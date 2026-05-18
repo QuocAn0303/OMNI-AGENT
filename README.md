@@ -126,9 +126,15 @@ Frontend mặc định: `http://localhost:5173` (vite).
 - `/api/reports` — xuất báo cáo
 - `/api/dashboard` — thông tin tổng quan
 
+**Cron & WebSocket (ưu tiên cao)**
+
+- Cron (node-cron) khởi chạy cùng server trong `src/jobs/cron.js`: đơn PENDING > 24h (mỗi giờ), công nợ quá hạn 09:00, nhắc lương ngày 25 lúc 09:00, nhắc đóng kỳ ngày 28 lúc 09:00.
+- Socket.IO: `src/realtime/socket.js` — client kết nối tới **origin** của API (bỏ hậu tố `/api`), xác thực qua `handshake.auth.token` (JWT giống header Bearer).
+- Fallback: frontend gọi `GET /api/notifications/unread-count` mỗi 30 giây (xem TopBar).
+
 **Testing**
 
-- Một vài file test có trong `src/modules/*/*.test.js` (ví dụ `inventory.service.test.js`, `product.service.test.js`) nhưng script `test` trong `package.json` chưa cấu hình để chạy test framework. Nếu muốn chạy tests, thêm dev-dependency (ví dụ `jest`) và cập nhật script `test`.
+- Chạy `npm test` (Jest). Ví dụ test đơn lẻ: `npx jest tests/debt.service.test.js`.
 
 **Chú ý & Gợi ý**
 

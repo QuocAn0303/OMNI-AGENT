@@ -58,6 +58,25 @@ router.get("/top-products", async (req, res, next) => {
 // GET /api/reports/inventory
 router.get("/inventory", async (req, res, next) => {
   try {
+    if (req.query.format) {
+      const { from, to, format } = z
+        .object({
+          from: z.string(),
+          to: z.string(),
+          format: z.enum(["xlsx", "csv", "pdf"]).default("xlsx"),
+        })
+        .parse(req.query);
+      const exportFormat = format === "pdf" ? "xlsx" : format;
+      const out = await reportService.exportReport("inventory", from, to, exportFormat);
+      res.setHeader("Content-Type", out.contentType);
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename="inventory_${from}_${to}.${exportFormat}"`,
+      );
+      res.send(out.buffer);
+      return;
+    }
+
     const data = await reportService.getInventoryReport();
     success(res, data, "Lấy báo cáo tồn kho thành công");
   } catch (err) {
@@ -65,7 +84,7 @@ router.get("/inventory", async (req, res, next) => {
   }
 });
 
-// Xuất Excel doanh thu: GET /api/reports/revenue/export?from=YYYY-MM-DD&to=YYYY-MM-DD
+// Specific export routes MUST come before the wildcard /:type route
 router.get(
   "/revenue/export",
   authorize("ADMIN", "MANAGER"),
@@ -91,7 +110,6 @@ router.get(
   },
 );
 
-// Xuất Excel tồn kho: GET /api/reports/inventory/export
 router.get(
   "/inventory/export",
   authorize("ADMIN", "MANAGER"),
@@ -113,5 +131,30 @@ router.get(
     }
   },
 );
+
+router.get("/:type(sales|orders|inventory|customers|hr|profit)", async (req, res, next) => {
+  try {
+    const { type } = req.params;
+    const { from, to, format } = z
+      .object({
+        from: z.string(),
+        to: z.string(),
+        format: z.enum(["xlsx", "csv", "pdf"]).default("xlsx"),
+      })
+      .parse(req.query);
+
+    const exportFormat = format === "pdf" ? "xlsx" : format;
+    const out = await reportService.exportReport(type, from, to, exportFormat);
+    const ext = exportFormat;
+    res.setHeader("Content-Type", out.contentType);
+    res.setHeader(
+      "Content-Disposition",
+      `attachment; filename="${type}_${from}_${to}.${ext}"`,
+    );
+    res.send(out.buffer);
+  } catch (err) {
+    next(err);
+  }
+});
 
 module.exports = router;

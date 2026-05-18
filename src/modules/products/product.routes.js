@@ -29,6 +29,15 @@ router.get("/", async (req, res, next) => {
   }
 });
 
+router.get("/sku/:sku", async (req, res, next) => {
+  try {
+    const product = await productService.findBySku(req.params.sku);
+    success(res, product);
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.get("/:id", async (req, res, next) => {
   try {
     const product = await productService.getById(req.params.id);
@@ -42,7 +51,7 @@ router.get("/:id", async (req, res, next) => {
 router.post("/", authorize("ADMIN", "MANAGER"), async (req, res, next) => {
   try {
     const data = productSchema.parse(req.body);
-    const product = await productService.create(data);
+    const product = await productService.create(data, req.user.id);
     created(res, product, "Tạo sản phẩm thành công");
   } catch (err) {
     next(err);
@@ -51,7 +60,8 @@ router.post("/", authorize("ADMIN", "MANAGER"), async (req, res, next) => {
 
 router.put("/:id", authorize("ADMIN", "MANAGER"), async (req, res, next) => {
   try {
-    const product = await productService.update(req.params.id, req.body);
+    const data = productSchema.partial().parse(req.body);
+    const product = await productService.update(req.params.id, data, req.user.id);
     success(res, product, "Cập nhật sản phẩm thành công");
   } catch (err) {
     next(err);
@@ -70,19 +80,29 @@ router.patch(
       const payload = { ...req.body };
       if (req.file) payload.imageUrl = req.file.path;
       // convert numeric fields
-      if (payload.price) payload.price = Number(payload.price);
-      if (payload.costPrice) payload.costPrice = Number(payload.costPrice);
-      if (payload.initialStock)
+      if (payload.price != null) payload.price = Number(payload.price);
+      if (payload.costPrice != null) payload.costPrice = Number(payload.costPrice);
+      if (payload.initialStock != null)
         payload.initialStock = Number(payload.initialStock);
 
       const data = partialSchema.parse(payload);
-      const updated = await productService.update(req.params.id, data);
+      const updated = await productService.update(req.params.id, data, req.user.id);
       success(res, updated, "Cập nhật một phần sản phẩm thành công");
     } catch (err) {
       next(err);
     }
   },
 );
+
+// Cập nhật cài đặt tồn kho (minStock)
+router.patch("/:id/inventory", authorize("ADMIN", "MANAGER"), async (req, res, next) => {
+  try {
+    const inventory = await productService.updateInventorySettings(req.params.id, req.body);
+    success(res, inventory, "Cập nhật cài đặt tồn kho thành công");
+  } catch (err) {
+    next(err);
+  }
+});
 
 // API: POST /api/products/:id/image
 router.post(
@@ -111,7 +131,7 @@ router.post(
 
 router.delete("/:id", authorize("ADMIN"), async (req, res, next) => {
   try {
-    await productService.remove(req.params.id);
+    await productService.remove(req.params.id, req.user.id);
     success(res, null, "Xóa sản phẩm thành công");
   } catch (err) {
     next(err);

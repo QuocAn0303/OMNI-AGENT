@@ -47,15 +47,39 @@ const getAll = async ({ page = 1, limit = 50 }) => {
   const l = Math.max(1, Math.min(200, Number(limit) || 50));
   const skip = (p - 1) * l;
 
-  const [logs, total] = await Promise.all([
+  const [rows, total] = await Promise.all([
     prisma.auditLog.findMany({
       skip,
       take: l,
       orderBy: { createdAt: "desc" },
-      include: { user: { select: { id: true, email: true, fullName: true } } },
+      include: { user: { select: { id: true, email: true, fullName: true, role: true } } },
     }),
     prisma.auditLog.count(),
   ]);
+
+  // DTO phẳng cho FE: vẫn trả được khi user đã bị xóa (userId → null) hoặc meta mô tả thay thế
+  const logs = rows.map((log) => {
+    const meta = log.meta && typeof log.meta === "object" ? log.meta : {};
+    const note = typeof meta.note === "string" ? meta.note : null;
+    return {
+      id: log.id,
+      userId: log.userId,
+      action: log.action,
+      entity: log.entity,
+      entityId: log.entityId,
+      beforeJson: log.beforeJson,
+      afterJson: log.afterJson,
+      meta: log.meta,
+      createdAt: log.createdAt,
+      userName: log.user?.fullName ?? (log.userId ? "—" : "System"),
+      userEmail: log.user?.email ?? null,
+      userRole: log.user?.role ?? null,
+      description: meta.description ?? note,
+      ipAddress: meta.ipAddress ?? meta.ip ?? null,
+      userAgent: meta.userAgent ?? null,
+      changes: log.afterJson != null ? log.afterJson : log.beforeJson,
+    };
+  });
 
   return {
     logs,

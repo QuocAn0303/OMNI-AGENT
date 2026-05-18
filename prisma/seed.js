@@ -1,11 +1,12 @@
 // prisma/seed.js
 require("dotenv").config();
-const { PrismaClient } = require("@prisma/client");
+const { PrismaClient, Prisma } = require("@prisma/client");
 const { PrismaPg } = require("@prisma/adapter-pg");
 const { Pool } = require("pg");
 const bcrypt = require("bcrypt");
 const { faker } = require("@faker-js/faker");
 
+// Use PrismaPg adapter so PrismaClient uses the Postgres adapter engine
 const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 const adapter = new PrismaPg(pool);
 const prisma = new PrismaClient({ adapter });
@@ -13,40 +14,114 @@ const prisma = new PrismaClient({ adapter });
 const rndInt = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
 const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
 
+async function ensureDeepDiveSchema() {
+  const statements = [
+    `ALTER TYPE "TransactionType" ADD VALUE IF NOT EXISTS 'RESERVATION'`,
+    `ALTER TYPE "TransactionType" ADD VALUE IF NOT EXISTS 'RESERVATION_RELEASE'`,
+    `DO $$ BEGIN CREATE TYPE "ReturnStatus" AS ENUM ('PENDING', 'APPROVED', 'REJECTED', 'COMPLETED'); EXCEPTION WHEN duplicate_object THEN null; END $$`,
+    `DO $$ BEGIN CREATE TYPE "RefundMethod" AS ENUM ('CASH', 'BANK_TRANSFER', 'STORE_CREDIT'); EXCEPTION WHEN duplicate_object THEN null; END $$`,
+    `DO $$ BEGIN CREATE TYPE "CycleCountStatus" AS ENUM ('DRAFT', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED'); EXCEPTION WHEN duplicate_object THEN null; END $$`,
+    `ALTER TABLE "inventories" ADD COLUMN IF NOT EXISTS "reserved" INTEGER NOT NULL DEFAULT 0`,
+    `ALTER TABLE "orders" ADD COLUMN IF NOT EXISTS "discountType" TEXT DEFAULT 'NONE'`,
+    `ALTER TABLE "orders" ADD COLUMN IF NOT EXISTS "discountValue" DECIMAL(12, 2) NOT NULL DEFAULT 0`,
+    `ALTER TABLE "order_items" ADD COLUMN IF NOT EXISTS "discountType" TEXT DEFAULT 'NONE'`,
+    `ALTER TABLE "order_items" ADD COLUMN IF NOT EXISTS "discountValue" DECIMAL(12, 2) NOT NULL DEFAULT 0`,
+    `ALTER TABLE "order_items" ADD COLUMN IF NOT EXISTS "discountAmount" DECIMAL(12, 2) NOT NULL DEFAULT 0`,
+    `CREATE TABLE IF NOT EXISTS "payments" (
+      "id" TEXT NOT NULL,
+      "orderId" TEXT NOT NULL,
+      "amount" DECIMAL(12, 2) NOT NULL,
+      "method" "PaymentMethod" NOT NULL,
+      "reference" TEXT,
+      "note" TEXT,
+      "createdById" TEXT NOT NULL,
+      "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "payments_pkey" PRIMARY KEY ("id")
+    )`,
+    `CREATE TABLE IF NOT EXISTS "order_returns" (
+      "id" TEXT NOT NULL,
+      "returnCode" TEXT NOT NULL,
+      "orderId" TEXT NOT NULL,
+      "status" "ReturnStatus" NOT NULL DEFAULT 'PENDING',
+      "reason" TEXT NOT NULL,
+      "refundMethod" "RefundMethod" NOT NULL DEFAULT 'CASH',
+      "refundAmount" DECIMAL(12, 2) NOT NULL,
+      "note" TEXT,
+      "createdById" TEXT NOT NULL,
+      "approvedById" TEXT,
+      "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "order_returns_pkey" PRIMARY KEY ("id")
+    )`,
+    `CREATE TABLE IF NOT EXISTS "order_return_items" (
+      "id" TEXT NOT NULL,
+      "returnId" TEXT NOT NULL,
+      "orderItemId" TEXT NOT NULL,
+      "quantity" INTEGER NOT NULL,
+      "refundAmount" DECIMAL(12, 2) NOT NULL,
+      CONSTRAINT "order_return_items_pkey" PRIMARY KEY ("id")
+    )`,
+    `CREATE TABLE IF NOT EXISTS "cycle_counts" (
+      "id" TEXT NOT NULL,
+      "code" TEXT NOT NULL,
+      "status" "CycleCountStatus" NOT NULL DEFAULT 'DRAFT',
+      "note" TEXT,
+      "createdById" TEXT NOT NULL,
+      "completedAt" TIMESTAMP(3),
+      "createdAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
+      CONSTRAINT "cycle_counts_pkey" PRIMARY KEY ("id")
+    )`,
+    `CREATE TABLE IF NOT EXISTS "cycle_count_items" (
+      "id" TEXT NOT NULL,
+      "cycleCountId" TEXT NOT NULL,
+      "productId" TEXT NOT NULL,
+      "systemQuantity" INTEGER NOT NULL,
+      "actualQuantity" INTEGER,
+      "variance" INTEGER,
+      "note" TEXT,
+      CONSTRAINT "cycle_count_items_pkey" PRIMARY KEY ("id")
+    )`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS "order_returns_returnCode_key" ON "order_returns"("returnCode")`,
+    `CREATE UNIQUE INDEX IF NOT EXISTS "cycle_counts_code_key" ON "cycle_counts"("code")`,
+  ];
+
+  for (const statement of statements) {
+    await prisma.$executeRawUnsafe(statement);
+  }
+}
+
 async function main() {
+  await ensureDeepDiveSchema();
   console.log("🌱 Seeding database for CANDORY SCENT...");
 
   // ---- CLEANUP (order matters to avoid FK constraint errors) ----
   console.log("→ Clearing old data (this may take a while)...");
-  await prisma.orderItem.deleteMany();
-  await prisma.inventoryTransaction.deleteMany();
-  await prisma.order.deleteMany();
-  await prisma.inventory.deleteMany();
-  await prisma.product.deleteMany();
-  await prisma.category.deleteMany();
-  await prisma.customer.deleteMany();
 
-  // HR related tables: delete payrolls, violations, shifts, employees before users
-  try {
-    await prisma.payroll.deleteMany();
-  } catch (e) {}
-  try {
-    await prisma.violation.deleteMany();
-  } catch (e) {}
-  try {
-    await prisma.shift.deleteMany();
-  } catch (e) {}
-  try {
-    await prisma.employee.deleteMany();
-  } catch (e) {}
-  // tokens / audit may exist in the project
-  try {
-    await prisma.refreshToken.deleteMany();
-  } catch (e) {}
-  try {
-    await prisma.auditLog.deleteMany();
-  } catch (e) {}
-  await prisma.user.deleteMany();
+  // Use raw SQL TRUNCATE CASCADE to avoid FK ordering issues
+  await prisma.$executeRawUnsafe(`
+    TRUNCATE TABLE
+      "order_return_items",
+      "order_returns",
+      "payments",
+      "order_items",
+      "inventory_transactions",
+      "orders",
+      "cycle_count_items",
+      "cycle_counts",
+      "inventories",
+      "products",
+      "categories",
+      "customers",
+      "payrolls",
+      "violations",
+      "shifts",
+      "employees",
+      "refresh_tokens",
+      "audit_logs",
+      "users"
+    CASCADE
+  `);
 
   // ---- USERS ----
   const plainPassword = "123456";
@@ -149,6 +224,19 @@ async function main() {
   }
   console.log(`✅ Created ${categories.length} categories`);
 
+  let defaultWarehouse = await prisma.warehouse.findFirst({
+    where: { isDefault: true },
+  });
+  if (!defaultWarehouse) {
+    defaultWarehouse = await prisma.warehouse.create({
+      data: {
+        code: "WH-DEFAULT",
+        name: "Kho mặc định",
+        isDefault: true,
+      },
+    });
+  }
+
   // ---- PRODUCTS + INVENTORY (30-50 sản phẩm) ----
   const scentList = [
     "Oải hương",
@@ -190,7 +278,7 @@ async function main() {
     const price = rndInt(50, 350) * 1000; // VND (50k - 350k stepped by 1k)
     // costPrice as ~45-80% of price, rounded to nearest 1000
     const rawCost = price * (0.45 + Math.random() * 0.35);
-    const costPrice = Math.round(rawCost / 1000) * 1000;
+    const costPrice = Math.round(rawCost / 1000) * 500;
     const qty = rndInt(50, 200);
     const category = pick(categories);
 
@@ -203,11 +291,15 @@ async function main() {
         costPrice: costPrice.toFixed(2),
         unit: "cái",
         categoryId: category.id,
-        inventory: {
-          create: { quantity: qty, minStock: rndInt(5, 20) },
+        inventories: {
+          create: {
+            quantity: qty,
+            minStock: rndInt(5, 20),
+            warehouseId: defaultWarehouse.id,
+          },
         },
       },
-      include: { inventory: true },
+      include: { inventories: true },
     });
 
     products.push({
@@ -215,7 +307,7 @@ async function main() {
       sku: created.sku,
       name: created.name,
       price: parseFloat(created.price),
-      inventoryId: created.inventory.id,
+      inventoryId: created.inventories[0].id,
     });
   }
   console.log(`✅ Created ${products.length} products (+inventory)`);
@@ -300,7 +392,7 @@ async function main() {
 
       for (const pid of productIds) {
         // read inventory inside transaction to avoid race
-        const inv = await tx.inventory.findUnique({
+        const inv = await tx.inventory.findFirst({
           where: { productId: pid },
         });
         if (!inv || inv.quantity <= 0) continue; // out of stock
@@ -392,5 +484,9 @@ main()
   })
   .finally(async () => {
     await prisma.$disconnect();
-    await pool.end();
+    try {
+      await pool.end();
+    } catch (err) {
+      // ignore
+    }
   });

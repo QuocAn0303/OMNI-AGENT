@@ -18,6 +18,7 @@ const authRoutes = require("./modules/auth/auth.routes");
 const userRoutes = require("./modules/users/user.routes");
 const productRoutes = require("./modules/products/product.routes");
 const orderRoutes = require("./modules/orders/order.routes");
+const returnRoutes = require("./modules/returns/return.routes");
 const dashboardRoutes = require("./modules/dashboard/dashboard.routes");
 const customerRoutes = require("./modules/customers/customer.routes");
 const inventoryRoutes = require("./modules/inventory/inventory.routes");
@@ -26,6 +27,22 @@ const reportRoutes = require("./modules/reports/report.routes");
 const auditRoutes = require("./modules/audit/audit.routes");
 const hrRoutes = require("./modules/hr/hr.routes");
 const analyticsRoutes = require("./modules/analytics/analytics.routes");
+//chưa hoạt động được
+//const aiRoutes = require("./modules/ai/ai.routes");
+const accountingRoutes = require("./modules/accounting/accounting.routes");
+const debtRoutes = require("./modules/debt/debt.routes");
+const notificationRoutes = require("./modules/notifications/notification.routes");
+const purchaseOrderAliasRoutes = require("./modules/accounting/purchase-order.routes");
+const promotionRoutes = require("./modules/promotions/promotion.routes");
+const invoiceRoutes = require("./modules/orders/invoice.routes");
+const loyaltyRoutes = require("./modules/loyalty/loyalty.routes");
+const deliveryRoutes = require("./modules/delivery/delivery.routes");
+const warehouseRoutes = require("./modules/warehouses/warehouse.routes");
+const stockTransferRoutes = require("./modules/warehouses/stock-transfer.routes");
+const deliveryService = require("./modules/delivery/delivery.service");
+const http = require("http");
+const { initSocket } = require("./realtime/socket");
+const { startCrons } = require("./jobs/cron");
 
 const app = express();
 const corsOrigin =
@@ -42,20 +59,46 @@ app.use(
     credentials: true,
   }),
 );
+app.use(
+  "/api/webhooks/delivery",
+  express.raw({ type: "application/json" }),
+);
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
+
+app.post("/api/webhooks/delivery/:provider", async (req, res) => {
+  try {
+    const rawBody =
+      req.body instanceof Buffer ? req.body.toString("utf8") : JSON.stringify(req.body);
+    const payload = JSON.parse(rawBody);
+    const signature = req.headers["x-ghtk-signature"] || req.headers["x-signature"];
+    const result = await deliveryService.handleWebhook(
+      req.params.provider,
+      payload,
+      signature,
+      rawBody,
+    );
+    res.json({ success: true, ...result });
+  } catch (err) {
+    res.status(err.status || 500).json({
+      success: false,
+      message: err.message || "Webhook error",
+    });
+  }
+});
 
 app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 
 // ==================== Routes ====================
 app.get("/", (req, res) => {
-  res.json({ message: "🚀 ERP System API đang chạy!", version: "1.0.0" });
+  res.json({ message: "ERP System API đang chạy", version: "1.0.0" });
 });
 
 app.use("/api/auth", authRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/products", productRoutes);
 app.use("/api/orders", orderRoutes);
+app.use("/api/returns", returnRoutes);
 app.use("/api/dashboard", dashboardRoutes);
 app.use("/api/customers", customerRoutes);
 app.use("/api/inventory", inventoryRoutes);
@@ -64,6 +107,17 @@ app.use("/api/reports", reportRoutes);
 app.use("/api/audit", auditRoutes);
 app.use("/api/hr", hrRoutes);
 app.use("/api/analytics", analyticsRoutes);
+//app.use("/api/ai", aiRoutes);
+app.use("/api/accounting", accountingRoutes);
+app.use("/api/debts", debtRoutes);
+app.use("/api/notifications", notificationRoutes);
+app.use("/api/purchase-orders", purchaseOrderAliasRoutes);
+app.use("/api/promotions", promotionRoutes);
+app.use("/api/invoices", invoiceRoutes);
+app.use("/api/loyalty", loyaltyRoutes);
+app.use("/api/deliveries", deliveryRoutes);
+app.use("/api/warehouses", warehouseRoutes);
+app.use("/api/stock-transfers", stockTransferRoutes);
 
 // 404 handler
 app.use("*", (req, res) => {
@@ -109,10 +163,13 @@ const updateFrontendEnv = (port) => {
 
 const startServer = (port, retries = 10) => {
   const p = Number(port);
-  const server = app.listen(p, () => {
-    console.log(`\n🚀 ERP Server đang chạy tại: http://localhost:${p}`);
-    console.log(`📚 Environment: ${process.env.NODE_ENV || "development"}`);
-    console.log("\n📋 API Endpoints:");
+  const httpServer = http.createServer(app);
+  initSocket(httpServer);
+  const server = httpServer.listen(p, () => {
+    startCrons();
+    console.log(`\n ERP Server đang chạy tại: http://localhost:${p}`);
+    console.log(` Environment: ${process.env.NODE_ENV || "development"}`);
+    console.log("\n API Endpoints:");
     console.log(`  POST   /api/auth/login`);
     console.log(`  GET    /api/auth/me`);
     console.log(`  GET    /api/products`);

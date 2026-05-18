@@ -61,6 +61,11 @@ const daysAgoDate = (days) => {
     console.error(e);
   } finally {
     await prisma.$disconnect();
+    try {
+      await pool.end();
+    } catch (err) {
+      // ignore
+    }
     process.exit(0);
   }
 })();

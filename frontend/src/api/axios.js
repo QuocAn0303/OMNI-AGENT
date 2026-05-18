@@ -1,9 +1,9 @@
 import axios from "axios";
-
+//chỉnh ở đây để set lại port api nếu cần
 // Nếu không set `VITE_API_URL` khi chạy local, mặc định dùng dev backend
 const API_BASE = (
   import.meta.env.VITE_API_URL ||
-  (import.meta.env.DEV ? "http://localhost:4003/api" : "")
+  (import.meta.env.DEV ? "http://localhost:4000/api" : "")
 ).replace(/\/$/, "");
 
 // Khởi tạo instance của axios (dùng cho hầu hết request)

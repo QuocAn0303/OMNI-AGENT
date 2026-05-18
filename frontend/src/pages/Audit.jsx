@@ -1,106 +1,278 @@
-import React, { useEffect, useState } from "react";
-import { Table, Tag, Space, message } from "antd";
-import axiosInstance from "../api/axios";
-import useAuthStore from "../stores/authStore";
+import { useEffect, useState, useMemo } from 'react';
+import { Table, Input, Select, DatePicker, Drawer, message } from 'antd';
+import { SearchOutlined, EyeOutlined } from '@ant-design/icons';
+import dayjs from 'dayjs';
+import axios from '../api/axios';
+import PageHeader from '../components/layout/PageHeader';
+import EmptyState from '../components/shared/EmptyState';
 
-// Trang Audit: chỉ hiển thị cho ADMIN
-// Ghi chú (VN): Trang này lấy danh sách activity từ backend (/api/audit)
+const { RangePicker } = DatePicker;
+
+const ACTION_CONFIG = {
+  CREATE: { color: '#059669', label: 'Tạo' },
+  UPDATE: { color: '#0284c7', label: 'Sửa' },
+  DELETE: { color: '#dc2626', label: 'Xóa' },
+  LOGIN:  { color: '#7c3aed', label: 'Đăng nhập' },
+  LOGOUT: { color: '#94a3b8', label: 'Đăng xuất' },
+  EXPORT: { color: '#d97706', label: 'Xuất file' },
+};
+
+/**
+ * Audit — Lịch sử thao tác hệ thống (Admin only)
+ * Endpoint: GET /api/audit
+ */
 export default function Audit() {
-  const { user } = useAuthStore();
   const [data, setData] = useState([]);
-  const [loading, setLoading] = useState(false);
-  const [pagination, setPagination] = useState({
-    current: 1,
-    pageSize: 10,
-    total: 0,
-  });
+  const [loading, setLoading] = useState(true);
+  const [search, setSearch] = useState('');
+  const [actionFilter, setActionFilter] = useState(null);
+  const [dateRange, setDateRange] = useState(null);
+
+  const [detailOpen, setDetailOpen] = useState(false);
+  const [detail, setDetail] = useState(null);
 
   useEffect(() => {
-    fetchData(pagination.current);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
+    (async () => {
+      try {
+        const res = await axios.get('/audit', { params: { page: 1, limit: 200 } });
+        const raw = res.data?.data;
+        const list = Array.isArray(raw) ? raw : [];
+        setData(list);
+      } catch {
+        message.error('Không tải được audit log');
+      } finally {
+        setLoading(false);
+      }
+    })();
   }, []);
 
-  const fetchData = async (page = 1) => {
-    if (!user || user.role !== "ADMIN") return;
-    setLoading(true);
-    try {
-      const res = await axiosInstance.get("/audit", {
-        params: { page, limit: pagination.pageSize },
-      });
-      // API trả về { success, data: [...], pagination: { page, limit, total, totalPages } }
-      const items = res.data.data || [];
-      const pag = res.data.pagination || {};
-      setData(items);
-      setPagination((p) => ({
-        ...p,
-        total: pag.total || items.length,
-        current: page,
-      }));
-    } catch (err) {
-      console.error(err);
-      message.error(err?.response?.data?.message || "Không thể tải audit logs");
-    } finally {
-      setLoading(false);
-    }
-  };
+  const filtered = useMemo(() => {
+    return data.filter((log) => {
+      if (search) {
+        const term = search.toLowerCase();
+        if (!`${log.userName} ${log.entity} ${log.description || ''}`.toLowerCase().includes(term))
+          return false;
+      }
+      if (actionFilter && log.action !== actionFilter) return false;
+      if (dateRange) {
+        const d = dayjs(log.createdAt);
+        if (d.isBefore(dateRange[0], 'day') || d.isAfter(dateRange[1], 'day')) return false;
+      }
+      return true;
+    });
+  }, [data, search, actionFilter, dateRange]);
 
   const columns = [
-    { title: "ID", dataIndex: "id", key: "id", width: 80 },
-    { title: "Hành động", dataIndex: "action", key: "action" },
-    { title: "Đối tượng", dataIndex: "entity", key: "entity" },
-    { title: "Entity ID", dataIndex: "entityId", key: "entityId" },
-    { title: "Người thực hiện", dataIndex: ["user", "fullName"], key: "user" },
     {
-      title: "Trạng thái trước",
-      dataIndex: "before",
-      key: "before",
-      render: (v) => (
-        <pre
-          style={{ whiteSpace: "pre-wrap", maxHeight: 80, overflow: "auto" }}
-        >
-          {JSON.stringify(v)}
-        </pre>
+      title: 'Thời gian',
+      dataIndex: 'createdAt',
+      width: 150,
+      defaultSortOrder: 'descend',
+      sorter: (a, b) => dayjs(a.createdAt).unix() - dayjs(b.createdAt).unix(),
+      render: (d) => (
+        <div>
+          <div style={{ fontSize: 13 }}>{dayjs(d).format('DD/MM/YYYY')}</div>
+          <div style={{ fontSize: 11, color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
+            {dayjs(d).format('HH:mm:ss')}
+          </div>
+        </div>
       ),
     },
     {
-      title: "Trạng thái sau",
-      dataIndex: "after",
-      key: "after",
-      render: (v) => (
-        <pre
-          style={{ whiteSpace: "pre-wrap", maxHeight: 80, overflow: "auto" }}
-        >
-          {JSON.stringify(v)}
-        </pre>
+      title: 'Người thực hiện',
+      dataIndex: 'userName',
+      width: 160,
+      render: (name, row) => (
+        <div>
+          <div style={{ fontWeight: 500 }}>{name || 'System'}</div>
+          {row.userRole && (
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', textTransform: 'uppercase' }}>
+              {row.userRole}
+            </div>
+          )}
+        </div>
       ),
     },
-    { title: "Thời gian", dataIndex: "createdAt", key: "createdAt" },
+    {
+      title: 'Hành động',
+      dataIndex: 'action',
+      width: 130,
+      render: (action) => {
+        const cfg = ACTION_CONFIG[action] || { color: '#94a3b8', label: action };
+        return (
+          <span style={{
+            display: 'inline-flex',
+            alignItems: 'center',
+            gap: 6,
+            padding: '2px 10px',
+            borderRadius: 'var(--radius-full)',
+            background: cfg.color + '15',
+            color: cfg.color,
+            fontSize: 12,
+            fontWeight: 500,
+          }}>
+            <span style={{ width: 6, height: 6, borderRadius: '50%', background: cfg.color }} />
+            {cfg.label}
+          </span>
+        );
+      },
+    },
+    {
+      title: 'Đối tượng',
+      dataIndex: 'entity',
+      width: 130,
+      render: (e, row) => (
+        <div>
+          <div style={{ fontSize: 13, fontWeight: 500 }}>{e}</div>
+          {row.entityId && (
+            <div style={{ fontSize: 11, color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
+              #{row.entityId}
+            </div>
+          )}
+        </div>
+      ),
+    },
+    {
+      title: 'Mô tả',
+      dataIndex: 'description',
+      ellipsis: true,
+      render: (v) => v || <span style={{ color: 'var(--text-muted)' }}>—</span>,
+    },
+    {
+      title: 'IP',
+      dataIndex: 'ipAddress',
+      width: 130,
+      render: (ip) => (
+        <span style={{ fontSize: 12, fontFamily: 'var(--font-mono)', color: 'var(--text-muted)' }}>
+          {ip || '—'}
+        </span>
+      ),
+    },
+    {
+      title: '',
+      width: 50,
+      align: 'right',
+      render: (_, row) => (
+        <button
+          type="button"
+          onClick={() => { setDetail(row); setDetailOpen(true); }}
+          style={{
+            background: 'transparent',
+            border: 'none',
+            color: 'var(--text-muted)',
+            cursor: 'pointer',
+            padding: 4,
+          }}
+        >
+          <EyeOutlined />
+        </button>
+      ),
+    },
   ];
 
-  if (!user)
-    return (
-      <div style={{ padding: 24 }}>Vui lòng đăng nhập để xem trang Audit.</div>
-    );
-  if (user.role !== "ADMIN")
-    return (
-      <div style={{ padding: 24 }}>Bạn không có quyền truy cập trang này.</div>
-    );
-
   return (
-    <div style={{ padding: 24 }}>
-      <h2>📝 Activity Logs (Audit)</h2>
-      <Table
-        columns={columns}
-        dataSource={data}
-        rowKey="id"
-        loading={loading}
-        pagination={{
-          current: pagination.current,
-          pageSize: pagination.pageSize,
-          total: pagination.total,
-          onChange: (page) => fetchData(page),
-        }}
+    <>
+      <PageHeader
+        title="Audit Log"
+        subtitle={`${filtered.length} bản ghi`}
       />
+
+      <div className="filters-bar">
+        <Input
+          className="filters-bar__search"
+          placeholder="Tìm theo user, entity, mô tả..."
+          prefix={<SearchOutlined style={{ color: 'var(--text-muted)' }} />}
+          value={search}
+          onChange={(e) => setSearch(e.target.value)}
+          allowClear
+        />
+        <Select
+          placeholder="Hành động"
+          style={{ width: 160 }}
+          value={actionFilter}
+          onChange={setActionFilter}
+          allowClear
+          options={Object.entries(ACTION_CONFIG).map(([k, v]) => ({ value: k, label: v.label }))}
+        />
+        <RangePicker
+          value={dateRange}
+          onChange={setDateRange}
+          format="DD/MM/YYYY"
+          placeholder={['Từ ngày', 'Đến ngày']}
+        />
+      </div>
+
+      <div className="table-card">
+        <Table
+          columns={columns}
+          dataSource={filtered}
+          rowKey="id"
+          loading={loading}
+          scroll={{ x: 1100 }}
+          pagination={{ pageSize: 50, showSizeChanger: true }}
+          locale={{ emptyText: <EmptyState title="Chưa có bản ghi" /> }}
+        />
+      </div>
+
+      {/* Detail Drawer */}
+      <Drawer
+        title="Chi tiết audit log"
+        width={520}
+        open={detailOpen}
+        onClose={() => setDetailOpen(false)}
+      >
+        {detail && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <Row label="Thời gian" value={dayjs(detail.createdAt).format('DD/MM/YYYY HH:mm:ss')} mono />
+            <Row
+              label="Người thực hiện"
+              value={`${detail.userName || '—'}${detail.userRole ? ` (${detail.userRole})` : ''}`}
+            />
+            <Row label="Hành động" value={ACTION_CONFIG[detail.action]?.label || detail.action} />
+            <Row label="Đối tượng" value={`${detail.entity} #${detail.entityId || ''}`} mono />
+            <Row label="IP Address" value={detail.ipAddress || '—'} mono />
+            <Row label="User Agent" value={detail.userAgent || '—'} mono small />
+            <Row label="Mô tả" value={detail.description || '—'} />
+
+            {detail.changes && (
+              <>
+                <div style={{ fontSize: 12, color: 'var(--text-muted)', marginTop: 8, fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em' }}>
+                  Thay đổi
+                </div>
+                <pre style={{
+                  background: 'var(--bg-tertiary)',
+                  padding: 12,
+                  borderRadius: 'var(--radius-md)',
+                  fontSize: 12,
+                  overflow: 'auto',
+                  fontFamily: 'var(--font-mono)',
+                  margin: 0,
+                }}>
+                  {typeof detail.changes === 'string' ? detail.changes : JSON.stringify(detail.changes, null, 2)}
+                </pre>
+              </>
+            )}
+          </div>
+        )}
+      </Drawer>
+    </>
+  );
+}
+
+function Row({ label, value, mono, small }) {
+  return (
+    <div>
+      <div style={{ fontSize: 11, color: 'var(--text-muted)', fontWeight: 600, textTransform: 'uppercase', letterSpacing: '0.04em', marginBottom: 4 }}>
+        {label}
+      </div>
+      <div style={{
+        fontSize: small ? 11 : 13,
+        fontFamily: mono ? 'var(--font-mono)' : 'inherit',
+        color: 'var(--text-primary)',
+        wordBreak: 'break-word',
+      }}>
+        {value}
+      </div>
     </div>
   );
 }

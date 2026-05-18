@@ -30,7 +30,8 @@ router.get("/overview", async (req, res, next) => {
       totalCustomers,
       todayOrderStats,
       monthRevenue,
-      lowStockProducts,
+      lowStockInventories,
+      lowStockCount,
       orderStatusGroups,
       topProductsGroups,
       totalQuantityResult,
@@ -52,13 +53,22 @@ router.get("/overview", async (req, res, next) => {
         },
         _sum: { total: true },
       }),
-      // Lấy 5 sản phẩm tồn kho thấp nhất (ngưỡng <= 10)
+      // Lấy 5 dòng tồn kho thấp nhất (ngưỡng <= 10); join product + category để FE hiển thị tên/SKU/danh mục
       prisma.inventory.findMany({
         where: { quantity: { lte: 10 } },
-        include: { product: { select: { name: true, sku: true } } },
+        include: {
+          product: {
+            select: {
+              name: true,
+              sku: true,
+              category: { select: { name: true } },
+            },
+          },
+        },
         take: 5,
         orderBy: { quantity: "asc" },
       }),
+      prisma.inventory.count({ where: { quantity: { lte: 10 } } }),
       // group by status to get counts per order status
       prisma.order.groupBy({
         by: ["status"],
@@ -118,12 +128,22 @@ router.get("/overview", async (req, res, next) => {
       productPerformance.push({ name: "Chưa có dữ liệu", value: 1 });
     }
 
+    const lowStockProducts = (lowStockInventories || []).map((inv) => ({
+      id: inv.id,
+      name: inv.product?.name ?? "—",
+      sku: inv.product?.sku ?? "",
+      categoryName: inv.product?.category?.name ?? null,
+      quantity: inv.quantity,
+      minStock: inv.minStock,
+    }));
+
     success(res, {
       totalProducts,
       totalCustomers,
       todayOrders: todayOrderStats._count.id ?? 0,
       todayRevenue: Number(todayOrderStats._sum.total ?? 0),
       monthRevenue: Number(monthRevenue._sum.total ?? 0),
+      lowStockCount: Number(lowStockCount ?? 0),
       lowStockProducts,
       orderStatus,
       productPerformance,

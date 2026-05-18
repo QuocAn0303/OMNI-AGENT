@@ -3,6 +3,7 @@ const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 const crypto = require("crypto");
 const prisma = require("../../config/prisma");
+const auditService = require("../audit/audit.service");
 
 // Ghi chú: Phần refresh token + logout
 // - Refresh token được lưu vào bảng `RefreshToken` (Prisma schema)
@@ -73,6 +74,16 @@ const login = async ({ email, password }) => {
   // 7. Trả về token + refreshToken + user info
   //    Destructure để bỏ field password ra khỏi object trước khi trả về FE
   const { password: _removed, ...userWithoutPassword } = user;
+
+  // Ghi audit: ai đăng nhập, lúc nào
+  auditService.log({
+    userId: user.id,
+    action: "LOGIN",
+    entity: "User",
+    entityId: user.id,
+    after: { email: user.email, role: user.role },
+  });
+
   return { token, refreshToken, user: userWithoutPassword };
 };
 
@@ -112,15 +123,14 @@ const changePassword = async (userId, { currentPassword, newPassword }) => {
     throw { status: 404, message: "Không tìm thấy người dùng" };
   }
 
-  // xét mật khẩu mới phải khác mật khẩu hiện tại
-  if (currentPassword === newPassword) {
-    throw { status: 400, message: "Mật khẩu mới phải khác mật khẩu hiện tại" };
-  }
-
   // 2. Kiểm tra mật khẩu hiện tại có đúng không
   const isValid = await bcrypt.compare(currentPassword, user.password);
   if (!isValid) {
     throw { status: 400, message: "Mật khẩu hiện tại không đúng" };
+  }
+
+  if (currentPassword === newPassword) {
+    throw { status: 400, message: "Mật khẩu mới phải khác mật khẩu hiện tại" };
   }
 
   // 3. Hash mật khẩu mới trước khi lưu
@@ -134,6 +144,14 @@ const changePassword = async (userId, { currentPassword, newPassword }) => {
   await prisma.user.update({
     where: { id: userId },
     data: { password: hashedNewPassword },
+  });
+
+  // Ghi audit: ai đổi mật khẩu
+  auditService.log({
+    userId,
+    action: "CHANGE_PASSWORD",
+    entity: "User",
+    entityId: userId,
   });
 
   return { message: "Đổi mật khẩu thành công" };

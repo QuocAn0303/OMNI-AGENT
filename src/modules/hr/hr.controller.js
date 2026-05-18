@@ -1,10 +1,21 @@
 const {
+  createEmployeeSchema,
   createShiftSchema,
   createViolationSchema,
   generatePayrollSchema,
 } = require("./hr.validation");
 const hrService = require("./hr.service");
 const prisma = require("../../config/prisma");
+
+const createEmployee = async (req, res, next) => {
+  try {
+    const parsed = createEmployeeSchema.parse(req.body);
+    const employee = await hrService.createEmployee(parsed);
+    res.status(201).json({ success: true, data: employee, message: "Đã thêm nhân viên" });
+  } catch (err) {
+    next(err);
+  }
+};
 
 const setEmployeeCounts = async (req, res, next) => {
   try {
@@ -291,6 +302,41 @@ const generatePayroll = async (req, res, next) => {
   }
 };
 
+const calculatePayroll = async (req, res, next) => {
+  try {
+    const { month, year } = hrService.parseMonthKey(req.query.month);
+    const out = await hrService.generatePayrollForMonth(month, year);
+    res.json({ success: true, data: out });
+  } catch (err) {
+    next(err);
+  }
+};
+
+const listPayroll = async (req, res, next) => {
+  try {
+    const out = await hrService.listPayroll(req.query.month);
+    res.json({ success: true, data: out });
+  } catch (err) {
+    next(err);
+  }
+};
+
+const listAttendance = async (req, res, next) => {
+  try {
+    const out = await hrService.listAttendance(req.query);
+    const role = req.user?.role;
+    if (role === "ADMIN" || role === "MANAGER") {
+      res.json({ success: true, data: out });
+      return;
+    }
+
+    const filtered = out.filter((r) => r.userId === req.user?.id);
+    res.json({ success: true, data: filtered });
+  } catch (err) {
+    next(err);
+  }
+};
+
 const listEmployees = async (req, res, next) => {
   try {
     const out = await hrService.listEmployeesWithPreview();
@@ -299,7 +345,7 @@ const listEmployees = async (req, res, next) => {
     if (role === "ADMIN" || role === "MANAGER") {
       res.json({ success: true, data: out });
     } else {
-      const filtered = out.filter((r) => r.employee.user.id === req.user?.id);
+      const filtered = out.filter((r) => r.userId === req.user?.id);
       res.json({ success: true, data: filtered });
     }
   } catch (err) {
@@ -312,24 +358,73 @@ const updateEmployee = async (req, res, next) => {
     const { updateEmployeeSchema } = require("./hr.validation");
     const parsed = updateEmployeeSchema.parse(req.body);
     const id = req.params.id;
-    const data = {};
-    if (parsed.baseSalary !== undefined) data.baseSalary = parsed.baseSalary;
-    if (parsed.shiftMoney !== undefined) data.shiftMoney = parsed.shiftMoney;
-    if (parsed.isActive !== undefined) data.isActive = parsed.isActive;
-    const updated = await prisma.employee.update({ where: { id }, data });
-    res.json({ success: true, data: updated });
+
+    const empData = {};
+    if (parsed.employeeCode !== undefined) empData.employeeCode = parsed.employeeCode;
+    if (parsed.phone !== undefined) empData.phone = parsed.phone;
+    if (parsed.position !== undefined) empData.position = parsed.position;
+    if (parsed.baseSalary !== undefined && parsed.baseSalary !== null) empData.baseSalary = parsed.baseSalary;
+    if (parsed.shiftMoney !== undefined && parsed.shiftMoney !== null) empData.shiftMoney = parsed.shiftMoney;
+    if (parsed.hireDate !== undefined) empData.hireDate = parsed.hireDate ? new Date(parsed.hireDate) : null;
+    if (parsed.address !== undefined) empData.address = parsed.address;
+    if (parsed.isActive !== undefined) empData.isActive = parsed.isActive;
+
+    const userData = {};
+    if (parsed.fullName !== undefined) userData.fullName = parsed.fullName;
+    if (parsed.email !== undefined && parsed.email !== null && parsed.email !== "") userData.email = parsed.email;
+
+    const updated = await prisma.$transaction(async (tx) => {
+      const emp = await tx.employee.update({
+        where: { id },
+        data: empData,
+        include: { user: true },
+      });
+      if (Object.keys(userData).length > 0) {
+        await tx.user.update({ where: { id: emp.userId }, data: userData });
+        const refreshed = await tx.employee.findUnique({ where: { id }, include: { user: true } });
+        return refreshed;
+      }
+      return emp;
+    });
+
+    res.json({ success: true, data: hrService.flattenEmployee(updated), message: "Đã cập nhật" });
+  } catch (err) {
+    next(err);
+  }
+};
+
+const deleteEmployee = async (req, res, next) => {
+  try {
+    const id = req.params.id;
+    await prisma.employee.update({ where: { id }, data: { isActive: false } });
+    res.json({ success: true, message: "Đã xóa nhân viên" });
+  } catch (err) {
+    next(err);
+  }
+};
+
+const lockPayroll = async (req, res, next) => {
+  try {
+    const out = await hrService.lockPayroll(req.params.id, req.user.id);
+    res.json({ success: true, data: out, message: "Đã khóa bảng lương" });
   } catch (err) {
     next(err);
   }
 };
 
 module.exports = {
+  createEmployee,
   createShift,
   createViolation,
   updateViolation,
   generatePayroll,
+  calculatePayroll,
+  listPayroll,
+  lockPayroll,
+  listAttendance,
   listEmployees,
   updateEmployee,
+  deleteEmployee,
   setEmployeeCounts,
   setBulkCounts,
 };

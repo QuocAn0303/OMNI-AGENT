@@ -1,5 +1,18 @@
 const { z } = require("zod");
 
+const POSITIONS = ["MANAGER", "CASHIER", "SALES", "WAREHOUSE", "OTHER"];
+
+const createEmployeeSchema = z.object({
+  employeeCode: z.string().optional(),
+  fullName: z.string().min(1, "Họ tên không được để trống"),
+  phone: z.string().optional(),
+  email: z.string().email("Email không hợp lệ").optional().or(z.literal("")),
+  position: z.enum(POSITIONS).default("OTHER"),
+  baseSalary: z.number().nonnegative().optional().default(0),
+  hireDate: z.string().optional().nullable(),
+  address: z.string().optional(),
+});
+
 const createShiftSchema = z.object({
   employeeId: z.string().uuid(),
   date: z.string().optional(),
@@ -38,8 +51,15 @@ const generatePayrollSchema = z.object({
 });
 
 const updateEmployeeSchema = z.object({
-  baseSalary: z.number().nonnegative().optional(),
-  shiftMoney: z.number().nonnegative().optional(),
+  employeeCode: z.string().optional().nullable(),
+  fullName: z.string().min(1).optional(),
+  phone: z.string().optional().nullable(),
+  email: z.union([z.string().email(), z.literal(""), z.null()]).optional(),
+  position: z.enum(POSITIONS).optional(),
+  baseSalary: z.number().nonnegative().optional().nullable(),
+  shiftMoney: z.number().nonnegative().optional().nullable(),
+  hireDate: z.string().optional().nullable(),
+  address: z.string().optional().nullable(),
   isActive: z.boolean().optional(),
 });
 
@@ -81,6 +101,7 @@ const setCountsBulkSchema = z.object({
 });
 
 module.exports = {
+  createEmployeeSchema,
   createShiftSchema,
   createViolationSchema,
   generatePayrollSchema,

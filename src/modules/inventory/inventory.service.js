@@ -1,21 +1,35 @@
 const prisma = require('../../config/prisma');
+const { findInventory, resolveWarehouseId } = require('../../utils/warehouse.helper');
 
 const inventoryService = {
-  getByProduct: async (productId) => {
-    const inventory = await prisma.inventory.findUnique({
-      where: { productId },
-      include: { product: { select: { name: true, sku: true } } }
-    });
+  getByProduct: async (productId, warehouseId) => {
+    const inventory = await findInventory(prisma, productId, warehouseId);
     if (!inventory) throw { status: 404, message: "Không tìm thấy thông tin kho của sản phẩm này." };
-    return inventory;
+    const full = await prisma.inventory.findUnique({
+      where: { id: inventory.id },
+      include: { product: { select: { name: true, sku: true } }, warehouse: true },
+    });
+    return full;
   },
 
-  // Truyền thêm userId vào để tracking
+  listByWarehouse: async (warehouseId) => {
+    const whId = await resolveWarehouseId(warehouseId);
+    return prisma.inventory.findMany({
+      where: { warehouseId: whId, product: { isActive: true } },
+      include: {
+        product: { select: { id: true, name: true, sku: true } },
+        warehouse: { select: { code: true, name: true } },
+      },
+      orderBy: { product: { name: 'asc' } },
+    });
+  },
+
   importStock: async (data, userId) => {
-    const { productId, quantity, note } = data;
-    
+    const { productId, quantity, note, warehouseId } = data;
+    if (!quantity || quantity <= 0) throw { status: 400, message: "Số lượng nhập phải lớn hơn 0" };
+
     return await prisma.$transaction(async (tx) => {
-      const inventory = await tx.inventory.findUnique({ where: { productId } });
+      const inventory = await findInventory(tx, productId, warehouseId);
       if (!inventory) throw { status: 404, message: "Không tìm thấy thông tin kho của sản phẩm này." };
 
       const updatedInventory = await tx.inventory.update({
@@ -38,13 +52,54 @@ const inventoryService = {
     });
   },
 
+  exportStock: async (data, userId) => {
+    const { productId, quantity, note, warehouseId } = data;
+    if (!quantity || quantity <= 0) throw { status: 400, message: "Số lượng xuất phải lớn hơn 0" };
+
+    const updatedInventory = await prisma.$transaction(async (tx) => {
+      const inventory = await findInventory(tx, productId, warehouseId);
+      if (!inventory) throw { status: 404, message: "Không tìm thấy thông tin kho của sản phẩm này." };
+      if (inventory.quantity - (inventory.reserved || 0) < quantity) {
+        throw { status: 400, message: "Tồn kho không đủ để xuất." };
+      }
+
+      const inv = await tx.inventory.update({
+        where: { id: inventory.id },
+        data: { quantity: { decrement: quantity } },
+      });
+
+      await tx.inventoryTransaction.create({
+        data: {
+          inventoryId: inv.id,
+          type: "EXPORT",
+          quantity,
+          note,
+          createdById: userId,
+        },
+      });
+
+      return inv;
+    });
+
+    try {
+      const notif = require("../notifications/notification.service");
+      await notif.checkAfterExport(productId);
+    } catch (_) {}
+
+    return updatedInventory;
+  },
+
   // Truyền thêm userId vào để tracking
   adjustment: async (data, userId) => {
-    const { productId, actualQuantity, note } = data;
-    
+    const { productId, actualQuantity, note, warehouseId } = data;
+    if (actualQuantity == null || actualQuantity < 0) throw { status: 400, message: "Số lượng thực tế không được âm" };
+
     return await prisma.$transaction(async (tx) => {
-      const inventory = await tx.inventory.findUnique({ where: { productId } });
+      const inventory = await findInventory(tx, productId, warehouseId);
       if (!inventory) throw { status: 404, message: "Không tìm thấy thông tin kho của sản phẩm này." };
+      if (actualQuantity < (inventory.reserved || 0)) {
+        throw { status: 400, message: "Số lượng thực tế không được nhỏ hơn số đang giữ hàng" };
+      }
 
       const diff = actualQuantity - inventory.quantity;
 
@@ -69,11 +124,35 @@ const inventoryService = {
   },
 
   getLowStock: async (threshold = 10) => {
-    return await prisma.inventory.findMany({
-      where: { quantity: { lte: threshold } },
+    const inventories = await prisma.inventory.findMany({
+      where: { product: { isActive: true } },
       include: { product: { select: { name: true, sku: true, isActive: true } } },
       orderBy: { quantity: 'asc' }
     });
+    return inventories
+      .map((item) => ({ ...item, available: item.quantity - (item.reserved || 0) }))
+      .filter((item) => item.available <= threshold)
+      .sort((a, b) => a.available - b.available);
+  },
+
+  checkAlerts: async () => {
+    const inventories = await prisma.inventory.findMany({
+      where: { product: { isActive: true } },
+      include: { product: { select: { id: true, name: true, sku: true } } },
+    });
+    const alerts = inventories.map((inv) => ({
+      productId: inv.productId,
+      name: inv.product?.name,
+      sku: inv.product?.sku,
+      quantity: inv.quantity,
+      reserved: inv.reserved,
+      available: inv.quantity - inv.reserved,
+      minStock: inv.minStock,
+    }));
+    return {
+      critical: alerts.filter((item) => item.available <= 0),
+      warning: alerts.filter((item) => item.available > 0 && item.available <= item.minStock),
+    };
   },
 
   getTransactions: async (query) => {

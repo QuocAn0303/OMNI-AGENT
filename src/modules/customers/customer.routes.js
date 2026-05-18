@@ -1,6 +1,8 @@
 const router = require('express').Router();
 const { z } = require('zod');
 const customerService = require('./customer.service');
+const debtService = require('../debt/debt.service');
+const loyaltyService = require('../loyalty/loyalty.service');
 const { authenticate, authorize } = require('../../middleware/auth.middleware');
 const { paginated, created, success } = require('../../utils/response');
 
@@ -12,6 +14,40 @@ router.get('/', async (req, res, next) => {
   try {
     const { customers, pagination } = await customerService.getAll(req.query);
     paginated(res, customers, pagination);
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get('/:id/loyalty', async (req, res, next) => {
+  try {
+    success(res, await loyaltyService.getLoyaltySummary(req.params.id));
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post('/:id/loyalty/redeem', async (req, res, next) => {
+  try {
+    const { points, orderId } = z
+      .object({
+        points: z.number().int().positive(),
+        orderId: z.string().uuid().optional(),
+      })
+      .parse(req.body);
+    success(
+      res,
+      await loyaltyService.redeemForOrder(req.params.id, points, orderId),
+      'Đổi điểm thành công',
+    );
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get('/:id/debts', async (req, res, next) => {
+  try {
+    success(res, await debtService.listByCustomer(req.params.id));
   } catch (err) {
     next(err);
   }
@@ -29,7 +65,7 @@ const createSchema = z.object({
 router.post('/', async (req, res, next) => {
   try {
     const validatedData = createSchema.parse(req.body);
-    const newCustomer = await customerService.create(validatedData);
+    const newCustomer = await customerService.create(validatedData, req.user.id);
     created(res, newCustomer, 'Thêm mới khách hàng thành công');
   } catch (err) {
     next(err);
@@ -47,7 +83,7 @@ const updateSchema = z.object({
 router.put('/:id', async (req, res, next) => {
   try {
     const validatedData = updateSchema.parse(req.body);
-    const updatedCustomer = await customerService.update(req.params.id, validatedData);
+    const updatedCustomer = await customerService.update(req.params.id, validatedData, req.user.id);
     success(res, updatedCustomer, 'Cập nhật thông tin khách hàng thành công');
   } catch (err) {
     next(err);
@@ -57,7 +93,7 @@ router.put('/:id', async (req, res, next) => {
 // API: DELETE /api/customers/:id
 router.delete('/:id', async (req, res, next) => {
   try {
-    const deletedCustomer = await customerService.remove(req.params.id);
+    const deletedCustomer = await customerService.remove(req.params.id, req.user.id);
     success(res, deletedCustomer, 'Xóa khách hàng thành công');
   } catch (err) {
     next(err);

@@ -1,9 +1,12 @@
 // src/modules/customers/customer.service.js
 const prisma = require("../../config/prisma");
+const auditService = require("../audit/audit.service");
 
 //Lấy danh sách khách hàng
 
-const getAll = async ({ page = 1, limit = 10, search = "" }) => {
+const getAll = async ({ page: rawPage = 1, limit: rawLimit = 10, search = "" }) => {
+  const page = Math.max(1, Number(rawPage) || 1);
+  const limit = Math.max(1, Number(rawLimit) || 10);
   const skip = (page - 1) * limit;
 
   const where = {               //Sửa lại điều kiện truy vấn để chỉ lấy khách hàng đang hoạt động
@@ -51,37 +54,50 @@ const getAll = async ({ page = 1, limit = 10, search = "" }) => {
 
 //Thêm khách hàng mới
 
-const create = async (data) => {
+const create = async (data, userId = null) => {
   const cleanData = { ...data };
+  if (cleanData.phone === "") cleanData.phone = null;
+  if (cleanData.email === "") cleanData.email = null;
 
-  if (cleanData.phone === "") {
-    cleanData.phone = null;
-  }
+  const customer = await prisma.customer.create({ data: cleanData });
 
-  if (cleanData.email === "") {
-    cleanData.email = null;
-  }
-  return prisma.customer.create({
-    data: cleanData,
+  auditService.log({
+    userId,
+    action: "CREATE_CUSTOMER",
+    entity: "Customer",
+    entityId: customer.id,
+    after: { name: customer.name, phone: customer.phone, email: customer.email },
   });
+
+  return customer;
 };
 
 //Cập nhật thông tin khách hàng
 
-const update = async (id, data) => {
+const update = async (id, data, userId = null) => {
   const { totalSpent, ...cleanData } = data;
-
   if (cleanData.phone === "") cleanData.phone = null;
   if (cleanData.email === "") cleanData.email = null;
 
-  return prisma.customer.update({
-    where: { id },
-    data: cleanData,
+  const before = await prisma.customer.findUnique({ where: { id }, select: { name: true, phone: true, email: true, isActive: true } });
+  if (!before) throw { status: 404, message: "Khách hàng không tồn tại" };
+  if (!before.isActive) throw { status: 400, message: "Không thể cập nhật khách hàng đã bị vô hiệu hóa" };
+  const updated = await prisma.customer.update({ where: { id }, data: cleanData });
+
+  auditService.log({
+    userId,
+    action: "UPDATE_CUSTOMER",
+    entity: "Customer",
+    entityId: id,
+    before,
+    after: { name: updated.name, phone: updated.phone, email: updated.email },
   });
+
+  return updated;
 };
 
 //Xóa khách hàng (Soft Delete)
-const remove = async (id) => {
+const remove = async (id, userId = null) => {
   // 1. Kiểm tra xem khách hàng có tồn tại không
   const customer = await prisma.customer.findUnique({ where: { id } });
   if (!customer) {
@@ -108,10 +124,17 @@ const remove = async (id) => {
   }
 
   // 3. Thực hiện Soft Delete: Đổi isActive thành false
-  return prisma.customer.update({
-    where: { id },
-    data: { isActive: false },
+  const deleted = await prisma.customer.update({ where: { id }, data: { isActive: false } });
+
+  auditService.log({
+    userId,
+    action: "DELETE_CUSTOMER",
+    entity: "Customer",
+    entityId: id,
+    before: { name: customer.name },
   });
+
+  return deleted;
 };
 
 module.exports = {
