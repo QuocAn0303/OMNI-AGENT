@@ -19,6 +19,47 @@ const productSchema = z.object({
 
 router.use(authenticate);
 
+// Xuất Excel
+router.get("/export-excel", async (req, res, next) => {
+  try {
+    const { products } = await productService.getAll({ page: 1, limit: 100000 });
+    const ExcelJS = require("exceljs");
+    const workbook = new ExcelJS.Workbook();
+    const sheet = workbook.addWorksheet("Sản phẩm");
+
+    sheet.columns = [
+      { header: "SKU", key: "sku", width: 18 },
+      { header: "Tên sản phẩm", key: "name", width: 35 },
+      { header: "Danh mục", key: "category", width: 20 },
+      { header: "Giá bán", key: "price", width: 15 },
+      { header: "Giá vốn", key: "costPrice", width: 15 },
+      { header: "Đơn vị", key: "unit", width: 10 },
+      { header: "Tồn kho", key: "quantity", width: 12 },
+    ];
+
+    sheet.getRow(1).font = { bold: true };
+
+    products.forEach((p) => {
+      sheet.addRow({
+        sku: p.sku,
+        name: p.name,
+        category: p.category?.name || "",
+        price: Number(p.price),
+        costPrice: Number(p.costPrice),
+        unit: p.unit,
+        quantity: p.inventory?.quantity ?? 0,
+      });
+    });
+
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    res.setHeader("Content-Disposition", "attachment; filename=san-pham.xlsx");
+    await workbook.xlsx.write(res);
+    res.end();
+  } catch (err) {
+    next(err);
+  }
+});
+
 // Xem danh sách - tất cả role
 router.get("/", async (req, res, next) => {
   try {

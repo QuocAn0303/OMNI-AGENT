@@ -25,6 +25,7 @@ import {
 import axios from "../api/axios";
 import MoneyDisplay from "../components/shared/MoneyDisplay";
 import Receipt from "../components/Receipt";
+import TransferQrCode from "../components/TransferQrCode";
 import useBarcodeScanner from "../hooks/useBarcodeScanner";
 
 const PAYMENT_METHODS = [
@@ -89,6 +90,16 @@ export default function Pos() {
   const subtotal = useMemo(() => cart.reduce((sum, item) => sum + Number(item.price) * item.quantity, 0), [cart]);
   const total = Math.max(0, subtotal - discount);
   const splitTotal = splitPayments.reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
+
+  const showBankQr = splitPayment
+    ? splitPayments.some((payment) => payment.method === "BANK_TRANSFER")
+    : paymentMethod === "BANK_TRANSFER";
+
+  const bankTransferAmount = splitPayment
+    ? splitPayments
+        .filter((payment) => payment.method === "BANK_TRANSFER")
+        .reduce((sum, payment) => sum + Number(payment.amount || 0), 0)
+    : total;
 
   useEffect(() => {
     if (checkoutOpen) setSplitPayments([{ method: paymentMethod, amount: total, reference: "" }]);
@@ -366,7 +377,7 @@ export default function Pos() {
         </div>
       </aside>
 
-      <Modal title={null} open={checkoutOpen} onCancel={() => !paying && setCheckoutOpen(false)} footer={null} width={560} centered closable={!paying}>
+      <Modal title={null} open={checkoutOpen} onCancel={() => !paying && setCheckoutOpen(false)} footer={null} width={showBankQr ? 400 : 560} centered closable={!paying}>
         <div style={{ padding: 8 }}>
           <div style={{ fontSize: 28, fontWeight: 800, marginBottom: 16 }}><MoneyDisplay value={total} /></div>
           <Space direction="vertical" size={16} style={{ width: "100%" }}>
@@ -377,7 +388,13 @@ export default function Pos() {
 
             {!splitPayment ? (
               <Select value={paymentMethod} onChange={setPaymentMethod} options={PAYMENT_METHODS} style={{ width: "100%" }} />
-            ) : (
+            ) : null}
+
+            {showBankQr && (
+              <TransferQrCode amount={bankTransferAmount} addInfo="Thanh toan POS" />
+            )}
+
+            {splitPayment ? (
               <Space direction="vertical" style={{ width: "100%" }}>
                 {splitPayments.map((payment, index) => (
                   <Space key={index} style={{ width: "100%" }} align="start">
@@ -392,7 +409,7 @@ export default function Pos() {
                   Còn lại: {(total - splitTotal).toLocaleString("vi-VN")} VND
                 </div>
               </Space>
-            )}
+            ) : null}
 
             <Space>
               <Button onClick={() => setCheckoutOpen(false)} disabled={paying}>Hủy</Button>

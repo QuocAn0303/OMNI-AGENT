@@ -25,6 +25,7 @@ export default function Products() {
   const [search, setSearch] = useState('');
   const [categoryFilter, setCategoryFilter] = useState(null);
   const [stockFilter, setStockFilter] = useState(null);
+  const [exporting, setExporting] = useState(false);
 
   const loadData = async () => {
     setLoading(true);
@@ -52,6 +53,26 @@ export default function Products() {
       loadData();
     } catch (err) {
       message.error('Xóa thất bại');
+    }
+  };
+
+  const handleExportExcel = async () => {
+    setExporting(true);
+    try {
+      const res = await axios.get('/products/export-excel', { responseType: 'blob' });
+      const url = window.URL.createObjectURL(new Blob([res.data]));
+      const link = document.createElement('a');
+      link.href = url;
+      link.setAttribute('download', 'san-pham.xlsx');
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+      message.success('Đã xuất file Excel');
+    } catch {
+      message.error('Xuất Excel thất bại');
+    } finally {
+      setExporting(false);
     }
   };
 
@@ -180,7 +201,7 @@ export default function Products() {
         subtitle={`${filteredData.length} / ${data.length} sản phẩm`}
         actions={
           <>
-            <Button icon={<ExportOutlined />}>Xuất Excel</Button>
+            <Button icon={<ExportOutlined />} loading={exporting} onClick={handleExportExcel}>Xuất Excel</Button>
             <Button
               type="primary"
               icon={<PlusOutlined />}

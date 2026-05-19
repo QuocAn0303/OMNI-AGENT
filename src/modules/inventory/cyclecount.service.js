@@ -11,7 +11,7 @@ const generateCode = async () => {
 const create = async ({ productIds, note }, userId) => {
   const products = await prisma.product.findMany({
     where: { id: { in: productIds }, isActive: true },
-    include: { inventory: true },
+    include: { inventories: true },
   });
   if (products.length !== new Set(productIds).size) {
     throw { status: 400, message: "Một số sản phẩm không tồn tại hoặc đã ngừng kinh doanh" };
@@ -26,7 +26,7 @@ const create = async ({ productIds, note }, userId) => {
       items: {
         create: products.map((product) => ({
           productId: product.id,
-          systemQuantity: product.inventory?.quantity || 0,
+          systemQuantity: product.inventories.reduce((sum, inv) => sum + inv.quantity, 0),
         })),
       },
     },
@@ -68,7 +68,7 @@ const complete = async (id, userId) => {
   return prisma.$transaction(async (tx) => {
     const cycleCount = await tx.cycleCount.findUnique({
       where: { id },
-      include: { items: { include: { product: { include: { inventory: true } } } } },
+      include: { items: { include: { product: { include: { inventories: true } } } } },
     });
     if (!cycleCount) throw { status: 404, message: "Không tìm thấy phiếu kiểm kê" };
     if (cycleCount.status === "COMPLETED") throw { status: 400, message: "Phiếu kiểm kê đã hoàn thành" };
@@ -79,20 +79,21 @@ const complete = async (id, userId) => {
         throw { status: 400, message: "Vui lòng nhập đủ số lượng thực tế trước khi hoàn thành" };
       }
       if (item.variance !== 0) {
-        const inventory = item.product.inventory;
-        await tx.inventory.update({
-          where: { productId: item.productId },
-          data: { quantity: item.actualQuantity },
-        });
-        await tx.inventoryTransaction.create({
-          data: {
-            inventoryId: inventory.id,
-            type: "ADJUSTMENT",
-            quantity: item.variance,
-            note: `Kiểm kê ${cycleCount.code}`,
-            createdById: userId,
-          },
-        });
+        for (const inventory of item.product.inventories) {
+          await tx.inventory.update({
+            where: { id: inventory.id },
+            data: { quantity: item.actualQuantity },
+          });
+          await tx.inventoryTransaction.create({
+            data: {
+              inventoryId: inventory.id,
+              type: "ADJUSTMENT",
+              quantity: item.variance,
+              note: `Kiểm kê ${cycleCount.code}`,
+              createdById: userId,
+            },
+          });
+        }
       }
     }
 
@@ -132,7 +133,7 @@ const getById = async (id) => {
     where: { id },
     include: {
       createdBy: { select: { id: true, fullName: true } },
-      items: { include: { product: { include: { inventory: true } } } },
+      items: { include: { product: { include: { inventories: true } } } },
     },
   });
   if (!cycleCount) throw { status: 404, message: "Không tìm thấy phiếu kiểm kê" };
