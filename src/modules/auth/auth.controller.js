@@ -65,4 +65,17 @@ const logout = async (req, res, next) => {
   }
 };
 
-module.exports = { login, getProfile, changePassword, refresh, logout };
+const register = async (req, res, next) => {
+  try {
+    const { companyName, email, password, industry } = req.body
+    if (!companyName || !email || !password) {
+      return next({ status: 400, message: 'Thiếu thông tin bắt buộc' })
+    }
+    const result = await authService.register({ companyName, email, password, industry })
+    success(res, result, 'Đăng ký thành công')
+  } catch (err) {
+    next(err)
+  }
+}
+
+module.exports = { login, register, getProfile, changePassword, refresh, logout };

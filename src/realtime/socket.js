@@ -1,15 +1,28 @@
 // src/realtime/socket.js
 const { Server } = require("socket.io");
+const { createAdapter } = require("@socket.io/redis-adapter");
 const jwt = require("jsonwebtoken");
+const { pubClient, subClient } = require("../config/redis");
 
 let io;
 
-const initSocket = (httpServer) => {
+const initSocket = async (httpServer) => {
   const origin = process.env.CORS_ORIGIN || process.env.CLIENT_URL || "http://localhost:5173";
   io = new Server(httpServer, {
     cors: { origin, credentials: true },
     transports: ["websocket", "polling"],
   });
+
+  try {
+    await Promise.all([
+      pubClient.status === "ready" ? Promise.resolve() : new Promise((r) => pubClient.once("ready", r)),
+      subClient.status === "ready" ? Promise.resolve() : new Promise((r) => subClient.once("ready", r)),
+    ]);
+    io.adapter(createAdapter(pubClient, subClient));
+    console.log("[socket] redis adapter attached");
+  } catch (e) {
+    console.error("[socket] redis adapter failed, falling back to in-memory:", e.message);
+  }
 
   io.use((socket, next) => {
     try {

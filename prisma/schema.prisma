@@ -11,10 +11,25 @@ datasource db {
 // ==================== USERS & AUTH ====================
 
 enum Role {
+  SUPER_ADMIN
   ADMIN
   MANAGER
   CASHIER
   WAREHOUSE
+}
+
+model Tenant {
+  id        String   @id @default(uuid())
+  name      String
+  slug      String   @unique
+  plan      String   @default("free")
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  users User[]
+
+  @@map("tenants")
 }
 
 model User {
@@ -26,6 +41,9 @@ model User {
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
+  tenantId  String?
+  tenant    Tenant?  @relation(fields: [tenantId], references: [id])
 
   orders                Order[]
   inventoryTransactions InventoryTransaction[]
@@ -46,7 +64,28 @@ model User {
   debtPayments          DebtPayment[]
   notifications         Notification[]
 
+  @@index([tenantId])
   @@map("users")
+}
+
+// ==================== COMPANY SETTINGS ====================
+
+model CompanySettings {
+  id             String   @id @default(uuid())
+  name           String   @default("Công ty của tôi")
+  address        String?
+  phone          String?
+  email          String?
+  taxCode        String?
+  logo           String?
+  industry       String?
+  currency       String   @default("VND")
+  onboardingDone Boolean  @default(false)
+  onboardingStep Int      @default(0)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  @@map("company_settings")
 }
 
 // ==================== PRODUCTS ====================
@@ -89,6 +128,10 @@ model Product {
   promotions      Promotion[]
   exchangeItems   ExchangeItem[]
 
+  @@index([name])
+  @@index([sku])
+  @@index([categoryId])
+  @@index([isActive])
   @@map("products")
 }
 
@@ -217,6 +260,9 @@ model Customer {
   promotionUsages PromotionUsage[]
   loyaltyTxs      LoyaltyTransaction[]
 
+  @@index([name])
+  @@index([phone])
+  @@index([email])
   @@map("customers")
 }
 
@@ -316,6 +362,9 @@ model Order {
   invoice          Invoice?
   delivery         Delivery?
 
+  @@index([status])
+  @@index([customerId])
+  @@index([createdAt])
   @@map("orders")
 }
 

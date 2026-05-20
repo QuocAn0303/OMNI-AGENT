@@ -1,14 +1,19 @@
 import { useEffect, useState } from 'react';
+import useDebounce from '../hooks/useDebounce';
 import { Tabs, Table, Button, Input, Select, message, Modal, Form, InputNumber, Alert } from 'antd';
 import {
   PlusOutlined, MinusOutlined, SearchOutlined, ImportOutlined, ExportOutlined,
 } from '@ant-design/icons';
+import { Joyride } from 'react-joyride';
+import { useTranslation } from 'react-i18next';
 import dayjs from 'dayjs';
 import axios from '../api/axios';
 import PageHeader from '../components/layout/PageHeader';
 import StatusTag from '../components/shared/StatusTag';
 import MoneyDisplay from '../components/shared/MoneyDisplay';
 import EmptyState from '../components/shared/EmptyState';
+import useTour from '../hooks/useTour';
+import { getInventoryTour } from '../config/tourSteps';
 
 /**
  * Inventory — Quản lý kho
@@ -21,10 +26,23 @@ import EmptyState from '../components/shared/EmptyState';
  *   POST /inventory/export        — xuất kho (giảm tồn, ghi EXPORT)
  */
 export default function Inventory() {
+  const { t } = useTranslation();
+  const tour = useTour('inventory');
   const [activeTab, setActiveTab] = useState('stock');
 
   return (
     <>
+      <Joyride
+        steps={getInventoryTour(t)}
+        run={tour.run}
+        continuous
+        showSkipButton
+        showProgress
+        callback={({ status }) => {
+          if (status === 'finished' || status === 'skipped') tour.markDone();
+        }}
+        styles={{ options: { primaryColor: '#0f766e', zIndex: 2000 } }}
+      />
       <PageHeader
         title="Kho hàng"
         subtitle="Quản lý tồn kho, nhập xuất, lịch sử giao dịch"
@@ -50,36 +68,45 @@ function StockTab() {
   const [alerts, setAlerts] = useState({ critical: [], warning: [] });
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const debouncedSearch = useDebounce(search, 300);
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
+
+  const load = async () => {
+    setLoading(true);
+    try {
+      const res = await axios.get('/products', { params: { page, limit: 20, search: debouncedSearch || '' } });
+      const pData = res.data?.data || [];
+      setTotal(res.data?.pagination?.total || 0);
+      setData(pData.map(p => ({
+        ...p,
+        categoryName: p.category?.name,
+        quantity: p.inventory?.quantity ?? 0,
+        reserved: p.inventory?.reserved ?? 0,
+        available: (p.inventory?.quantity ?? 0) - (p.inventory?.reserved ?? 0),
+        minStock: p.inventory?.minStock ?? 0,
+        cost: p.costPrice ?? 0,
+      })));
+    } catch {
+      message.error('Không tải được tồn kho');
+    } finally {
+      setLoading(false);
+    }
+  };
 
   useEffect(() => {
-    (async () => {
-      try {
-        const [res, alertRes] = await Promise.all([
-          axios.get('/products'),
-          axios.get('/inventory/alerts'),
-        ]);
-        const pData = Array.isArray(res.data) ? res.data : (res.data?.data || []);
-        setAlerts(alertRes.data?.data || { critical: [], warning: [] });
-        setData(pData.map(p => ({
-          ...p,
-          categoryName: p.category?.name,
-          quantity: p.inventory?.quantity ?? 0,
-          reserved: p.inventory?.reserved ?? 0,
-          available: (p.inventory?.quantity ?? 0) - (p.inventory?.reserved ?? 0),
-          minStock: p.inventory?.minStock ?? 0,
-          cost: p.costPrice ?? 0,
-        })));
-      } catch {
-        message.error('Không tải được tồn kho');
-      } finally {
-        setLoading(false);
-      }
-    })();
-  }, []);
+    load();
+  }, [page, debouncedSearch]);
 
-  const filtered = data.filter((item) =>
-    !search || `${item.name} ${item.sku}`.toLowerCase().includes(search.toLowerCase())
-  );
+  useEffect(() => {
+    setPage(1);
+  }, [debouncedSearch]);
+
+  useEffect(() => {
+    axios.get('/inventory/alerts').then((alertRes) => {
+      setAlerts(alertRes.data?.data || { critical: [], warning: [] });
+    });
+  }, []);
 
   return (
     <>
@@ -108,9 +135,10 @@ function StockTab() {
       <div className="table-card">
         <Table
           loading={loading}
-          dataSource={filtered}
+          dataSource={data}
           rowKey="id"
-          pagination={{ pageSize: 20 }}
+          scroll={{ x: 1000 }}
+          pagination={{ current: page, pageSize: 20, total, showSizeChanger: false, onChange: (p) => setPage(p) }}
           locale={{ emptyText: <EmptyState title="Chưa có sản phẩm" /> }}
           columns={[
             {
@@ -342,6 +370,7 @@ function HistoryTab() {
           loading={loading}
           dataSource={filtered}
           rowKey="id"
+          scroll={{ x: 1100 }}
           pagination={{ pageSize: 20 }}
           locale={{ emptyText: <EmptyState title="Chưa có giao dịch" /> }}
           columns={[

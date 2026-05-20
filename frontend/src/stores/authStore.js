@@ -2,6 +2,7 @@ import { create } from "zustand";
 
 const initialToken = localStorage.getItem("token") || null;
 const initialRefresh = localStorage.getItem("refreshToken") || null;
+const initialTheme = localStorage.getItem("theme") || "light";
 
 const useAuthStore = create((set) => ({
   // Trạng thái ban đầu
@@ -9,6 +10,7 @@ const useAuthStore = create((set) => ({
   token: initialToken,
   refreshToken: initialRefresh,
   isAuthenticated: !!initialToken,
+  theme: initialTheme,
 
   // Đăng nhập: lưu token + refreshToken
   login: (userData, token, refreshToken) => {
@@ -31,6 +33,11 @@ const useAuthStore = create((set) => ({
 
   // Cập nhật thông tin user
   setUser: (userData) => set({ user: userData }),
+
+  setTheme: (theme) => {
+    localStorage.setItem("theme", theme);
+    set({ theme });
+  },
 
   // Thiết lập token (hữu ích khi refresh)
   setToken: (token) => {

@@ -42,19 +42,24 @@ const log = async ({
 };
 
 // Lấy danh sách audit log (phân trang, admin)
-const getAll = async ({ page = 1, limit = 50 }) => {
+const getAll = async ({ page = 1, limit = 50, action, userId } = {}) => {
   const p = Math.max(1, Number(page) || 1);
   const l = Math.max(1, Math.min(200, Number(limit) || 50));
   const skip = (p - 1) * l;
 
+  const where = {};
+  if (action) where.action = action;
+  if (userId) where.userId = userId;
+
   const [rows, total] = await Promise.all([
     prisma.auditLog.findMany({
+      where,
       skip,
       take: l,
       orderBy: { createdAt: "desc" },
       include: { user: { select: { id: true, email: true, fullName: true, role: true } } },
     }),
-    prisma.auditLog.count(),
+    prisma.auditLog.count({ where }),
   ]);
 
   // DTO phẳng cho FE: vẫn trả được khi user đã bị xóa (userId → null) hoặc meta mô tả thay thế

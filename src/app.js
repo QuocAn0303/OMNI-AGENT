@@ -1,5 +1,15 @@
 // src/app.js
 require("dotenv").config();
+
+const Sentry = require("@sentry/node");
+if (process.env.SENTRY_DSN) {
+  Sentry.init({
+    dsn: process.env.SENTRY_DSN,
+    environment: process.env.NODE_ENV || "development",
+    tracesSampleRate: process.env.NODE_ENV === "production" ? 0.1 : 0,
+  });
+}
+
 const express = require("express");
 const cors = require("cors");
 const helmet = require("helmet");
@@ -11,6 +21,7 @@ const swaggerSpec = require("./config/swagger");
 const fs = require("fs");
 const path = require("path");
 
+const compression = require("compression");
 const errorHandler = require("./middleware/error.middleware");
 
 // Routes
@@ -39,6 +50,9 @@ const loyaltyRoutes = require("./modules/loyalty/loyalty.routes");
 const deliveryRoutes = require("./modules/delivery/delivery.routes");
 const warehouseRoutes = require("./modules/warehouses/warehouse.routes");
 const stockTransferRoutes = require("./modules/warehouses/stock-transfer.routes");
+const importRoutes = require("./modules/import/import.routes");
+const settingsRoutes = require("./modules/settings/settings.routes");
+const adminRoutes = require("./modules/admin/admin.routes");
 const deliveryService = require("./modules/delivery/delivery.service");
 const http = require("http");
 const { initSocket } = require("./realtime/socket");
@@ -49,14 +63,36 @@ const corsOrigin =
   process.env.CORS_ORIGIN || process.env.CLIENT_URL || "http://localhost:5173";
 
 // ==================== Middleware ====================
+app.use(compression());
 app.use(helmet());
 app.use(morgan(process.env.NODE_ENV === "production" ? "combined" : "dev"));
 app.use(xssClean());
 app.use(hpp());
+
+const rateLimit = require('express-rate-limit')
+
+const apiLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 100,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, message: 'Quá nhiều request, vui lòng thử lại sau' }
+})
+
+const loginLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 5,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, message: 'Quá nhiều lần đăng nhập, vui lòng thử lại sau 1 phút' }
+})
+
 app.use(
   cors({
     origin: corsOrigin,
     credentials: true,
+    methods: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
+    allowedHeaders: ['Content-Type', 'Authorization'],
   }),
 );
 app.use(
@@ -90,6 +126,9 @@ app.post("/api/webhooks/delivery/:provider", async (req, res) => {
 app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
 
 // ==================== Routes ====================
+app.use('/api', apiLimiter)
+app.use('/api/auth/login', loginLimiter)
+
 app.get("/", (req, res) => {
   res.json({ message: "ERP System API đang chạy", version: "1.0.0" });
 });
@@ -118,6 +157,14 @@ app.use("/api/loyalty", loyaltyRoutes);
 app.use("/api/deliveries", deliveryRoutes);
 app.use("/api/warehouses", warehouseRoutes);
 app.use("/api/stock-transfers", stockTransferRoutes);
+app.use("/api/import", importRoutes);
+app.use("/api/settings", settingsRoutes);
+app.use("/api/admin", adminRoutes);
+
+// Sentry error handler (phải trước error middleware)
+if (process.env.SENTRY_DSN) {
+  Sentry.setupExpressErrorHandler(app);
+}
 
 // 404 handler
 app.use("*", (req, res) => {
@@ -161,12 +208,19 @@ const updateFrontendEnv = (port) => {
   }
 };
 
-const startServer = (port, retries = 10) => {
+const startServer = async (port, retries = 10) => {
   const p = Number(port);
   const httpServer = http.createServer(app);
-  initSocket(httpServer);
+  await initSocket(httpServer);
+
+  // Only run cron jobs on a single worker (PM2 instance 0) to avoid N× firing in cluster mode.
+  // NODE_APP_INSTANCE is undefined when running outside PM2 (dev / single process).
+  const instance = process.env.NODE_APP_INSTANCE;
+  const shouldRunCrons = instance === undefined || instance === "0";
+
   const server = httpServer.listen(p, () => {
-    startCrons();
+    if (shouldRunCrons) startCrons();
+    else console.log(`[cron] skipped on worker instance ${instance}`);
     console.log(`\n ERP Server đang chạy tại: http://localhost:${p}`);
     console.log(` Environment: ${process.env.NODE_ENV || "development"}`);
     console.log("\n API Endpoints:");
@@ -209,6 +263,9 @@ const startServer = (port, retries = 10) => {
   });
 };
 
-startServer(DEFAULT_PORT);
+startServer(DEFAULT_PORT).catch((err) => {
+  console.error("Fatal startup error:", err);
+  process.exit(1);
+});
 
 module.exports = app;

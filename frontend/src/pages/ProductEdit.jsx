@@ -116,7 +116,7 @@ export default function ProductEdit() {
               <Form.Item
                 label="Tên sản phẩm"
                 name="name"
-                rules={[{ required: true, message: 'Vui lòng nhập tên' }]}
+                rules={[{ required: true, min: 2, message: 'Tối thiểu 2 ký tự' }]}
               >
                 <Input placeholder="VD: Áo thun cotton trắng size M" />
               </Form.Item>
@@ -153,7 +153,7 @@ export default function ProductEdit() {
                 <Form.Item
                   label="Giá vốn"
                   name="costPrice"
-                  rules={[{ required: true, message: 'Nhập giá vốn' }]}
+                  rules={[{ required: true, message: 'Nhập giá vốn' }, { type: 'number', min: 0, message: 'Giá trị phải >= 0' }]}
                 >
                   <InputNumber
                     style={{ width: '100%' }}
@@ -168,7 +168,7 @@ export default function ProductEdit() {
                 <Form.Item
                   label="Giá bán"
                   name="price"
-                  rules={[{ required: true, message: 'Nhập giá bán' }]}
+                  rules={[{ required: true, message: 'Nhập giá bán' }, { type: 'number', min: 0, message: 'Giá trị phải >= 0' }]}
                 >
                   <InputNumber
                     style={{ width: '100%' }}

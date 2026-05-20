@@ -2,6 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import {
   Badge,
   Button,
+  Drawer,
   Dropdown,
   Empty,
   Input,
@@ -22,11 +23,15 @@ import {
   SearchOutlined,
   ShoppingCartOutlined,
 } from "@ant-design/icons";
+import { Joyride } from 'react-joyride';
+import { useTranslation } from 'react-i18next';
 import axios from "../api/axios";
 import MoneyDisplay from "../components/shared/MoneyDisplay";
 import Receipt from "../components/Receipt";
 import TransferQrCode from "../components/TransferQrCode";
 import useBarcodeScanner from "../hooks/useBarcodeScanner";
+import useTour from "../hooks/useTour";
+import { getPosTour } from "../config/tourSteps";
 
 const PAYMENT_METHODS = [
   { value: "CASH", label: "Tiền mặt" },
@@ -35,6 +40,8 @@ const PAYMENT_METHODS = [
 ];
 
 export default function Pos() {
+  const { t } = useTranslation();
+  const tour = useTour('pos');
   const [products, setProducts] = useState([]);
   const [categories, setCategories] = useState([]);
   const [search, setSearch] = useState("");
@@ -57,6 +64,14 @@ export default function Pos() {
       return [];
     }
   });
+  const [cartDrawer, setCartDrawer] = useState(false);
+  const [isMobile, setIsMobile] = useState(window.innerWidth <= 1024);
+
+  useEffect(() => {
+    const handler = () => setIsMobile(window.innerWidth <= 1024);
+    window.addEventListener('resize', handler);
+    return () => window.removeEventListener('resize', handler);
+  }, []);
 
   const normalizeProduct = (product) => ({
     ...product,
@@ -260,8 +275,22 @@ export default function Pos() {
     }
   };
 
+  const allTourSteps = getPosTour(t);
+  const tourSteps = isMobile ? allTourSteps.filter(s => !s.target.includes('pos-cart')) : allTourSteps;
+
   return (
     <div className="pos-layout">
+      <Joyride
+        steps={tourSteps}
+        run={tour.run}
+        continuous
+        showSkipButton
+        showProgress
+        callback={({ status }) => {
+          if (status === 'finished' || status === 'skipped') tour.markDone();
+        }}
+        styles={{ options: { primaryColor: '#0f766e', zIndex: 2000 } }}
+      />
       <section className="pos-products">
         <div className="pos-products__search">
           <Input
@@ -307,8 +336,20 @@ export default function Pos() {
         )}
       </section>
 
-      <aside className="pos-cart">
-        <div className="pos-cart__header">
+      {isMobile && (
+        <button
+          type="button"
+          className="cart-fab"
+          onClick={() => setCartDrawer(true)}
+        >
+          <ShoppingCartOutlined />
+          {cart.length > 0 && <span className="cart-fab__badge">{cart.length}</span>}
+        </button>
+      )}
+
+      {!isMobile ? (
+        <aside className="pos-cart">
+          <div className="pos-cart__header">
           <div>
             <div className="pos-cart__title">Giỏ hàng</div>
             <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>{customer ? customer.name : "Khách lẻ"}</div>
@@ -376,6 +417,86 @@ export default function Pos() {
           </Space>
         </div>
       </aside>
+      ) : (
+        <Drawer
+          title={`Giỏ hàng (${cart.length} món)`}
+          placement="bottom"
+          height="80vh"
+          open={cartDrawer}
+          onClose={() => setCartDrawer(false)}
+          styles={{ body: { padding: 0 } }}
+        >
+          <aside className="pos-cart" style={{ height: '100%', border: 'none' }}>
+            <div className="pos-cart__header">
+              <div>
+                <div className="pos-cart__title">Giỏ hàng</div>
+                <div style={{ fontSize: 12, color: "var(--text-muted)", marginTop: 2 }}>{customer ? customer.name : "Khách lẻ"}</div>
+              </div>
+              <span className="pos-cart__count">{cart.length} món</span>
+            </div>
+
+            <div style={{ padding: "0 16px 12px" }}>
+              <Select
+                showSearch
+                allowClear
+                placeholder="Tìm khách hàng"
+                value={customer?.id}
+                filterOption={false}
+                onSearch={searchCustomers}
+                onChange={(_, option) => setCustomer(option?.customer || null)}
+                options={customerOptions}
+                style={{ width: "100%" }}
+              />
+            </div>
+
+            {cart.length === 0 ? (
+              <div style={{ flex: 1, display: "grid", placeItems: "center", padding: 32 }}>
+                <Empty image={<ShoppingCartOutlined style={{ fontSize: 48, color: "var(--text-muted)" }} />} description="Chưa có sản phẩm" />
+              </div>
+            ) : (
+              <div className="pos-cart__items">
+                {cart.map((item) => (
+                  <div key={item.id} className="pos-cart__item">
+                    <div className="pos-cart__item-info">
+                      <div className="pos-cart__item-name">{item.name}</div>
+                      <div className="pos-cart__item-price"><MoneyDisplay value={item.price} /> x {item.quantity}</div>
+                    </div>
+                    <Space size={4}>
+                      <Button type="text" size="small" shape="circle" icon={<MinusOutlined />} onClick={() => updateQty(item.id, -1)} />
+                      <span style={{ minWidth: 24, textAlign: "center", fontWeight: 500 }}>{item.quantity}</span>
+                      <Button type="text" size="small" shape="circle" icon={<PlusOutlined />} onClick={() => updateQty(item.id, 1)} />
+                      <Button type="text" size="small" danger icon={<DeleteOutlined />} onClick={() => setCart((prev) => prev.filter((cartItem) => cartItem.id !== item.id))} />
+                    </Space>
+                  </div>
+                ))}
+              </div>
+            )}
+
+            <div className="pos-cart__footer">
+              <CartRow label="Tạm tính" value={subtotal} />
+              <div className="pos-cart__row" style={{ alignItems: "center" }}>
+                <span>Giảm giá</span>
+                <InputNumber size="small" min={0} max={subtotal} step={1000} value={discount} onChange={(value) => setDiscount(value || 0)} style={{ width: 120 }} />
+              </div>
+              <div className="pos-cart__total">
+                <span className="pos-cart__total-label">Tổng cộng</span>
+                <span className="pos-cart__total-value"><MoneyDisplay value={total} /></span>
+              </div>
+              <Space wrap>
+                <Button onClick={holdOrder} disabled={!cart.length}>Giữ đơn</Button>
+                <Dropdown
+                  menu={{ items: heldOrders.map((held) => ({ key: held.id, label: `${held.label} · ${new Date(held.timestamp).toLocaleTimeString("vi-VN")}`, onClick: () => resumeOrder(held) })) }}
+                  disabled={!heldOrders.length}
+                >
+                  <Button><Badge count={heldOrders.length} size="small">Đơn đang giữ</Badge></Button>
+                </Dropdown>
+                <Button onClick={clearCart} disabled={!cart.length}>Xóa</Button>
+                <Button type="primary" disabled={!cart.length} onClick={() => { setCheckoutOpen(true); setCartDrawer(false); }}>Thanh toán</Button>
+              </Space>
+            </div>
+          </aside>
+        </Drawer>
+      )}
 
       <Modal title={null} open={checkoutOpen} onCancel={() => !paying && setCheckoutOpen(false)} footer={null} width={showBankQr ? 400 : 560} centered closable={!paying}>
         <div style={{ padding: 8 }}>

@@ -1,4 +1,5 @@
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState } from 'react';
+import useDebounce from '../hooks/useDebounce';
 import { Table, Input, Select, Button, Avatar, message, Modal, Form, Switch } from 'antd';
 import {
   SearchOutlined, PlusOutlined, EditOutlined, LockOutlined,
@@ -25,16 +26,20 @@ export default function Users() {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const debouncedSearch = useDebounce(search, 300);
   const [roleFilter, setRoleFilter] = useState(null);
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState(null);
   const [form] = Form.useForm();
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
 
   const load = async () => {
     setLoading(true);
     try {
-      const res = await axios.get('/users');
-      setData(Array.isArray(res.data) ? res.data : (res.data?.data || []));
+      const res = await axios.get('/users', { params: { page, limit: 20, ...(debouncedSearch && { search: debouncedSearch }) } });
+      setData(res.data?.data || []);
+      setTotal(res.data?.pagination?.total || 0);
     } catch {
       message.error('Không tải được tài khoản');
     } finally {
@@ -42,16 +47,10 @@ export default function Users() {
     }
   };
 
-  useEffect(() => { load(); }, []);
+  useEffect(() => { load(); }, [page, debouncedSearch]);
+  useEffect(() => { setPage(1); }, [debouncedSearch]);
 
-  const filtered = useMemo(() => {
-    return data.filter((u) => {
-      if (search && !`${u.fullName} ${u.email || ''}`.toLowerCase().includes(search.toLowerCase()))
-        return false;
-      if (roleFilter && u.role !== roleFilter) return false;
-      return true;
-    });
-  }, [data, search, roleFilter]);
+  const displayData = roleFilter ? data.filter(u => u.role === roleFilter) : data;
 
   const openModal = (user = null) => {
     setEditing(user);
@@ -196,7 +195,7 @@ export default function Users() {
     <>
       <PageHeader
         title="Quản lý tài khoản"
-        subtitle={`${filtered.length} / ${data.length} tài khoản`}
+        subtitle={`${total} tài khoản`}
         actions={
           <Button type="primary" icon={<PlusOutlined />} onClick={() => openModal()}>
             Thêm tài khoản
@@ -226,11 +225,11 @@ export default function Users() {
       <div className="table-card">
         <Table
           columns={columns}
-          dataSource={filtered}
+          dataSource={displayData}
           rowKey="id"
           loading={loading}
           scroll={{ x: 900 }}
-          pagination={{ pageSize: 20 }}
+          pagination={{ current: page, pageSize: 20, total, showSizeChanger: false, onChange: (p) => setPage(p) }}
           locale={{ emptyText: <EmptyState title="Chưa có tài khoản" /> }}
         />
       </div>

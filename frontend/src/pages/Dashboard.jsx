@@ -1,4 +1,8 @@
 import { useEffect, useState } from 'react';
+import { Joyride } from 'react-joyride';
+import { useTranslation } from 'react-i18next';
+import useTour from '../hooks/useTour';
+import { getDashboardTour } from '../config/tourSteps';
 import {
   DollarCircleOutlined,
   ShoppingCartOutlined,
@@ -31,6 +35,8 @@ const CHART_COLORS = {
 };
 
 export default function Dashboard() {
+  const { t } = useTranslation();
+  const tour = useTour('dashboard');
   const [loading, setLoading] = useState(true);
   const [overview, setOverview] = useState(null);
   const [revenueSeries, setRevenueSeries] = useState([]);
@@ -74,6 +80,17 @@ export default function Dashboard() {
 
   return (
     <>
+      <Joyride
+        steps={getDashboardTour(t)}
+        run={tour.run}
+        continuous
+        showSkipButton
+        showProgress
+        callback={({ status }) => {
+          if (status === 'finished' || status === 'skipped') tour.markDone();
+        }}
+        styles={{ options: { primaryColor: '#0f766e', zIndex: 2000 } }}
+      />
       <PageHeader
         title="Tổng quan"
         subtitle="Tình hình kinh doanh hôm nay và 7 ngày gần nhất"

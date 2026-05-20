@@ -25,6 +25,7 @@ import {
   PieChartOutlined,
   FundOutlined,
   SwapOutlined,
+  UploadOutlined,
 } from '@ant-design/icons';
 import useAuthStore from '../../stores/authStore';
 
@@ -108,6 +109,7 @@ const MENU_GROUPS = [
       { key: '/users',   icon: <UserOutlined />,      label: 'Tài khoản',  roles: ['ADMIN'] },
       { key: '/reports', icon: <FileExcelOutlined />, label: 'Báo cáo',    roles: ['ADMIN'] },
       { key: '/audit',   icon: <AuditOutlined />,     label: 'Audit Log',  roles: ['ADMIN'] },
+      { key: '/import',  icon: <UploadOutlined />,    label: 'Import dữ liệu', roles: ['ADMIN', 'MANAGER'] },
     ],
   },
 ];
@@ -134,7 +136,7 @@ function buildMenuItems(userRole) {
   return items;
 }
 
-export default function Sidebar({ collapsed, onToggleCollapse }) {
+export default function Sidebar({ collapsed, onToggleCollapse, mobileOpen, onMobileClose }) {
   const location = useLocation();
   const navigate = useNavigate();
   const { user, logout } = useAuthStore();
@@ -159,7 +161,15 @@ export default function Sidebar({ collapsed, onToggleCollapse }) {
     .join('');
 
   return (
-    <aside className={`sidebar ${collapsed ? 'sidebar--collapsed' : ''}`}>
+    <>
+      {mobileOpen && (
+        <div
+          className="sidebar-backdrop"
+          onClick={onMobileClose}
+          aria-hidden="true"
+        />
+      )}
+      <aside className={`sidebar ${collapsed ? 'sidebar--collapsed' : ''} ${mobileOpen ? 'sidebar--mobile-open' : ''}`}>
       {/* Toggle button */}
       <button
         type="button"
@@ -209,6 +219,7 @@ export default function Sidebar({ collapsed, onToggleCollapse }) {
           )}
         </div>
       </div>
-    </aside>
+      </aside>
+    </>
   );
 }

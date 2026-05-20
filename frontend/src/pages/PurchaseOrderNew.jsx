@@ -11,6 +11,7 @@ export default function PurchaseOrderNew() {
   const [vendors, setVendors] = useState([]);
   const [products, setProducts] = useState([]);
   const [taxRates, setTaxRates] = useState([]);
+  const [submitting, setSubmitting] = useState(false);
   const [form] = Form.useForm();
 
   useEffect(() => {
@@ -28,6 +29,7 @@ export default function PurchaseOrderNew() {
   }, []);
 
   const submit = async () => {
+    setSubmitting(true);
     try {
       const v = await form.validateFields();
       await createPurchaseOrder({
@@ -39,6 +41,8 @@ export default function PurchaseOrderNew() {
     } catch (e) {
       if (e.errorFields) return;
       message.error(e.response?.data?.message || "Lỗi");
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -100,7 +104,7 @@ export default function PurchaseOrderNew() {
               </>
             )}
           </Form.List>
-          <Button type="primary" style={{ marginTop: 16 }} onClick={submit}>
+          <Button type="primary" style={{ marginTop: 16 }} onClick={submit} loading={submitting}>
             Tạo PO
           </Button>
         </Form>

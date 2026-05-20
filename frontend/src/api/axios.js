@@ -1,4 +1,5 @@
 import axios from "axios";
+import * as Sentry from "@sentry/react";
 //chỉnh ở đây để set lại port api nếu cần
 // Nếu không set `VITE_API_URL` khi chạy local, mặc định dùng dev backend
 const API_BASE = (
@@ -98,6 +99,12 @@ axiosInstance.interceptors.response.use(
       } finally {
         isRefreshing = false;
       }
+    }
+
+    if (!status || status >= 500) {
+      Sentry.captureException(err, {
+        tags: { api_url: originalRequest?.url, http_status: status },
+      });
     }
 
     return Promise.reject(err);

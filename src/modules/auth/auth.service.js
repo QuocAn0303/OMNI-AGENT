@@ -52,10 +52,11 @@ const login = async ({ email, password }) => {
     {
       id: user.id,
       email: user.email,
-      role: user.role, // dùng để authorize (check quyền) sau này
+      role: user.role,
+      tenantId: user.tenantId || null,
     },
-    process.env.JWT_SECRET, // key bí mật trong .env
-    { expiresIn: process.env.JWT_EXPIRES_IN || "7d" }, // hết hạn sau 7 ngày
+    process.env.JWT_SECRET,
+    { expiresIn: process.env.JWT_EXPIRES_IN || "7d" },
   );
 
   // 6. Tạo refresh token và lưu vào database
@@ -102,7 +103,7 @@ const getProfile = async (userId) => {
       role: true,
       isActive: true,
       createdAt: true,
-      // password không có trong select → Prisma tự bỏ qua
+      tenantId: true,
     },
   });
 
@@ -160,7 +161,7 @@ const changePassword = async (userId, { currentPassword, newPassword }) => {
 // Tạo access token từ user object (tách để tái sử dụng)
 const createAccessToken = (user) => {
   return jwt.sign(
-    { id: user.id, email: user.email, role: user.role },
+    { id: user.id, email: user.email, role: user.role, tenantId: user.tenantId || null },
     process.env.JWT_SECRET,
     {
       expiresIn: process.env.JWT_EXPIRES_IN || "7d",
@@ -224,8 +225,60 @@ const revokeRefreshToken = async ({ token, userId, revokeAll = false }) => {
   throw { status: 400, message: "Yêu cầu token hoặc userId để revoke" };
 };
 
+const register = async ({ companyName, email, password, industry }) => {
+  const existing = await prisma.user.findUnique({ where: { email } })
+  if (existing) throw { status: 400, message: 'Email đã được sử dụng' }
+
+  const slug = companyName
+    .toLowerCase()
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '')
+
+  const existingSlug = await prisma.tenant.findUnique({ where: { slug } })
+  if (existingSlug) throw { status: 400, message: 'Tên công ty đã tồn tại' }
+
+  const hashedPassword = await bcrypt.hash(password, Number(process.env.BCRYPT_ROUNDS) || 10)
+
+  const result = await prisma.$transaction(async (tx) => {
+    const tenant = await tx.tenant.create({
+      data: { name: companyName, slug, plan: 'free' },
+    })
+
+    const user = await tx.user.create({
+      data: {
+        email,
+        password: hashedPassword,
+        fullName: companyName,
+        role: 'ADMIN',
+        tenantId: tenant.id,
+      },
+    })
+
+    await tx.companySettings.create({
+      data: { name: companyName, industry },
+    })
+
+    return { tenant, user }
+  })
+
+  const token = createAccessToken(result.user)
+  const { password: _p, ...userWithoutPassword } = result.user
+
+  auditService.log({
+    userId: result.user.id,
+    action: 'REGISTER',
+    entity: 'Tenant',
+    entityId: result.tenant.id,
+    after: { companyName, email, plan: 'free' },
+  })
+
+  return { token, user: userWithoutPassword, tenant: result.tenant }
+}
+
 module.exports = {
   login,
+  register,
   getProfile,
   changePassword,
   refreshAccessToken,

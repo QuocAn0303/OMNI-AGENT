@@ -1,4 +1,5 @@
 import { useEffect, useState, useMemo } from 'react';
+import useDebounce from '../hooks/useDebounce';
 import { Table, Input, Select, DatePicker, Drawer, message } from 'antd';
 import { SearchOutlined, EyeOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
@@ -25,42 +26,52 @@ export default function Audit() {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const debouncedSearch = useDebounce(search, 300);
   const [actionFilter, setActionFilter] = useState(null);
   const [dateRange, setDateRange] = useState(null);
 
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
   const [detailOpen, setDetailOpen] = useState(false);
   const [detail, setDetail] = useState(null);
 
+  const load = async () => {
+    setLoading(true);
+    try {
+      const res = await axios.get('/audit', { params: { page, limit: 50, ...(actionFilter && { action: actionFilter }) } });
+      const raw = res.data?.data;
+      const list = Array.isArray(raw) ? raw : [];
+      setData(list);
+      setTotal(res.data?.pagination?.total || 0);
+    } catch {
+      message.error('Không tải được audit log');
+    } finally {
+      setLoading(false);
+    }
+  };
+
   useEffect(() => {
-    (async () => {
-      try {
-        const res = await axios.get('/audit', { params: { page: 1, limit: 200 } });
-        const raw = res.data?.data;
-        const list = Array.isArray(raw) ? raw : [];
-        setData(list);
-      } catch {
-        message.error('Không tải được audit log');
-      } finally {
-        setLoading(false);
-      }
-    })();
-  }, []);
+    load();
+  }, [page, actionFilter]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [actionFilter]);
 
   const filtered = useMemo(() => {
     return data.filter((log) => {
-      if (search) {
-        const term = search.toLowerCase();
+      if (debouncedSearch) {
+        const term = debouncedSearch.toLowerCase();
         if (!`${log.userName} ${log.entity} ${log.description || ''}`.toLowerCase().includes(term))
           return false;
       }
-      if (actionFilter && log.action !== actionFilter) return false;
       if (dateRange) {
         const d = dayjs(log.createdAt);
         if (d.isBefore(dateRange[0], 'day') || d.isAfter(dateRange[1], 'day')) return false;
       }
       return true;
     });
-  }, [data, search, actionFilter, dateRange]);
+  }, [data, debouncedSearch, dateRange]);
 
   const columns = [
     {
@@ -209,7 +220,7 @@ export default function Audit() {
           rowKey="id"
           loading={loading}
           scroll={{ x: 1100 }}
-          pagination={{ pageSize: 50, showSizeChanger: true }}
+          pagination={{ current: page, pageSize: 50, total, showSizeChanger: false, onChange: (p) => setPage(p) }}
           locale={{ emptyText: <EmptyState title="Chưa có bản ghi" /> }}
         />
       </div>

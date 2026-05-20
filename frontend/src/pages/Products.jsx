@@ -1,21 +1,28 @@
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState } from 'react';
+import useDebounce from '../hooks/useDebounce';
 import { Table, Input, Select, Button, Image, Popconfirm, message, Space } from 'antd';
 import {
   PlusOutlined, SearchOutlined, EditOutlined, DeleteOutlined,
   ExportOutlined, FilterOutlined,
 } from '@ant-design/icons';
+import { Joyride } from 'react-joyride';
+import { useTranslation } from 'react-i18next';
 import { useNavigate } from 'react-router-dom';
 import axios from '../api/axios';
 import PageHeader from '../components/layout/PageHeader';
 import StatusTag from '../components/shared/StatusTag';
 import MoneyDisplay from '../components/shared/MoneyDisplay';
 import EmptyState from '../components/shared/EmptyState';
+import useTour from '../hooks/useTour';
+import { getProductsTour } from '../config/tourSteps';
 
 /**
  * Products — Danh sách sản phẩm
  * Endpoints: GET /products, GET /categories, DELETE /products/:id
  */
 export default function Products() {
+  const { t } = useTranslation();
+  const tour = useTour('products');
   const navigate = useNavigate();
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState([]);
@@ -23,19 +30,23 @@ export default function Products() {
 
   // Filter state
   const [search, setSearch] = useState('');
+  const debouncedSearch = useDebounce(search, 300);
   const [categoryFilter, setCategoryFilter] = useState(null);
   const [stockFilter, setStockFilter] = useState(null);
   const [exporting, setExporting] = useState(false);
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
 
   const loadData = async () => {
     setLoading(true);
     try {
       const [productsRes, categoriesRes] = await Promise.all([
-        axios.get('/products'),
+        axios.get('/products', { params: { page, limit: 20, search: debouncedSearch, ...(categoryFilter && { categoryId: categoryFilter }) } }),
         axios.get('/categories'),
       ]);
-      const pData = Array.isArray(productsRes.data) ? productsRes.data : (productsRes.data?.data || []);
+      const pData = productsRes.data?.data || [];
       setData(pData.map(p => ({ ...p, categoryName: p.category?.name, quantity: p.inventory?.quantity ?? 0, minStock: p.inventory?.minStock ?? 0 })));
+      setTotal(productsRes.data?.pagination?.total || 0);
       setCategories(Array.isArray(categoriesRes.data) ? categoriesRes.data : (categoriesRes.data?.data || []));
     } catch (err) {
       message.error('Không tải được danh sách sản phẩm');
@@ -44,7 +55,8 @@ export default function Products() {
     }
   };
 
-  useEffect(() => { loadData(); }, []);
+  useEffect(() => { loadData(); }, [page, debouncedSearch, categoryFilter]);
+  useEffect(() => { setPage(1); }, [debouncedSearch, categoryFilter]);
 
   const handleDelete = async (id) => {
     try {
@@ -76,18 +88,12 @@ export default function Products() {
     }
   };
 
-  // Client-side filter
-  const filteredData = useMemo(() => {
-    return data.filter((p) => {
-      if (search && !`${p.name} ${p.sku}`.toLowerCase().includes(search.toLowerCase()))
-        return false;
-      if (categoryFilter && p.categoryId !== categoryFilter) return false;
-      if (stockFilter === 'IN_STOCK' && p.quantity <= 0) return false;
-      if (stockFilter === 'LOW_STOCK' && (p.quantity > p.minStock || p.quantity <= 0)) return false;
-      if (stockFilter === 'OUT_STOCK' && p.quantity > 0) return false;
-      return true;
-    });
-  }, [data, search, categoryFilter, stockFilter]);
+  const displayData = stockFilter ? data.filter(p => {
+    if (stockFilter === 'IN_STOCK' && p.quantity <= 0) return false;
+    if (stockFilter === 'LOW_STOCK' && (p.quantity > p.minStock || p.quantity <= 0)) return false;
+    if (stockFilter === 'OUT_STOCK' && p.quantity > 0) return false;
+    return true;
+  }) : data;
 
   const columns = [
     {
@@ -196,9 +202,20 @@ export default function Products() {
 
   return (
     <>
+      <Joyride
+        steps={getProductsTour(t)}
+        run={tour.run}
+        continuous
+        showSkipButton
+        showProgress
+        callback={({ status }) => {
+          if (status === 'finished' || status === 'skipped') tour.markDone();
+        }}
+        styles={{ options: { primaryColor: '#0f766e', zIndex: 2000 } }}
+      />
       <PageHeader
         title="Sản phẩm"
-        subtitle={`${filteredData.length} / ${data.length} sản phẩm`}
+        subtitle={`${total} sản phẩm`}
         actions={
           <>
             <Button icon={<ExportOutlined />} loading={exporting} onClick={handleExportExcel}>Xuất Excel</Button>
@@ -250,14 +267,17 @@ export default function Products() {
       <div className="table-card">
         <Table
           columns={columns}
-          dataSource={filteredData}
+          dataSource={displayData}
           rowKey="id"
           loading={loading}
           scroll={{ x: 900 }}
           pagination={{
+            current: page,
             pageSize: 20,
-            showSizeChanger: true,
-            showTotal: (total) => `${total} sản phẩm`,
+            total,
+            showSizeChanger: false,
+            onChange: (p) => setPage(p),
+            showTotal: (t) => `${t} sản phẩm`,
           }}
           locale={{
             emptyText: (

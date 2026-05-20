@@ -1,0 +1,259 @@
+{
+  "topbar": {
+    "profile": "Hồ sơ",
+    "settings": "Cài đặt",
+    "restartTour": "Xem lại hướng dẫn",
+    "tourRestarted": "Đã bật lại hướng dẫn. Mở lại trang để xem.",
+    "logout": "Đăng xuất"
+  },
+  "menu": {
+    "dashboard": "Tổng quan",
+    "analytics": "Phân tích",
+    "pos": "Bán hàng",
+    "orders": "Đơn hàng",
+    "returns": "Trả hàng",
+    "products": "Sản phẩm",
+    "inventory": "Tồn kho",
+    "cycleCount": "Kiểm kê",
+    "customers": "Khách hàng",
+    "hr": "Nhân sự",
+    "finance": "Tài chính",
+    "debts": "Công nợ",
+    "expenses": "Chi phí",
+    "vendors": "Nhà cung cấp",
+    "purchaseOrders": "Đặt hàng NCC",
+    "reports": "Báo cáo",
+    "journal": "Sổ kế toán",
+    "users": "Tài khoản",
+    "audit": "Audit Log",
+    "notifications": "Thông báo",
+    "settings": "Cài đặt",
+    "import": "Import dữ liệu"
+  },
+  "common": {
+    "save": "Lưu",
+    "cancel": "Hủy",
+    "delete": "Xóa",
+    "edit": "Sửa",
+    "create": "Tạo mới",
+    "search": "Tìm kiếm...",
+    "loading": "Đang tải...",
+    "noData": "Không có dữ liệu",
+    "confirm": "Xác nhận",
+    "back": "Quay lại",
+    "next": "Tiếp theo",
+    "finish": "Hoàn thành",
+    "retry": "Thử lại",
+    "export": "Xuất file",
+    "import": "Nhập file",
+    "filter": "Bộ lọc",
+    "all": "Tất cả",
+    "actions": "Thao tác",
+    "active": "Hoạt động",
+    "inactive": "Ngừng hoạt động",
+    "total": "Tổng",
+    "status": "Trạng thái"
+  },
+  "auth": {
+    "login": "Đăng nhập",
+    "logout": "Đăng xuất",
+    "email": "Email",
+    "password": "Mật khẩu",
+    "loginButton": "Đăng nhập",
+    "loginError": "Email hoặc mật khẩu không đúng"
+  },
+  "dashboard": {
+    "title": "Tổng quan",
+    "revenue": "Doanh thu",
+    "orders": "Đơn hàng",
+    "customers": "Khách hàng",
+    "products": "Sản phẩm",
+    "lowStock": "Sắp hết hàng"
+  },
+  "products": {
+    "title": "Sản phẩm",
+    "name": "Tên sản phẩm",
+    "sku": "Mã SKU",
+    "price": "Giá bán",
+    "costPrice": "Giá vốn",
+    "category": "Danh mục",
+    "stock": "Tồn kho",
+    "unit": "Đơn vị",
+    "addNew": "Thêm sản phẩm"
+  },
+  "orders": {
+    "title": "Đơn hàng",
+    "orderCode": "Mã đơn",
+    "customer": "Khách hàng",
+    "total": "Tổng tiền",
+    "status": "Trạng thái",
+    "createdAt": "Ngày tạo"
+  },
+  "onboarding": {
+    "title": "Thiết lập hệ thống",
+    "subtitle": "Hoàn thành các bước sau để bắt đầu sử dụng ERP",
+    "skip": "Bỏ qua",
+    "finishMessage": "Thiết lập hoàn tất! Chào mừng bạn đến với ERP.",
+    "steps": {
+      "companyInfo": "Thông tin",
+      "companyInfoDesc": "Công ty",
+      "warehouse": "Kho hàng",
+      "warehouseDesc": "Thiết lập kho",
+      "category": "Danh mục",
+      "categoryDesc": "Sản phẩm",
+      "staff": "Nhân viên",
+      "staffDesc": "Tài khoản",
+      "payment": "Thanh toán",
+      "paymentDesc": "Phương thức"
+    },
+    "company": {
+      "hint": "Thông tin này sẽ xuất hiện trên hóa đơn và báo cáo.",
+      "name": "Tên công ty",
+      "namePlaceholder": "VD: Công ty TNHH ABC",
+      "address": "Địa chỉ",
+      "addressPlaceholder": "Địa chỉ trụ sở",
+      "phone": "Số điện thoại",
+      "phoneInvalid": "SĐT không hợp lệ",
+      "email": "Email",
+      "emailInvalid": "Email không hợp lệ",
+      "taxCode": "Mã số thuế",
+      "industry": "Ngành nghề",
+      "industryPlaceholder": "Chọn ngành nghề",
+      "industries": ["Bán lẻ", "Nhà hàng / F&B", "Thời trang", "Điện tử", "Vật liệu xây dựng", "Dược phẩm", "Khác"],
+      "saving": "Đang lưu..."
+    },
+    "warehouse": {
+      "hint": "Tạo ít nhất một kho hàng để bắt đầu quản lý tồn kho.",
+      "name": "Tên kho",
+      "namePlaceholder": "Tên kho (VD: Kho chính)",
+      "nameRequired": "Nhập tên kho",
+      "code": "Mã kho",
+      "codePlaceholder": "Mã kho (VD: KHO-01)",
+      "codeRequired": "Nhập mã kho",
+      "addressPlaceholder": "Địa chỉ (tùy chọn)",
+      "add": "Thêm kho",
+      "added": "Đã thêm kho hàng",
+      "error": "Lỗi thêm kho"
+    },
+    "category": {
+      "hint": "Chọn nhanh hoặc tự thêm danh mục sản phẩm.",
+      "quickAdd": "Thêm nhanh:",
+      "defaults": ["Thực phẩm", "Đồ uống", "Thời trang", "Điện tử", "Gia dụng", "Mỹ phẩm", "Văn phòng phẩm"],
+      "namePlaceholder": "Tên danh mục mới",
+      "add": "Thêm",
+      "error": "Lỗi thêm danh mục"
+    },
+    "staff": {
+      "hint": "Tạo tài khoản cho nhân viên. Mật khẩu mặc định:",
+      "hintPassword": "123456",
+      "hintSuffix": "(yêu cầu đổi khi đăng nhập lần đầu).",
+      "fullName": "Họ tên",
+      "email": "Email",
+      "role": "Vai trò",
+      "roles": { "MANAGER": "Quản lý", "CASHIER": "Thu ngân", "WAREHOUSE": "Kho" },
+      "add": "Thêm nhân viên",
+      "created": "Đã tạo tài khoản cho {{name}} (mật khẩu mặc định: 123456)",
+      "error": "Lỗi tạo tài khoản"
+    },
+    "payment": {
+      "hint": "Chọn phương thức thanh toán mà cửa hàng chấp nhận.",
+      "cash": "Tiền mặt",
+      "cashDesc": "Thanh toán trực tiếp",
+      "transfer": "Chuyển khoản",
+      "transferDesc": "Chuyển khoản ngân hàng",
+      "qr": "QR Code",
+      "qrDesc": "VietQR, MoMo, ZaloPay",
+      "card": "Thẻ",
+      "cardDesc": "Visa, Mastercard",
+      "bankInfo": "Thông tin tài khoản ngân hàng:",
+      "bankName": "Ngân hàng",
+      "bankNamePlaceholder": "VD: Vietcombank",
+      "accountNumber": "Số tài khoản",
+      "accountNumberPlaceholder": "VD: 0123456789",
+      "accountName": "Tên chủ tài khoản",
+      "accountNamePlaceholder": "VD: NGUYEN VAN A"
+    }
+  },
+  "tour": {
+    "dashboard": {
+      "kpi": "Đây là các chỉ số KPI chính của cửa hàng: doanh thu, đơn hàng, khách hàng, sản phẩm.",
+      "charts": "Biểu đồ doanh thu và trạng thái đơn hàng — giúp bạn theo dõi xu hướng kinh doanh.",
+      "lowStock": "Danh sách sản phẩm sắp hết hàng — cần nhập thêm để tránh gián đoạn bán hàng."
+    },
+    "pos": {
+      "search": "Tìm sản phẩm theo tên hoặc quét mã barcode để thêm nhanh vào giỏ hàng.",
+      "grid": "Nhấn vào sản phẩm để thêm vào giỏ hàng. Có thể lọc theo danh mục phía trên.",
+      "cart": "Giỏ hàng — điều chỉnh số lượng, chọn khách hàng, áp dụng giảm giá và thanh toán."
+    },
+    "products": {
+      "header": "Quản lý toàn bộ sản phẩm — thêm mới, chỉnh sửa, theo dõi tồn kho.",
+      "filters": "Tìm kiếm theo tên, SKU hoặc lọc theo danh mục và trạng thái tồn kho.",
+      "table": "Bảng sản phẩm — nhấn nút sửa hoặc xóa ở cột cuối để thao tác."
+    },
+    "orders": {
+      "header": "Quản lý tất cả đơn hàng — xem trạng thái, ghi nhận thanh toán, xử lý trả hàng.",
+      "filters": "Lọc đơn theo mã đơn, trạng thái, hình thức thanh toán hoặc khoảng thời gian.",
+      "table": "Nhấn biểu tượng mắt ở cột cuối để xem chi tiết đơn hàng, in hóa đơn hoặc trả hàng."
+    },
+    "inventory": {
+      "header": "Quản lý kho hàng — theo dõi tồn kho, nhập xuất và lịch sử giao dịch.",
+      "tabs": "Chuyển giữa các tab: xem tồn kho hiện tại, nhập kho, xuất kho hoặc xem lịch sử."
+    }
+  },
+  "register": {
+    "title": "Đăng ký doanh nghiệp",
+    "subtitle": "Bắt đầu miễn phí, nâng cấp khi cần",
+    "companyRequired": "Nhập tên công ty",
+    "companyMin": "Tối thiểu 2 ký tự",
+    "companyPlaceholder": "Tên công ty / cửa hàng",
+    "emailRequired": "Nhập email",
+    "emailInvalid": "Email không hợp lệ",
+    "passwordRequired": "Nhập mật khẩu",
+    "passwordMin": "Tối thiểu 6 ký tự",
+    "passwordPlaceholder": "Mật khẩu",
+    "industryPlaceholder": "Ngành nghề (tùy chọn)",
+    "submit": "Đăng ký",
+    "hasAccount": "Đã có tài khoản?",
+    "login": "Đăng nhập",
+    "success": "Đăng ký thành công!",
+    "error": "Đăng ký thất bại",
+    "industries": {
+      "retail": "Bán lẻ",
+      "fnb": "Ăn uống",
+      "fashion": "Thời trang",
+      "electronics": "Điện tử",
+      "cosmetics": "Mỹ phẩm",
+      "pharmacy": "Dược phẩm",
+      "grocery": "Tạp hóa",
+      "service": "Dịch vụ",
+      "other": "Khác"
+    }
+  },
+  "pricing": {
+    "title": "Chọn gói phù hợp",
+    "subtitle": "Bắt đầu miễn phí, nâng cấp khi cần",
+    "popular": "Phổ biến",
+    "free": "Miễn phí",
+    "month": "tháng",
+    "unlimited": "Không giới hạn",
+    "startFree": "Bắt đầu miễn phí",
+    "upgrade": "Nâng cấp",
+    "plans": {
+      "free": "FREE",
+      "pro": "PRO",
+      "enterprise": "ENTERPRISE"
+    },
+    "features": {
+      "warehouses": "Kho hàng",
+      "products": "Sản phẩm",
+      "users": "Người dùng",
+      "basicReports": "Báo cáo cơ bản",
+      "advancedReports": "Báo cáo nâng cao + Analytics",
+      "importExport": "Import/Export Excel",
+      "multiLang": "Đa ngôn ngữ",
+      "allFeatures": "Tất cả tính năng",
+      "apiAccess": "API access",
+      "prioritySupport": "Hỗ trợ ưu tiên"
+    }
+  }
+}

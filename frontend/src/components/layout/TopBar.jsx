@@ -1,7 +1,8 @@
 import { useEffect, useMemo, useState, useCallback } from 'react';
-import { Dropdown, Avatar, Badge } from 'antd';
-import { BellOutlined, SettingOutlined, LogoutOutlined, UserOutlined, SearchOutlined } from '@ant-design/icons';
+import { Dropdown, Avatar, Badge, message } from 'antd';
+import { BellOutlined, SettingOutlined, LogoutOutlined, UserOutlined, SearchOutlined, MenuOutlined, SunOutlined, MoonOutlined, GlobalOutlined, QuestionCircleOutlined } from '@ant-design/icons';
 import { useLocation, useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import { io } from 'socket.io-client';
 import useAuthStore from '../../stores/authStore';
 import { getUnreadCount } from '../../api/notifications';
@@ -27,11 +28,23 @@ const ROUTE_LABELS = {
   '/debts': 'Công nợ',
 };
 
-export default function TopBar() {
+export default function TopBar({ onMenuClick }) {
   const location = useLocation();
   const navigate = useNavigate();
-  const { user, logout, token } = useAuthStore();
+  const { user, logout, token, theme, setTheme } = useAuthStore();
+  const { t, i18n } = useTranslation();
   const [unread, setUnread] = useState(0);
+
+  const langMenu = {
+    items: [
+      { key: 'vi', label: 'Tiếng Việt' },
+      { key: 'en', label: 'English' },
+    ],
+    onClick: ({ key }) => {
+      i18n.changeLanguage(key);
+      localStorage.setItem('i18n_lang', key);
+    },
+  };
 
   const refreshUnread = useCallback(() => {
     getUnreadCount()
@@ -68,25 +81,38 @@ export default function TopBar() {
     return match ? ROUTE_LABELS[match] : 'Trang';
   }, [location.pathname]);
 
+  const restartTours = () => {
+    ['dashboard', 'pos', 'products', 'orders', 'inventory'].forEach((key) => {
+      localStorage.removeItem(`tour_${key}_done`);
+    });
+    message.success(t('topbar.tourRestarted'));
+  };
+
   const userMenu = {
     items: [
       {
         key: 'profile',
         icon: <UserOutlined />,
-        label: 'Hồ sơ',
+        label: t('topbar.profile'),
         onClick: () => navigate('/profile'),
       },
       {
         key: 'settings',
         icon: <SettingOutlined />,
-        label: 'Cài đặt',
+        label: t('topbar.settings'),
         onClick: () => navigate('/settings'),
+      },
+      {
+        key: 'tour',
+        icon: <QuestionCircleOutlined />,
+        label: t('topbar.restartTour'),
+        onClick: restartTours,
       },
       { type: 'divider' },
       {
         key: 'logout',
         icon: <LogoutOutlined />,
-        label: 'Đăng xuất',
+        label: t('topbar.logout'),
         danger: true,
         onClick: logout,
       },
@@ -96,6 +122,14 @@ export default function TopBar() {
   return (
     <header className="topbar">
       <div className="topbar__left">
+        <button
+          type="button"
+          className="topbar__icon-btn topbar__hamburger"
+          aria-label="Mở menu"
+          onClick={onMenuClick}
+        >
+          <MenuOutlined style={{ fontSize: 16 }} />
+        </button>
         <div className="topbar__breadcrumb">
           <span className="topbar__breadcrumb-current">{currentLabel}</span>
         </div>
@@ -110,6 +144,24 @@ export default function TopBar() {
         >
           <SearchOutlined style={{ fontSize: 16 }} />
         </button>
+
+        <button
+          type="button"
+          className="topbar__icon-btn"
+          aria-label="Chuyển giao diện"
+          title={theme === 'dark' ? 'Chuyển sang sáng' : 'Chuyển sang tối'}
+          onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+        >
+          {theme === 'dark'
+            ? <SunOutlined style={{ fontSize: 16 }} />
+            : <MoonOutlined style={{ fontSize: 16 }} />}
+        </button>
+
+        <Dropdown menu={langMenu} placement="bottomRight" trigger={['click']}>
+          <button type="button" className="topbar__icon-btn" aria-label="Ngôn ngữ" title="Ngôn ngữ">
+            <GlobalOutlined style={{ fontSize: 16 }} />
+          </button>
+        </Dropdown>
 
         <button
           type="button"

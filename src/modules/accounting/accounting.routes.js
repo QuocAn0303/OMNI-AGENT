@@ -2,7 +2,7 @@
 const router = require("express").Router();
 const { z } = require("zod");
 const { authenticate, authorize } = require("../../middleware/auth.middleware");
-const { success, created } = require("../../utils/response");
+const { success, created, paginated } = require("../../utils/response");
 
 const accountService = require("./account.service");
 const journalService = require("./journal.service");
@@ -178,8 +178,10 @@ const expenseSchema = z.object({
 });
 
 router.get("/expenses", async (req, res, next) => {
-  try { success(res, await expenseService.list(req.query)); }
-  catch (e) { next(e); }
+  try {
+    const { expenses, pagination } = await expenseService.list(req.query);
+    paginated(res, expenses, pagination);
+  } catch (e) { next(e); }
 });
 
 router.get("/expense-categories", async (req, res, next) => {

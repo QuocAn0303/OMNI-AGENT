@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
+import useDebounce from '../hooks/useDebounce';
 import {
   Button,
   DatePicker,
@@ -24,12 +25,16 @@ import {
   SearchOutlined,
   UndoOutlined,
 } from "@ant-design/icons";
+import { Joyride } from 'react-joyride';
+import { useTranslation } from 'react-i18next';
 import dayjs from "dayjs";
 import axios from "../api/axios";
 import PageHeader from "../components/layout/PageHeader";
 import StatusTag, { STATUS_DICT } from "../components/shared/StatusTag";
 import MoneyDisplay from "../components/shared/MoneyDisplay";
 import EmptyState from "../components/shared/EmptyState";
+import useTour from "../hooks/useTour";
+import { getOrdersTour } from "../config/tourSteps";
 
 const { RangePicker } = DatePicker;
 
@@ -40,9 +45,12 @@ const paymentOptions = [
 ];
 
 export default function Orders() {
+  const { t } = useTranslation();
+  const tour = useTour('orders');
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState([]);
   const [search, setSearch] = useState("");
+  const debouncedSearch = useDebounce(search, 300);
   const [statusFilter, setStatusFilter] = useState(null);
   const [paymentFilter, setPaymentFilter] = useState(null);
   const [dateRange, setDateRange] = useState(null);
@@ -51,6 +59,8 @@ export default function Orders() {
   const [detailData, setDetailData] = useState(null);
   const [paymentOpen, setPaymentOpen] = useState(false);
   const [returnOpen, setReturnOpen] = useState(false);
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
   const [paymentForm] = Form.useForm();
   const [returnForm] = Form.useForm();
 
@@ -66,9 +76,10 @@ export default function Orders() {
   const loadOrders = async () => {
     setLoading(true);
     try {
-      const res = await axios.get("/orders");
-      const raw = Array.isArray(res.data) ? res.data : res.data?.data || [];
+      const res = await axios.get("/orders", { params: { page, limit: 20, ...(statusFilter && { status: statusFilter }) } });
+      const raw = res.data?.data || [];
       setData(raw.map(normalizeOrder));
+      setTotal(res.data?.pagination?.total || 0);
     } catch {
       message.error("Không tải được danh sách đơn");
     } finally {
@@ -78,21 +89,24 @@ export default function Orders() {
 
   useEffect(() => {
     loadOrders();
-  }, []);
+  }, [page, statusFilter]);
+
+  useEffect(() => {
+    setPage(1);
+  }, [statusFilter]);
 
   const filtered = useMemo(() => data.filter((order) => {
-    if (search) {
-      const term = search.toLowerCase();
+    if (debouncedSearch) {
+      const term = debouncedSearch.toLowerCase();
       if (!`${order.orderNumber} ${order.customerName}`.toLowerCase().includes(term)) return false;
     }
-    if (statusFilter && order.status !== statusFilter) return false;
     if (paymentFilter && order.paymentStatus !== paymentFilter) return false;
     if (dateRange) {
       const createdAt = dayjs(order.createdAt);
       if (createdAt.isBefore(dateRange[0], "day") || createdAt.isAfter(dateRange[1], "day")) return false;
     }
     return true;
-  }), [data, search, statusFilter, paymentFilter, dateRange]);
+  }), [data, debouncedSearch, paymentFilter, dateRange]);
 
   const openDetail = async (orderId) => {
     setDetailOpen(true);
@@ -207,6 +221,17 @@ export default function Orders() {
 
   return (
     <>
+      <Joyride
+        steps={getOrdersTour(t)}
+        run={tour.run}
+        continuous
+        showSkipButton
+        showProgress
+        callback={({ status }) => {
+          if (status === 'finished' || status === 'skipped') tour.markDone();
+        }}
+        styles={{ options: { primaryColor: '#0f766e', zIndex: 2000 } }}
+      />
       <PageHeader
         title="Đơn hàng"
         subtitle={<span>{filtered.length} đơn · <span style={{ color: "var(--primary)", fontWeight: 500 }}><MoneyDisplay value={totalRevenue} short /></span></span>}
@@ -226,7 +251,7 @@ export default function Orders() {
           rowKey="id"
           loading={loading}
           scroll={{ x: 1100 }}
-          pagination={{ pageSize: 20, showSizeChanger: true }}
+          pagination={{ current: page, pageSize: 20, total, showSizeChanger: false, onChange: (p) => setPage(p) }}
           locale={{ emptyText: <EmptyState title="Không tìm thấy đơn hàng" description="Thử bỏ bộ lọc hoặc tạo đơn mới từ trang POS." /> }}
         />
       </div>

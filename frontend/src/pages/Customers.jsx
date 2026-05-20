@@ -1,4 +1,5 @@
-import { useEffect, useState, useMemo } from 'react';
+import { useEffect, useState } from 'react';
+import useDebounce from '../hooks/useDebounce';
 import { Table, Input, Button, Avatar, message, Modal, Form } from 'antd';
 import {
   SearchOutlined, PlusOutlined, EditOutlined, DeleteOutlined,
@@ -18,15 +19,19 @@ export default function Customers() {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
+  const debouncedSearch = useDebounce(search, 300);
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState(null);
   const [form] = Form.useForm();
+  const [page, setPage] = useState(1);
+  const [total, setTotal] = useState(0);
 
   const load = async () => {
     setLoading(true);
     try {
-      const res = await axios.get('/customers');
-      setData(Array.isArray(res.data) ? res.data : (res.data?.data || []));
+      const res = await axios.get('/customers', { params: { page, limit: 20, ...(debouncedSearch && { search: debouncedSearch }) } });
+      setData(res.data?.data || []);
+      setTotal(res.data?.pagination?.total || 0);
     } catch {
       message.error('Không tải được khách hàng');
     } finally {
@@ -34,15 +39,8 @@ export default function Customers() {
     }
   };
 
-  useEffect(() => { load(); }, []);
-
-  const filtered = useMemo(() => {
-    if (!search) return data;
-    const term = search.toLowerCase();
-    return data.filter((c) =>
-      `${c.name} ${c.phone || ''} ${c.email || ''}`.toLowerCase().includes(term)
-    );
-  }, [data, search]);
+  useEffect(() => { load(); }, [page, debouncedSearch]);
+  useEffect(() => { setPage(1); }, [debouncedSearch]);
 
   const openModal = (customer = null) => {
     setEditing(customer);
@@ -206,7 +204,7 @@ export default function Customers() {
     <>
       <PageHeader
         title="Khách hàng"
-        subtitle={`${filtered.length} / ${data.length} khách hàng`}
+        subtitle={`${total} khách hàng`}
         actions={
           <Button type="primary" icon={<PlusOutlined />} onClick={() => openModal()}>
             Thêm khách hàng
@@ -228,11 +226,11 @@ export default function Customers() {
       <div className="table-card">
         <Table
           columns={columns}
-          dataSource={filtered}
+          dataSource={data}
           rowKey="id"
           loading={loading}
           scroll={{ x: 900 }}
-          pagination={{ pageSize: 20, showSizeChanger: true }}
+          pagination={{ current: page, pageSize: 20, total, showSizeChanger: false, onChange: (p) => setPage(p) }}
           locale={{
             emptyText: (
               <EmptyState

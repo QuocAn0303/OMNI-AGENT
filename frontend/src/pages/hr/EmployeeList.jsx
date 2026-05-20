@@ -34,6 +34,7 @@ export default function EmployeeList() {
   const [search, setSearch] = useState('');
   const [modalOpen, setModalOpen] = useState(false);
   const [editing, setEditing] = useState(null);
+  const [submitting, setSubmitting] = useState(false);
   const [form] = Form.useForm();
 
   const load = async () => {
@@ -69,6 +70,7 @@ export default function EmployeeList() {
   };
 
   const handleSave = async () => {
+    setSubmitting(true);
     try {
       const values = await form.validateFields();
       // Convert null → undefined để Zod/backend không reject các field bỏ trống
@@ -91,6 +93,8 @@ export default function EmployeeList() {
     } catch (err) {
       if (err.errorFields) return;
       message.error('Lưu thất bại');
+    } finally {
+      setSubmitting(false);
     }
   };
 
@@ -236,6 +240,7 @@ export default function EmployeeList() {
         okText="Lưu"
         cancelText="Hủy"
         width={560}
+        okButtonProps={{ loading: submitting }}
       >
         <Form form={form} layout="vertical" size="large" style={{ marginTop: 16 }}>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
@@ -248,7 +253,7 @@ export default function EmployeeList() {
           </div>
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
-            <Form.Item label="SĐT" name="phone">
+            <Form.Item label="SĐT" name="phone" rules={[{ pattern: /^(0[3|5|7|8|9])+([0-9]{8})$/, message: 'Số điện thoại không hợp lệ' }]}>
               <Input prefix={<PhoneOutlined style={{ color: 'var(--text-muted)' }} />} placeholder="0901234567" />
             </Form.Item>
             <Form.Item label="Email" name="email" rules={[{ type: 'email', message: 'Email không hợp lệ' }]}>

@@ -138,12 +138,12 @@
 }
 
 .stat-card__value {
-  font-size: 26px;
+  font-size: 28px;
   font-weight: 700;
   color: var(--text-primary);
   line-height: 1.2;
   margin-top: var(--space-1);
-  letter-spacing: -0.02em;
+  letter-spacing: -0.03em;
   font-variant-numeric: tabular-nums;
 }
 
@@ -618,4 +618,51 @@
 .status-tag--danger  { background: var(--danger-light);  color: var(--danger-dark); }
 .status-tag--info    { background: var(--info-light);    color: var(--info-dark); }
 .status-tag--neutral { background: var(--bg-tertiary);   color: var(--text-secondary); }
+
+/* === POS CART FAB === */
+.cart-fab {
+  display: none;
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  width: 56px;
+  height: 56px;
+  border-radius: 50%;
+  background: var(--primary);
+  color: #fff;
+  border: none;
+  cursor: pointer;
+  font-size: 22px;
+  box-shadow: var(--shadow-xl);
+  z-index: 200;
+  align-items: center;
+  justify-content: center;
+  transition: transform var(--transition-fast);
+}
+
+.cart-fab:hover { transform: scale(1.05); }
+
+.cart-fab__badge {
+  position: absolute;
+  top: -4px;
+  right: -4px;
+  width: 20px;
+  height: 20px;
+  border-radius: 50%;
+  background: var(--danger);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 600;
+  display: grid;
+  place-items: center;
+  border: 2px solid var(--bg-primary);
+}
+
+@media (max-width: 1024px) {
+  .cart-fab { display: flex; }
+
+  .pos-layout {
+    grid-template-columns: 1fr;
+  }
+}
 .status-tag--primary { background: var(--primary-light); color: var(--primary-active); }

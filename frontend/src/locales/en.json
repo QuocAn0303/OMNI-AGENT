@@ -1,0 +1,259 @@
+{
+  "topbar": {
+    "profile": "Profile",
+    "settings": "Settings",
+    "restartTour": "Restart tour guide",
+    "tourRestarted": "Tour guide reset. Reload the page to see it.",
+    "logout": "Sign out"
+  },
+  "menu": {
+    "dashboard": "Dashboard",
+    "analytics": "Analytics",
+    "pos": "Point of Sale",
+    "orders": "Orders",
+    "returns": "Returns",
+    "products": "Products",
+    "inventory": "Inventory",
+    "cycleCount": "Cycle Count",
+    "customers": "Customers",
+    "hr": "HR",
+    "finance": "Finance",
+    "debts": "Debts",
+    "expenses": "Expenses",
+    "vendors": "Vendors",
+    "purchaseOrders": "Purchase Orders",
+    "reports": "Reports",
+    "journal": "Journal",
+    "users": "Users",
+    "audit": "Audit Log",
+    "notifications": "Notifications",
+    "settings": "Settings",
+    "import": "Import Data"
+  },
+  "common": {
+    "save": "Save",
+    "cancel": "Cancel",
+    "delete": "Delete",
+    "edit": "Edit",
+    "create": "Create",
+    "search": "Search...",
+    "loading": "Loading...",
+    "noData": "No data",
+    "confirm": "Confirm",
+    "back": "Back",
+    "next": "Next",
+    "finish": "Finish",
+    "retry": "Retry",
+    "export": "Export",
+    "import": "Import",
+    "filter": "Filter",
+    "all": "All",
+    "actions": "Actions",
+    "active": "Active",
+    "inactive": "Inactive",
+    "total": "Total",
+    "status": "Status"
+  },
+  "auth": {
+    "login": "Login",
+    "logout": "Logout",
+    "email": "Email",
+    "password": "Password",
+    "loginButton": "Sign In",
+    "loginError": "Invalid email or password"
+  },
+  "dashboard": {
+    "title": "Dashboard",
+    "revenue": "Revenue",
+    "orders": "Orders",
+    "customers": "Customers",
+    "products": "Products",
+    "lowStock": "Low Stock"
+  },
+  "products": {
+    "title": "Products",
+    "name": "Product Name",
+    "sku": "SKU",
+    "price": "Price",
+    "costPrice": "Cost Price",
+    "category": "Category",
+    "stock": "Stock",
+    "unit": "Unit",
+    "addNew": "Add Product"
+  },
+  "orders": {
+    "title": "Orders",
+    "orderCode": "Order #",
+    "customer": "Customer",
+    "total": "Total",
+    "status": "Status",
+    "createdAt": "Date"
+  },
+  "onboarding": {
+    "title": "System Setup",
+    "subtitle": "Complete the following steps to start using ERP",
+    "skip": "Skip",
+    "finishMessage": "Setup complete! Welcome to ERP.",
+    "steps": {
+      "companyInfo": "Company",
+      "companyInfoDesc": "Info",
+      "warehouse": "Warehouse",
+      "warehouseDesc": "Setup",
+      "category": "Categories",
+      "categoryDesc": "Products",
+      "staff": "Staff",
+      "staffDesc": "Accounts",
+      "payment": "Payment",
+      "paymentDesc": "Methods"
+    },
+    "company": {
+      "hint": "This information will appear on invoices and reports.",
+      "name": "Company name",
+      "namePlaceholder": "e.g. ABC Corp",
+      "address": "Address",
+      "addressPlaceholder": "Headquarters address",
+      "phone": "Phone number",
+      "phoneInvalid": "Invalid phone number",
+      "email": "Email",
+      "emailInvalid": "Invalid email",
+      "taxCode": "Tax ID",
+      "industry": "Industry",
+      "industryPlaceholder": "Select industry",
+      "industries": ["Retail", "Restaurant / F&B", "Fashion", "Electronics", "Construction materials", "Pharmaceutical", "Other"],
+      "saving": "Saving..."
+    },
+    "warehouse": {
+      "hint": "Create at least one warehouse to start managing inventory.",
+      "name": "Warehouse name",
+      "namePlaceholder": "Name (e.g. Main warehouse)",
+      "nameRequired": "Enter warehouse name",
+      "code": "Code",
+      "codePlaceholder": "Code (e.g. WH-01)",
+      "codeRequired": "Enter warehouse code",
+      "addressPlaceholder": "Address (optional)",
+      "add": "Add warehouse",
+      "added": "Warehouse added",
+      "error": "Error adding warehouse"
+    },
+    "category": {
+      "hint": "Quick-select or add your own product categories.",
+      "quickAdd": "Quick add:",
+      "defaults": ["Food", "Beverages", "Fashion", "Electronics", "Household", "Cosmetics", "Office supplies"],
+      "namePlaceholder": "New category name",
+      "add": "Add",
+      "error": "Error adding category"
+    },
+    "staff": {
+      "hint": "Create accounts for your staff. Default password:",
+      "hintPassword": "123456",
+      "hintSuffix": "(must be changed on first login).",
+      "fullName": "Full name",
+      "email": "Email",
+      "role": "Role",
+      "roles": { "MANAGER": "Manager", "CASHIER": "Cashier", "WAREHOUSE": "Warehouse" },
+      "add": "Add employee",
+      "created": "Account created for {{name}} (default password: 123456)",
+      "error": "Error creating account"
+    },
+    "payment": {
+      "hint": "Select payment methods your store accepts.",
+      "cash": "Cash",
+      "cashDesc": "Direct payment",
+      "transfer": "Bank Transfer",
+      "transferDesc": "Bank transfer",
+      "qr": "QR Code",
+      "qrDesc": "VietQR, MoMo, ZaloPay",
+      "card": "Card",
+      "cardDesc": "Visa, Mastercard",
+      "bankInfo": "Bank account information:",
+      "bankName": "Bank",
+      "bankNamePlaceholder": "e.g. Vietcombank",
+      "accountNumber": "Account number",
+      "accountNumberPlaceholder": "e.g. 0123456789",
+      "accountName": "Account holder",
+      "accountNamePlaceholder": "e.g. NGUYEN VAN A"
+    }
+  },
+  "tour": {
+    "dashboard": {
+      "kpi": "These are your store's key KPIs: revenue, orders, customers, and products.",
+      "charts": "Revenue and order status charts — track your business trends over time.",
+      "lowStock": "Products running low on stock — restock to avoid sales disruption."
+    },
+    "pos": {
+      "search": "Search products by name or scan a barcode to quickly add to cart.",
+      "grid": "Click a product to add it to the cart. Use category tabs above to filter.",
+      "cart": "Shopping cart — adjust quantities, select a customer, apply discounts and checkout."
+    },
+    "products": {
+      "header": "Manage all products — add new, edit existing, track inventory.",
+      "filters": "Search by name or SKU, filter by category and stock status.",
+      "table": "Product table — click edit or delete buttons in the last column."
+    },
+    "orders": {
+      "header": "Manage all orders — view status, record payments, process returns.",
+      "filters": "Filter by order code, status, payment method or date range.",
+      "table": "Click the eye icon in the last column to view order details, print invoice or process returns."
+    },
+    "inventory": {
+      "header": "Manage warehouse — track stock levels, imports, exports and transaction history.",
+      "tabs": "Switch between tabs: current stock, import, export or view history."
+    }
+  },
+  "register": {
+    "title": "Register your business",
+    "subtitle": "Start free, upgrade when you need",
+    "companyRequired": "Enter company name",
+    "companyMin": "Minimum 2 characters",
+    "companyPlaceholder": "Company / store name",
+    "emailRequired": "Enter email",
+    "emailInvalid": "Invalid email",
+    "passwordRequired": "Enter password",
+    "passwordMin": "Minimum 6 characters",
+    "passwordPlaceholder": "Password",
+    "industryPlaceholder": "Industry (optional)",
+    "submit": "Register",
+    "hasAccount": "Already have an account?",
+    "login": "Sign in",
+    "success": "Registration successful!",
+    "error": "Registration failed",
+    "industries": {
+      "retail": "Retail",
+      "fnb": "Food & Beverage",
+      "fashion": "Fashion",
+      "electronics": "Electronics",
+      "cosmetics": "Cosmetics",
+      "pharmacy": "Pharmacy",
+      "grocery": "Grocery",
+      "service": "Service",
+      "other": "Other"
+    }
+  },
+  "pricing": {
+    "title": "Choose the right plan",
+    "subtitle": "Start free, upgrade when you need",
+    "popular": "Popular",
+    "free": "Free",
+    "month": "month",
+    "unlimited": "Unlimited",
+    "startFree": "Start for free",
+    "upgrade": "Upgrade",
+    "plans": {
+      "free": "FREE",
+      "pro": "PRO",
+      "enterprise": "ENTERPRISE"
+    },
+    "features": {
+      "warehouses": "Warehouses",
+      "products": "Products",
+      "users": "Users",
+      "basicReports": "Basic reports",
+      "advancedReports": "Advanced reports + Analytics",
+      "importExport": "Import/Export Excel",
+      "multiLang": "Multi-language",
+      "allFeatures": "All features",
+      "apiAccess": "API access",
+      "prioritySupport": "Priority support"
+    }
+  }
+}

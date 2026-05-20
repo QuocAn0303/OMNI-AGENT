@@ -71,6 +71,7 @@ export default function Debts() {
           rowKey="id"
           dataSource={data.debts}
           columns={columns}
+          scroll={{ x: 900 }}
           pagination={{
             current: filters.page,
             pageSize: filters.limit,
