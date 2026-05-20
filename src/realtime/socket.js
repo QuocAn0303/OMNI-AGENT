@@ -5,6 +5,35 @@ const jwt = require("jsonwebtoken");
 const { pubClient, subClient } = require("../config/redis");
 
 let io;
+const REDIS_READY_TIMEOUT_MS = 3000;
+
+const waitForRedisReady = (client) => {
+  if (client.status === "ready") return Promise.resolve();
+
+  return new Promise((resolve, reject) => {
+    const onReady = () => {
+      cleanup();
+      resolve();
+    };
+    const onError = (err) => {
+      cleanup();
+      reject(err || new Error("Redis connection error"));
+    };
+    const timeout = setTimeout(() => {
+      cleanup();
+      reject(new Error("Redis ready timeout"));
+    }, REDIS_READY_TIMEOUT_MS);
+
+    const cleanup = () => {
+      clearTimeout(timeout);
+      client.off("ready", onReady);
+      client.off("error", onError);
+    };
+
+    client.once("ready", onReady);
+    client.once("error", onError);
+  });
+};
 
 const initSocket = async (httpServer) => {
   const origin = process.env.CORS_ORIGIN || process.env.CLIENT_URL || "http://localhost:5173";
@@ -15,8 +44,8 @@ const initSocket = async (httpServer) => {
 
   try {
     await Promise.all([
-      pubClient.status === "ready" ? Promise.resolve() : new Promise((r) => pubClient.once("ready", r)),
-      subClient.status === "ready" ? Promise.resolve() : new Promise((r) => subClient.once("ready", r)),
+      waitForRedisReady(pubClient),
+      waitForRedisReady(subClient),
     ]);
     io.adapter(createAdapter(pubClient, subClient));
     console.log("[socket] redis adapter attached");

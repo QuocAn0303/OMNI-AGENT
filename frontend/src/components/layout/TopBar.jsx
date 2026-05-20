@@ -7,8 +7,12 @@ import { io } from 'socket.io-client';
 import useAuthStore from '../../stores/authStore';
 import { getUnreadCount } from '../../api/notifications';
 
-const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:4000/api';
-const socketOrigin = apiBase.replace(/\/api\/?$/, '');
+function getSocketOrigin() {
+  // Dev: cùng origin với Vite; proxy websocket → backend (vite.config.js)
+  if (import.meta.env.DEV) return window.location.origin;
+  const apiBase = import.meta.env.VITE_API_URL || 'http://localhost:4000/api';
+  return apiBase.replace(/\/api\/?$/, '');
+}
 
 // Map pathname → breadcrumb text
 const ROUTE_LABELS = {
@@ -60,7 +64,7 @@ export default function TopBar({ onMenuClick }) {
 
   useEffect(() => {
     if (!token) return undefined;
-    const socket = io(socketOrigin, {
+    const socket = io(getSocketOrigin(), {
       auth: { token },
       transports: ['websocket', 'polling'],
       reconnection: true,

@@ -1,11 +1,11 @@
 import axios from "axios";
 import * as Sentry from "@sentry/react";
-//chỉnh ở đây để set lại port api nếu cần
-// Nếu không set `VITE_API_URL` khi chạy local, mặc định dùng dev backend
-const API_BASE = (
-  import.meta.env.VITE_API_URL ||
-  (import.meta.env.DEV ? "http://localhost:4000/api" : "")
-).replace(/\/$/, "");
+// Dev: luôn gọi `/api` cùng origin với Vite rồi proxy sang backend (xem vite.config.js).
+// Khi đó không bị "lệch cổng" chỉ vì file .env cập nhật sau khi Vite đã start.
+const envApi = String(import.meta.env.VITE_API_URL || "").replace(/\/$/, "");
+const API_BASE = import.meta.env.DEV
+  ? "/api"
+  : envApi || "http://localhost:4000/api";
 
 // Khởi tạo instance của axios (dùng cho hầu hết request)
 const axiosInstance = axios.create({
@@ -46,11 +46,9 @@ axiosInstance.interceptors.response.use(
       // Nếu request là refresh thì không cố refresh nữa
       if (
         originalRequest.url &&
-        originalRequest.url.includes("/auth/refresh")
+        (originalRequest.url.includes("/auth/refresh") ||
+          originalRequest.url.includes("/auth/login"))
       ) {
-        localStorage.removeItem("token");
-        localStorage.removeItem("refreshToken");
-        window.location.href = "/login";
         return Promise.reject(err);
       }
 

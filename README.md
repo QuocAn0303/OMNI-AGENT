@@ -315,77 +315,250 @@ erp-system/
                 └── Payroll.jsx          #     Bảng lương — tính lương, phụ cấp, khấu trừ
 ```
 
-**Biến môi trường (quan trọng)**
-Tạo file `.env` ở root với tối thiểu các biến sau:
+---
 
-```
-DATABASE_URL=postgresql://user:pass@host:5432/dbname
-PORT=4000
-JWT_SECRET=your_jwt_secret
-JWT_EXPIRES_IN=7d
-REFRESH_TOKEN_EXPIRES_DAYS=30
-BCRYPT_ROUNDS=10
-CLOUDINARY_CLOUD_NAME=...
-CLOUDINARY_API_KEY=...
-CLOUDINARY_API_SECRET=...
-SWAGGER_SERVER_URL=http://localhost:4000
-CLIENT_URL=http://localhost:5173
-LOG_LEVEL=info
-RATE_LIMIT_WINDOW_MINUTES=15
-RATE_LIMIT_MAX=10
-```
+## 🚀 HƯỚNG DẪN CHẠY DỰ ÁN (Tutorial chi tiết)
 
-Ghi chú: code dùng `process.env` ở nhiều nơi; kiểm tra `src/config` và `src/modules` nếu cần thêm biến.
+> Phần này hướng dẫn từ A → Z cách chạy dự án trên máy local. Làm đúng theo thứ tự là chạy được.
 
-**Chạy nhanh (local)**
+### Bước 0 — Yêu cầu cài đặt sẵn
 
-1. Cài đặt Docker (tuỳ chọn) và chạy PostgreSQL bằng `docker-compose`:
+| Phần mềm | Phiên bản tối thiểu | Ghi chú |
+|---|---|---|
+| **Node.js** | 20 LTS hoặc 22 LTS | Project hiện chưa khoá engine, nhưng nên tránh Node 25 (Prisma Studio cảnh báo). |
+| **npm** | 10+ | Đi kèm Node.js. |
+| **Docker Desktop** | mới nhất | Dùng cho PostgreSQL + Redis (khuyến nghị). |
+| **Git** | bất kỳ | Để clone repo. |
+
+Kiểm tra nhanh:
 
 ```bash
-docker-compose up -d
+node -v
+npm -v
+docker -v
 ```
 
-2. Cài đặt deps (backend):
+---
+
+### Bước 1 — Clone & cài dependencies
 
 ```bash
+git clone <repo-url> erp-system
+cd erp-system
+
+# Cài deps cho backend (chạy ở root)
 npm install
+
+# Cài deps cho frontend
+cd frontend
+npm install
+cd ..
 ```
 
-3. Migrate & seed (Prisma):
+---
+
+### Bước 2 — Tạo file `.env` (ở root)
+
+Copy từ mẫu rồi điền giá trị:
 
 ```bash
-npm run db:migrate
-npm run db:seed
-# (mở Prisma Studio nếu cần)
-npm run db:studio
+# Windows PowerShell
+Copy-Item .env.example .env
+
+# Linux / macOS
+cp .env.example .env
 ```
 
-4. Chạy backend (phát triển):
+Mở `.env` và **điền tối thiểu các biến sau** (những biến còn lại có thể để trống nếu chưa dùng):
 
-```bash
-npm run dev
+```env
+# --- Bắt buộc ---
+PORT=3000
+NODE_ENV=development
+DATABASE_URL="postgresql://postgres:uit@localhost:5432/erp_db?schema=public"
+JWT_SECRET=hay_doi_thanh_chuoi_ngau_nhien_dai_32_ky_tu_tro_len
+JWT_EXPIRES_IN=7d
+
+# --- CORS / Frontend ---
+CORS_ORIGIN=http://localhost:5173
+CLIENT_URL=http://localhost:5173
+
+# --- Redis (cho Socket.IO real-time) ---
+# Nếu không có Redis, code sẽ fallback sang in-memory nhưng log sẽ spam ECONNREFUSED.
+REDIS_URL=redis://127.0.0.1:6379
+
+# --- Bcrypt ---
+BCRYPT_ROUNDS=10
+
+# --- Tuỳ chọn: Cloudinary (chỉ cần khi upload ảnh sản phẩm) ---
+CLOUDINARY_CLOUD_NAME=
+CLOUDINARY_API_KEY=
+CLOUDINARY_API_SECRET=
+
+# --- Tuỳ chọn: OpenAI (chỉ cần khi dùng AI Assistant) ---
+OPENAI_API_KEY=
 ```
 
-Server mặc định lắng nghe `PORT` (nếu không đặt sẽ dùng `4000`). Swagger UI: `http://localhost:4000/api-docs`
+> ⚠️ Lưu ý mật khẩu DB: `docker-compose.yml` mặc định dùng `postgres / uit / erp_db`. Nếu bạn sửa ở `docker-compose.yml` thì phải đồng bộ lại `DATABASE_URL` trong `.env`.
 
-5. Chạy frontend (terminal khác):
+Tương tự, tạo `.env` cho frontend:
 
 ```bash
 cd frontend
-npm install
+Copy-Item .env.example .env   # hoặc cp .env.example .env
+cd ..
+```
+
+Mặc định frontend trỏ tới `http://localhost:3000` qua biến `VITE_API_URL` — chỉnh nếu backend đổi port.
+
+---
+
+### Bước 3 — Khởi động PostgreSQL + Redis bằng Docker
+
+Cách đơn giản nhất là chạy cả 2 dịch vụ qua Docker. `docker-compose.yml` hiện có sẵn PostgreSQL; bạn có thể thêm Redis tạm thời bằng lệnh:
+
+```bash
+# 1. Khởi động PostgreSQL (theo docker-compose.yml)
+docker-compose up -d
+
+# 2. Khởi động Redis (chạy tách riêng, port 6379)
+docker run -d --name erp-redis -p 6379:6379 redis:7-alpine
+```
+
+Kiểm tra:
+
+```bash
+docker ps
+# Phải thấy 2 container: erp-postgres (5432) và erp-redis (6379)
+```
+
+> 💡 Nếu **không muốn cài Redis**, vẫn chạy được — nhưng log backend sẽ spam `connect ECONNREFUSED 127.0.0.1:6379`. Socket.IO sẽ tự fallback sang in-memory adapter (xem `src/realtime/socket.js`).
+
+---
+
+### Bước 4 — Migrate database & seed dữ liệu mẫu
+
+```bash
+# Tạo schema trong DB (chạy migration của Prisma)
+npm run db:migrate
+
+# Tạo dữ liệu mẫu: admin + sản phẩm + đơn hàng + kế toán demo
+npm run db:seed
+```
+
+Sau bước này DB đã có:
+
+- Tài khoản admin: **`admin@erp.com` / `admin123`**
+- Một số sản phẩm, danh mục, kho, khách hàng mẫu
+- Chart of Accounts (hệ thống tài khoản kế toán)
+- Bút toán demo
+
+Mở Prisma Studio để xem trực quan dữ liệu (tuỳ chọn):
+
+```bash
+npm run db:studio
+# Mở trình duyệt: http://localhost:5555
+```
+
+---
+
+### Bước 5 — Chạy backend
+
+Mở **terminal 1** tại root của repo:
+
+```bash
 npm run dev
 ```
 
-Frontend mặc định: `http://localhost:5173` (vite).
+Khi thành công bạn sẽ thấy log kiểu:
 
-**Docker / Database**
+```
+[server] listening on http://localhost:3000
+[socket] redis adapter attached
+```
 
-- `docker-compose.yml` cung cấp service `postgres` (image: `postgres:15`).
-- Hoặc cấu hình PostgreSQL riêng và set `DATABASE_URL` tương ứng.
+Kiểm tra:
 
-**Seeder & Test account**
+- API health: <http://localhost:3000/api/health> (nếu có) hoặc gọi thử `POST /api/auth/login`
+- Swagger UI: <http://localhost:3000/api-docs>
 
-- Seeder tạo admin: `admin@erp.com` / `admin123` (xem `prisma/seed.js`).
+---
+
+### Bước 6 — Chạy frontend
+
+Mở **terminal 2** (giữ terminal backend đang chạy):
+
+```bash
+cd frontend
+npm run dev
+```
+
+Vite sẽ in ra:
+
+```
+  ➜  Local:   http://localhost:5173/
+```
+
+Mở trình duyệt vào <http://localhost:5173>, đăng nhập bằng tài khoản seed:
+
+- **Email**: `admin@erp.com`
+- **Mật khẩu**: `admin123`
+
+---
+
+### Bước 7 — Chạy test (tuỳ chọn)
+
+```bash
+# Chạy toàn bộ test
+npm test
+
+# Chạy 1 file test cụ thể
+npx jest tests/debt.service.test.js
+```
+
+---
+
+## 🛠️ Sự cố thường gặp (Troubleshooting)
+
+| Triệu chứng | Nguyên nhân & Cách khắc phục |
+|---|---|
+| `Cannot find module '@socket.io/redis-adapter'` | Thiếu deps. Chạy lại `npm install`. Nếu vẫn lỗi: `npm install @socket.io/redis-adapter ioredis`. |
+| `connect ECONNREFUSED 127.0.0.1:6379` (spam liên tục) | Chưa chạy Redis. Khởi động lại: `docker start erp-redis` hoặc tạo mới như Bước 3. App vẫn chạy được nhưng real-time bị giới hạn 1 instance. |
+| `P1001: Can't reach database server at localhost:5432` | Postgres chưa chạy hoặc sai `DATABASE_URL`. Chạy `docker-compose up -d` và kiểm tra user/pass trong `.env` khớp với `docker-compose.yml`. |
+| `Error: P3009: migrate found failed migrations` | Migration cũ bị lỗi. Với DB rỗng: `npx prisma migrate reset` (sẽ xoá sạch DB rồi migrate + seed lại). |
+| Login trả `401 Unauthorized` ngay sau seed | `JWT_SECRET` rỗng hoặc khác giữa các lần restart. Đặt một chuỗi cố định trong `.env`. |
+| Frontend báo `Network Error` / CORS | Kiểm tra `CORS_ORIGIN` trong `.env` backend và `VITE_API_URL` trong `frontend/.env`. Đảm bảo backend đang chạy trước khi mở frontend. |
+| Port 3000 / 5173 đã bị chiếm | Đổi `PORT` trong `.env` hoặc đóng tiến trình đang chiếm port (`netstat -ano | findstr :3000` trên Windows). |
+| Prisma Studio cảnh báo Node 25 | Hạ Node về 20 LTS hoặc 22 LTS (dùng `nvm` để chuyển nhanh). |
+
+---
+
+## 📋 Tóm tắt lệnh hay dùng
+
+```bash
+# Backend (chạy ở root)
+npm install                 # cài deps
+npm run dev                 # chạy dev server (nodemon)
+npm start                   # chạy production
+npm run db:migrate          # tạo/cập nhật schema DB
+npm run db:seed             # nạp dữ liệu mẫu
+npm run db:studio           # mở Prisma Studio (GUI cho DB)
+npm test                    # chạy Jest
+
+# Frontend (chạy trong thư mục frontend/)
+npm install
+npm run dev                 # vite dev server (port 5173)
+npm run build               # build production
+npm run preview             # preview bản build
+
+# Docker hạ tầng
+docker-compose up -d        # khởi động Postgres
+docker-compose down         # dừng & giữ data
+docker-compose down -v      # dừng & XOÁ data (cẩn thận!)
+docker start erp-redis      # khởi động lại Redis
+```
+
+---
 
 **API / Endpoints cơ bản**
 
