@@ -30,6 +30,7 @@ import {
   ClusterOutlined,
   NotificationOutlined,
   ProjectOutlined,
+  ExperimentOutlined,
 } from '@ant-design/icons';
 import useAuthStore from '../../stores/authStore';
 
@@ -100,6 +101,14 @@ const MENU_GROUPS = [
     roles: ['ADMIN', 'MANAGER'],
     items: [
       { key: '/projects', icon: <ProjectOutlined />, label: 'Dự án' },
+    ],
+  },
+  {
+    key: 'production',
+    label: 'SẢN XUẤT',
+    roles: ['ADMIN', 'MANAGER', 'WAREHOUSE'],
+    items: [
+      { key: '/production', icon: <ExperimentOutlined />, label: 'Sản xuất' },
     ],
   },
   {
