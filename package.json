@@ -5,8 +5,9 @@
   "main": "src/app.js",
   "scripts": {
     "dev": "nodemon src/app.js",
-    "start": "node src/app.js",
+    "start": "prisma migrate deploy && node src/app.js",
     "db:migrate": "prisma migrate dev",
+    "db:migrate:deploy": "prisma migrate deploy",
     "db:seed": "node prisma/seed.js && node prisma/seed_accounting.js && node prisma/spread_orders.js && node prisma/seed_accounting_demo.js",
     "db:seed:accounting-demo": "node prisma/seed_accounting_demo.js",
     "db:seed:accounting": "node prisma/seed_accounting.js",

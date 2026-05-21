@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import useDebounce from '../hooks/useDebounce';
-import { Table, Input, Button, Avatar, message, Modal, Form } from 'antd';
+import { Table, Input, Button, Avatar, message, Modal, Form, Tag } from 'antd';
 import {
   SearchOutlined, PlusOutlined, EditOutlined, DeleteOutlined,
   PhoneOutlined, MailOutlined, EnvironmentOutlined,
@@ -16,6 +17,7 @@ import EmptyState from '../components/shared/EmptyState';
  * Endpoints: GET/POST/PUT/DELETE /customers
  */
 export default function Customers() {
+  const navigate = useNavigate();
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -166,6 +168,20 @@ export default function Customers() {
       ),
     },
     {
+      title: 'Tags',
+      dataIndex: 'tags',
+      width: 180,
+      render: (tags) =>
+        (tags && tags.length > 0) ? (
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 4 }}>
+            {tags.slice(0, 3).map((t) => (
+              <Tag key={t.id} color={t.color} style={{ marginRight: 0 }}>{t.name}</Tag>
+            ))}
+            {tags.length > 3 && <Tag>+{tags.length - 3}</Tag>}
+          </div>
+        ) : <span style={{ color: 'var(--text-muted)' }}>—</span>,
+    },
+    {
       title: 'Lần mua cuối',
       dataIndex: 'lastOrderAt',
       width: 130,
@@ -188,12 +204,12 @@ export default function Customers() {
           <Button
             type="text" size="small"
             icon={<EditOutlined />}
-            onClick={() => openModal(row)}
+            onClick={(e) => { e.stopPropagation(); openModal(row); }}
           />
           <Button
             type="text" size="small" danger
             icon={<DeleteOutlined />}
-            onClick={() => handleDelete(row.id)}
+            onClick={(e) => { e.stopPropagation(); handleDelete(row.id); }}
           />
         </>
       ),
@@ -230,6 +246,10 @@ export default function Customers() {
           rowKey="id"
           loading={loading}
           scroll={{ x: 900 }}
+          onRow={(row) => ({
+            onClick: () => navigate(`/customers/${row.id}`),
+            style: { cursor: 'pointer' },
+          })}
           pagination={{ current: page, pageSize: 20, total, showSizeChanger: false, onChange: (p) => setPage(p) }}
           locale={{
             emptyText: (

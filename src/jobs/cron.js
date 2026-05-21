@@ -5,6 +5,7 @@ const notif = require("../modules/notifications/notification.service");
 const promotionService = require("../modules/promotions/promotion.service");
 const expenseAuto = require("../modules/accounting/expense-auto.service");
 const loyaltyService = require("../modules/loyalty/loyalty.service");
+const crmTasksService = require("../modules/crm/tasks.service");
 
 const startCrons = () => {
   cron.schedule("0 * * * *", async () => {
@@ -63,7 +64,17 @@ const startCrons = () => {
     }
   });
 
-  console.log("[cron] scheduled: orders hourly, debt 09:00, payroll 25th, period 28th, promo daily, recurring 1st");
+  // CRM: nhắc nhiệm vụ sắp tới hạn / quá hạn — 8h sáng mỗi ngày
+  cron.schedule("0 8 * * *", async () => {
+    try {
+      const n = await crmTasksService.cronRemindUpcoming();
+      if (n) console.log(`[cron] CRM task reminders sent: ${n}`);
+    } catch (e) {
+      console.error("[cron] crm task reminder", e.message);
+    }
+  });
+
+  console.log("[cron] scheduled: orders hourly, debt 09:00, payroll 25th, period 28th, promo daily, recurring 1st, CRM tasks 08:00");
 };
 
 module.exports = { startCrons };

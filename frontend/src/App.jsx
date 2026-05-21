@@ -13,6 +13,9 @@ const Reports = lazy(() => import("./pages/Reports"));
 const Audit = lazy(() => import("./pages/Audit"));
 const Inventory = lazy(() => import("./pages/Inventory"));
 const Customers = lazy(() => import("./pages/Customers"));
+const CustomerDetail = lazy(() => import("./pages/CustomerDetail"));
+const Tasks = lazy(() => import("./pages/Tasks"));
+const Segments = lazy(() => import("./pages/Segments"));
 const Products = lazy(() => import("./pages/Products"));
 const Orders = lazy(() => import("./pages/Orders"));
 const Pos = lazy(() => import("./pages/Pos"));
@@ -127,6 +130,11 @@ function App() {
           <Route path="/pos" element={<Pos />} />
           <Route path="/orders" element={<Orders />} />
           <Route path="/customers" element={<Customers />} />
+          <Route path="/customers/:id" element={<CustomerDetail />} />
+          <Route path="/crm/tasks" element={<Tasks />} />
+          <Route element={<RequireRole roles={['ADMIN', 'MANAGER']} />}>
+            <Route path="/crm/segments" element={<Segments />} />
+          </Route>
           <Route path="/notifications" element={<NotificationsPage />} />
 
           {/* ADMIN + MANAGER */}

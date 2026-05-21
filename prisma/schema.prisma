@@ -63,6 +63,10 @@ model User {
   purchaseOrdersApproved PurchaseOrder[]       @relation("PurchaseApprovedBy")
   debtPayments          DebtPayment[]
   notifications         Notification[]
+  customerNotes         CustomerNote[]
+  tasksAssigned         CustomerTask[]         @relation("TaskAssignedTo")
+  tasksCreated          CustomerTask[]         @relation("TaskCreatedBy")
+  segmentsCreated       CustomerSegment[]
 
   @@index([tenantId])
   @@map("users")
@@ -240,6 +244,27 @@ enum CustomerTier {
   PLATINUM
 }
 
+enum CustomerNoteType {
+  NOTE
+  CALL
+  EMAIL
+  MEETING
+  ZALO
+}
+
+enum TaskStatus {
+  PENDING
+  IN_PROGRESS
+  DONE
+  CANCELLED
+}
+
+enum TaskPriority {
+  LOW
+  NORMAL
+  HIGH
+}
+
 model Customer {
   id         String   @id @default(uuid())
   name       String
@@ -259,11 +284,85 @@ model Customer {
   debts           Debt[]
   promotionUsages PromotionUsage[]
   loyaltyTxs      LoyaltyTransaction[]
+  notes           CustomerNote[]
+  tags            CustomerTagOnCustomer[]
+  tasks           CustomerTask[]
 
   @@index([name])
   @@index([phone])
   @@index([email])
   @@map("customers")
+}
+
+model CustomerNote {
+  id          String           @id @default(uuid())
+  customerId  String
+  customer    Customer         @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  content     String           @db.Text
+  type        CustomerNoteType @default(NOTE)
+  createdById String
+  createdBy   User             @relation(fields: [createdById], references: [id])
+  createdAt   DateTime         @default(now())
+
+  @@index([customerId, createdAt])
+  @@map("customer_notes")
+}
+
+model CustomerTag {
+  id        String                   @id @default(uuid())
+  name      String                   @unique
+  color     String                   @default("#0f766e")
+  createdAt DateTime                 @default(now())
+  customers CustomerTagOnCustomer[]
+
+  @@map("customer_tags")
+}
+
+model CustomerTagOnCustomer {
+  customerId String
+  customer   Customer    @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  tagId      String
+  tag        CustomerTag @relation(fields: [tagId], references: [id], onDelete: Cascade)
+  assignedAt DateTime    @default(now())
+
+  @@id([customerId, tagId])
+  @@map("customer_tag_on_customer")
+}
+
+model CustomerTask {
+  id           String       @id @default(uuid())
+  customerId   String
+  customer     Customer     @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  title        String
+  description  String?      @db.Text
+  status       TaskStatus   @default(PENDING)
+  priority     TaskPriority @default(NORMAL)
+  dueAt        DateTime?
+  assignedToId String
+  assignedTo   User         @relation("TaskAssignedTo", fields: [assignedToId], references: [id])
+  createdById  String
+  createdBy    User         @relation("TaskCreatedBy", fields: [createdById], references: [id])
+  completedAt  DateTime?
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+
+  @@index([assignedToId, status, dueAt])
+  @@index([customerId])
+  @@map("customer_tasks")
+}
+
+model CustomerSegment {
+  id            String   @id @default(uuid())
+  name          String   @unique
+  description   String?
+  rules         Json
+  customerCount Int      @default(0)
+  createdById   String
+  createdBy     User     @relation(fields: [createdById], references: [id])
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@map("customer_segments")
 }
 
 model LoyaltyTransaction {

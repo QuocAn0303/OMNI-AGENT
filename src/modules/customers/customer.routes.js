@@ -19,6 +19,14 @@ router.get('/', async (req, res, next) => {
   }
 });
 
+router.get('/:id/full', async (req, res, next) => {
+  try {
+    success(res, await customerService.getCustomer360(req.params.id));
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.get('/:id/loyalty', async (req, res, next) => {
   try {
     success(res, await loyaltyService.getLoyaltySummary(req.params.id));

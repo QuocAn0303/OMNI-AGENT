@@ -34,12 +34,18 @@ const getAll = async ({ page: rawPage = 1, limit: rawLimit = 10, search = "" }) 
         address: true,
         totalSpent: true,
         createdAt: true,
+        tags: { select: { tag: { select: { id: true, name: true, color: true } } } },
         //isActive: true, Lệnh này chỉ trả về trạng thái hoạt đông của khách hàng, không trả về khách hàng đã bị xóa (isActive: false)
       },
       orderBy: { createdAt: "desc" },
     }),
     prisma.customer.count({ where }),
   ]);
+
+  // Flatten tags
+  for (const c of customers) {
+    c.tags = (c.tags || []).map((t) => t.tag);
+  }
 
   return {
     customers,
@@ -137,9 +143,121 @@ const remove = async (id, userId = null) => {
   return deleted;
 };
 
+// Customer 360°: tổng hợp toàn bộ dữ liệu liên quan tới 1 khách hàng
+const getCustomer360 = async (id) => {
+  const customer = await prisma.customer.findUnique({
+    where: { id },
+    select: {
+      id: true,
+      name: true,
+      phone: true,
+      email: true,
+      address: true,
+      totalSpent: true,
+      totalDebt: true,
+      storeCredit: true,
+      tier: true,
+      loyaltyPoints: true,
+      isActive: true,
+      createdAt: true,
+      updatedAt: true,
+    },
+  });
+  if (!customer) {
+    const err = new Error("Khách hàng không tồn tại");
+    err.status = 404;
+    throw err;
+  }
+
+  const [recentOrders, debts, loyaltyTxs, notes, tags, orderStats] =
+    await Promise.all([
+      prisma.order.findMany({
+        where: { customerId: id },
+        select: {
+          id: true,
+          orderCode: true,
+          status: true,
+          paymentStatus: true,
+          total: true,
+          createdAt: true,
+        },
+        orderBy: { createdAt: "desc" },
+        take: 10,
+      }),
+      prisma.debt.findMany({
+        where: { customerId: id },
+        select: {
+          id: true,
+          amount: true,
+          paidAmount: true,
+          dueDate: true,
+          status: true,
+          createdAt: true,
+        },
+        orderBy: { createdAt: "desc" },
+        take: 10,
+      }),
+      prisma.loyaltyTransaction.findMany({
+        where: { customerId: id },
+        select: {
+          id: true,
+          points: true,
+          type: true,
+          note: true,
+          createdAt: true,
+        },
+        orderBy: { createdAt: "desc" },
+        take: 5,
+      }),
+      prisma.customerNote.findMany({
+        where: { customerId: id },
+        select: {
+          id: true,
+          content: true,
+          type: true,
+          createdAt: true,
+          createdBy: { select: { id: true, fullName: true } },
+        },
+        orderBy: { createdAt: "desc" },
+        take: 10,
+      }),
+      prisma.customerTagOnCustomer.findMany({
+        where: { customerId: id },
+        select: { tag: { select: { id: true, name: true, color: true } } },
+      }),
+      prisma.order.aggregate({
+        where: { customerId: id, status: { not: "CANCELLED" } },
+        _count: { _all: true },
+        _max: { createdAt: true },
+      }),
+    ]);
+
+  const orderCount = orderStats._count._all || 0;
+  const lastOrderAt = orderStats._max.createdAt;
+  const recencyDays = lastOrderAt
+    ? Math.floor((Date.now() - new Date(lastOrderAt).getTime()) / 86400000)
+    : null;
+
+  return {
+    customer,
+    recentOrders,
+    debts,
+    loyaltyTxs,
+    notes,
+    tags: tags.map((t) => t.tag),
+    rfm: {
+      recencyDays,
+      frequency: orderCount,
+      monetary: Number(customer.totalSpent || 0),
+      lastOrderAt,
+    },
+  };
+};
+
 module.exports = {
   getAll,
   create,
   update,
   remove,
+  getCustomer360,
 };
