@@ -10,5 +10,6 @@ RUN npx prisma generate
 COPY src ./src/
 COPY ecosystem.config.js ./
 
+ENV NODE_ENV=production
 EXPOSE 4000
 CMD ["node", "src/app.js"]
