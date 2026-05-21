@@ -7,7 +7,7 @@ const bcrypt = require("bcrypt");
 const { faker } = require("@faker-js/faker");
 
 // Use PrismaPg adapter so PrismaClient uses the Postgres adapter engine
-const pool = new Pool({ connectionString: process.env.DATABASE_URL });
+const pool = new Pool({ connectionString: process.env.DATABASE_URL, max: 2, idleTimeoutMillis: 30000, connectionTimeoutMillis: 10000 });
 const adapter = new PrismaPg(pool);
 const prisma = new PrismaClient({ adapter });
 
@@ -355,7 +355,7 @@ async function main() {
   console.log(`✅ Created ${customers.length} customers`);
 
   // ---- ORDERS (100-200) ----
-  const orderCount = rndInt(100, 200);
+  const orderCount = rndInt(40, 60);
   console.log(
     `→ Creating ${orderCount} orders (this will update inventory & create transactions)...`,
   );
@@ -465,7 +465,7 @@ async function main() {
         // no items could be created (all OOS) → remove the empty order
         await tx.order.delete({ where: { id: order.id } });
       }
-    });
+    }, { timeout: 60000 });
 
     if ((oi + 1) % 25 === 0) console.log(`  → ${oi + 1} orders processed`);
   }
