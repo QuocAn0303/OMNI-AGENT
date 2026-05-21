@@ -1,7 +1,11 @@
 -- Incremental migration: debt, notifications, PO workflow fields, customer.totalDebt, JournalSource.DEBT
 -- Apply on a DB that already matches prior Prisma migrations for this project.
 
--- JournalSource: DEBT
+-- JournalSource: create if not exists, then add DEBT
+DO $$ BEGIN
+  CREATE TYPE "JournalSource" AS ENUM ('MANUAL', 'ORDER', 'PAYMENT', 'RETURN', 'PURCHASE', 'EXPENSE', 'PAYROLL', 'INVENTORY', 'BANK', 'ADJUSTMENT');
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
 DO $$ BEGIN
   ALTER TYPE "JournalSource" ADD VALUE 'DEBT';
 EXCEPTION
