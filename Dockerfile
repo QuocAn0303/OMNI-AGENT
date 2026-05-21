@@ -13,4 +13,4 @@ COPY ecosystem.config.js ./
 
 ENV NODE_ENV=production
 EXPOSE 4000
-CMD ["node", "src/app.js"]
+CMD ["sh", "-c", "npx prisma migrate deploy && node src/app.js"]
