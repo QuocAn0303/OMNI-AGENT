@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Modal, Alert, Spin, Select } from "antd";
+import { Modal, Alert, Spin, Select, Button } from "antd";
 import { Html5Qrcode } from "html5-qrcode";
 
 const SCANNER_ELEMENT_ID = "camera-scanner-region";
@@ -10,77 +10,110 @@ export default function CameraScanner({ open, onClose, onDetect }) {
   const [loading, setLoading] = useState(false);
   const [cameras, setCameras] = useState([]);
   const [selectedCamera, setSelectedCamera] = useState(null);
+  const [domReady, setDomReady] = useState(false);
 
-  // Get list of cameras when modal opens
+  // Request camera permission + list cameras when modal opens
   useEffect(() => {
-    if (!open) return;
+    if (!open) {
+      setError(null);
+      setCameras([]);
+      setSelectedCamera(null);
+      setDomReady(false);
+      return;
+    }
+
     setError(null);
-    Html5Qrcode.getCameras()
+
+    // First request camera permission via getUserMedia (iOS Safari needs this)
+    navigator.mediaDevices
+      .getUserMedia({ video: { facingMode: "environment" } })
+      .then((stream) => {
+        // Stop the test stream immediately, html5-qrcode will start its own
+        stream.getTracks().forEach((t) => t.stop());
+
+        return Html5Qrcode.getCameras();
+      })
       .then((devices) => {
         if (!devices || devices.length === 0) {
           setError("Không tìm thấy camera trên thiết bị này");
           return;
         }
         setCameras(devices);
-        // Prefer back camera on mobile
         const back = devices.find((d) => /back|rear|environment/i.test(d.label));
         setSelectedCamera(back?.id || devices[0].id);
       })
       .catch((err) => {
-        setError(
-          err?.message?.includes("Permission")
-            ? "Vui lòng cấp quyền truy cập camera"
-            : `Không thể truy cập camera: ${err?.message || err}`
-        );
+        const msg = err?.message || String(err);
+        if (/permission|denied|notallowed/i.test(msg)) {
+          setError("Vui lòng cấp quyền truy cập camera trong cài đặt trình duyệt");
+        } else {
+          setError(`Không thể truy cập camera: ${msg}`);
+        }
       });
   }, [open]);
 
-  // Start/stop scanner when camera selection or open changes
+  // Start scanner when DOM is ready and camera is selected
   useEffect(() => {
-    if (!open || !selectedCamera) return;
+    if (!open || !selectedCamera || !domReady) return;
 
     let stopped = false;
     setLoading(true);
 
-    const html5QrCode = new Html5Qrcode(SCANNER_ELEMENT_ID);
-    scannerRef.current = html5QrCode;
+    const startTimer = setTimeout(() => {
+      if (stopped) return;
+      const html5QrCode = new Html5Qrcode(SCANNER_ELEMENT_ID);
+      scannerRef.current = html5QrCode;
 
-    html5QrCode
-      .start(
-        selectedCamera,
-        { fps: 10, qrbox: { width: 250, height: 250 } },
-        (decodedText) => {
-          if (stopped) return;
-          stopped = true;
-          onDetect?.(decodedText);
-        },
-        () => {
-          // ignore per-frame scan errors
-        }
-      )
-      .then(() => setLoading(false))
-      .catch((err) => {
-        setError(`Không thể khởi động camera: ${err?.message || err}`);
-        setLoading(false);
-      });
+      html5QrCode
+        .start(
+          selectedCamera,
+          {
+            fps: 10,
+            qrbox: (vw, vh) => {
+              const size = Math.min(vw, vh) * 0.7;
+              return { width: size, height: size };
+            },
+            aspectRatio: 1.0,
+          },
+          (decodedText) => {
+            if (stopped) return;
+            stopped = true;
+            onDetect?.(decodedText);
+          },
+          () => {}
+        )
+        .then(() => {
+          if (!stopped) setLoading(false);
+        })
+        .catch((err) => {
+          setError(`Không thể khởi động camera: ${err?.message || err}`);
+          setLoading(false);
+        });
+    }, 100);
 
     return () => {
       stopped = true;
+      clearTimeout(startTimer);
       if (scannerRef.current?.isScanning) {
         scannerRef.current.stop().catch(() => {});
       }
       scannerRef.current = null;
     };
-  }, [open, selectedCamera, onDetect]);
+  }, [open, selectedCamera, domReady, onDetect]);
 
   return (
     <Modal
       title="Quét mã sản phẩm"
       open={open}
       onCancel={onClose}
-      footer={null}
+      footer={[
+        <Button key="close" onClick={onClose}>
+          Đóng
+        </Button>,
+      ]}
       destroyOnClose
       width={420}
+      styles={{ body: { padding: 16 } }}
     >
       {error && <Alert type="error" message={error} style={{ marginBottom: 12 }} />}
 
@@ -89,17 +122,44 @@ export default function CameraScanner({ open, onClose, onDetect }) {
           value={selectedCamera}
           onChange={setSelectedCamera}
           style={{ width: "100%", marginBottom: 12 }}
-          options={cameras.map((c) => ({ value: c.id, label: c.label || `Camera ${c.id.slice(0, 6)}` }))}
+          options={cameras.map((c) => ({
+            value: c.id,
+            label: c.label || `Camera ${c.id.slice(0, 6)}`,
+          }))}
         />
       )}
 
-      <div style={{ position: "relative", minHeight: 280 }}>
+      <div
+        style={{
+          position: "relative",
+          width: "100%",
+          aspectRatio: "1 / 1",
+          background: "#000",
+          borderRadius: 8,
+          overflow: "hidden",
+        }}
+      >
         {loading && (
-          <div style={{ position: "absolute", inset: 0, display: "grid", placeItems: "center", zIndex: 2 }}>
+          <div
+            style={{
+              position: "absolute",
+              inset: 0,
+              display: "grid",
+              placeItems: "center",
+              zIndex: 2,
+              color: "#fff",
+            }}
+          >
             <Spin tip="Đang khởi động camera..." />
           </div>
         )}
-        <div id={SCANNER_ELEMENT_ID} style={{ width: "100%" }} />
+        <div
+          id={SCANNER_ELEMENT_ID}
+          ref={(el) => {
+            if (el && !domReady) setDomReady(true);
+          }}
+          style={{ width: "100%", height: "100%" }}
+        />
       </div>
 
       <div style={{ marginTop: 12, fontSize: 12, color: "var(--text-muted, #888)" }}>
