@@ -28,6 +28,7 @@ import {
   UploadOutlined,
   CheckSquareOutlined,
   ClusterOutlined,
+  NotificationOutlined,
 } from '@ant-design/icons';
 import useAuthStore from '../../stores/authStore';
 
@@ -81,6 +82,7 @@ const MENU_GROUPS = [
       { key: '/customers', icon: <TeamOutlined />, label: 'Khách hàng' },
       { key: '/crm/tasks', icon: <CheckSquareOutlined />, label: 'Nhiệm vụ CSKH' },
       { key: '/crm/segments', icon: <ClusterOutlined />, label: 'Phân khúc KH', roles: ['ADMIN', 'MANAGER'] },
+      { key: '/crm/campaigns', icon: <NotificationOutlined />, label: 'Chiến dịch', roles: ['ADMIN', 'MANAGER'] },
     ],
   },
   {

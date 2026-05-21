@@ -16,6 +16,8 @@ const Customers = lazy(() => import("./pages/Customers"));
 const CustomerDetail = lazy(() => import("./pages/CustomerDetail"));
 const Tasks = lazy(() => import("./pages/Tasks"));
 const Segments = lazy(() => import("./pages/Segments"));
+const Campaigns = lazy(() => import("./pages/Campaigns"));
+const CampaignDetail = lazy(() => import("./pages/CampaignDetail"));
 const Products = lazy(() => import("./pages/Products"));
 const Orders = lazy(() => import("./pages/Orders"));
 const Pos = lazy(() => import("./pages/Pos"));
@@ -134,6 +136,8 @@ function App() {
           <Route path="/crm/tasks" element={<Tasks />} />
           <Route element={<RequireRole roles={['ADMIN', 'MANAGER']} />}>
             <Route path="/crm/segments" element={<Segments />} />
+            <Route path="/crm/campaigns" element={<Campaigns />} />
+            <Route path="/crm/campaigns/:id" element={<CampaignDetail />} />
           </Route>
           <Route path="/notifications" element={<NotificationsPage />} />
 

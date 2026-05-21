@@ -67,6 +67,7 @@ model User {
   tasksAssigned         CustomerTask[]         @relation("TaskAssignedTo")
   tasksCreated          CustomerTask[]         @relation("TaskCreatedBy")
   segmentsCreated       CustomerSegment[]
+  campaignsCreated      CustomerCampaign[]
 
   @@index([tenantId])
   @@map("users")
@@ -287,6 +288,7 @@ model Customer {
   notes           CustomerNote[]
   tags            CustomerTagOnCustomer[]
   tasks           CustomerTask[]
+  campaignRecipients CampaignRecipient[]
 
   @@index([name])
   @@index([phone])
@@ -362,7 +364,66 @@ model CustomerSegment {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
+  campaigns     CustomerCampaign[]
+
   @@map("customer_segments")
+}
+
+enum CampaignChannel {
+  EMAIL
+  ZALO
+}
+
+enum CampaignStatus {
+  DRAFT
+  SCHEDULED
+  SENDING
+  SENT
+  FAILED
+}
+
+enum RecipientStatus {
+  PENDING
+  SENT
+  FAILED
+  BOUNCED
+}
+
+model CustomerCampaign {
+  id           String          @id @default(uuid())
+  name         String
+  channel      CampaignChannel
+  segmentId    String
+  segment      CustomerSegment @relation(fields: [segmentId], references: [id])
+  subject      String?
+  bodyTemplate String          @db.Text
+  status       CampaignStatus  @default(DRAFT)
+  scheduledAt  DateTime?
+  sentAt       DateTime?
+  stats        Json?
+  createdById  String
+  createdBy    User            @relation(fields: [createdById], references: [id])
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
+
+  recipients   CampaignRecipient[]
+
+  @@index([status, scheduledAt])
+  @@map("customer_campaigns")
+}
+
+model CampaignRecipient {
+  id         String           @id @default(uuid())
+  campaignId String
+  campaign   CustomerCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  customerId String
+  customer   Customer         @relation(fields: [customerId], references: [id])
+  status     RecipientStatus  @default(PENDING)
+  error      String?
+  sentAt     DateTime?
+
+  @@index([campaignId, status])
+  @@map("campaign_recipients")
 }
 
 model LoyaltyTransaction {
