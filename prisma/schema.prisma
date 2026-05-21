@@ -69,6 +69,11 @@ model User {
   segmentsCreated       CustomerSegment[]
   campaignsCreated      CustomerCampaign[]
 
+  projectsCreated      Project[]       @relation("ProjectCreatedBy")
+  projectMemberships   ProjectMember[] @relation("ProjectMemberships")
+  projectTasksAssigned ProjectTask[]   @relation("ProjectTaskAssignee")
+  projectTasksCreated  ProjectTask[]   @relation("ProjectTaskCreatedBy")
+
   @@index([tenantId])
   @@map("users")
 }
@@ -1369,4 +1374,98 @@ model Notification {
   @@index([userId, isRead])
   @@index([roleScope, isRead])
   @@map("notifications")
+}
+
+// ==================== PROJECT MANAGEMENT ====================
+
+enum ProjectStatus {
+  DRAFT
+  ACTIVE
+  ON_HOLD
+  COMPLETED
+  ARCHIVED
+}
+
+enum ProjectTaskStatus {
+  TODO
+  IN_PROGRESS
+  REVIEW
+  DONE
+  CANCELLED
+}
+
+enum ProjectTaskPriority {
+  LOW
+  MEDIUM
+  HIGH
+  URGENT
+}
+
+enum ProjectMemberRole {
+  OWNER
+  MEMBER
+  VIEWER
+}
+
+model Project {
+  id          String        @id @default(uuid())
+  code        String        @unique
+  name        String
+  description String?
+  status      ProjectStatus @default(DRAFT)
+  startDate   DateTime?
+  endDate     DateTime?
+  budget      Decimal?      @db.Decimal(15, 2)
+
+  createdById String
+  createdBy   User          @relation("ProjectCreatedBy", fields: [createdById], references: [id])
+
+  tasks   ProjectTask[]
+  members ProjectMember[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([status])
+  @@index([createdById])
+  @@map("projects")
+}
+
+model ProjectTask {
+  id          String              @id @default(uuid())
+  projectId   String
+  project     Project             @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  title       String
+  description String?
+  status      ProjectTaskStatus   @default(TODO)
+  priority    ProjectTaskPriority @default(MEDIUM)
+  dueDate     DateTime?
+
+  assigneeId String?
+  assignee   User?   @relation("ProjectTaskAssignee", fields: [assigneeId], references: [id])
+
+  createdById String
+  createdBy   User   @relation("ProjectTaskCreatedBy", fields: [createdById], references: [id])
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([projectId])
+  @@index([status])
+  @@index([assigneeId])
+  @@map("project_tasks")
+}
+
+model ProjectMember {
+  id        String            @id @default(uuid())
+  projectId String
+  project   Project           @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  userId    String
+  user      User              @relation("ProjectMemberships", fields: [userId], references: [id])
+  role      ProjectMemberRole @default(MEMBER)
+
+  createdAt DateTime @default(now())
+
+  @@unique([projectId, userId])
+  @@map("project_members")
 }

@@ -43,6 +43,8 @@ const Onboarding = lazy(() => import("./pages/Onboarding"));
 const Pricing = lazy(() => import("./pages/Pricing"));
 const Register = lazy(() => import("./pages/Register"));
 const SuperAdminDashboard = lazy(() => import("./pages/admin/SuperAdminDashboard"));
+const Projects = lazy(() => import("./pages/projects/Projects"));
+const ProjectDetail = lazy(() => import("./pages/projects/ProjectDetail"));
 
 const erpThemeTokens = {
   token: {
@@ -143,6 +145,8 @@ function App() {
 
           {/* ADMIN + MANAGER */}
           <Route element={<RequireRole roles={['ADMIN', 'MANAGER']} />}>
+            <Route path="/projects" element={<Projects />} />
+            <Route path="/projects/:id" element={<ProjectDetail />} />
             <Route path="/analytics" element={<Analytics />} />
             <Route path="/returns" element={<Returns />} />
             <Route path="/hr" element={<HR />} />

@@ -29,6 +29,7 @@ import {
   CheckSquareOutlined,
   ClusterOutlined,
   NotificationOutlined,
+  ProjectOutlined,
 } from '@ant-design/icons';
 import useAuthStore from '../../stores/authStore';
 
@@ -91,6 +92,14 @@ const MENU_GROUPS = [
     roles: ['ADMIN', 'MANAGER'],
     items: [
       { key: '/hr', icon: <SolutionOutlined />, label: 'HR & Lương' },
+    ],
+  },
+  {
+    key: 'projects',
+    label: 'DỰ ÁN',
+    roles: ['ADMIN', 'MANAGER'],
+    items: [
+      { key: '/projects', icon: <ProjectOutlined />, label: 'Dự án' },
     ],
   },
   {

@@ -54,6 +54,7 @@ const importRoutes = require("./modules/import/import.routes");
 const settingsRoutes = require("./modules/settings/settings.routes");
 const adminRoutes = require("./modules/admin/admin.routes");
 const crmRoutes = require("./modules/crm");
+const projectRoutes = require("./modules/projects");
 const deliveryService = require("./modules/delivery/delivery.service");
 const http = require("http");
 const { initSocket } = require("./realtime/socket");
@@ -162,6 +163,7 @@ app.use("/api/import", importRoutes);
 app.use("/api/settings", settingsRoutes);
 app.use("/api/admin", adminRoutes);
 app.use("/api/crm", crmRoutes);
+app.use("/api/projects", projectRoutes);
 
 // Sentry error handler (phải trước error middleware)
 if (process.env.SENTRY_DSN) {
