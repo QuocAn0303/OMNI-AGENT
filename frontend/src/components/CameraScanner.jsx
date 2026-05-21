@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from "react";
-import { Modal, Alert, Spin, Select, Button } from "antd";
+import { Modal, Alert, Spin, Button } from "antd";
 import { Html5Qrcode } from "html5-qrcode";
 
 const SCANNER_ELEMENT_ID = "camera-scanner-region";
@@ -8,97 +8,86 @@ export default function CameraScanner({ open, onClose, onDetect }) {
   const scannerRef = useRef(null);
   const [error, setError] = useState(null);
   const [loading, setLoading] = useState(false);
-  const [cameras, setCameras] = useState([]);
-  const [selectedCamera, setSelectedCamera] = useState(null);
   const [domReady, setDomReady] = useState(false);
 
-  // Request camera permission + list cameras when modal opens
   useEffect(() => {
     if (!open) {
       setError(null);
-      setCameras([]);
-      setSelectedCamera(null);
       setDomReady(false);
+      setLoading(false);
       return;
     }
-
-    setError(null);
-
-    // First request camera permission via getUserMedia (iOS Safari needs this)
-    navigator.mediaDevices
-      .getUserMedia({ video: { facingMode: "environment" } })
-      .then((stream) => {
-        // Stop the test stream immediately, html5-qrcode will start its own
-        stream.getTracks().forEach((t) => t.stop());
-
-        return Html5Qrcode.getCameras();
-      })
-      .then((devices) => {
-        if (!devices || devices.length === 0) {
-          setError("Không tìm thấy camera trên thiết bị này");
-          return;
-        }
-        setCameras(devices);
-        const back = devices.find((d) => /back|rear|environment/i.test(d.label));
-        setSelectedCamera(back?.id || devices[0].id);
-      })
-      .catch((err) => {
-        const msg = err?.message || String(err);
-        if (/permission|denied|notallowed/i.test(msg)) {
-          setError("Vui lòng cấp quyền truy cập camera trong cài đặt trình duyệt");
-        } else {
-          setError(`Không thể truy cập camera: ${msg}`);
-        }
-      });
   }, [open]);
 
-  // Start scanner when DOM is ready and camera is selected
   useEffect(() => {
-    if (!open || !selectedCamera || !domReady) return;
+    if (!open || !domReady) return;
 
     let stopped = false;
     setLoading(true);
+    setError(null);
+
+    const startWith = (constraints) =>
+      new Promise((resolve, reject) => {
+        const html5QrCode = new Html5Qrcode(SCANNER_ELEMENT_ID, { verbose: false });
+        scannerRef.current = html5QrCode;
+        html5QrCode
+          .start(
+            constraints,
+            {
+              fps: 10,
+              qrbox: (vw, vh) => {
+                const size = Math.min(vw, vh) * 0.7;
+                return { width: size, height: size };
+              },
+            },
+            (decodedText) => {
+              if (stopped) return;
+              stopped = true;
+              onDetect?.(decodedText);
+            },
+            () => {}
+          )
+          .then(resolve)
+          .catch((err) => {
+            scannerRef.current = null;
+            reject(err);
+          });
+      });
 
     const startTimer = setTimeout(() => {
       if (stopped) return;
-      const html5QrCode = new Html5Qrcode(SCANNER_ELEMENT_ID);
-      scannerRef.current = html5QrCode;
-
-      html5QrCode
-        .start(
-          selectedCamera,
-          {
-            fps: 10,
-            qrbox: (vw, vh) => {
-              const size = Math.min(vw, vh) * 0.7;
-              return { width: size, height: size };
-            },
-          },
-          (decodedText) => {
-            if (stopped) return;
-            stopped = true;
-            onDetect?.(decodedText);
-          },
-          () => {}
-        )
+      // Try back camera first, then any camera, then front
+      startWith({ facingMode: { exact: "environment" } })
+        .catch(() => startWith({ facingMode: "environment" }))
+        .catch(() => startWith({ facingMode: "user" }))
         .then(() => {
           if (!stopped) setLoading(false);
         })
         .catch((err) => {
-          setError(`Không thể khởi động camera: ${err?.message || err}`);
+          const msg = err?.message || String(err);
+          if (/permission|denied|notallowed/i.test(msg)) {
+            setError(
+              "Trình duyệt chưa được cấp quyền camera. Vào Cài đặt → Safari → Camera → Cho phép, rồi tải lại trang."
+            );
+          } else if (/notfound|devicesnotfound/i.test(msg)) {
+            setError("Không tìm thấy camera trên thiết bị này");
+          } else {
+            setError(`Không thể khởi động camera: ${msg}`);
+          }
           setLoading(false);
         });
-    }, 100);
+    }, 150);
 
     return () => {
       stopped = true;
       clearTimeout(startTimer);
-      if (scannerRef.current?.isScanning) {
-        scannerRef.current.stop().catch(() => {});
-      }
+      const scanner = scannerRef.current;
       scannerRef.current = null;
+      if (scanner?.isScanning) {
+        scanner.stop().then(() => scanner.clear()).catch(() => {});
+      }
     };
-  }, [open, selectedCamera, domReady, onDetect]);
+  }, [open, domReady, onDetect]);
 
   return (
     <Modal
@@ -116,26 +105,19 @@ export default function CameraScanner({ open, onClose, onDetect }) {
     >
       {error && <Alert type="error" message={error} style={{ marginBottom: 12 }} />}
 
-      {cameras.length > 1 && (
-        <Select
-          value={selectedCamera}
-          onChange={setSelectedCamera}
-          style={{ width: "100%", marginBottom: 12 }}
-          options={cameras.map((c) => ({
-            value: c.id,
-            label: c.label || `Camera ${c.id.slice(0, 6)}`,
-          }))}
-        />
-      )}
-
       <style>{`
         #${SCANNER_ELEMENT_ID} video {
           width: 100% !important;
           height: 100% !important;
           object-fit: cover !important;
           display: block !important;
+          transform: none !important;
         }
-        #${SCANNER_ELEMENT_ID} { display: block !important; }
+        #${SCANNER_ELEMENT_ID} {
+          width: 100% !important;
+          height: 100% !important;
+          display: block !important;
+        }
       `}</style>
       <div
         style={{
