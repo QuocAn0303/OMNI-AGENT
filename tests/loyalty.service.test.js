@@ -1,3 +1,5 @@
+jest.mock("../src/config/prisma", () => ({}));
+
 const {
   computeTier,
   pointsFromAmount,

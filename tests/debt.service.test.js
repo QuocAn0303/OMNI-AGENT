@@ -1,3 +1,10 @@
+jest.mock("../src/config/prisma", () => ({}));
+jest.mock("../src/modules/audit/audit.service", () => ({ log: jest.fn() }));
+jest.mock("../src/modules/accounting/autopost.service", () => ({}));
+jest.mock("../src/modules/accounting/posting-error.service", () => ({}));
+jest.mock("../src/modules/accounting/expense-auto.service", () => ({}));
+jest.mock("../src/modules/payments/payment.service", () => ({}));
+
 const { statusFromAmounts } = require("../src/modules/debt/debt.service");
 
 describe("debt.service statusFromAmounts", () => {
