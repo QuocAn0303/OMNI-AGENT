@@ -73,7 +73,6 @@ export default function CameraScanner({ open, onClose, onDetect }) {
               const size = Math.min(vw, vh) * 0.7;
               return { width: size, height: size };
             },
-            aspectRatio: 1.0,
           },
           (decodedText) => {
             if (stopped) return;
@@ -129,6 +128,15 @@ export default function CameraScanner({ open, onClose, onDetect }) {
         />
       )}
 
+      <style>{`
+        #${SCANNER_ELEMENT_ID} video {
+          width: 100% !important;
+          height: 100% !important;
+          object-fit: cover !important;
+          display: block !important;
+        }
+        #${SCANNER_ELEMENT_ID} { display: block !important; }
+      `}</style>
       <div
         style={{
           position: "relative",
