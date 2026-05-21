@@ -12,7 +12,11 @@ EXCEPTION
   WHEN duplicate_object THEN NULL;
 END $$;
 
--- PurchaseStatus: PENDING, APPROVED (append order matters for PG < 15 in some setups)
+-- PurchaseStatus: create if not exists, then add PENDING, APPROVED
+DO $$ BEGIN
+  CREATE TYPE "PurchaseStatus" AS ENUM ('DRAFT', 'ORDERED', 'RECEIVED', 'PAID', 'CANCELLED');
+EXCEPTION WHEN duplicate_object THEN NULL; END $$;
+
 DO $$ BEGIN
   ALTER TYPE "PurchaseStatus" ADD VALUE 'PENDING';
 EXCEPTION
