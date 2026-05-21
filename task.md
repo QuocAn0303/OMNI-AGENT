@@ -55,18 +55,18 @@
 
 - [ ] `src/modules/categories/category.service.js` → `getAll()`, `create()`, `update()`, `remove()`
 - [ ] `src/modules/categories/category.routes.js` → map routes CRUD
-
+done
 ### 🟡 Ngày mai
 
 - [ ] `src/modules/products/product.service.js` → `getAll()` với filter (search, categoryId) + paginate
 - [ ] `src/modules/products/product.service.js` → `getById()` — include category + inventory
-
+done
 ### 📅 Tuần 2
 
 - [ ] `src/modules/products/product.service.js` → `create()` (tạo product + tự tạo Inventory record luôn)
 - [ ] `src/modules/products/product.service.js` → `update()`, `remove()` (soft delete)
 - [ ] `src/modules/products/product.routes.js` → map routes CRUD
-
+done 
 ### 📅 Tuần 3
 
 - [ ] Tích hợp **Multer + Cloudinary** upload ảnh sản phẩm

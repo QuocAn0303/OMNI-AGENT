@@ -1,0 +1,134 @@
+/* ============================================================
+   ERP Design Tokens — Slate Emerald Palette
+   ============================================================ */
+
+:root {
+  /* === BRAND === */
+  --primary: #0f766e;              /* Teal 700 — chín chắn, tin cậy */
+  --primary-hover: #115e59;        /* Teal 800 */
+  --primary-active: #134e4a;       /* Teal 900 */
+  --primary-light: rgba(15, 118, 110, 0.08);
+  --primary-lighter: rgba(15, 118, 110, 0.04);
+
+  --accent: #14b8a6;               /* Teal 500 — highlight, chart */
+  --accent-soft: #ccfbf1;          /* Teal 100 — badge bg */
+
+  /* === SURFACES === */
+  --bg-primary: #f8fafc;           /* Slate 50 — nền app */
+  --bg-secondary: #ffffff;         /* Card, modal */
+  --bg-tertiary: #f1f5f9;          /* Slate 100 — hover row, input bg */
+  --bg-sidebar: #0f172a;           /* Slate 900 — sidebar */
+  --bg-sidebar-hover: #1e293b;     /* Slate 800 — menu hover */
+  --bg-sidebar-active: #115e59;    /* Teal 800 — menu item active */
+
+  /* === TEXT === */
+  --text-primary: #0f172a;         /* Slate 900 — heading */
+  --text-secondary: #475569;       /* Slate 600 — body */
+  --text-muted: #94a3b8;           /* Slate 400 — caption, placeholder */
+  --text-inverse: #f8fafc;         /* Text trên sidebar */
+  --text-inverse-muted: #94a3b8;   /* Text phụ trên sidebar */
+
+  /* === BORDERS === */
+  --border: #e2e8f0;               /* Slate 200 — default */
+  --border-light: #f1f5f9;         /* Slate 100 — subtle */
+  --border-strong: #cbd5e1;        /* Slate 300 — focus outline */
+  --border-sidebar: rgba(255, 255, 255, 0.06);
+
+  /* === SEMANTIC === */
+  --success: #059669;              /* Emerald 600 */
+  --success-light: #d1fae5;        /* Emerald 100 */
+  --success-dark: #065f46;         /* Emerald 800 — text trên light bg */
+
+  --warning: #d97706;              /* Amber 600 */
+  --warning-light: #fef3c7;        /* Amber 100 */
+  --warning-dark: #92400e;         /* Amber 800 */
+
+  --danger: #dc2626;               /* Red 600 */
+  --danger-light: #fee2e2;         /* Red 100 */
+  --danger-dark: #991b1b;          /* Red 800 */
+
+  --info: #0284c7;                 /* Sky 600 */
+  --info-light: #e0f2fe;           /* Sky 100 */
+  --info-dark: #075985;            /* Sky 800 */
+
+  /* === SHADOWS === */
+  --shadow-xs: 0 1px 2px rgba(15, 23, 42, 0.04);
+  --shadow-sm: 0 1px 3px rgba(15, 23, 42, 0.06), 0 1px 2px rgba(15, 23, 42, 0.04);
+  --shadow-md: 0 4px 12px rgba(15, 23, 42, 0.08), 0 2px 4px rgba(15, 23, 42, 0.04);
+  --shadow-lg: 0 12px 28px rgba(15, 23, 42, 0.10), 0 4px 8px rgba(15, 23, 42, 0.04);
+  --shadow-xl: 0 24px 48px rgba(15, 23, 42, 0.14);
+  --shadow-focus: 0 0 0 3px rgba(15, 118, 110, 0.15);
+
+  /* === TYPOGRAPHY === */
+  --font-sans: 'Geist', 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
+  --font-mono: 'Geist Mono', 'JetBrains Mono', ui-monospace, 'SF Mono', Menlo, monospace;
+
+  /* === SPACING (4px grid) === */
+  --space-1: 4px;
+  --space-2: 8px;
+  --space-3: 12px;
+  --space-4: 16px;
+  --space-5: 20px;
+  --space-6: 24px;
+  --space-7: 28px;
+  --space-8: 32px;
+  --space-10: 40px;
+  --space-12: 48px;
+  --space-16: 64px;
+
+  /* === RADIUS === */
+  --radius-sm: 6px;
+  --radius-md: 10px;
+  --radius-lg: 14px;
+  --radius-xl: 20px;
+  --radius-full: 9999px;
+
+  /* === LAYOUT === */
+  --sidebar-width: 260px;
+  --sidebar-collapsed: 72px;
+  --header-height: 64px;
+  --content-max-width: 1440px;
+
+  /* === TRANSITIONS === */
+  --transition-fast: 120ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-base: 200ms cubic-bezier(0.4, 0, 0.2, 1);
+  --transition-slow: 300ms cubic-bezier(0.4, 0, 0.2, 1);
+
+  /* === Z-INDEX === */
+  --z-dropdown: 1000;
+  --z-sticky: 1020;
+  --z-modal: 1050;
+  --z-toast: 1080;
+}
+
+/* Dark mode overrides */
+:root.dark {
+  --bg-primary: #0f172a;
+  --bg-secondary: #1e293b;
+  --bg-tertiary: #334155;
+
+  --text-primary: #f1f5f9;
+  --text-secondary: #cbd5e1;
+  --text-muted: #64748b;
+
+  --border: #334155;
+  --border-light: #1e293b;
+  --border-strong: #475569;
+
+  --shadow-xs: 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-sm: 0 1px 3px rgba(0, 0, 0, 0.4), 0 1px 2px rgba(0, 0, 0, 0.3);
+  --shadow-md: 0 4px 12px rgba(0, 0, 0, 0.5), 0 2px 4px rgba(0, 0, 0, 0.3);
+  --shadow-lg: 0 12px 28px rgba(0, 0, 0, 0.6), 0 4px 8px rgba(0, 0, 0, 0.3);
+  --shadow-xl: 0 24px 48px rgba(0, 0, 0, 0.7);
+}
+
+/* Chart palette — dùng trong Recharts */
+:root {
+  --chart-1: #0f766e;  /* Teal 700 — primary series */
+  --chart-2: #0891b2;  /* Cyan 600 */
+  --chart-3: #d97706;  /* Amber 600 */
+  --chart-4: #7c3aed;  /* Violet 600 */
+  --chart-5: #db2777;  /* Pink 600 */
+  --chart-6: #059669;  /* Emerald 600 */
+  --chart-7: #e11d48;  /* Rose 600 */
+}

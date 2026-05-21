@@ -1,7 +1,15 @@
 // src/modules/auth/auth.service.js
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
+const crypto = require("crypto");
 const prisma = require("../../config/prisma");
+const auditService = require("../audit/audit.service");
+
+// Ghi chú: Phần refresh token + logout
+// - Refresh token được lưu vào bảng `RefreshToken` (Prisma schema)
+// - Khi login sẽ tạo 1 refresh token và trả về cùng access token
+// - Endpoint refresh sẽ kiểm tra token, revoke token cũ và tạo token mới (rotate)
+// - Logout sẽ revoke refresh token (hoặc revoke tất cả token của user nếu muốn)
 
 // ─────────────────────────────────────────────────────────────
 // LOGIN
@@ -44,16 +52,40 @@ const login = async ({ email, password }) => {
     {
       id: user.id,
       email: user.email,
-      role: user.role, // dùng để authorize (check quyền) sau này
+      role: user.role,
+      tenantId: user.tenantId || null,
     },
-    process.env.JWT_SECRET, // key bí mật trong .env
-    { expiresIn: process.env.JWT_EXPIRES_IN || "7d" }, // hết hạn sau 7 ngày
+    process.env.JWT_SECRET,
+    { expiresIn: process.env.JWT_EXPIRES_IN || "7d" },
   );
 
-  // 6. Trả về token + user info
+  // 6. Tạo refresh token và lưu vào database
+  const createRefreshToken = async (userId) => {
+    const tokenStr = crypto.randomBytes(48).toString("hex");
+    const days = Number(process.env.REFRESH_TOKEN_EXPIRES_DAYS) || 30;
+    const expiresAt = new Date(Date.now() + days * 24 * 60 * 60 * 1000);
+    await prisma.refreshToken.create({
+      data: { token: tokenStr, userId, expiresAt },
+    });
+    return tokenStr;
+  };
+
+  const refreshToken = await createRefreshToken(user.id);
+
+  // 7. Trả về token + refreshToken + user info
   //    Destructure để bỏ field password ra khỏi object trước khi trả về FE
   const { password: _removed, ...userWithoutPassword } = user;
-  return { token, user: userWithoutPassword };
+
+  // Ghi audit: ai đăng nhập, lúc nào
+  auditService.log({
+    userId: user.id,
+    action: "LOGIN",
+    entity: "User",
+    entityId: user.id,
+    after: { email: user.email, role: user.role },
+  });
+
+  return { token, refreshToken, user: userWithoutPassword };
 };
 
 // ─────────────────────────────────────────────────────────────
@@ -71,7 +103,7 @@ const getProfile = async (userId) => {
       role: true,
       isActive: true,
       createdAt: true,
-      // password không có trong select → Prisma tự bỏ qua
+      tenantId: true,
     },
   });
 
@@ -92,15 +124,14 @@ const changePassword = async (userId, { currentPassword, newPassword }) => {
     throw { status: 404, message: "Không tìm thấy người dùng" };
   }
 
-  // xét mật khẩu mới phải khác mật khẩu hiện tại
-  if (currentPassword === newPassword) {
-    throw { status: 400, message: "Mật khẩu mới phải khác mật khẩu hiện tại" };
-  }
-
   // 2. Kiểm tra mật khẩu hiện tại có đúng không
   const isValid = await bcrypt.compare(currentPassword, user.password);
   if (!isValid) {
     throw { status: 400, message: "Mật khẩu hiện tại không đúng" };
+  }
+
+  if (currentPassword === newPassword) {
+    throw { status: 400, message: "Mật khẩu mới phải khác mật khẩu hiện tại" };
   }
 
   // 3. Hash mật khẩu mới trước khi lưu
@@ -116,7 +147,140 @@ const changePassword = async (userId, { currentPassword, newPassword }) => {
     data: { password: hashedNewPassword },
   });
 
+  // Ghi audit: ai đổi mật khẩu
+  auditService.log({
+    userId,
+    action: "CHANGE_PASSWORD",
+    entity: "User",
+    entityId: userId,
+  });
+
   return { message: "Đổi mật khẩu thành công" };
 };
 
-module.exports = { login, getProfile, changePassword };
+// Tạo access token từ user object (tách để tái sử dụng)
+const createAccessToken = (user) => {
+  return jwt.sign(
+    { id: user.id, email: user.email, role: user.role, tenantId: user.tenantId || null },
+    process.env.JWT_SECRET,
+    {
+      expiresIn: process.env.JWT_EXPIRES_IN || "7d",
+    },
+  );
+};
+
+// Dùng khi client gửi refresh token để lấy access token mới
+const refreshAccessToken = async (providedToken) => {
+  if (!providedToken) throw { status: 401, message: "Thiếu refresh token" };
+
+  const stored = await prisma.refreshToken.findUnique({
+    where: { token: providedToken },
+  });
+  if (!stored || stored.isRevoked)
+    throw { status: 401, message: "Refresh token không hợp lệ" };
+  if (new Date(stored.expiresAt) < new Date())
+    throw { status: 401, message: "Refresh token đã hết hạn" };
+
+  const user = await prisma.user.findUnique({ where: { id: stored.userId } });
+  if (!user || !user.isActive)
+    throw { status: 401, message: "Tài khoản không hợp lệ" };
+
+  // Revoke old token and create a new one (rotation)
+  await prisma.refreshToken.update({
+    where: { id: stored.id },
+    data: { isRevoked: true },
+  });
+  const newRefresh = crypto.randomBytes(48).toString("hex");
+  const days = Number(process.env.REFRESH_TOKEN_EXPIRES_DAYS) || 30;
+  const expiresAt = new Date(Date.now() + days * 24 * 60 * 60 * 1000);
+  await prisma.refreshToken.create({
+    data: { token: newRefresh, userId: user.id, expiresAt },
+  });
+
+  const newAccess = createAccessToken(user);
+  const { password: _p, ...userWithoutPassword } = user;
+  return {
+    token: newAccess,
+    refreshToken: newRefresh,
+    user: userWithoutPassword,
+  };
+};
+
+// Revoke a refresh token or revoke all tokens for a user
+const revokeRefreshToken = async ({ token, userId, revokeAll = false }) => {
+  if (revokeAll && userId) {
+    await prisma.refreshToken.updateMany({
+      where: { userId },
+      data: { isRevoked: true },
+    });
+    return;
+  }
+  if (token) {
+    await prisma.refreshToken.updateMany({
+      where: { token },
+      data: { isRevoked: true },
+    });
+    return;
+  }
+  throw { status: 400, message: "Yêu cầu token hoặc userId để revoke" };
+};
+
+const register = async ({ companyName, email, password, industry }) => {
+  const existing = await prisma.user.findUnique({ where: { email } })
+  if (existing) throw { status: 400, message: 'Email đã được sử dụng' }
+
+  const slug = companyName
+    .toLowerCase()
+    .normalize('NFD').replace(/[̀-ͯ]/g, '')
+    .replace(/[^a-z0-9]+/g, '-')
+    .replace(/^-|-$/g, '')
+
+  const existingSlug = await prisma.tenant.findUnique({ where: { slug } })
+  if (existingSlug) throw { status: 400, message: 'Tên công ty đã tồn tại' }
+
+  const hashedPassword = await bcrypt.hash(password, Number(process.env.BCRYPT_ROUNDS) || 10)
+
+  const result = await prisma.$transaction(async (tx) => {
+    const tenant = await tx.tenant.create({
+      data: { name: companyName, slug, plan: 'free' },
+    })
+
+    const user = await tx.user.create({
+      data: {
+        email,
+        password: hashedPassword,
+        fullName: companyName,
+        role: 'ADMIN',
+        tenantId: tenant.id,
+      },
+    })
+
+    await tx.companySettings.create({
+      data: { name: companyName, industry },
+    })
+
+    return { tenant, user }
+  })
+
+  const token = createAccessToken(result.user)
+  const { password: _p, ...userWithoutPassword } = result.user
+
+  auditService.log({
+    userId: result.user.id,
+    action: 'REGISTER',
+    entity: 'Tenant',
+    entityId: result.tenant.id,
+    after: { companyName, email, plan: 'free' },
+  })
+
+  return { token, user: userWithoutPassword, tenant: result.tenant }
+}
+
+module.exports = {
+  login,
+  register,
+  getProfile,
+  changePassword,
+  refreshAccessToken,
+  revokeRefreshToken,
+};
