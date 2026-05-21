@@ -42,15 +42,19 @@ const initSocket = async (httpServer) => {
     transports: ["websocket", "polling"],
   });
 
-  try {
-    await Promise.all([
-      waitForRedisReady(pubClient),
-      waitForRedisReady(subClient),
-    ]);
-    io.adapter(createAdapter(pubClient, subClient));
-    console.log("[socket] redis adapter attached");
-  } catch (e) {
-    console.error("[socket] redis adapter failed, falling back to in-memory:", e.message);
+  if (pubClient && subClient) {
+    try {
+      await Promise.all([
+        waitForRedisReady(pubClient),
+        waitForRedisReady(subClient),
+      ]);
+      io.adapter(createAdapter(pubClient, subClient));
+      console.log("[socket] redis adapter attached");
+    } catch (e) {
+      console.error("[socket] redis adapter failed, falling back to in-memory:", e.message);
+    }
+  } else {
+    console.log("[socket] running in-memory (no Redis)");
   }
 
   io.use((socket, next) => {

@@ -1,18 +1,27 @@
 const Redis = require("ioredis");
 
-const url = process.env.REDIS_URL || "redis://127.0.0.1:6379";
+const url = process.env.REDIS_URL;
 
-const makeClient = (role) =>
-  new Redis(url, {
-    maxRetriesPerRequest: null,
-    enableReadyCheck: true,
-    lazyConnect: false,
-  }).on("error", (err) => {
-    console.error(`[redis:${role}]`, err.message);
-  });
+let redis = null;
+let pubClient = null;
+let subClient = null;
 
-const redis = makeClient("main");
-const pubClient = makeClient("pub");
-const subClient = pubClient.duplicate();
+if (url) {
+  const makeClient = (role) =>
+    new Redis(url, {
+      maxRetriesPerRequest: 3,
+      enableReadyCheck: true,
+      lazyConnect: false,
+      retryStrategy: (times) => (times > 5 ? null : Math.min(times * 200, 2000)),
+    }).on("error", (err) => {
+      console.error(`[redis:${role}]`, err.message);
+    });
+
+  redis = makeClient("main");
+  pubClient = makeClient("pub");
+  subClient = pubClient.duplicate();
+} else {
+  console.log("[redis] REDIS_URL not set, running without Redis (in-memory mode)");
+}
 
 module.exports = { redis, pubClient, subClient };
