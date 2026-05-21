@@ -30,6 +30,7 @@ import MoneyDisplay from "../components/shared/MoneyDisplay";
 import Receipt from "../components/Receipt";
 import TransferQrCode from "../components/TransferQrCode";
 import useBarcodeScanner from "../hooks/useBarcodeScanner";
+import CameraScanner from "../components/CameraScanner";
 import useTour from "../hooks/useTour";
 import { getPosTour } from "../config/tourSteps";
 
@@ -148,7 +149,9 @@ export default function Pos() {
     });
   };
 
-  useBarcodeScanner(async (sku) => {
+  const [cameraOpen, setCameraOpen] = useState(false);
+
+  const handleScannedCode = async (sku) => {
     try {
       const res = await axios.get(`/products/sku/${encodeURIComponent(sku)}`);
       const product = normalizeProduct(res.data?.data || res.data);
@@ -157,7 +160,9 @@ export default function Pos() {
     } catch {
       message.warning(`Không tìm thấy SKU ${sku}`);
     }
-  });
+  };
+
+  useBarcodeScanner(handleScannedCode);
 
   const updateQty = (id, delta) => {
     setCart((prev) => prev.map((item) => {
@@ -296,7 +301,13 @@ export default function Pos() {
           <Input
             placeholder="Tìm sản phẩm hoặc quét mã SKU..."
             prefix={<SearchOutlined style={{ color: "var(--text-muted)" }} />}
-            suffix={<ScanOutlined style={{ color: "var(--text-muted)" }} />}
+            suffix={
+              <ScanOutlined
+                style={{ color: "var(--text-muted)", cursor: "pointer", fontSize: 18 }}
+                onClick={() => setCameraOpen(true)}
+                title="Quét bằng camera"
+              />
+            }
             size="large"
             value={search}
             onChange={(event) => setSearch(event.target.value)}
@@ -552,6 +563,15 @@ export default function Pos() {
       >
         {receipt && <Receipt order={receipt} />}
       </Modal>
+
+      <CameraScanner
+        open={cameraOpen}
+        onClose={() => setCameraOpen(false)}
+        onDetect={async (code) => {
+          setCameraOpen(false);
+          await handleScannedCode(code);
+        }}
+      />
     </div>
   );
 }
