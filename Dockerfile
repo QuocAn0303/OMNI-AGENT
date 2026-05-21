@@ -11,4 +11,4 @@ COPY src ./src/
 COPY ecosystem.config.js ./
 
 EXPOSE 4000
-CMD ["npx", "pm2-runtime", "ecosystem.config.js"]
+CMD ["sh", "-c", "npx prisma migrate deploy && npx pm2-runtime ecosystem.config.js"]
