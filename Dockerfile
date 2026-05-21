@@ -1,5 +1,5 @@
 FROM node:20-alpine
-
+ARG CACHE_BUST=20260521v2
 WORKDIR /app
 
 COPY package*.json ./
