@@ -179,8 +179,7 @@ const expenseSchema = z.object({
 
 router.get("/expenses", async (req, res, next) => {
   try {
-    const { expenses, pagination } = await expenseService.list(req.query);
-    paginated(res, expenses, pagination);
+    success(res, await expenseService.list(req.query));
   } catch (e) { next(e); }
 });
 
