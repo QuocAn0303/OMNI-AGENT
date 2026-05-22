@@ -4,7 +4,7 @@
     "builder": "NIXPACKS"
   },
   "deploy": {
-    "startCommand": "node scripts/fix-failed-migration.js && npx prisma migrate deploy && node src/app.js",
+    "startCommand": "node prisma/fix-failed-migration.js && npx prisma migrate deploy && node src/app.js",
     "restartPolicyType": "ON_FAILURE",
     "restartPolicyMaxRetries": 3
   }
