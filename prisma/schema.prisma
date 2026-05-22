@@ -42,44 +42,44 @@ model User {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  tenantId  String?
-  tenant    Tenant?  @relation(fields: [tenantId], references: [id])
+  tenantId String?
+  tenant   Tenant? @relation(fields: [tenantId], references: [id])
 
-  orders                Order[]
-  inventoryTransactions InventoryTransaction[]
-  refreshTokens         RefreshToken[]
-  auditLogs             AuditLog[]
-  employee              Employee?
-  payments              Payment[]              @relation("PaymentCreatedBy")
-  returnsCreated        OrderReturn[]          @relation("ReturnCreatedBy")
-  returnsApproved       OrderReturn[]          @relation("ReturnApprovedBy")
-  cycleCounts           CycleCount[]           @relation("CycleCountCreatedBy")
-  journalEntries        JournalEntry[]         @relation("JournalCreatedBy")
-  expenses              Expense[]              @relation("ExpenseCreatedBy")
-  expensesApproved      Expense[]              @relation("ExpenseApprovedBy")
-  purchaseOrders        PurchaseOrder[]        @relation("PurchaseCreatedBy")
-  bankTxs               BankTransaction[]      @relation("BankTxCreatedBy")
-  closedPeriods         FiscalPeriod[]         @relation("PeriodClosedBy")
-  purchaseOrdersApproved PurchaseOrder[]       @relation("PurchaseApprovedBy")
-  debtPayments          DebtPayment[]
-  notifications         Notification[]
-  customerNotes         CustomerNote[]
-  tasksAssigned         CustomerTask[]         @relation("TaskAssignedTo")
-  tasksCreated          CustomerTask[]         @relation("TaskCreatedBy")
-  segmentsCreated       CustomerSegment[]
-  campaignsCreated      CustomerCampaign[]
+  orders                 Order[]
+  inventoryTransactions  InventoryTransaction[]
+  refreshTokens          RefreshToken[]
+  auditLogs              AuditLog[]
+  employee               Employee?
+  payments               Payment[]              @relation("PaymentCreatedBy")
+  returnsCreated         OrderReturn[]          @relation("ReturnCreatedBy")
+  returnsApproved        OrderReturn[]          @relation("ReturnApprovedBy")
+  cycleCounts            CycleCount[]           @relation("CycleCountCreatedBy")
+  journalEntries         JournalEntry[]         @relation("JournalCreatedBy")
+  expenses               Expense[]              @relation("ExpenseCreatedBy")
+  expensesApproved       Expense[]              @relation("ExpenseApprovedBy")
+  purchaseOrders         PurchaseOrder[]        @relation("PurchaseCreatedBy")
+  bankTxs                BankTransaction[]      @relation("BankTxCreatedBy")
+  closedPeriods          FiscalPeriod[]         @relation("PeriodClosedBy")
+  purchaseOrdersApproved PurchaseOrder[]        @relation("PurchaseApprovedBy")
+  debtPayments           DebtPayment[]
+  notifications          Notification[]
+  customerNotes          CustomerNote[]
+  tasksAssigned          CustomerTask[]         @relation("TaskAssignedTo")
+  tasksCreated           CustomerTask[]         @relation("TaskCreatedBy")
+  segmentsCreated        CustomerSegment[]
+  campaignsCreated       CustomerCampaign[]
 
   projectsCreated      Project[]       @relation("ProjectCreatedBy")
   projectMemberships   ProjectMember[] @relation("ProjectMemberships")
   projectTasksAssigned ProjectTask[]   @relation("ProjectTaskAssignee")
   projectTasksCreated  ProjectTask[]   @relation("ProjectTaskCreatedBy")
 
-  bomsCreated       Bom[]             @relation("BomCreatedBy")
-  workOrdersCreated WorkOrder[]       @relation("WorkOrderCreatedBy")
-  qualityChecks     QualityCheck[]    @relation("QCCheckedBy")
-  timeEntries       TimeEntry[]       @relation("TimeEntryUser")
-  savedReports      SavedReport[]     @relation("ReportCreatedBy")
-  workflowsCreated  Workflow[]        @relation("WorkflowCreatedBy")
+  bomsCreated       Bom[]              @relation("BomCreatedBy")
+  workOrdersCreated WorkOrder[]        @relation("WorkOrderCreatedBy")
+  qualityChecks     QualityCheck[]     @relation("QCCheckedBy")
+  timeEntries       TimeEntry[]        @relation("TimeEntryUser")
+  savedReports      SavedReport[]      @relation("ReportCreatedBy")
+  workflowsCreated  Workflow[]         @relation("WorkflowCreatedBy")
   workflowApprovals WorkflowApproval[] @relation("WorkflowApprover")
 
   @@index([tenantId])
@@ -168,22 +168,22 @@ model Product {
   categoryId String
   category   Category @relation(fields: [categoryId], references: [id])
 
-  inventories     Inventory[]
-  orderItems      OrderItem[]
+  inventories        Inventory[]
+  orderItems         OrderItem[]
   stockTransferItems StockTransferItem[]
-  cycleCountItems CycleCountItem[]
-  purchaseItems   PurchaseItem[]
-  promotions      Promotion[]
-  exchangeItems   ExchangeItem[]
+  cycleCountItems    CycleCountItem[]
+  purchaseItems      PurchaseItem[]
+  promotions         Promotion[]
+  exchangeItems      ExchangeItem[]
 
-  trackByLot    Boolean  @default(false)
-  trackBySerial Boolean  @default(false)
+  trackByLot    Boolean @default(false)
+  trackBySerial Boolean @default(false)
   shelfLifeDays Int?
 
-  bomsAsProduct             Bom[]           @relation("BomProduct")
-  bomItemsAsComponent       BomItem[]       @relation("BomComponent")
-  workOrdersAsProduct       WorkOrder[]     @relation("WorkOrderProduct")
-  workOrderItemsAsComponent WorkOrderItem[] @relation("WorkOrderComponent")
+  bomsAsProduct             Bom[]                @relation("BomProduct")
+  bomItemsAsComponent       BomItem[]            @relation("BomComponent")
+  workOrdersAsProduct       WorkOrder[]          @relation("WorkOrderProduct")
+  workOrderItemsAsComponent WorkOrderItem[]      @relation("WorkOrderComponent")
   inventoryLots             InventoryLot[]
   marketplaceListings       MarketplaceListing[]
   routings                  Routing[]
@@ -206,12 +206,12 @@ model Warehouse {
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
 
-  inventories    Inventory[]
-  orders         Order[]
-  transfersFrom  StockTransfer[] @relation("TransferFrom")
-  transfersTo    StockTransfer[] @relation("TransferTo")
-  workOrders     WorkOrder[]     @relation("WorkOrderWarehouse")
-  inventoryLots  InventoryLot[]
+  inventories   Inventory[]
+  orders        Order[]
+  transfersFrom StockTransfer[] @relation("TransferFrom")
+  transfersTo   StockTransfer[] @relation("TransferTo")
+  workOrders    WorkOrder[]     @relation("WorkOrderWarehouse")
+  inventoryLots InventoryLot[]
 
   @@map("warehouses")
 }
@@ -290,6 +290,7 @@ model InventoryTransaction {
   createdById String?
   createdBy   User?   @relation(fields: [createdById], references: [id], onDelete: SetNull)
 
+  @@index([inventoryId, createdAt(sort: Desc)])
   @@map("inventory_transactions")
 }
 
@@ -324,24 +325,24 @@ enum TaskPriority {
 }
 
 model Customer {
-  id         String   @id @default(uuid())
-  name       String
-  phone      String?  @unique
-  email      String?
-  address    String?
-  totalSpent    Decimal  @default(0) @db.Decimal(12, 2)
-  totalDebt     Decimal  @default(0) @db.Decimal(12, 2)
-  storeCredit   Decimal  @default(0) @db.Decimal(12, 2)
+  id            String       @id @default(uuid())
+  name          String
+  phone         String?      @unique
+  email         String?
+  address       String?
+  totalSpent    Decimal      @default(0) @db.Decimal(12, 2)
+  totalDebt     Decimal      @default(0) @db.Decimal(12, 2)
+  storeCredit   Decimal      @default(0) @db.Decimal(12, 2)
   tier          CustomerTier @default(BRONZE)
   loyaltyPoints Int          @default(0)
-  isActive      Boolean  @default(true)
-  createdAt     DateTime @default(now())
-  updatedAt     DateTime @updatedAt
+  isActive      Boolean      @default(true)
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
 
-  orders          Order[]
-  debts           Debt[]
-  promotionUsages PromotionUsage[]
-  loyaltyTxs      LoyaltyTransaction[]
+  orders             Order[]
+  debts              Debt[]
+  promotionUsages    PromotionUsage[]
+  loyaltyTxs         LoyaltyTransaction[]
   notes              CustomerNote[]
   tags               CustomerTagOnCustomer[]
   tasks              CustomerTask[]
@@ -371,10 +372,10 @@ model CustomerNote {
 }
 
 model CustomerTag {
-  id        String                   @id @default(uuid())
-  name      String                   @unique
-  color     String                   @default("#0f766e")
-  createdAt DateTime                 @default(now())
+  id        String                  @id @default(uuid())
+  name      String                  @unique
+  color     String                  @default("#0f766e")
+  createdAt DateTime                @default(now())
   customers CustomerTagOnCustomer[]
 
   @@map("customer_tags")
@@ -424,7 +425,7 @@ model CustomerSegment {
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
 
-  campaigns     CustomerCampaign[]
+  campaigns CustomerCampaign[]
 
   @@map("customer_segments")
 }
@@ -466,7 +467,7 @@ model CustomerCampaign {
   createdAt    DateTime        @default(now())
   updatedAt    DateTime        @updatedAt
 
-  recipients   CampaignRecipient[]
+  recipients CampaignRecipient[]
 
   @@index([status, scheduledAt])
   @@map("customer_campaigns")
@@ -487,15 +488,15 @@ model CampaignRecipient {
 }
 
 model LoyaltyTransaction {
-  id         String   @id @default(uuid())
+  id         String    @id @default(uuid())
   customerId String
-  customer   Customer @relation(fields: [customerId], references: [id])
+  customer   Customer  @relation(fields: [customerId], references: [id])
   points     Int
   type       String
   orderId    String?
   note       String?
   expiresAt  DateTime?
-  createdAt  DateTime @default(now())
+  createdAt  DateTime  @default(now())
 
   @@index([customerId, createdAt])
   @@map("loyalty_transactions")
@@ -547,25 +548,25 @@ enum ReturnReason {
 }
 
 model Order {
-  id            String        @id @default(uuid())
-  orderCode     String        @unique
-  status        OrderStatus   @default(PENDING)
-  paymentMethod PaymentMethod @default(CASH)
-  paymentStatus PaymentStatus @default(UNPAID)
-  subtotal      Decimal       @db.Decimal(12, 2)
-  discount           Decimal       @default(0) @db.Decimal(12, 2)
-  discountType       String?       @default("NONE")
-  discountValue      Decimal       @default(0) @db.Decimal(12, 2)
-  promotionDiscount  Decimal       @default(0) @db.Decimal(12, 2)
-  voucherCode        String?
-  loyaltyDiscount    Decimal       @default(0) @db.Decimal(12, 2)
-  loyaltyPointsUsed  Int           @default(0)
-  total              Decimal       @db.Decimal(12, 2)
-  currency           String        @default("VND")
-  exchangeRate       Decimal       @default(1) @db.Decimal(18, 6)
-  note          String?
-  createdAt     DateTime      @default(now())
-  updatedAt     DateTime      @updatedAt
+  id                String        @id @default(uuid())
+  orderCode         String        @unique
+  status            OrderStatus   @default(PENDING)
+  paymentMethod     PaymentMethod @default(CASH)
+  paymentStatus     PaymentStatus @default(UNPAID)
+  subtotal          Decimal       @db.Decimal(12, 2)
+  discount          Decimal       @default(0) @db.Decimal(12, 2)
+  discountType      String?       @default("NONE")
+  discountValue     Decimal       @default(0) @db.Decimal(12, 2)
+  promotionDiscount Decimal       @default(0) @db.Decimal(12, 2)
+  voucherCode       String?
+  loyaltyDiscount   Decimal       @default(0) @db.Decimal(12, 2)
+  loyaltyPointsUsed Int           @default(0)
+  total             Decimal       @db.Decimal(12, 2)
+  currency          String        @default("VND")
+  exchangeRate      Decimal       @default(1) @db.Decimal(18, 6)
+  note              String?
+  createdAt         DateTime      @default(now())
+  updatedAt         DateTime      @updatedAt
 
   customerId String?
   customer   Customer? @relation(fields: [customerId], references: [id])
@@ -576,11 +577,11 @@ model Order {
   createdById String
   createdBy   User   @relation(fields: [createdById], references: [id])
 
-  items    OrderItem[]
-  payments Payment[]
-  returns          OrderReturn[]
-  debt             Debt?
-  promotionUsages  PromotionUsage[]
+  items             OrderItem[]
+  payments          Payment[]
+  returns           OrderReturn[]
+  debt              Debt?
+  promotionUsages   PromotionUsage[]
   invoice           Invoice?
   delivery          Delivery?
   electronicInvoice ElectronicInvoice?
@@ -588,19 +589,20 @@ model Order {
   @@index([status])
   @@index([customerId])
   @@index([createdAt])
+  @@index([status, createdAt(sort: Desc)])
   @@map("orders")
 }
 
 model Invoice {
-  id          String   @id @default(uuid())
-  invoiceCode String   @unique
-  orderId     String   @unique
-  order       Order    @relation(fields: [orderId], references: [id])
+  id          String    @id @default(uuid())
+  invoiceCode String    @unique
+  orderId     String    @unique
+  order       Order     @relation(fields: [orderId], references: [id])
   pdfUrl      String?
   taxCode     String?
   companyName String?
   emailSentAt DateTime?
-  createdAt   DateTime @default(now())
+  createdAt   DateTime  @default(now())
 
   @@map("invoices")
 }
@@ -620,7 +622,7 @@ model ElectronicInvoice {
   pdfUrl       String?
   cqtCode      String?
   cqtStatus    String   @default("PENDING") // PENDING/SIGNED/SENT/ACCEPTED/REJECTED/CANCELLED
-  provider     String   @default("VNPT")    // VNPT/VIETTEL/FPT
+  provider     String   @default("VNPT") // VNPT/VIETTEL/FPT
   rawResponse  Json?
   createdAt    DateTime @default(now())
   updatedAt    DateTime @updatedAt
@@ -703,41 +705,42 @@ model OrderItem {
 }
 
 model Payment {
-  id          String        @id @default(uuid())
-  orderId     String
-  order       Order         @relation(fields: [orderId], references: [id])
-  amount      Decimal       @db.Decimal(12, 2)
-  currency    String        @default("VND")
-  exchangeRate Decimal      @default(1) @db.Decimal(18, 6)
-  method      PaymentMethod
-  reference   String?
-  note        String?
-  createdById String
-  createdBy   User          @relation("PaymentCreatedBy", fields: [createdById], references: [id])
-  createdAt   DateTime      @default(now())
+  id           String        @id @default(uuid())
+  orderId      String
+  order        Order         @relation(fields: [orderId], references: [id])
+  amount       Decimal       @db.Decimal(12, 2)
+  currency     String        @default("VND")
+  exchangeRate Decimal       @default(1) @db.Decimal(18, 6)
+  method       PaymentMethod
+  reference    String?
+  note         String?
+  createdById  String
+  createdBy    User          @relation("PaymentCreatedBy", fields: [createdById], references: [id])
+  createdAt    DateTime      @default(now())
 
+  @@index([orderId, createdAt(sort: Desc)])
   @@map("payments")
 }
 
 model OrderReturn {
-  id           String            @id @default(uuid())
-  returnCode   String            @unique
-  orderId      String
-  order        Order             @relation(fields: [orderId], references: [id])
-  status       ReturnStatus      @default(PENDING)
-  reason       ReturnReason
-  restockable  Boolean           @default(true)
-  refundMethod RefundMethod      @default(CASH)
-  refundAmount Decimal           @db.Decimal(12, 2)
-  completedAt  DateTime?
-  note         String?
-  createdById  String
-  createdBy    User              @relation("ReturnCreatedBy", fields: [createdById], references: [id])
-  approvedById String?
-  approvedBy   User?             @relation("ReturnApprovedBy", fields: [approvedById], references: [id])
-  createdAt    DateTime          @default(now())
-  updatedAt    DateTime          @updatedAt
-  items        OrderReturnItem[]
+  id            String            @id @default(uuid())
+  returnCode    String            @unique
+  orderId       String
+  order         Order             @relation(fields: [orderId], references: [id])
+  status        ReturnStatus      @default(PENDING)
+  reason        ReturnReason
+  restockable   Boolean           @default(true)
+  refundMethod  RefundMethod      @default(CASH)
+  refundAmount  Decimal           @db.Decimal(12, 2)
+  completedAt   DateTime?
+  note          String?
+  createdById   String
+  createdBy     User              @relation("ReturnCreatedBy", fields: [createdById], references: [id])
+  approvedById  String?
+  approvedBy    User?             @relation("ReturnApprovedBy", fields: [approvedById], references: [id])
+  createdAt     DateTime          @default(now())
+  updatedAt     DateTime          @updatedAt
+  items         OrderReturnItem[]
   exchangeItems ExchangeItem[]
 
   @@map("order_returns")
@@ -900,6 +903,8 @@ model AuditLog {
 
   user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
 
+  @@index([createdAt(sort: Desc)])
+  @@index([userId, createdAt(sort: Desc)])
   @@map("audit_logs")
 }
 
@@ -920,14 +925,14 @@ enum ViolationType {
 }
 
 model Employee {
-  id           String    @id @default(uuid())
-  userId       String    @unique
-  user         User      @relation(fields: [userId], references: [id])
-  employeeCode String?   @unique
-  phone        String?
-  position     String    @default("OTHER")
-  hireDate     DateTime?
-  address      String?
+  id                  String    @id @default(uuid())
+  userId              String    @unique
+  user                User      @relation(fields: [userId], references: [id])
+  employeeCode        String?   @unique
+  phone               String?
+  position            String    @default("OTHER")
+  hireDate            DateTime?
+  address             String?
   baseSalary          Decimal   @default(5000000) @db.Decimal(12, 2)
   shiftMoney          Decimal   @default(0) @db.Decimal(12, 2)
   dependents          Int       @default(0)
@@ -1085,17 +1090,17 @@ model JournalEntry {
 // entryCode collision, ...), thay vì nuốt lỗi và để kế toán lệch, chúng ta
 // lưu lại payload + lỗi để retry sau (cron hoặc admin trigger).
 model JournalPostingError {
-  id          String        @id @default(uuid())
-  source      JournalSource
-  sourceId    String?
-  payload     Json          // input đã chuẩn bị cho postEntry
-  errorMsg    String
-  retryCount  Int           @default(0)
-  lastTriedAt DateTime?
-  resolvedAt  DateTime?     // null = chưa xử lý; có giá trị = đã retry thành công hoặc admin đánh dấu bỏ qua
+  id              String        @id @default(uuid())
+  source          JournalSource
+  sourceId        String?
+  payload         Json // input đã chuẩn bị cho postEntry
+  errorMsg        String
+  retryCount      Int           @default(0)
+  lastTriedAt     DateTime?
+  resolvedAt      DateTime? // null = chưa xử lý; có giá trị = đã retry thành công hoặc admin đánh dấu bỏ qua
   resolvedEntryId String?
-  createdAt   DateTime      @default(now())
-  updatedAt   DateTime      @updatedAt
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
 
   @@index([source, sourceId])
   @@index([resolvedAt])
@@ -1124,34 +1129,34 @@ model JournalLine {
 // ==================== BANK RECONCILIATION ====================
 
 model BankStatement {
-  id           String             @id @default(uuid())
+  id            String              @id @default(uuid())
   bankAccountId String
-  bankAccount  BankAccount        @relation(fields: [bankAccountId], references: [id])
-  fileName     String?
-  importedAt   DateTime           @default(now())
-  fromDate     DateTime?
-  toDate       DateTime?
-  lineCount    Int                @default(0)
-  status       String             @default("IMPORTED") // IMPORTED / RECONCILED
-  lines        BankStatementLine[]
+  bankAccount   BankAccount         @relation(fields: [bankAccountId], references: [id])
+  fileName      String?
+  importedAt    DateTime            @default(now())
+  fromDate      DateTime?
+  toDate        DateTime?
+  lineCount     Int                 @default(0)
+  status        String              @default("IMPORTED") // IMPORTED / RECONCILED
+  lines         BankStatementLine[]
 
   @@index([bankAccountId])
   @@map("bank_statements")
 }
 
 model BankStatementLine {
-  id              String       @id @default(uuid())
-  statementId     String
-  statement       BankStatement @relation(fields: [statementId], references: [id], onDelete: Cascade)
-  txDate          DateTime
-  description     String
-  debit           Decimal      @default(0) @db.Decimal(15, 2)
-  credit          Decimal      @default(0) @db.Decimal(15, 2)
-  balance         Decimal?     @db.Decimal(15, 2)
-  reference       String?
-  matchedEntryId  String?      // FK → JournalEntry.id (nullable until matched)
-  isMatched       Boolean      @default(false)
-  isAdjustment    Boolean      @default(false)
+  id             String        @id @default(uuid())
+  statementId    String
+  statement      BankStatement @relation(fields: [statementId], references: [id], onDelete: Cascade)
+  txDate         DateTime
+  description    String
+  debit          Decimal       @default(0) @db.Decimal(15, 2)
+  credit         Decimal       @default(0) @db.Decimal(15, 2)
+  balance        Decimal?      @db.Decimal(15, 2)
+  reference      String?
+  matchedEntryId String? // FK → JournalEntry.id (nullable until matched)
+  isMatched      Boolean       @default(false)
+  isAdjustment   Boolean       @default(false)
 
   @@index([statementId, isMatched])
   @@map("bank_statement_lines")
@@ -1160,15 +1165,15 @@ model BankStatementLine {
 // ==================== FIXED ASSETS ====================
 
 model FixedAssetCategory {
-  id        String   @id @default(uuid())
-  code      String   @unique
-  name      String
-  accountId String   // TK 211/213...
-  deprAccountId String  // TK 214
-  expAccountId  String  // TK 6427/6421...
-  lifeMonths Int     @default(60)
-  method    String   @default("STRAIGHT_LINE")
-  createdAt DateTime @default(now())
+  id            String   @id @default(uuid())
+  code          String   @unique
+  name          String
+  accountId     String // TK 211/213...
+  deprAccountId String // TK 214
+  expAccountId  String // TK 6427/6421...
+  lifeMonths    Int      @default(60)
+  method        String   @default("STRAIGHT_LINE")
+  createdAt     DateTime @default(now())
 
   assets FixedAsset[]
 
@@ -1176,22 +1181,22 @@ model FixedAssetCategory {
 }
 
 model FixedAsset {
-  id                     String             @id @default(uuid())
-  code                   String             @unique
-  name                   String
-  categoryId             String
-  category               FixedAssetCategory @relation(fields: [categoryId], references: [id])
-  purchaseDate           DateTime
-  cost                   Decimal            @db.Decimal(15, 2)
-  salvageValue           Decimal            @default(0) @db.Decimal(15, 2)
-  lifeMonths             Int
-  method                 String             @default("STRAIGHT_LINE")
-  accumulatedDepreciation Decimal           @default(0) @db.Decimal(15, 2)
-  status                 String             @default("ACTIVE") // ACTIVE/DISPOSED/FULLY_DEPRECIATED
-  departmentId           String?
-  note                   String?
-  createdAt              DateTime           @default(now())
-  updatedAt              DateTime           @updatedAt
+  id                      String             @id @default(uuid())
+  code                    String             @unique
+  name                    String
+  categoryId              String
+  category                FixedAssetCategory @relation(fields: [categoryId], references: [id])
+  purchaseDate            DateTime
+  cost                    Decimal            @db.Decimal(15, 2)
+  salvageValue            Decimal            @default(0) @db.Decimal(15, 2)
+  lifeMonths              Int
+  method                  String             @default("STRAIGHT_LINE")
+  accumulatedDepreciation Decimal            @default(0) @db.Decimal(15, 2)
+  status                  String             @default("ACTIVE") // ACTIVE/DISPOSED/FULLY_DEPRECIATED
+  departmentId            String?
+  note                    String?
+  createdAt               DateTime           @default(now())
+  updatedAt               DateTime           @updatedAt
 
   depreciationSchedules DepreciationSchedule[]
 
@@ -1200,13 +1205,13 @@ model FixedAsset {
 }
 
 model DepreciationSchedule {
-  id         String     @id @default(uuid())
-  assetId    String
-  asset      FixedAsset @relation(fields: [assetId], references: [id], onDelete: Cascade)
-  period     String     // "YYYY-MM"
-  amount     Decimal    @db.Decimal(15, 2)
+  id             String     @id @default(uuid())
+  assetId        String
+  asset          FixedAsset @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  period         String // "YYYY-MM"
+  amount         Decimal    @db.Decimal(15, 2)
   journalEntryId String?
-  postedAt   DateTime?
+  postedAt       DateTime?
 
   @@unique([assetId, period])
   @@map("depreciation_schedules")
@@ -1263,40 +1268,40 @@ model ExpenseCategory {
 }
 
 model Expense {
-  id            String          @id @default(uuid())
-  expenseCode   String          @unique // EXP-YYYYMMDD-XXXX
-  date          DateTime        @default(now())
-  categoryId    String
-  category      ExpenseCategory @relation(fields: [categoryId], references: [id])
-  vendorId      String?
-  vendor        Vendor?         @relation(fields: [vendorId], references: [id])
-  projectId     String?
-  project       Project?        @relation("ProjectExpenses", fields: [projectId], references: [id])
-  description   String
-  amount        Decimal         @db.Decimal(15, 2) // số tiền chưa thuế
-  taxRateId     String?
-  taxRate       TaxRate?        @relation(fields: [taxRateId], references: [id])
-  taxAmount     Decimal         @default(0) @db.Decimal(15, 2)
-  totalAmount   Decimal         @db.Decimal(15, 2)
-  paymentMethod PaymentMethod   @default(CASH)
-  bankAccountId String?
-  bankAccount   BankAccount?    @relation("ExpensePaidFrom", fields: [bankAccountId], references: [id])
-  status        ExpenseStatus   @default(DRAFT)
-  invoiceNumber String? // số hóa đơn đầu vào
-  invoiceUrl    String? // ảnh hóa đơn (Cloudinary)
-  paidAt        DateTime?
-  note          String?
-  createdById   String
-  createdBy     User            @relation("ExpenseCreatedBy", fields: [createdById], references: [id])
-  approvedById  String?
-  approvedBy       User?           @relation("ExpenseApprovedBy", fields: [approvedById], references: [id])
-  isRecurring      Boolean         @default(false)
+  id               String                @id @default(uuid())
+  expenseCode      String                @unique // EXP-YYYYMMDD-XXXX
+  date             DateTime              @default(now())
+  categoryId       String
+  category         ExpenseCategory       @relation(fields: [categoryId], references: [id])
+  vendorId         String?
+  vendor           Vendor?               @relation(fields: [vendorId], references: [id])
+  projectId        String?
+  project          Project?              @relation("ProjectExpenses", fields: [projectId], references: [id])
+  description      String
+  amount           Decimal               @db.Decimal(15, 2) // số tiền chưa thuế
+  taxRateId        String?
+  taxRate          TaxRate?              @relation(fields: [taxRateId], references: [id])
+  taxAmount        Decimal               @default(0) @db.Decimal(15, 2)
+  totalAmount      Decimal               @db.Decimal(15, 2)
+  paymentMethod    PaymentMethod         @default(CASH)
+  bankAccountId    String?
+  bankAccount      BankAccount?          @relation("ExpensePaidFrom", fields: [bankAccountId], references: [id])
+  status           ExpenseStatus         @default(DRAFT)
+  invoiceNumber    String? // số hóa đơn đầu vào
+  invoiceUrl       String? // ảnh hóa đơn (Cloudinary)
+  paidAt           DateTime?
+  note             String?
+  createdById      String
+  createdBy        User                  @relation("ExpenseCreatedBy", fields: [createdById], references: [id])
+  approvedById     String?
+  approvedBy       User?                 @relation("ExpenseApprovedBy", fields: [approvedById], references: [id])
+  isRecurring      Boolean               @default(false)
   recurringRule    String?
   parentTemplateId String?
   sourceType       String?
   sourceId         String?
-  createdAt        DateTime        @default(now())
-  updatedAt        DateTime        @updatedAt
+  createdAt        DateTime              @default(now())
+  updatedAt        DateTime              @updatedAt
   recurringLogs    RecurringExpenseLog[]
 
   @@unique([sourceType, sourceId])
@@ -1331,28 +1336,28 @@ enum PurchaseStatus {
 }
 
 model PurchaseOrder {
-  id             String          @id @default(uuid())
-  poCode         String          @unique // PO-YYYYMMDD-XXXX
-  date           DateTime        @default(now())
-  vendorId       String
-  vendor         Vendor          @relation(fields: [vendorId], references: [id])
-  status         PurchaseStatus  @default(DRAFT)
-  paymentStatus  PaymentStatus   @default(UNPAID)
-  subtotal       Decimal         @default(0) @db.Decimal(15, 2)
-  taxAmount      Decimal         @default(0) @db.Decimal(15, 2)
-  total          Decimal         @default(0) @db.Decimal(15, 2)
-  paidAmount     Decimal         @default(0) @db.Decimal(15, 2)
-  receivedAt     DateTime?
-  expectedAt     DateTime?
-  submittedAt    DateTime?
-  note           String?
-  invoiceNumber  String?
-  createdById    String
-  createdBy      User            @relation("PurchaseCreatedBy", fields: [createdById], references: [id])
-  approvedById   String?
-  approvedBy     User?           @relation("PurchaseApprovedBy", fields: [approvedById], references: [id])
-  createdAt      DateTime        @default(now())
-  updatedAt      DateTime        @updatedAt
+  id            String         @id @default(uuid())
+  poCode        String         @unique // PO-YYYYMMDD-XXXX
+  date          DateTime       @default(now())
+  vendorId      String
+  vendor        Vendor         @relation(fields: [vendorId], references: [id])
+  status        PurchaseStatus @default(DRAFT)
+  paymentStatus PaymentStatus  @default(UNPAID)
+  subtotal      Decimal        @default(0) @db.Decimal(15, 2)
+  taxAmount     Decimal        @default(0) @db.Decimal(15, 2)
+  total         Decimal        @default(0) @db.Decimal(15, 2)
+  paidAmount    Decimal        @default(0) @db.Decimal(15, 2)
+  receivedAt    DateTime?
+  expectedAt    DateTime?
+  submittedAt   DateTime?
+  note          String?
+  invoiceNumber String?
+  createdById   String
+  createdBy     User           @relation("PurchaseCreatedBy", fields: [createdById], references: [id])
+  approvedById  String?
+  approvedBy    User?          @relation("PurchaseApprovedBy", fields: [approvedById], references: [id])
+  createdAt     DateTime       @default(now())
+  updatedAt     DateTime       @updatedAt
 
   items PurchaseItem[]
   debt  Debt?
@@ -1420,9 +1425,9 @@ model BankAccount {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
-  transactions  BankTransaction[]
-  expensesPaid  Expense[]         @relation("ExpensePaidFrom")
-  statements    BankStatement[]
+  transactions BankTransaction[]
+  expensesPaid Expense[]         @relation("ExpensePaidFrom")
+  statements   BankStatement[]
 
   @@map("bank_accounts")
 }
@@ -1498,13 +1503,13 @@ model Debt {
   createdAt  DateTime   @default(now())
   updatedAt  DateTime   @updatedAt
 
-  customerId String?
-  customer   Customer? @relation(fields: [customerId], references: [id])
-  vendorId   String?
-  vendor     Vendor?   @relation(fields: [vendorId], references: [id])
-  orderId    String?   @unique
-  order      Order?    @relation(fields: [orderId], references: [id])
-  poId       String?   @unique
+  customerId    String?
+  customer      Customer?      @relation(fields: [customerId], references: [id])
+  vendorId      String?
+  vendor        Vendor?        @relation(fields: [vendorId], references: [id])
+  orderId       String?        @unique
+  order         Order?         @relation(fields: [orderId], references: [id])
+  poId          String?        @unique
   purchaseOrder PurchaseOrder? @relation(fields: [poId], references: [id])
 
   payments DebtPayment[]
@@ -1548,22 +1553,23 @@ enum NotificationSeverity {
 }
 
 model Notification {
-  id         String               @id @default(uuid())
-  type       NotificationType
-  severity   NotificationSeverity   @default(INFO)
-  title      String
-  message    String
-  link       String?
-  meta       Json?
-  isRead     Boolean              @default(false)
-  createdAt  DateTime             @default(now())
+  id        String               @id @default(uuid())
+  type      NotificationType
+  severity  NotificationSeverity @default(INFO)
+  title     String
+  message   String
+  link      String?
+  meta      Json?
+  isRead    Boolean              @default(false)
+  createdAt DateTime             @default(now())
 
   userId    String?
-  user      User?    @relation(fields: [userId], references: [id], onDelete: Cascade)
+  user      User?   @relation(fields: [userId], references: [id], onDelete: Cascade)
   roleScope Role?
 
   @@index([userId, isRead])
   @@index([roleScope, isRead])
+  @@index([type, createdAt(sort: Desc)])
   @@map("notifications")
 }
 
@@ -1609,7 +1615,7 @@ model Project {
   budget      Decimal?      @db.Decimal(15, 2)
 
   createdById String
-  createdBy   User          @relation("ProjectCreatedBy", fields: [createdById], references: [id])
+  createdBy   User   @relation("ProjectCreatedBy", fields: [createdById], references: [id])
 
   tasks           ProjectTask[]
   members         ProjectMember[]
@@ -1687,17 +1693,17 @@ enum WorkOrderStatus {
 }
 
 model Bom {
-  id           String    @id @default(uuid())
-  code         String    @unique
-  productId    String
-  product      Product   @relation("BomProduct", fields: [productId], references: [id])
-  version      String    @default("v1")
-  status       BomStatus @default(DRAFT)
-  isSubAssembly Boolean  @default(false)
-  parentBomId  String?
-  parentBom    Bom?      @relation("BomParent", fields: [parentBomId], references: [id])
-  childBoms    Bom[]     @relation("BomParent")
-  notes        String?
+  id            String    @id @default(uuid())
+  code          String    @unique
+  productId     String
+  product       Product   @relation("BomProduct", fields: [productId], references: [id])
+  version       String    @default("v1")
+  status        BomStatus @default(DRAFT)
+  isSubAssembly Boolean   @default(false)
+  parentBomId   String?
+  parentBom     Bom?      @relation("BomParent", fields: [parentBomId], references: [id])
+  childBoms     Bom[]     @relation("BomParent")
+  notes         String?
 
   items      BomItem[]
   workOrders WorkOrder[]
@@ -1823,8 +1829,8 @@ model Routing {
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
-  operations  RoutingOperation[]
-  workOrders  WorkOrder[]
+  operations RoutingOperation[]
+  workOrders WorkOrder[]
 
   @@map("routings")
 }
@@ -1899,16 +1905,16 @@ model InventoryLot {
 }
 
 model LotTransaction {
-  id          String        @id @default(uuid())
+  id          String       @id @default(uuid())
   lotId       String
-  lot         InventoryLot  @relation(fields: [lotId], references: [id], onDelete: Cascade)
+  lot         InventoryLot @relation(fields: [lotId], references: [id], onDelete: Cascade)
   txId        String?
   orderId     String?
   workOrderId String?
-  workOrder   WorkOrder?    @relation(fields: [workOrderId], references: [id])
+  workOrder   WorkOrder?   @relation(fields: [workOrderId], references: [id])
   quantity    Int
   type        String
-  createdAt   DateTime      @default(now())
+  createdAt   DateTime     @default(now())
 
   @@map("lot_transactions")
 }
@@ -1916,15 +1922,15 @@ model LotTransaction {
 // ==================== MARKETPLACE ====================
 
 model MarketplaceShop {
-  id          String   @id @default(uuid())
+  id          String    @id @default(uuid())
   platform    String
   shopName    String?
   shopId      String?
-  isActive    Boolean  @default(true)
+  isActive    Boolean   @default(true)
   credentials Json?
   lastSyncAt  DateTime?
-  createdAt   DateTime @default(now())
-  updatedAt   DateTime @updatedAt
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
 
   listings MarketplaceListing[]
   syncLogs MarketplaceSyncLog[]
@@ -1933,19 +1939,19 @@ model MarketplaceShop {
 }
 
 model MarketplaceListing {
-  id          String           @id @default(uuid())
-  shopId      String
-  shop        MarketplaceShop  @relation(fields: [shopId], references: [id], onDelete: Cascade)
-  productId   String
-  product     Product          @relation(fields: [productId], references: [id], onDelete: Cascade)
-  platform    String
-  externalId  String?
-  externalSku String?
-  status      String           @default("ACTIVE")
+  id           String          @id @default(uuid())
+  shopId       String
+  shop         MarketplaceShop @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  productId    String
+  product      Product         @relation(fields: [productId], references: [id], onDelete: Cascade)
+  platform     String
+  externalId   String?
+  externalSku  String?
+  status       String          @default("ACTIVE")
   lastPushedAt DateTime?
-  syncErrors  String?
-  createdAt   DateTime         @default(now())
-  updatedAt   DateTime         @updatedAt
+  syncErrors   String?
+  createdAt    DateTime        @default(now())
+  updatedAt    DateTime        @updatedAt
 
   @@unique([shopId, productId])
   @@map("marketplace_listings")
@@ -1969,24 +1975,24 @@ model MarketplaceSyncLog {
 // ==================== TIME TRACKING & PROJECT INVOICING ====================
 
 model TimeEntry {
-  id          String       @id @default(uuid())
+  id          String          @id @default(uuid())
   projectId   String
-  project     Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  project     Project         @relation(fields: [projectId], references: [id], onDelete: Cascade)
   taskId      String?
-  task        ProjectTask? @relation(fields: [taskId], references: [id])
+  task        ProjectTask?    @relation(fields: [taskId], references: [id])
   userId      String
-  user        User         @relation("TimeEntryUser", fields: [userId], references: [id])
+  user        User            @relation("TimeEntryUser", fields: [userId], references: [id])
   startTime   DateTime
   endTime     DateTime?
-  hours       Decimal?     @db.Decimal(8, 2)
+  hours       Decimal?        @db.Decimal(8, 2)
   description String?
-  billable    Boolean      @default(true)
-  hourlyRate  Decimal      @default(0) @db.Decimal(12, 2)
-  invoiced    Boolean      @default(false)
+  billable    Boolean         @default(true)
+  hourlyRate  Decimal         @default(0) @db.Decimal(12, 2)
+  invoiced    Boolean         @default(false)
   invoiceId   String?
   invoice     ProjectInvoice? @relation(fields: [invoiceId], references: [id])
-  createdAt   DateTime     @default(now())
-  updatedAt   DateTime     @updatedAt
+  createdAt   DateTime        @default(now())
+  updatedAt   DateTime        @updatedAt
 
   @@index([projectId])
   @@index([userId])
@@ -2033,15 +2039,15 @@ model SavedReport {
 }
 
 model ReportSchedule {
-  id         String      @id @default(uuid())
-  reportId   String
-  report     SavedReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
-  cron       String
-  emailTo    String[]
-  lastRunAt  DateTime?
-  nextRunAt  DateTime?
-  isActive   Boolean     @default(true)
-  createdAt  DateTime    @default(now())
+  id        String      @id @default(uuid())
+  reportId  String
+  report    SavedReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  cron      String
+  emailTo   String[]
+  lastRunAt DateTime?
+  nextRunAt DateTime?
+  isActive  Boolean     @default(true)
+  createdAt DateTime    @default(now())
 
   @@map("report_schedules")
 }
@@ -2049,15 +2055,15 @@ model ReportSchedule {
 // ==================== PHASE 4: WORKFLOW ENGINE ====================
 
 model Workflow {
-  id          String         @id @default(uuid())
+  id          String   @id @default(uuid())
   name        String
   trigger     String
-  config      Json           @default("{}")
-  isActive    Boolean        @default(true)
+  config      Json     @default("{}")
+  isActive    Boolean  @default(true)
   createdById String
-  createdBy   User           @relation("WorkflowCreatedBy", fields: [createdById], references: [id])
-  createdAt   DateTime       @default(now())
-  updatedAt   DateTime       @updatedAt
+  createdBy   User     @relation("WorkflowCreatedBy", fields: [createdById], references: [id])
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
 
   steps WorkflowStep[]
   runs  WorkflowRun[]
@@ -2080,14 +2086,14 @@ model WorkflowStep {
 }
 
 model WorkflowRun {
-  id         String   @id @default(uuid())
+  id         String    @id @default(uuid())
   workflowId String
-  workflow   Workflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  workflow   Workflow  @relation(fields: [workflowId], references: [id], onDelete: Cascade)
   entity     String
   entityId   String
-  status     String   @default("PENDING")
+  status     String    @default("PENDING")
   data       Json?
-  startedAt  DateTime @default(now())
+  startedAt  DateTime  @default(now())
   endedAt    DateTime?
 
   approvals WorkflowApproval[]
@@ -2139,15 +2145,15 @@ model PortalOtp {
 // ==================== INTEGRATION CONFIG ====================
 
 model IntegrationConfig {
-  id         String   @id @default(uuid())
-  key        String   @unique
-  category   String
-  valueEnc   String?
-  iv         String?
-  isSecret   Boolean  @default(true)
-  updatedBy  String?
-  updatedAt  DateTime @updatedAt
-  createdAt  DateTime @default(now())
+  id        String   @id @default(uuid())
+  key       String   @unique
+  category  String
+  valueEnc  String?
+  iv        String?
+  isSecret  Boolean  @default(true)
+  updatedBy String?
+  updatedAt DateTime @updatedAt
+  createdAt DateTime @default(now())
 
   @@index([category])
   @@map("integration_configs")
