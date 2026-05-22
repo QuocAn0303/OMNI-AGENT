@@ -5,6 +5,7 @@ import {
   Drawer,
   Dropdown,
   Empty,
+  Form,
   Input,
   InputNumber,
   Modal,
@@ -17,11 +18,14 @@ import {
 import {
   DeleteOutlined,
   MinusOutlined,
+  PhoneOutlined,
   PlusOutlined,
   PrinterOutlined,
   ScanOutlined,
   SearchOutlined,
   ShoppingCartOutlined,
+  StarFilled,
+  UserAddOutlined,
 } from "@ant-design/icons";
 import { Joyride } from 'react-joyride';
 import { useTranslation } from 'react-i18next';
@@ -52,6 +56,10 @@ export default function Pos() {
   const [discount, setDiscount] = useState(0);
   const [customer, setCustomer] = useState(null);
   const [customerOptions, setCustomerOptions] = useState([]);
+  const [phoneLookup, setPhoneLookup] = useState("");
+  const [phoneLoading, setPhoneLoading] = useState(false);
+  const [quickCreate, setQuickCreate] = useState({ open: false, phone: "" });
+  const [quickCreateForm] = Form.useForm();
   const [checkoutOpen, setCheckoutOpen] = useState(false);
   const [paymentMethod, setPaymentMethod] = useState("CASH");
   const [splitPayment, setSplitPayment] = useState(false);
@@ -194,6 +202,49 @@ export default function Pos() {
       })));
     } catch {
       setCustomerOptions([]);
+    }
+  };
+
+  // KiotViet-style: tra cứu theo SĐT → tự chọn KH nếu có, không có thì mở modal tạo nhanh.
+  const lookupByPhone = async (rawPhone) => {
+    const phone = String(rawPhone || "").replace(/\s|-/g, "").trim();
+    if (!phone) return;
+    if (!/^0\d{8,10}$/.test(phone)) {
+      message.warning("Số điện thoại không hợp lệ");
+      return;
+    }
+    setPhoneLoading(true);
+    try {
+      const res = await axios.get("/customers", { params: { search: phone, limit: 5 } });
+      const list = res.data?.data || [];
+      const exact = list.find((c) => (c.phone || "").replace(/\s|-/g, "") === phone);
+      if (exact) {
+        setCustomer(exact);
+        message.success(`Đã chọn KH: ${exact.name}`);
+      } else {
+        quickCreateForm.setFieldsValue({ phone, name: "" });
+        setQuickCreate({ open: true, phone });
+      }
+    } catch {
+      message.error("Không tra cứu được khách hàng");
+    } finally {
+      setPhoneLoading(false);
+    }
+  };
+
+  const submitQuickCreate = async (values) => {
+    try {
+      const res = await axios.post("/customers", {
+        name: values.name?.trim() || `Khách ${values.phone}`,
+        phone: values.phone,
+      });
+      const created = res.data?.data || res.data;
+      setCustomer(created);
+      setQuickCreate({ open: false, phone: "" });
+      setPhoneLookup("");
+      message.success("Đã tạo khách hàng mới");
+    } catch (e) {
+      message.error(e.response?.data?.message || "Tạo khách hàng thất bại");
     }
   };
 
@@ -369,10 +420,21 @@ export default function Pos() {
         </div>
 
         <div style={{ padding: "0 16px 12px" }}>
+          <Input.Search
+            allowClear
+            placeholder="SĐT khách hàng (Enter để tra cứu)"
+            prefix={<PhoneOutlined />}
+            value={phoneLookup}
+            onChange={(e) => setPhoneLookup(e.target.value)}
+            onSearch={lookupByPhone}
+            loading={phoneLoading}
+            enterButton="Tra cứu"
+            style={{ marginBottom: 8 }}
+          />
           <Select
             showSearch
             allowClear
-            placeholder="Tìm khách hàng"
+            placeholder="hoặc tìm theo tên"
             value={customer?.id}
             filterOption={false}
             onSearch={searchCustomers}
@@ -380,6 +442,23 @@ export default function Pos() {
             options={customerOptions}
             style={{ width: "100%" }}
           />
+          {customer && (
+            <div style={{
+              marginTop: 8, padding: "8px 10px", background: "var(--bg-soft, #f8fafc)",
+              borderRadius: 8, fontSize: 12, display: "flex", justifyContent: "space-between", alignItems: "center"
+            }}>
+              <div>
+                <div style={{ fontWeight: 600 }}>{customer.name}</div>
+                {customer.phone && <div style={{ color: "var(--text-muted)" }}>{customer.phone}</div>}
+              </div>
+              <Space size={4}>
+                <Tag color="gold" icon={<StarFilled />} style={{ margin: 0 }}>
+                  {Number(customer.loyaltyPoints || 0).toLocaleString("vi-VN")} điểm
+                </Tag>
+                {customer.tier && <Tag color="purple" style={{ margin: 0 }}>{customer.tier}</Tag>}
+              </Space>
+            </div>
+          )}
         </div>
 
         {cart.length === 0 ? (
@@ -562,6 +641,31 @@ export default function Pos() {
         width={420}
       >
         {receipt && <Receipt order={receipt} />}
+      </Modal>
+
+      <Modal
+        title={<Space><UserAddOutlined /> Tạo nhanh khách hàng</Space>}
+        open={quickCreate.open}
+        onCancel={() => setQuickCreate({ open: false, phone: "" })}
+        footer={null}
+        destroyOnClose
+        width={400}
+      >
+        <p style={{ color: "var(--text-muted)", marginTop: 0 }}>
+          Số điện thoại <strong>{quickCreate.phone}</strong> chưa có trong hệ thống. Tạo khách mới để tích điểm?
+        </p>
+        <Form form={quickCreateForm} layout="vertical" onFinish={submitQuickCreate}>
+          <Form.Item name="phone" label="Số điện thoại" rules={[{ required: true }]}>
+            <Input disabled prefix={<PhoneOutlined />} />
+          </Form.Item>
+          <Form.Item name="name" label="Tên khách hàng" extra="Để trống sẽ dùng 'Khách <SĐT>'">
+            <Input placeholder="VD: Nguyễn Văn A" autoFocus />
+          </Form.Item>
+          <Space>
+            <Button type="primary" htmlType="submit" icon={<UserAddOutlined />}>Tạo & chọn</Button>
+            <Button onClick={() => setQuickCreate({ open: false, phone: "" })}>Hủy</Button>
+          </Space>
+        </Form>
       </Modal>
 
       <CameraScanner

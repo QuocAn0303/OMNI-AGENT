@@ -56,6 +56,7 @@ const Marketplace = lazy(() => import("./pages/Marketplace"));
 const LotTracking = lazy(() => import("./pages/LotTracking"));
 const ReportBuilder = lazy(() => import("./pages/ReportBuilder"));
 const Workflows = lazy(() => import("./pages/Workflows"));
+const Integrations = lazy(() => import("./pages/Integrations"));
 
 const erpThemeTokens = {
   token: {
@@ -186,6 +187,7 @@ function App() {
             <Route path="/users" element={<Users />} />
             <Route path="/audit" element={<Audit />} />
             <Route path="/journal" element={<Journal />} />
+            <Route path="/integrations" element={<Integrations />} />
           </Route>
 
           {/* SUPER_ADMIN */}

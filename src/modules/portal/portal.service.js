@@ -2,6 +2,7 @@
 // Customer self-service portal: OTP login, view orders/debt/invoices/loyalty
 const prisma = require("../../config/prisma");
 const crypto = require("crypto");
+const { sendSms } = require("../../utils/sms");
 
 const OTP_EXPIRY_MINUTES = 5;
 const SESSION_EXPIRY_HOURS = 24;
@@ -22,8 +23,12 @@ const requestOtp = async (phone) => {
 
   await prisma.portalOtp.create({ data: { phone, otp, expiresAt } });
 
-  // TODO: send SMS via FPT/Viettel brandname SMS
-  console.log(`[portal-otp] Phone: ${phone} OTP: ${otp}`); // dev mode — log only
+  try {
+    await sendSms(phone, `Ma OTP dang nhap Aduu: ${otp}. Co hieu luc ${OTP_EXPIRY_MINUTES} phut.`);
+  } catch (e) {
+    console.warn(`[portal-otp] SMS thất bại, fallback log: ${e.message}`);
+    console.log(`[portal-otp] Phone: ${phone} OTP: ${otp}`);
+  }
 
   return { message: "OTP đã được gửi", expiresIn: OTP_EXPIRY_MINUTES * 60 };
 };

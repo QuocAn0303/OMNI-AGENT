@@ -6,12 +6,18 @@ const prisma = require("../../config/prisma");
 const paymentService = require("../payments/payment.service");
 const auditService = require("../audit/audit.service");
 const { numberToVietnameseWords } = require("../../utils/vietnameseMoneyWords");
+const config = require("../integrations/integration-config.service");
 
-cloudinary.config({
-  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-  api_key: process.env.CLOUDINARY_API_KEY,
-  api_secret: process.env.CLOUDINARY_API_SECRET,
-});
+const _ensureCloudinary = async () => {
+  const cfg = await config.getMany(["CLOUDINARY_CLOUD_NAME", "CLOUDINARY_API_KEY", "CLOUDINARY_API_SECRET"]);
+  if (!cfg.CLOUDINARY_CLOUD_NAME) return false;
+  cloudinary.config({
+    cloud_name: cfg.CLOUDINARY_CLOUD_NAME,
+    api_key: cfg.CLOUDINARY_API_KEY,
+    api_secret: cfg.CLOUDINARY_API_SECRET,
+  });
+  return true;
+};
 
 const formatMoney = (value) => Number(value || 0).toLocaleString("vi-VN");
 const VAT_RATE = Number(process.env.INVOICE_VAT_RATE || 10);
@@ -113,7 +119,7 @@ const buildPdfBuffer = async (order, balance, invoiceCode) => {
 };
 
 const uploadPdf = async (buffer, invoiceCode) => {
-  if (!process.env.CLOUDINARY_CLOUD_NAME) return null;
+  if (!(await _ensureCloudinary())) return null;
   return new Promise((resolve, reject) => {
     const stream = cloudinary.uploader.upload_stream(
       { folder: "erp_invoices", resource_type: "raw", public_id: invoiceCode },

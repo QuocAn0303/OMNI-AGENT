@@ -1,6 +1,7 @@
 // src/modules/einvoice/einvoice.service.js
 const prisma = require("../../config/prisma");
 const vnpt = require("./provider/vnpt.adapter");
+const config = require("../integrations/integration-config.service");
 const auditService = require("../audit/audit.service");
 
 const toNum = (v) => Number(v || 0);
@@ -72,8 +73,8 @@ const issueForOrder = async (orderId, userId = null) => {
     create: {
       invoiceNo: result.invoiceNo || internalNo,
       orderId,
-      templateCode: vnpt.TEMPLATE,
-      serial: vnpt.SERIAL,
+      templateCode: (await config.get("VNPT_TEMPLATE_CODE")) || "1/001",
+      serial: (await config.get("VNPT_SERIAL")) || "K24TVE",
       issueDate: new Date(),
       buyerName: order.customer?.name || "Khách lẻ",
       buyerTaxCode: order.customer?.taxCode || null,

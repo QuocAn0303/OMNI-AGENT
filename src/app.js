@@ -65,6 +65,7 @@ const marketplaceRoutes = require("./modules/marketplace/marketplace.routes");
 const reportBuilderRoutes = require("./modules/report-builder/report-builder.routes");
 const workflowRoutes = require("./modules/workflow/workflow.routes");
 const portalRoutes = require("./modules/portal/portal.routes");
+const integrationRoutes = require("./modules/integrations/integration.routes");
 const deliveryService = require("./modules/delivery/delivery.service");
 const http = require("http");
 const { initSocket } = require("./realtime/socket");
@@ -184,6 +185,7 @@ app.use("/api/marketplace", marketplaceRoutes);
 app.use("/api/report-builder", reportBuilderRoutes);
 app.use("/api/workflows", workflowRoutes);
 app.use("/api/portal", portalRoutes);
+app.use("/api/integrations", integrationRoutes);
 
 // Sentry error handler (phải trước error middleware)
 if (process.env.SENTRY_DSN) {

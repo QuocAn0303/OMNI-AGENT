@@ -1,24 +1,71 @@
-const cloudinary = require('cloudinary').v2;
-const { CloudinaryStorage } = require('multer-storage-cloudinary');
-const multer = require('multer');
+// src/config/cloudinary.config.js
+// Đọc cấu hình Cloudinary từ IntegrationConfig (DB) → fallback .env.
+// Trả về middleware multer; nếu chưa cấu hình thì dùng disk storage tạm để upload không vỡ.
+const multer = require("multer");
+const cloudinary = require("cloudinary").v2;
+const { CloudinaryStorage } = require("multer-storage-cloudinary");
+const config = require("../modules/integrations/integration-config.service");
 
-// Cấu hình thông tin kết nối với Cloudinary
-cloudinary.config({
-  cloud_name: process.env.CLOUDINARY_CLOUD_NAME,
-  api_key: process.env.CLOUDINARY_API_KEY,
-  api_secret: process.env.CLOUDINARY_API_SECRET
-});
+let _configured = null; // { cloudName, apiKey, apiSecret } đã apply
+let _middleware = null;
 
-// Cấu hình kho lưu trữ (Storage)
-const storage = new CloudinaryStorage({
-  cloudinary,
-  params: {
-    folder: 'IS207_Products', // Tên thư mục trên Cloudinary (bạn có thể đổi tên khác)
-    allowed_formats: ['jpg', 'jpeg', 'png', 'webp'], // Chỉ cho phép up ảnh
+const _apply = async () => {
+  const cfg = await config.getMany(["CLOUDINARY_CLOUD_NAME", "CLOUDINARY_API_KEY", "CLOUDINARY_API_SECRET"]);
+  const sig = JSON.stringify(cfg);
+  if (_middleware && _configured === sig) return _middleware;
+
+  if (!cfg.CLOUDINARY_CLOUD_NAME || !cfg.CLOUDINARY_API_KEY || !cfg.CLOUDINARY_API_SECRET) {
+    // Chưa cấu hình → memory storage (upload vào RAM, không lưu được vĩnh viễn).
+    _middleware = multer({ storage: multer.memoryStorage() });
+    _configured = sig;
+    return _middleware;
   }
-});
 
-// Khởi tạo Multer với cấu hình storage ở trên
-const uploadCloud = multer({ storage });
+  cloudinary.config({
+    cloud_name: cfg.CLOUDINARY_CLOUD_NAME,
+    api_key: cfg.CLOUDINARY_API_KEY,
+    api_secret: cfg.CLOUDINARY_API_SECRET,
+  });
+  const storage = new CloudinaryStorage({
+    cloudinary,
+    params: { folder: "IS207_Products", allowed_formats: ["jpg", "jpeg", "png", "webp"] },
+  });
+  _middleware = multer({ storage });
+  _configured = sig;
+  return _middleware;
+};
+
+// Proxy middleware — gọi single(field) trên nó sẽ trả về handler resolve lazy.
+const uploadCloud = {
+  single(field) {
+    return async (req, res, next) => {
+      try {
+        const mw = await _apply();
+        return mw.single(field)(req, res, next);
+      } catch (e) { next(e); }
+    };
+  },
+  array(field, max) {
+    return async (req, res, next) => {
+      try {
+        const mw = await _apply();
+        return mw.array(field, max)(req, res, next);
+      } catch (e) { next(e); }
+    };
+  },
+};
+
+const testConnection = async () => {
+  const cfg = await config.getMany(["CLOUDINARY_CLOUD_NAME", "CLOUDINARY_API_KEY", "CLOUDINARY_API_SECRET"]);
+  if (!cfg.CLOUDINARY_CLOUD_NAME) throw { status: 400, message: "Chưa cấu hình Cloudinary" };
+  cloudinary.config({
+    cloud_name: cfg.CLOUDINARY_CLOUD_NAME,
+    api_key: cfg.CLOUDINARY_API_KEY,
+    api_secret: cfg.CLOUDINARY_API_SECRET,
+  });
+  const res = await cloudinary.api.ping();
+  return { success: true, status: res.status };
+};
 
 module.exports = uploadCloud;
+module.exports.testConnection = testConnection;

@@ -2136,6 +2136,23 @@ model PortalOtp {
   @@map("portal_otps")
 }
 
+// ==================== INTEGRATION CONFIG ====================
+
+model IntegrationConfig {
+  id         String   @id @default(uuid())
+  key        String   @unique
+  category   String
+  valueEnc   String?
+  iv         String?
+  isSecret   Boolean  @default(true)
+  updatedBy  String?
+  updatedAt  DateTime @updatedAt
+  createdAt  DateTime @default(now())
+
+  @@index([category])
+  @@map("integration_configs")
+}
+
 // ==================== PHASE 4: CAMPAIGN TRACKING ====================
 
 model CampaignTracking {

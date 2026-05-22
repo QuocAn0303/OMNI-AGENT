@@ -28,6 +28,7 @@ import {
   UploadOutlined,
   CheckSquareOutlined,
   ClusterOutlined,
+  ApiOutlined,
   NotificationOutlined,
   ProjectOutlined,
   ExperimentOutlined,
@@ -143,6 +144,7 @@ const MENU_GROUPS = [
       { key: '/reports', icon: <FileExcelOutlined />, label: 'Báo cáo',    roles: ['ADMIN'] },
       { key: '/audit',   icon: <AuditOutlined />,     label: 'Audit Log',  roles: ['ADMIN'] },
       { key: '/import',  icon: <UploadOutlined />,    label: 'Import dữ liệu', roles: ['ADMIN', 'MANAGER'] },
+      { key: '/integrations', icon: <ApiOutlined />,  label: 'Tích hợp & API keys', roles: ['ADMIN'] },
     ],
   },
 ];

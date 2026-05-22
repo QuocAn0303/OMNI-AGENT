@@ -26,8 +26,18 @@ Tổng quan: **Aduu** là hệ thống ERP đa module cho doanh nghiệp bán l�
 - Nhân sự: nhân viên, chấm công 3 ca, payroll, vi phạm, khóa kỳ lương
 - Kế toán: double-entry, Chart of Accounts, autopost, kỳ kế toán, P&L / Balance Sheet / Cash Flow
 - Công nợ phải thu/phải trả, chi phí (+ định kỳ), thuế, nhà cung cấp, đơn mua hàng
-- Quản lý dự án: dự án, công việc, thành viên, tiến độ
-- Quản lý sản xuất: BOM, lệnh sản xuất, tự cập nhật kho khi hoàn thành
+- Quản lý dự án: dự án, công việc, thành viên, tiến độ, **timesheet (chấm công theo task)**
+- Quản lý sản xuất: BOM (đa cấp + resolver), lệnh sản xuất, tự cập nhật kho khi hoàn thành, **Lot/Serial/Expiry tracking, Work Center, Routing (định tuyến công đoạn), Quality Check (QC pass/fail)**
+- **Hóa đơn điện tử (E-Invoice)**: tích hợp VNPT adapter — phát hành, hủy, tra cứu mã CQT
+- **Báo cáo thuế HTKK**: tờ khai GTGT (01/GTGT), TNCN (05/KK-TNCN), BHXH (D02-LT) — xuất XML đúng schema HTKK + Excel
+- **PIT / BHXH**: tính thuế thu nhập cá nhân + bảo hiểm xã hội cho payroll
+- **Đối soát ngân hàng (Bank Reconciliation)**: import sao kê VCB / TCB, auto-match với JournalEntry, điều chỉnh chênh lệch
+- **Tài sản cố định (Fixed Assets)**: quản lý TSCĐ + cron tự động khấu hao tháng (straight-line) + autopost bút toán
+- **Đa tiền tệ (Multi-currency)**: Currency master, tỷ giá theo ngày, quy đổi VND ↔ USD/EUR/...
+- **Marketplace integration**: adapter Shopee / Lazada / TikTok (stub sẵn cho API key thật)
+- **Report Builder**: query builder an toàn (whitelist bảng + cột, parameterized) cho người dùng tự dựng báo cáo
+- **Workflow / Approval**: rule trigger (EXPENSE_ABOVE, PO_ABOVE, LEAVE_REQUEST, CUSTOM) + nhiều bước duyệt
+- **Customer Self-service Portal**: KH đăng nhập OTP, xem đơn hàng / công nợ / hóa đơn / điểm loyalty
 - Báo cáo & Dashboard, Analytics (xu hướng, RFM khách hàng)
 - Audit log: ghi lịch sử thao tác đầy đủ (ai, làm gì, lúc nào, before/after)
 - Thông báo real-time (Socket.IO + Redis adapter)
@@ -58,7 +68,19 @@ Tổng quan: **Aduu** là hệ thống ERP đa module cho doanh nghiệp bán l�
 - Bom, BomItem, WorkOrder, WorkOrderItem, BomStatus enum, WorkOrderStatus enum
 - AuditLog
 - Notification, NotificationType, NotificationSeverity
-- BankAccount, BankTransaction
+- BankAccount, BankTransaction, **BankStatement, BankStatementLine, BankMatch** (đối soát)
+- **EInvoice, EInvoiceStatus enum** (DRAFT/ISSUED/CANCELLED) — kèm taxCode CQT
+- **TaxReport, TaxReportType enum** (VAT_01_GTGT, PIT_05_KK_TNCN, BHXH_D02_LT)
+- **FixedAsset, FixedAssetDepreciation** (lịch sử khấu hao tháng)
+- **Currency, ExchangeRate** (tỷ giá theo ngày)
+- **ProductLot, LotMovement** (lot/serial + hạn dùng)
+- **WorkCenter, Routing, RoutingStep, QualityCheck** (định tuyến + QC)
+- **MarketplaceAccount, MarketplaceOrder** (Shopee/Lazada/TikTok)
+- **ReportTemplate** (cấu hình query builder)
+- **WorkflowRule, WorkflowStep, WorkflowInstance, WorkflowApproval**
+- **PortalSession, PortalOtp** (customer portal)
+- **Timesheet** (chấm giờ cho ProjectTask)
+- **IntegrationConfig** (key/value mã hóa AES-256-GCM cho VNPT/Cloudinary/SMS/SMTP — quản trị qua UI thay cho `.env`)
 
 **Cấu trúc thư mục chi tiết**
 
@@ -120,7 +142,14 @@ erp-system/
 │       ├── 20260521140000_add_crm_segments/                      # CRM Phase 3: Customer segments
 │       ├── 20260521150000_add_crm_campaigns/                     # CRM Phase 4: Email + Zalo campaigns
 │       ├── 20260522120000_add_project_management/                # Module Quản lý dự án
-│       └── 20260522130000_add_production_management/             # Module Quản lý sản xuất (BOM + WO)
+│       ├── 20260522130000_add_production_management/             # Module Quản lý sản xuất (BOM + WO)
+│       ├── 20260522140000_finance_integration/                   # Tích hợp tài chính (autopost mở rộng)
+│       ├── 20260522150000_finance_hardening/                     # Hardening kế toán (idempotent posting)
+│       ├── 20260522160000_phase1_einvoice_pit/                   # Phase 1: E-Invoice + Tax Report + PIT/BHXH
+│       ├── 20260522170000_phase2_bank_reco_fixed_assets/         # Phase 2: Bank Reconciliation + Fixed Assets
+│       ├── 20260522180000_phase2_multicurrency/                  # Phase 2: Multi-currency + Exchange rate
+│       ├── 20260522190000_phase3_bom_lot_marketplace_project/    # Phase 3: Lot/Routing/QC + Marketplace + Timesheet
+│       └── 20260522200000_phase4_report_workflow_portal/         # Phase 4: Report Builder + Workflow + Customer Portal
 │
 ├── src/                         # ===== BACKEND (Node.js + Express) =====
 │   ├── app.js                   # Entry point — khởi tạo Express, mount routes, Socket.IO, cron
@@ -263,18 +292,70 @@ erp-system/
 │       │   ├── index.js                 #   Router aggregator: /api/projects + /assignable-users
 │       │   ├── project.routes.js        #   Routes: CRUD project + /overview + /:id/stats
 │       │   ├── project.service.js       #   Service: tạo/sửa dự án (auto add người tạo làm OWNER)
+│       │   ├── project-access.middleware.js  # Middleware kiểm tra quyền truy cập project theo member role
 │       │   ├── task.routes.js           #   Routes: /api/projects/:id/tasks — công việc trong dự án
 │       │   ├── task.service.js          #   Service: CRUD task, gán assignee, thông báo real-time
 │       │   ├── member.routes.js         #   Routes: /api/projects/:id/members — thành viên
-│       │   └── member.service.js        #   Service: thêm/sửa role (OWNER/MEMBER/VIEWER), kiểm soát OWNER cuối
+│       │   ├── member.service.js        #   Service: thêm/sửa role (OWNER/MEMBER/VIEWER), kiểm soát OWNER cuối
+│       │   ├── timesheet.routes.js      #   Routes: /api/projects/:id/timesheets — chấm giờ theo task
+│       │   └── timesheet.service.js     #   Service: log giờ làm, tổng hợp theo task / nhân viên / dự án
 │       │
-│       ├── production/                  # Quản lý sản xuất (BOM + Work Orders)
+│       ├── production/                  # Quản lý sản xuất (BOM + WO + Lot + Routing + QC)
 │       │   ├── index.js                 #   Router aggregator: /api/production + /overview
 │       │   ├── bom.routes.js            #   Routes: CRUD BOM + activate/deactivate
 │       │   ├── bom.service.js           #   Service: định mức nguyên liệu, version, kiểm tra tự tham chiếu
+│       │   ├── bom-resolver.js          #   Resolver BOM đa cấp (multi-level explode → leaf materials)
 │       │   ├── work-order.routes.js     #   Routes: CRUD WO + start/complete/cancel
-│       │   └── work-order.service.js    #   Service: lifecycle WO, atomic update kho khi complete
-│       │                                #   (trừ NL + cộng thành phẩm + tạo InventoryTransaction trong 1 transaction)
+│       │   ├── work-order.service.js    #   Service: lifecycle WO, atomic update kho khi complete
+│       │   │                            #   (trừ NL + cộng thành phẩm + tạo InventoryTransaction trong 1 transaction)
+│       │   ├── lot.routes.js            #   Routes: /api/production/lots — lot/serial/hạn dùng
+│       │   ├── lot.service.js           #   Service: tạo lot, theo dõi tồn theo lot, cảnh báo hết hạn
+│       │   ├── work-center.routes.js    #   Routes: /api/production/work-centers — trung tâm sản xuất
+│       │   ├── work-center.service.js   #   Service: CRUD work center (máy/dây chuyền + account chi phí)
+│       │   ├── routing.routes.js        #   Routes: /api/production/routings — định tuyến công đoạn
+│       │   ├── routing.service.js       #   Service: định nghĩa các bước qua work-center, thời gian chuẩn
+│       │   └── quality.service.js       #   Service: Quality Check pass/fail cho từng WO
+│       │
+│       ├── einvoice/                    # Hóa đơn điện tử (E-Invoice)
+│       │   ├── einvoice.routes.js       #   Routes: /api/einvoice — phát hành / hủy / tra cứu
+│       │   ├── einvoice.service.js      #   Service: tạo HĐĐT từ Order, gọi adapter VNPT, lưu mã CQT
+│       │   └── provider/
+│       │       └── vnpt.adapter.js      #   Adapter VNPT — issue / cancel / query (mock + ready cho real API)
+│       │
+│       ├── tax-report/                  # Báo cáo thuế HTKK
+│       │   ├── tax-report.routes.js     #   Routes: /api/tax-reports — tạo / xuất XML / xuất Excel
+│       │   └── tax-report.service.js    #   Service: tờ khai 01/GTGT, 05/KK-TNCN, D02-LT (BHXH) — XML đúng HTKK
+│       │
+│       ├── bank-reco/                   # Đối soát ngân hàng
+│       │   ├── bank-reco.routes.js      #   Routes: /api/bank-reco — upload sao kê, match, điều chỉnh
+│       │   ├── bank-reco.service.js     #   Service: parse sao kê → auto-match với JournalEntry → flag chênh lệch
+│       │   └── importers/
+│       │       ├── vcb.importer.js      #   Parser sao kê Vietcombank (Excel/CSV)
+│       │       └── tcb.importer.js      #   Parser sao kê Techcombank
+│       │
+│       ├── fixed-assets/                # Tài sản cố định
+│       │   ├── fixed-assets.routes.js   #   Routes: /api/fixed-assets — CRUD + lịch khấu hao
+│       │   └── fixed-assets.service.js  #   Service: TSCĐ + cron khấu hao tháng (straight-line) + autopost
+│       │
+│       ├── currency/                    # Đa tiền tệ
+│       │   ├── currency.routes.js       #   Routes: /api/currencies — danh sách + tỷ giá
+│       │   └── currency.service.js      #   Service: Currency master + ExchangeRate theo ngày, quy đổi
+│       │
+│       ├── marketplace/                 # Tích hợp sàn TMĐT
+│       │   ├── marketplace.routes.js    #   Routes: /api/marketplace — sync đơn từ Shopee/Lazada/TikTok
+│       │   └── marketplace.service.js   #   Service: adapter stub cho 3 sàn, đồng bộ đơn → ERP Order
+│       │
+│       ├── report-builder/              # Trình dựng báo cáo tùy chỉnh
+│       │   ├── report-builder.routes.js #   Routes: /api/report-builder
+│       │   └── report-builder.service.js#   Service: query builder an toàn — whitelist bảng + cột, parameterized
+│       │
+│       ├── workflow/                    # Workflow / Approval
+│       │   ├── workflow.routes.js       #   Routes: /api/workflows — rule + instance + approve/reject
+│       │   └── workflow.service.js      #   Service: trigger (EXPENSE_ABOVE/PO_ABOVE/LEAVE_REQUEST/CUSTOM), n bước duyệt
+│       │
+│       ├── portal/                      # Customer Self-service Portal
+│       │   ├── portal.routes.js         #   Routes: /api/portal — OTP login + xem orders/debts/invoices/loyalty
+│       │   └── portal.service.js        #   Service: OTP qua email/SMS, session riêng cho khách hàng
 │       │
 │       ├── reports/                     # Báo cáo tổng hợp
 │       │   ├── report.routes.js         #   Routes: /api/reports
@@ -298,9 +379,14 @@ erp-system/
 │       │   ├── notification.routes.js   #   Routes: /api/notifications
 │       │   └── notification.service.js  #   Service: tạo/đọc thông báo, đếm chưa đọc, push real-time
 │       │
-│       └── ai/                          # AI Assistant
-│           ├── ai.routes.js             #   Routes: /api/ai
-│           └── ai.service.js            #   Service: chatbot AI hỗ trợ tra cứu nghiệp vụ ERP (OpenAI)
+│       ├── ai/                          # AI Assistant
+│       │   ├── ai.routes.js             #   Routes: /api/ai
+│       │   └── ai.service.js            #   Service: chatbot AI hỗ trợ tra cứu nghiệp vụ ERP (OpenAI)
+│       │
+│       └── integrations/                # Trung tâm tích hợp (Integration Center)
+│           ├── integration.routes.js    #   Routes: /api/integrations — đọc/ghi/test cấu hình
+│           └── integration-config.service.js  # Service: lưu key/value mã hóa AES-256-GCM, cache 60s
+│                                        #   DB > process.env, dùng cho VNPT, Cloudinary, SMS, SMTP
 │
 └── frontend/                    # ===== FRONTEND (React + Vite + Ant Design) =====
     ├── index.html               # HTML entry point
@@ -404,6 +490,16 @@ erp-system/
             ├── Audit.jsx                #   Xem nhật ký thao tác hệ thống
             ├── NotificationsPage.jsx    #   Danh sách thông báo
             ├── Import.jsx               #   Bulk import dữ liệu (Excel/CSV)
+            ├── EInvoice.jsx             #   Quản lý hóa đơn điện tử — phát hành / hủy / tra cứu CQT
+            ├── TaxReports.jsx           #   Báo cáo thuế HTKK — 01/GTGT, 05/KK-TNCN, D02-LT
+            ├── BankReco.jsx             #   Đối soát ngân hàng — upload sao kê, auto-match
+            ├── FixedAssets.jsx          #   Tài sản cố định — danh mục + lịch khấu hao
+            ├── Currency.jsx             #   Đa tiền tệ — Currency master + tỷ giá
+            ├── Marketplace.jsx          #   Sàn TMĐT — sync đơn Shopee / Lazada / TikTok
+            ├── ReportBuilder.jsx        #   Trình dựng báo cáo tùy chỉnh — chọn bảng + cột + filter
+            ├── Workflows.jsx            #   Workflow / Approval — danh sách rule + approve/reject
+            ├── LotTracking.jsx          #   Tracking lot/serial/hạn dùng cho sản phẩm
+            ├── Integrations.jsx         #   Trung tâm tích hợp — UI cấu hình VNPT / Cloudinary / SMS / SMTP + Test connection
             │
             ├── hr/                      #   Module Nhân sự
             │   ├── HR.jsx               #     Layout chung cho HR (tabs điều hướng)
@@ -505,6 +601,10 @@ REDIS_URL=redis://127.0.0.1:6379
 # --- Bcrypt ---
 BCRYPT_ROUNDS=10
 
+# --- Encryption key cho Integration Center (≥ 32 ký tự ngẫu nhiên) ---
+# Nếu để trống sẽ derive từ JWT_SECRET — KHÔNG khuyến nghị cho production.
+ENCRYPTION_KEY=hay_doi_thanh_chuoi_ngau_nhien_dai_32_ky_tu_tro_len
+
 # --- Tuỳ chọn: Cloudinary (chỉ cần khi upload ảnh sản phẩm) ---
 CLOUDINARY_CLOUD_NAME=
 CLOUDINARY_API_KEY=
@@ -516,6 +616,8 @@ OPENAI_API_KEY=
 # --- Tuỳ chọn: Sentry (monitoring) ---
 SENTRY_DSN=
 ```
+
+> 💡 **Mới**: Từ phiên bản này, các biến VNPT / Cloudinary / SMTP / SMS đã có **UI cấu hình tại `/integrations`** (cần role ADMIN). Giá trị nhập trong UI sẽ được lưu vào DB (mã hóa AES-256-GCM) và **ưu tiên hơn `.env`** — không cần redeploy khi đổi credentials.
 
 > ⚠️ Lưu ý mật khẩu DB: `docker-compose.yml` mặc định dùng `postgres / uit / erp_db`. Nếu bạn sửa ở `docker-compose.yml` thì phải đồng bộ lại `DATABASE_URL` trong `.env`.
 
@@ -719,9 +821,22 @@ docker start erp-redis      # khởi động lại Redis
 /api/purchase-orders              # đơn mua hàng
 /api/debts                        # công nợ
 /api/expenses                     # chi phí
-/api/projects                     # quản lý dự án (+ tasks + members)
-/api/production/boms              # BOM
+/api/projects                     # quản lý dự án (+ tasks + members + timesheets)
+/api/production/boms              # BOM (đa cấp + resolver)
 /api/production/work-orders       # lệnh sản xuất
+/api/production/lots              # lot / serial / hạn dùng
+/api/production/work-centers      # trung tâm sản xuất
+/api/production/routings          # định tuyến công đoạn
+/api/einvoice                     # hóa đơn điện tử (VNPT) — issue/cancel/query
+/api/tax-reports                  # báo cáo thuế HTKK (01/GTGT, 05/KK-TNCN, D02-LT) + XML
+/api/bank-reco                    # đối soát ngân hàng — import sao kê VCB/TCB
+/api/fixed-assets                 # tài sản cố định + khấu hao tháng
+/api/currencies                   # đa tiền tệ + tỷ giá
+/api/marketplace                  # tích hợp Shopee / Lazada / TikTok
+/api/report-builder               # trình dựng báo cáo (whitelist query)
+/api/workflows                    # workflow / approval rules
+/api/portal                       # customer self-service portal (OTP)
+/api/integrations                 # trung tâm tích hợp — VNPT / Cloudinary / SMS / SMTP (ADMIN)
 /api/reports                      # báo cáo
 /api/dashboard                    # KPI cho trang chủ
 /api/analytics                    # phân tích, RFM
@@ -744,6 +859,7 @@ Chi tiết tham số từng endpoint: xem Swagger tại `/api-docs`.
 - 09:00 hằng ngày: nhắc công nợ quá hạn, nhắc nhiệm vụ CSKH tới hạn
 - 09:00 ngày 25 hằng tháng: nhắc tính lương
 - 09:00 ngày 28 hằng tháng: nhắc đóng kỳ kế toán
+- 02:00 ngày cuối tháng: tự động khấu hao tài sản cố định (Fixed Assets) + autopost bút toán
 
 **Socket.IO** (`src/realtime/socket.js`):
 - Client kết nối tới **origin của API** (bỏ hậu tố `/api`)
@@ -776,4 +892,350 @@ Dockerfile có sẵn — chỉ cần push lên GitHub, Railway tự build & depl
 
 ---
 
-_Tài liệu cập nhật: 2026-05-22 — hệ thống đã hoàn thiện cả 7 module: Bán hàng, Kho, Tài chính, HR, CRM/Marketing, Dự án, Sản xuất._
+## 📖 Hướng dẫn sử dụng các module mở rộng
+
+> Các module dưới đây là phần bổ sung sau giai đoạn nền tảng (Phase 1–4). Tất cả endpoint đều dùng JWT — gắn header `Authorization: Bearer <token>`. Các trang frontend tương ứng đều có sẵn ở `/einvoice`, `/tax-reports`, `/bank-reco`, `/fixed-assets`, `/currency`, `/marketplace`, `/report-builder`, `/workflows`, `/lot-tracking`.
+
+---
+
+### 🧾 1. Hóa đơn điện tử (E-Invoice — VNPT)
+
+**Mục đích**: phát hành HĐĐT cho đơn hàng, lấy mã CQT, hủy hoặc tra cứu lại trạng thái.
+
+**Frontend**: vào trang `E-Invoice` từ sidebar → chọn đơn hàng → bấm **Phát hành** → hệ thống gọi VNPT, trả về số hóa đơn + mã CQT.
+
+**API**:
+```http
+GET    /api/einvoice                      # danh sách HĐĐT (filter: status, from, to)
+GET    /api/einvoice/:id                  # chi tiết
+POST   /api/einvoice/order/:orderId/issue # phát hành HĐĐT cho 1 Order
+POST   /api/einvoice/:id/cancel           # hủy (chỉ ADMIN) — kèm lý do
+POST   /api/einvoice/:id/sync             # đồng bộ lại trạng thái từ VNPT
+```
+
+**Cấu hình VNPT** (`.env`):
+```env
+VNPT_EINVOICE_URL=https://...        # endpoint VNPT (sandbox/production)
+VNPT_USERNAME=...
+VNPT_PASSWORD=...
+VNPT_TAX_CODE=0312345678
+VNPT_PATTERN=1/001                    # mẫu số HĐ
+VNPT_SERIAL=K24TAA                    # ký hiệu HĐ
+```
+> Nếu để trống, adapter chạy ở **mock mode** (sinh mã giả) — dùng cho dev/demo.
+
+---
+
+### 📊 2. Báo cáo thuế HTKK (Tax Report)
+
+**Mục đích**: xuất tờ khai thuế đúng schema HTKK, nộp lên Tổng cục Thuế.
+
+**Frontend**: trang `Báo cáo thuế` → chọn năm + tháng → 3 tab: VAT / PIT / BHXH → bấm **Xuất XML** hoặc **Xuất Excel**.
+
+**API**:
+```http
+GET /api/tax-reports/vat?year=2026&month=5         # tờ khai 01/GTGT + bảng kê bán/mua
+GET /api/tax-reports/pit?year=2026&month=5         # tờ khai 05/KK-TNCN
+GET /api/tax-reports/vat/excel?year=2026&month=5   # tải file Excel
+GET /api/tax-reports/vat/xml?year=2026&month=5     # tải file XML HTKK
+GET /api/tax-reports/bhxh/excel?year=2026&month=5  # D02-LT (BHXH)
+```
+
+**Lưu ý**: hệ thống lấy dữ liệu từ `Invoice`, `PurchaseOrder`, `Payroll`. Đảm bảo:
+- Đã set `taxCode` trong `Company Settings`
+- Mỗi nhân viên có `idNumber` (CCCD) + `pitCode` (MST cá nhân) để PIT chạy đúng
+- Payroll kỳ tương ứng đã chạy `runPayroll` xong
+
+---
+
+### 💰 3. PIT / BHXH trong Payroll
+
+**Mục đích**: tự động tính thuế TNCN (biểu lũy tiến 7 bậc) + BHXH (8%) + BHYT (1.5%) + BHTN (1%) khi chạy payroll.
+
+**Frontend**: vào `Nhân sự → Bảng lương` → bấm **Tính lương kỳ** — kết quả hiện thêm cột PIT, BHXH, BHYT, BHTN, Net.
+
+**Logic** (xem [payroll.calc.js](src/modules/hr/payroll.calc.js)):
+- Lương đóng BH = min(lươngCơBản, 20×mức lương cơ sở)
+- PIT theo bậc lũy tiến, đã trừ giảm trừ bản thân (11tr) + người phụ thuộc (4.4tr/người)
+- Field cấu hình ở Employee: `dependents`, `pitCode`, `bhxhSalary` (nếu khác lương CB)
+
+---
+
+### 🏦 4. Đối soát ngân hàng (Bank Reconciliation)
+
+**Mục đích**: import sao kê VCB/TCB → tự động match với JournalEntry → tạo bút toán điều chỉnh cho phần lệch.
+
+**Frontend**: trang `Đối soát ngân hàng` → chọn tài khoản ngân hàng → **Upload sao kê** (.xlsx/.csv VCB hoặc TCB) → bấm **Auto-match** → review các dòng chưa match → **Match thủ công** hoặc **Tạo điều chỉnh**.
+
+**API**:
+```http
+GET   /api/bank-reco/statements
+GET   /api/bank-reco/statements/:id/lines?isMatched=false
+POST  /api/bank-reco/statements/import     # multipart: file, bankAccountId, bank=VCB|TCB
+POST  /api/bank-reco/statements/:id/auto-match
+PATCH /api/bank-reco/lines/:lineId/match   # body: { entryId }
+PATCH /api/bank-reco/lines/:lineId/unmatch
+POST  /api/bank-reco/lines/:lineId/adjustment  # body: { bankAccountId, description, amount }
+```
+
+**Quy tắc auto-match**: cùng số tiền (±1đ) + cùng ngày (±3 ngày) + matching keyword trong description.
+
+---
+
+### 🏢 5. Tài sản cố định (Fixed Assets)
+
+**Mục đích**: quản lý TSCĐ + tự động khấu hao straight-line hằng tháng.
+
+**Frontend**: trang `Tài sản cố định` → tab **Categories** (thiết lập nhóm + thời gian khấu hao) → tab **Assets** (thêm TSCĐ, kèm ngày bắt đầu khấu hao, giá trị ban đầu) → tab **Lịch khấu hao** xem dự kiến.
+
+**API**:
+```http
+GET  /api/fixed-assets/categories
+POST /api/fixed-assets/categories          # { name, usefulLifeMonths, depreciationAccountId }
+GET  /api/fixed-assets                     # ?categoryId=&status=ACTIVE|DISPOSED
+GET  /api/fixed-assets/:id                 # chi tiết + lịch sử khấu hao
+POST /api/fixed-assets                     # { code, name, categoryId, cost, startDate, ... }
+POST /api/fixed-assets/:id/dispose         # thanh lý — body: { date, salePrice }
+POST /api/fixed-assets/depreciation/run    # chạy thủ công 1 kỳ — body: { year, month }
+```
+
+**Cron tự động**: chạy 02:00 ngày cuối tháng → khấu hao toàn bộ TSCĐ `ACTIVE` + autopost bút toán **Nợ 642/Có 214**.
+
+---
+
+### 💱 6. Đa tiền tệ (Multi-currency)
+
+**Mục đích**: quản lý nhiều loại tiền + tỷ giá theo ngày.
+
+**Frontend**: trang `Tiền tệ` → thêm currency (USD, EUR…) → cập nhật tỷ giá hằng ngày.
+
+**API**:
+```http
+GET  /api/currencies                       # list + tỷ giá hiện tại
+GET  /api/currencies/:code/rates?limit=30  # lịch sử tỷ giá
+POST /api/currencies                       # { code, name, symbol, isBase }
+POST /api/currencies/:code/rates           # { rate, effectiveDate }
+```
+
+Khi tạo Order/PurchaseOrder, có thể chọn `currencyCode` → hệ thống tự quy đổi sang VND tại thời điểm phát sinh để hạch toán.
+
+---
+
+### 🛒 7. Marketplace (Shopee / Lazada / TikTok)
+
+**Mục đích**: đồng bộ sản phẩm + đơn hàng giữa ERP và các sàn.
+
+**Frontend**: trang `Marketplace` → **Kết nối shop** (chọn sàn + nhập API key) → tab **Listings** map sản phẩm ERP ↔ sản phẩm sàn → bấm **Push Inventory** (đẩy tồn lên sàn) / **Pull Orders** (kéo đơn về ERP).
+
+**API**:
+```http
+GET   /api/marketplace/shops
+POST  /api/marketplace/shops                 # { platform: SHOPEE|LAZADA|TIKTOK, name, apiKey, ... }
+PATCH /api/marketplace/shops/:id/toggle      # { isActive: true|false }
+GET   /api/marketplace/shops/:id/listings
+POST  /api/marketplace/shops/:id/listings    # { productId, externalId, price, stock }
+GET   /api/marketplace/shops/:id/logs        # ?limit=50
+POST  /api/marketplace/shops/:id/push-inventory
+POST  /api/marketplace/shops/:id/pull-orders
+```
+
+> Adapter hiện ở dạng **stub** — sẵn sàng plug API key thật của Shopee Open Platform / Lazada Open Platform / TikTok Shop API.
+
+---
+
+### 📐 8. Report Builder (Trình dựng báo cáo)
+
+**Mục đích**: cho phép user tự kéo thả tạo báo cáo từ dữ liệu ERP — an toàn nhờ **whitelist** bảng và cột (không SQL injection).
+
+**Frontend**: trang `Report Builder` → chọn bảng (Orders, Customers, …) → chọn cột → thêm filter → **Run** xem kết quả → **Save** để dùng lại.
+
+**API**:
+```http
+GET    /api/report-builder/tables          # danh sách bảng + cột được phép
+GET    /api/report-builder                 # báo cáo đã lưu của tôi
+POST   /api/report-builder                 # tạo báo cáo — body: { name, table, columns, filters, groupBy }
+PATCH  /api/report-builder/:id
+DELETE /api/report-builder/:id             # ADMIN only
+POST   /api/report-builder/run             # chạy ad-hoc, không lưu — body: { table, columns, filters }
+POST   /api/report-builder/:id/run         # chạy báo cáo đã lưu
+```
+
+**Ví dụ body**:
+```json
+{
+  "table": "Order",
+  "columns": ["id", "total", "status", "createdAt", "customer.name"],
+  "filters": [{ "field": "status", "op": "=", "value": "COMPLETED" }],
+  "groupBy": "status",
+  "orderBy": { "field": "createdAt", "dir": "desc" }
+}
+```
+
+---
+
+### ✅ 9. Workflow / Approval
+
+**Mục đích**: bắt buộc duyệt nhiều cấp cho các nghiệp vụ vượt ngưỡng (chi phí, PO, nghỉ phép).
+
+**Frontend**: trang `Workflows` → tạo rule (trigger + ngưỡng + người duyệt từng bước) → khi phát sinh giao dịch match rule, hệ thống tự tạo **WorkflowInstance** + push notification cho người duyệt → người duyệt vào tab **Cần tôi duyệt** → **Approve** / **Reject**.
+
+**API**:
+```http
+GET   /api/workflows
+POST  /api/workflows                  # ADMIN — { name, trigger, threshold, steps: [{ approverIds, order }] }
+PATCH /api/workflows/:id
+GET   /api/workflows/runs/:runId      # xem 1 instance
+POST  /api/workflows/approvals/:approvalId/decide   # { decision: APPROVE|REJECT, comment }
+```
+
+**Triggers hỗ trợ**: `EXPENSE_ABOVE`, `PO_ABOVE`, `LEAVE_REQUEST`, `CUSTOM`.
+
+---
+
+### 👤 10. Customer Self-service Portal
+
+**Mục đích**: khách hàng đăng nhập bằng OTP (gửi qua SMS/email) để tự xem đơn hàng / công nợ / hóa đơn / điểm thưởng — **không dùng JWT**, dùng `x-portal-token` riêng.
+
+**Luồng**:
+1. KH nhập SĐT → `POST /api/portal/otp/request` → nhận OTP 6 số
+2. KH nhập OTP → `POST /api/portal/otp/verify` → trả về `token`
+3. Các request sau gửi header `x-portal-token: <token>`
+
+**API**:
+```http
+POST /api/portal/otp/request      # { phone }
+POST /api/portal/otp/verify       # { phone, otp }  →  { token, customer }
+GET  /api/portal/me               # profile + điểm loyalty + hạng
+GET  /api/portal/orders           # đơn hàng của tôi
+GET  /api/portal/debt             # công nợ
+GET  /api/portal/invoices         # hóa đơn
+```
+
+> Portal frontend riêng chưa kèm trong repo — có thể build SPA nhỏ hoặc nhúng vào website công ty. OTP mặc định log ra console khi chưa cấu hình SMS gateway.
+
+---
+
+### 🏭 11. Sản xuất nâng cao — Lot / Routing / Work Center / QC
+
+**Lot/Serial/Expiry** ([LotTracking.jsx](frontend/src/pages/LotTracking.jsx)):
+```http
+GET  /api/production/lots                # ?productId=&warehouseId=&hasStock=true
+GET  /api/production/lots/expiring?days=30   # cảnh báo hết hạn
+GET  /api/production/lots/:id            # chi tiết + lịch sử di chuyển
+POST /api/production/lots/receive        # { productId, warehouseId, lotNumber, qty, expiryDate }
+POST /api/production/lots/:id/consume    # { quantity, reason }
+```
+
+**Work Center** (máy/dây chuyền — gắn account chi phí để autopost):
+```http
+GET    /api/production/work-centers
+POST   /api/production/work-centers      # { code, name, accountId, costPerHour }
+PATCH  /api/production/work-centers/:id
+DELETE /api/production/work-centers/:id  # ADMIN
+```
+
+**Routing** (định tuyến công đoạn cho mỗi BOM):
+```http
+GET   /api/production/routings           # ?productId=
+POST  /api/production/routings           # { productId, name, steps: [{ workCenterId, sequence, runtimeMin }] }
+PATCH /api/production/routings/:id
+```
+
+**Quality Check**: tự khởi tạo khi Work Order chuyển `IN_PROGRESS`. Khi `COMPLETE`, nếu QC chưa pass thì WO bị chặn. Endpoint nằm trong [work-order.service.js](src/modules/production/work-order.service.js) — gọi qua action complete.
+
+---
+
+### ⏱️ 12. Project Timesheet
+
+**Mục đích**: log giờ làm theo task → tổng hợp cho payroll hoặc xuất hóa đơn dự án (T&M billing).
+
+**API** (nested dưới `/api/projects/:id`):
+```http
+GET    /api/projects/:id/timesheet              # ?from=&to=&userId=
+POST   /api/projects/:id/timesheet              # { taskId, date, hours, note }
+PATCH  /api/projects/:id/timesheet/:entryId
+DELETE /api/projects/:id/timesheet/:entryId     # MANAGER+
+
+GET    /api/projects/:id/invoices
+POST   /api/projects/:id/invoices/generate      # body: { from, to, rate }
+PATCH  /api/projects/:id/invoices/:invId        # { status: DRAFT|SENT|PAID }
+```
+
+**Frontend**: vào `Dự án → Chi tiết` → tab **Timesheet** thêm giờ; tab **Hóa đơn dự án** generate theo khoảng thời gian.
+
+---
+
+### 🔌 13. Trung tâm tích hợp (Integration Center) — **MỚI**
+
+**Mục đích**: thay vì chỉnh `.env` rồi redeploy mỗi khi đổi key VNPT/Cloudinary/SMTP/SMS, quản trị viên có thể cấu hình trực tiếp qua **UI tại `/integrations`** (cần role ADMIN). Giá trị được mã hóa **AES-256-GCM** trong DB và **ưu tiên hơn `process.env`**.
+
+**Frontend**: trang `Trung tâm tích hợp` → 4 tab (VNPT / Cloudinary / SMS / SMTP):
+- Mỗi tab có form cấu hình + nút **Test kết nối** (gửi SMS thật, verify SMTP, login VNPT, ping Cloudinary)
+- Secret field hiển thị `••••••••` để không lộ giá trị cũ — nhập rỗng = giữ nguyên
+- Tag xanh "Đã cấu hình X/Y" hiện trạng thái mỗi nhóm
+
+**API**:
+```http
+GET   /api/integrations                    # toàn bộ cấu hình (secrets đã che)
+GET   /api/integrations/:category          # 1 nhóm: VNPT | CLOUDINARY | SMS | EMAIL
+PUT   /api/integrations/:category          # cập nhật key/value (giá trị "••••••••" sẽ bị bỏ qua)
+POST  /api/integrations/:category/test     # thử kết nối — body tùy provider
+```
+
+**Các nhóm hỗ trợ**:
+
+| Category | Keys | Provider hỗ trợ |
+|---|---|---|
+| `VNPT` | `VNPT_EINVOICE_URL`, `VNPT_USERNAME`, `VNPT_PASSWORD`, `VNPT_COM_CODE`, `VNPT_TEMPLATE_CODE`, `VNPT_SERIAL` | VNPT E-Invoice (mock fallback) |
+| `CLOUDINARY` | `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET` | Cloudinary |
+| `SMS` | `SMS_PROVIDER`, `SMS_API_KEY`, `SMS_API_SECRET`, `SMS_BRAND_NAME` | ESMS, Twilio, LOG (dev) |
+| `EMAIL` | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM`, `SMTP_SECURE` | bất kỳ SMTP (Gmail, SendGrid, …) |
+
+**Cấu hình mã hóa** (`.env`):
+```env
+ENCRYPTION_KEY=chuoi_ngau_nhien_dai_>=_32_ky_tu
+```
+> Nếu để trống, hệ thống tự derive key từ `JWT_SECRET` (chỉ dùng cho dev — production phải set riêng).
+
+**Quy tắc đọc giá trị** (xem [integration-config.service.js](src/modules/integrations/integration-config.service.js)):
+1. Đọc từ DB → giải mã nếu là secret
+2. Fallback sang `process.env[KEY]` nếu DB trống
+3. Cache in-memory TTL 60s, invalidate khi `set()`
+
+**Provider SMS hỗ trợ** (xem [sms.js](src/utils/sms.js)):
+- **ESMS** (`rest.esms.vn`): brandname SMS Việt Nam
+- **Twilio**: SMS quốc tế
+- **LOG** (mặc định khi chưa cấu hình): chỉ ghi log để dev
+
+---
+
+## 🧪 Quy trình test nhanh các tính năng mới
+
+```bash
+# 1. Khởi động lại sau khi pull code mới
+npm install
+npm run db:migrate     # áp dụng các migration phase 1-4
+npm run dev
+
+# 2. Đăng nhập admin@erp.com / admin123, sau đó test theo thứ tự:
+#    - Cài VNPT mock → /einvoice → phát hành 1 HĐ từ Order
+#    - /tax-reports → chọn tháng có Invoice → xuất XML 01/GTGT
+#    - /fixed-assets → tạo category + asset → chạy depreciation manual
+#    - /bank-reco → upload sao kê VCB mẫu → auto-match
+#    - /currency → thêm USD + tỷ giá
+#    - /marketplace → tạo shop mock → push inventory
+#    - /report-builder → chọn Order → run thử
+#    - /workflows → tạo rule EXPENSE_ABOVE 1tr → tạo expense 2tr → check tab Cần duyệt
+#    - /production → BOM đa cấp → tạo WO → start → complete (kèm QC)
+#    - /integrations → tab SMTP → điền Gmail App Password → Test → kiểm tra inbox
+```
+
+---
+
+_Tài liệu cập nhật: 2026-05-22 — hệ thống đã hoàn thiện 7 module nền tảng (Bán hàng, Kho, Tài chính, HR, CRM/Marketing, Dự án, Sản xuất) + 4 giai đoạn mở rộng:_
+
+- _**Phase 1** — Tuân thủ thuế VN: E-Invoice (VNPT) + Tax Report HTKK + PIT/BHXH_
+- _**Phase 2** — Tài chính nâng cao: Bank Reconciliation (VCB/TCB) + Fixed Assets + Multi-currency_
+- _**Phase 3** — Vận hành chuyên sâu: BOM đa cấp + Lot/Serial/Expiry + Work Center + Routing + QC + Marketplace (Shopee/Lazada/TikTok) + Project Timesheet_
+- _**Phase 4** — Mở rộng người dùng: Report Builder + Workflow/Approval + Customer Self-service Portal_
+- _**Integration Center** — UI quản trị tập trung cho VNPT / Cloudinary / SMS / SMTP, mã hóa AES-256-GCM, không cần redeploy khi đổi credentials_
