@@ -104,6 +104,21 @@ const create = async (data, userId, { overridePolicy = false, userRole } = {}) =
 
   const refundAmount = round2(returnItems.reduce((sum, item) => sum + item.refundAmount, 0));
 
+  // Cap: tổng tất cả phiếu trả (kể cả các phiếu cũ chưa CANCELLED) + phiếu này
+  // không được vượt order.total — chống hoàn nhiều hơn đã thu.
+  const existingReturnsAgg = await prisma.orderReturn.aggregate({
+    where: { orderId: data.orderId, status: { not: "REJECTED" } },
+    _sum: { refundAmount: true },
+  });
+  const existingRefund = toNumber(existingReturnsAgg._sum.refundAmount);
+  const orderTotal = toNumber(order.total);
+  if (round2(existingRefund + refundAmount) > orderTotal) {
+    throw {
+      status: 400,
+      message: `Tổng tiền hoàn (${round2(existingRefund + refundAmount).toLocaleString("vi-VN")}đ) vượt quá tổng đơn (${orderTotal.toLocaleString("vi-VN")}đ). Đã hoàn trước đó: ${existingRefund.toLocaleString("vi-VN")}đ.`,
+    };
+  }
+
   return withCodeRetry(
     generateReturnCode,
     (returnCode) =>

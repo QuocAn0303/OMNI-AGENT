@@ -297,7 +297,7 @@ const start = async (id, userId) => {
         select: {
           requiredQty: true,
           componentId: true,
-          component: { select: { sku: true, name: true } },
+          component: { select: { sku: true, name: true, costPrice: true } },
         },
       },
     },
@@ -322,6 +322,7 @@ const start = async (id, userId) => {
   const stockMap = new Map(inventories.map((i) => [i.productId, i.quantity]));
 
   const shortages = [];
+  const zeroCostComponents = [];
   for (const it of wo.items) {
     const have = stockMap.get(it.componentId) || 0;
     if (have < it.requiredQty) {
@@ -331,12 +332,24 @@ const start = async (id, userId) => {
         available: have,
       });
     }
+    // Cảnh báo nếu component có costPrice = 0 — sẽ làm totalCost = 0 → không ghi
+    // bút toán giá vốn. Block lại để buộc user cập nhật costPrice trước.
+    if (!it.component.costPrice || Number(it.component.costPrice) <= 0) {
+      zeroCostComponents.push(`${it.component.sku} - ${it.component.name}`);
+    }
   }
   if (shortages.length > 0) {
     const msg = shortages
       .map((s) => `${s.component} (cần ${s.required}, còn ${s.available})`)
       .join("; ");
     const err = new Error(`Thiếu nguyên liệu: ${msg}`);
+    err.status = 400;
+    throw err;
+  }
+  if (zeroCostComponents.length > 0) {
+    const err = new Error(
+      `Các nguyên liệu sau chưa có giá vốn (costPrice = 0), không thể tính giá thành: ${zeroCostComponents.join("; ")}. Hãy cập nhật costPrice trong trang Sản phẩm trước khi bắt đầu sản xuất.`
+    );
     err.status = 400;
     throw err;
   }

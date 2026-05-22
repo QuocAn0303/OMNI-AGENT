@@ -383,14 +383,22 @@ router.post("/fiscal-periods/close", authorize("ADMIN"), async (req, res, next) 
 router.post("/fiscal-periods/reopen", authorize("ADMIN"), async (req, res, next) => {
   try {
     const { year, month } = req.body;
-    success(res, await fiscalService.reopen({ year: Number(year), month: Number(month) }), "Đã mở lại kỳ");
+    success(
+      res,
+      await fiscalService.reopen({ year: Number(year), month: Number(month) }, req.user.id, req.user.role),
+      "Đã mở lại kỳ"
+    );
   } catch (e) { next(e); }
 });
 
 router.post("/fiscal-periods/lock", authorize("ADMIN"), async (req, res, next) => {
   try {
     const { year, month } = req.body;
-    success(res, await fiscalService.lock({ year: Number(year), month: Number(month) }), "Đã khóa kỳ");
+    success(
+      res,
+      await fiscalService.lock({ year: Number(year), month: Number(month) }, req.user.id, req.user.role),
+      "Đã khóa kỳ"
+    );
   } catch (e) { next(e); }
 });
 

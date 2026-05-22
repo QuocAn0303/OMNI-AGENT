@@ -3,6 +3,7 @@ const auditService = require("../audit/audit.service");
 const paymentService = require("../payments/payment.service");
 const autopostService = require("../accounting/autopost.service");
 const postingErrorService = require("../accounting/posting-error.service");
+const journalService = require("../accounting/journal.service");
 const debtService = require("../debt/debt.service");
 const promotionService = require("../promotions/promotion.service");
 const loyaltyService = require("../loyalty/loyalty.service");
@@ -414,7 +415,9 @@ const validTransitions = {
   PENDING: ["CONFIRMED", "CANCELLED"],
   CONFIRMED: ["SHIPPING", "CANCELLED"],
   SHIPPING: ["COMPLETED", "CANCELLED"],
-  COMPLETED: [],
+  // COMPLETED → CANCELLED chỉ dành cho khôi phục sai sót (vd order tạo nhầm).
+  // Khi hủy đơn đã COMPLETED: tự reverse bút toán + nhập lại kho + rollback loyalty/promo + đóng debt.
+  COMPLETED: ["CANCELLED"],
   CANCELLED: [],
 };
 
@@ -451,22 +454,58 @@ const updateStatus = async (id, status, userId = null) => {
     if (status === "CANCELLED") {
       await promotionService.rollbackOrderPromotions(tx, id);
       await loyaltyService.rollbackOnCancel(tx, order);
+
+      // Tùy trạng thái cũ mà xử lý kho khác nhau:
+      //   PENDING/CONFIRMED/SHIPPING: giải phóng RESERVATION
+      //   COMPLETED: nhập lại kho (đã EXPORT) — đây là khôi phục đơn lỡ tay
+      const wasCompleted = order.status === "COMPLETED";
       for (const item of order.items) {
         const inv =
           item.product.inventories?.find((i) => i.warehouseId === whId) ||
           (await findInventory(tx, item.productId, whId));
-        await tx.inventory.update({
-          where: { id: inv.id },
-          data: { reserved: { decrement: item.quantity } },
-        });
-        await tx.inventoryTransaction.create({
-          data: {
-            inventoryId: inv.id,
-            type: "RESERVATION_RELEASE",
-            quantity: item.quantity,
-            note: `Giải phóng giữ hàng - đơn ${order.orderCode}`,
-            createdById: userId,
-          },
+        if (wasCompleted) {
+          await tx.inventory.update({
+            where: { id: inv.id },
+            data: { quantity: { increment: item.quantity } },
+          });
+          await tx.inventoryTransaction.create({
+            data: {
+              inventoryId: inv.id,
+              type: "RETURN",
+              quantity: item.quantity,
+              note: `Hủy đơn đã hoàn thành - nhập lại kho ${order.orderCode}`,
+              createdById: userId,
+            },
+          });
+        } else {
+          await tx.inventory.update({
+            where: { id: inv.id },
+            data: { reserved: { decrement: item.quantity } },
+          });
+          await tx.inventoryTransaction.create({
+            data: {
+              inventoryId: inv.id,
+              type: "RESERVATION_RELEASE",
+              quantity: item.quantity,
+              note: `Giải phóng giữ hàng - đơn ${order.orderCode}`,
+              createdById: userId,
+            },
+          });
+        }
+      }
+
+      // Nếu trước đó COMPLETED và đã có totalSpent/debt thì rollback
+      if (wasCompleted) {
+        if (order.customerId) {
+          await tx.customer.update({
+            where: { id: order.customerId },
+            data: { totalSpent: { decrement: order.total } },
+          });
+        }
+        // Đóng debt phải thu (nếu có) — chuyển sang CLOSED + note đính kèm
+        await tx.debt.updateMany({
+          where: { orderId: id, type: "RECEIVABLE", status: { not: "CLOSED" } },
+          data: { status: "CLOSED" },
         });
       }
     }
@@ -516,6 +555,34 @@ const updateStatus = async (id, status, userId = null) => {
         await notif.checkAfterExport(it.productId);
       }
     } catch (_) {}
+  }
+
+  // Hủy đơn đã COMPLETED: đảo bút toán đã ghi
+  if (order.status === "COMPLETED" && status === "CANCELLED") {
+    try {
+      const orig = await prisma.journalEntry.findFirst({
+        where: {
+          source: "ORDER",
+          sourceId: id,
+          operation: "PRIMARY",
+          status: "POSTED",
+        },
+        select: { id: true },
+      });
+      if (orig) {
+        await journalService.reverseEntry(orig.id, userId);
+      }
+    } catch (err) {
+      // Không re-throw — nghiệp vụ đã commit. Lưu vào outbox để admin retry.
+      await postingErrorService
+        .recordError({
+          source: "ORDER",
+          sourceId: id,
+          payload: { operation: "REVERSE_ORDER", reason: "COMPLETED_TO_CANCELLED" },
+          error: err,
+        })
+        .catch(() => {});
+    }
   }
 
   // Sau khi commit, nếu chuyển PENDING/CONFIRMED/SHIPPING → COMPLETED, autopost

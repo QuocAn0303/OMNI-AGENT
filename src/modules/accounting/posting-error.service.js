@@ -97,6 +97,7 @@ const REBUILDERS = {
       vendor: po.vendor,
       amount: Number(payload.amount || 0),
       method: payload.method || "BANK_TRANSFER",
+      paymentId: payload.paymentId,
       userId,
     });
   },

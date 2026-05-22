@@ -85,6 +85,22 @@ const getById = async (id) => {
 };
 
 const create = async (data, userId) => {
+  // Validate category has linked account before creating expense.
+  // Tránh trường hợp post bút toán fail vì account null.
+  const category = await prisma.expenseCategory.findUnique({
+    where: { id: data.categoryId },
+    select: { id: true, name: true, accountId: true },
+  });
+  if (!category) {
+    throw { status: 400, message: "Danh mục chi phí không tồn tại" };
+  }
+  if (!category.accountId) {
+    throw {
+      status: 400,
+      message: `Danh mục "${category.name}" chưa được gán tài khoản kế toán. Vui lòng cập nhật ở phần Cấu hình.`,
+    };
+  }
+
   const { amount, taxAmount, totalAmount } = await computeAmounts(data);
 
   return withUniqueRetry(() => prisma.$transaction(async (tx) => {
@@ -310,10 +326,28 @@ const markPaid = async (id, { method = "CASH", bankAccountId } = {}, userId) => 
 };
 
 const reject = async (id, userId) => {
-  return prisma.expense.update({
+  const auditService = require("../audit/audit.service");
+  const before = await prisma.expense.findUnique({
+    where: { id },
+    select: { status: true, expenseCode: true },
+  });
+  if (!before) throw { status: 404, message: "Không tìm thấy chi phí" };
+  if (["PAID", "REJECTED"].includes(before.status)) {
+    throw { status: 400, message: "Không thể từ chối chi phí ở trạng thái này" };
+  }
+  const updated = await prisma.expense.update({
     where: { id },
     data: { status: "REJECTED", approvedById: userId },
   });
+  auditService.log({
+    userId,
+    action: "REJECT_EXPENSE",
+    entity: "Expense",
+    entityId: id,
+    before: { status: before.status, expenseCode: before.expenseCode },
+    after: { status: "REJECTED" },
+  });
+  return updated;
 };
 
 const listCategories = async () => {

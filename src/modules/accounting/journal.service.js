@@ -99,6 +99,7 @@ const postEntryOnce = async (input, tx = prisma) => {
     description,
     source = "MANUAL",
     sourceId = null,
+    operation = "PRIMARY",
     userId = null,
     lines = [],
   } = input;
@@ -106,6 +107,16 @@ const postEntryOnce = async (input, tx = prisma) => {
   if (!description) throw { status: 400, message: "Bút toán phải có mô tả" };
   if (!Array.isArray(lines) || lines.length < 2) {
     throw { status: 400, message: "Bút toán phải có tối thiểu 2 dòng (Nợ/Có)" };
+  }
+
+  // Idempotency: nếu đã có bút toán POSTED cùng (source, sourceId, operation)
+  // → không tạo nữa, trả về bản cũ. Tránh race condition + retry trùng lặp.
+  if (sourceId) {
+    const existing = await tx.journalEntry.findFirst({
+      where: { source, sourceId, operation, status: "POSTED" },
+      include: { lines: { include: { account: true } } },
+    });
+    if (existing) return existing;
   }
 
   // Resolve accounts & validate
@@ -154,32 +165,62 @@ const postEntryOnce = async (input, tx = prisma) => {
     throw { status: 400, message: "Bút toán có tổng = 0, không hợp lệ" };
   }
 
-  // Check fiscal period closed
+  // Check fiscal period:
+  //  1. Nếu date nằm trong 1 kỳ → kỳ đó phải đang OPEN
+  //  2. Nếu date không thuộc kỳ nào VÀ hệ thống đã có ít nhất 1 kỳ → reject
+  //     (ngăn user post lùi/post tới ngày không kế toán)
+  //  3. Nếu hệ thống chưa cấu hình kỳ nào → cho phép (early setup phase)
   const period = await findOpenPeriod(date, tx);
-  if (period && period.status !== "OPEN") {
-    throw {
-      status: 400,
-      message: `Kỳ kế toán ${period.month}/${period.year} đã ${period.status === "CLOSED" ? "đóng" : "khóa"}, không thể ghi sổ`,
-    };
+  if (period) {
+    if (period.status !== "OPEN") {
+      throw {
+        status: 400,
+        message: `Kỳ kế toán ${period.month}/${period.year} đã ${period.status === "CLOSED" ? "đóng" : "khóa"}, không thể ghi sổ`,
+      };
+    }
+  } else {
+    const anyPeriod = await tx.fiscalPeriod.findFirst({
+      where: { month: { not: 0 } },
+      select: { id: true },
+    });
+    if (anyPeriod) {
+      throw {
+        status: 400,
+        message: `Ngày ${new Date(date).toISOString().slice(0, 10)} không thuộc kỳ kế toán nào đang mở. Vui lòng mở kỳ tương ứng trước khi ghi sổ.`,
+      };
+    }
   }
 
   const entryCode = await generateEntryCode(tx);
-  const entry = await tx.journalEntry.create({
-    data: {
-      entryCode,
-      date,
-      description,
-      source,
-      sourceId,
-      status: "POSTED",
-      createdById: userId,
-      fiscalPeriodId: period?.id,
-      lines: { create: resolvedLines },
-    },
-    include: { lines: { include: { account: true } } },
-  });
-
-  return entry;
+  try {
+    const entry = await tx.journalEntry.create({
+      data: {
+        entryCode,
+        date,
+        description,
+        source,
+        sourceId,
+        operation,
+        status: "POSTED",
+        createdById: userId,
+        fiscalPeriodId: period?.id,
+        lines: { create: resolvedLines },
+      },
+      include: { lines: { include: { account: true } } },
+    });
+    return entry;
+  } catch (err) {
+    // Race condition: 2 process post cùng (source, sourceId, operation) → P2002
+    // Trả về bản cũ thay vì throw.
+    if (isUniqueConstraintError(err) && sourceId) {
+      const existing = await tx.journalEntry.findFirst({
+        where: { source, sourceId, operation, status: "POSTED" },
+        include: { lines: { include: { account: true } } },
+      });
+      if (existing) return existing;
+    }
+    throw err;
+  }
 };
 
 const postEntry = (input, tx = prisma) => {
@@ -209,11 +250,24 @@ const reverseEntry = async (entryId, userId = null, externalTx = null) => {
     // Check fiscal period đang OPEN cho ngày đảo
     const reversalDate = new Date();
     const period = await findOpenPeriod(reversalDate, tx);
-    if (period && period.status !== "OPEN") {
-      throw {
-        status: 400,
-        message: `Kỳ kế toán ${period.month}/${period.year} đã ${period.status === "CLOSED" ? "đóng" : "khóa"}, không thể đảo bút toán`,
-      };
+    if (period) {
+      if (period.status !== "OPEN") {
+        throw {
+          status: 400,
+          message: `Kỳ kế toán ${period.month}/${period.year} đã ${period.status === "CLOSED" ? "đóng" : "khóa"}, không thể đảo bút toán`,
+        };
+      }
+    } else {
+      const anyPeriod = await tx.fiscalPeriod.findFirst({
+        where: { month: { not: 0 } },
+        select: { id: true },
+      });
+      if (anyPeriod) {
+        throw {
+          status: 400,
+          message: "Ngày hiện tại không thuộc kỳ kế toán nào đang mở. Vui lòng mở kỳ tương ứng trước khi đảo bút toán.",
+        };
+      }
     }
 
     const reversedLines = original.lines.map((l) => ({
@@ -233,6 +287,8 @@ const reverseEntry = async (entryId, userId = null, externalTx = null) => {
             description: `[ĐẢO] ${original.description}`,
             source: original.source,
             sourceId: original.sourceId,
+            // operation = REVERSAL + originalId để unique theo từng bút toán đảo
+            operation: `REVERSAL:${original.id.slice(0, 8)}`,
             status: "POSTED",
             reversedById: original.id,
             createdById: userId,

@@ -82,6 +82,7 @@ const buildOrderCompletedEntry = ({ order, items, paidAmount = 0, payments = [],
     description: `Ban hang - don ${order.orderCode}`,
     source: "ORDER",
     sourceId: order.id,
+    operation: "PRIMARY",
     userId,
     lines,
   };
@@ -96,6 +97,7 @@ const buildPaymentEntry = ({ payment, order, userId }) => {
     description: `Thu tien KH - don ${order.orderCode}`,
     source: "PAYMENT",
     sourceId: payment.id,
+    operation: "PRIMARY",
     userId,
     lines: [
       { accountCode: cashAccountByMethod(payment.method), debit: amount, description: `Thu ${payment.method}` },
@@ -144,6 +146,7 @@ const buildOrderReturnEntry = ({ orderReturn, order, items, userId }) => {
     description: `Tra hang ${orderReturn.returnCode} - don ${order.orderCode}`,
     source: "RETURN",
     sourceId: orderReturn.id,
+    operation: "PRIMARY",
     userId,
     lines,
   };
@@ -154,6 +157,13 @@ const buildExpenseEntry = ({ expense, category, vendor, userId }) => {
   const tax = toNum(expense.taxAmount);
   const total = toNum(expense.totalAmount);
   if (total <= 0) return null;
+  if (!category?.accountId) {
+    // Defensive: nếu đến đây mà accountId null thì có lỗi schema.
+    throw {
+      status: 500,
+      message: `Danh mục chi phí "${category?.name || "?"}" thiếu tài khoản kế toán liên kết`,
+    };
+  }
 
   const lines = [{ accountId: category.accountId, debit: amount, description: expense.description }];
   if (tax > 0) lines.push({ accountCode: "1331", debit: tax, description: `VAT dau vao (${expense.expenseCode})` });
@@ -181,6 +191,7 @@ const buildExpenseEntry = ({ expense, category, vendor, userId }) => {
     description: `Chi phi: ${expense.description}`,
     source: "EXPENSE",
     sourceId: expense.id,
+    operation: "ACCRUAL",
     userId,
     lines,
   };
@@ -195,6 +206,7 @@ const buildExpensePaymentEntry = ({ expense, vendor, userId }) => {
     description: `Thanh toan chi phi: ${expense.description}`,
     source: "EXPENSE",
     sourceId: expense.id,
+    operation: "PAYMENT",
     userId,
     lines: [
       {
@@ -230,12 +242,13 @@ const buildPurchaseReceivedEntry = ({ purchaseOrder, vendor, userId }) => {
     description: `Nhap hang tu ${vendor.name} - PO ${purchaseOrder.poCode}`,
     source: "PURCHASE",
     sourceId: purchaseOrder.id,
+    operation: "RECEIVE",
     userId,
     lines,
   };
 };
 
-const buildPurchasePaymentEntry = ({ purchaseOrder, vendor, amount, method, userId }) => {
+const buildPurchasePaymentEntry = ({ purchaseOrder, vendor, amount, method, userId, paymentId }) => {
   if (amount <= 0) return null;
 
   return {
@@ -243,6 +256,9 @@ const buildPurchasePaymentEntry = ({ purchaseOrder, vendor, amount, method, user
     description: `Thanh toan PO ${purchaseOrder.poCode} cho ${vendor.name}`,
     source: "PURCHASE",
     sourceId: purchaseOrder.id,
+    // Mỗi payment là một sự kiện riêng → operation phải unique theo paymentId.
+    // Nếu không có paymentId, fall back timestamp để allow nhiều partial payments.
+    operation: `PAYMENT:${paymentId || Date.now()}`,
     userId,
     lines: [
       {
@@ -267,6 +283,7 @@ const buildPayrollAccrualEntry = ({ payroll, employee, userId }) => {
     description: `Luong ${payroll.month}/${payroll.year} - ${employee?.user?.fullName || "NV"}`,
     source: "PAYROLL",
     sourceId: payroll.id,
+    operation: "PRIMARY",
     userId,
     lines: [
       { accountCode: expenseCode, debit: total, description: "Chi phi luong" },
@@ -292,6 +309,7 @@ const buildDebtPaymentEntry = ({ debt, payment, userId }) => {
       description: `Thu công nợ khách hàng (${debt.id.slice(0, 8)})`,
       source: "DEBT",
       sourceId: payment.id,
+      operation: "PRIMARY",
       userId,
       lines: [
         { accountCode: cashCode, debit: amt, description: `Thu tiền công nợ` },
@@ -310,6 +328,7 @@ const buildDebtPaymentEntry = ({ debt, payment, userId }) => {
     description: `Thanh toán công nợ NCC (${debt.id.slice(0, 8)})`,
     source: "DEBT",
     sourceId: payment.id,
+    operation: "PRIMARY",
     userId,
     lines: [
       {
@@ -350,6 +369,8 @@ const buildWorkOrderCompletedEntry = ({ workOrder, items, userId }) => {
     description: `Hoàn thành sản xuất WO ${workOrder.code} - ${workOrder.product?.name || ""}`,
     source: "INVENTORY",
     sourceId: workOrder.id,
+    // WO completed dùng operation riêng để không clash với INVENTORY khác
+    operation: "WORK_ORDER",
     userId,
     lines: [
       {
@@ -366,11 +387,15 @@ const buildWorkOrderCompletedEntry = ({ workOrder, items, userId }) => {
   };
 };
 
-const buildCapitalContributionEntry = ({ amount, method = "CASH", description = "Gop von chu so huu", userId }) => {
+const buildCapitalContributionEntry = ({ amount, method = "CASH", description = "Gop von chu so huu", userId, contributionId }) => {
   if (amount <= 0) return null;
   return {
     description,
     source: "MANUAL",
+    // Capital contribution có thể có sourceId từ contribution table nếu có
+    // hoặc fall back to date để mỗi lần là entry mới
+    sourceId: contributionId || null,
+    operation: "PRIMARY",
     userId,
     lines: [
       { accountCode: cashAccountByMethod(method), debit: amount, description },

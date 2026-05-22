@@ -976,6 +976,10 @@ model JournalEntry {
   date           DateTime       @default(now())
   source         JournalSource  @default(MANUAL)
   sourceId       String? // id của Order/Payment/Expense...
+  // Sub-event code để phân biệt nhiều bút toán cho cùng sourceId.
+  // Ví dụ: source=EXPENSE, sourceId=<expense.id> có thể có operation='ACCRUAL' và 'PAYMENT'.
+  // source=ORDER thường chỉ có operation='PRIMARY' (mặc định).
+  operation      String         @default("PRIMARY")
   description    String
   status         JournalStatus  @default(POSTED)
   reversedById   String?
@@ -989,6 +993,9 @@ model JournalEntry {
   updatedAt      DateTime       @updatedAt
   lines          JournalLine[]
 
+  // Chỉ áp dụng unique khi sourceId không null (MANUAL không có sourceId).
+  // Postgres treat NULL trong composite key là khác nhau → an toàn cho MANUAL.
+  @@unique([source, sourceId, operation], name: "uniq_je_source_op")
   @@index([source, sourceId])
   @@index([date])
   @@map("journal_entries")

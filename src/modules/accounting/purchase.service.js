@@ -341,12 +341,17 @@ const pay = async (id, { amount, method = "BANK_TRANSFER" }, userId) => {
     return { updated, payAmount, method };
   });
 
+  // Mỗi partial payment cần có ID duy nhất để journal entry idempotent.
+  // Dùng `paidAmount` sau khi thanh toán (newPaid) — giá trị này luôn khác nhau
+  // giữa các lần pay() trên cùng 1 PO (vì atomic update).
+  const paymentId = `po-${result.updated.id}-paid-${result.updated.paidAmount}`;
   const postingPayload = autopostService.buildPurchasePaymentEntry({
     purchaseOrder: result.updated,
     vendor: result.updated.vendor,
     amount: result.payAmount,
     method: result.method,
     userId,
+    paymentId,
   });
   await postingErrorService.tryPostOrQueue(
     () =>
@@ -356,11 +361,12 @@ const pay = async (id, { amount, method = "BANK_TRANSFER" }, userId) => {
         amount: result.payAmount,
         method: result.method,
         userId,
+        paymentId,
       }),
     {
       source: "PURCHASE",
       sourceId: result.updated.id,
-      payload: postingPayload,
+      payload: { ...postingPayload, paymentId },
     },
   );
 
