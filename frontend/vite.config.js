@@ -19,10 +19,10 @@ export default defineConfig(({ mode }) => {
       VitePWA({
         registerType: 'autoUpdate',
         manifest: {
-          name: 'ERP System',
-          short_name: 'ERP',
-          description: 'Hệ thống quản lý doanh nghiệp',
-          theme_color: '#0f766e',
+          name: 'Aduu',
+          short_name: 'Aduu',
+          description: 'Hệ thống quản trị doanh nghiệp Aduu',
+          theme_color: '#714B67',
           background_color: '#f8fafc',
           display: 'standalone',
           icons: [

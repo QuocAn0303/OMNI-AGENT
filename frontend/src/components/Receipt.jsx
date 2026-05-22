@@ -36,7 +36,7 @@ export default function Receipt({ order }) {
         }
       `}</style>
       <div className="thermal-receipt__center">
-        <div className="thermal-receipt__title">{import.meta.env.VITE_STORE_NAME || "MINI ERP"}</div>
+        <div className="thermal-receipt__title">{import.meta.env.VITE_STORE_NAME || "ADUU STORE"}</div>
         <div>Cảm ơn quý khách!</div>
       </div>
       <div className="thermal-receipt__line" />

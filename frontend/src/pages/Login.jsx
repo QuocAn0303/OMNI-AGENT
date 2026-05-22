@@ -46,7 +46,7 @@ export default function Login() {
       {/* LEFT: Brand panel */}
       <section className="login-brand" aria-hidden="true">
         <div className="login-brand__header">
-          <div className="login-brand__logo">E</div>
+          <div className="login-brand__logo">A</div>
           <div>
             <div
               style={{
@@ -55,10 +55,10 @@ export default function Login() {
                 letterSpacing: "-0.02em",
               }}
             >
-              ERP System
+              Aduu
             </div>
             <div style={{ fontSize: 12, color: "rgba(255,255,255,0.5)" }}>
-              Retail Management
+              Business Management Platform
             </div>
           </div>
         </div>
@@ -75,7 +75,7 @@ export default function Login() {
         </div>
 
         <div className="login-brand__footer">
-          © {new Date().getFullYear()} ERP System · v1.0
+          © {new Date().getFullYear()} Aduu · v1.0
         </div>
       </section>
 

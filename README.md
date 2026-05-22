@@ -1,6 +1,6 @@
-# ERP System
+# Aduu
 
-Tổng quan: Hệ thống ERP đa module cho doanh nghiệp bán lẻ + dịch vụ + sản xuất nhỏ và vừa. Backend Node.js + Express + Prisma + PostgreSQL, frontend React + Vite + Ant Design. Mục tiêu: quản lý sản phẩm, kho, đơn hàng, khách hàng, kế toán, nhân sự, marketing/CRM, dự án, sản xuất và báo cáo trong cùng 1 hệ thống.
+Tổng quan: **Aduu** là hệ thống ERP đa module cho doanh nghiệp bán lẻ + dịch vụ + sản xuất nhỏ và vừa. Backend Node.js + Express + Prisma + PostgreSQL, frontend React + Vite + Ant Design. Mục tiêu: quản lý sản phẩm, kho, đơn hàng, khách hàng, kế toán, nhân sự, marketing/CRM, dự án, sản xuất và báo cáo trong cùng 1 hệ thống.
 
 **Kiến trúc & Stack**
 

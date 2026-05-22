@@ -133,7 +133,7 @@ app.use('/api', apiLimiter)
 app.use('/api/auth/login', loginLimiter)
 
 app.get("/", (req, res) => {
-  res.json({ message: "ERP System API đang chạy", version: "1.0.0" });
+  res.json({ message: "Aduu API đang chạy", version: "1.0.0" });
 });
 
 app.use("/api/auth", authRoutes);

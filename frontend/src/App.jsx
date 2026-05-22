@@ -50,8 +50,8 @@ const WorkOrderDetail = lazy(() => import("./pages/production/WorkOrderDetail"))
 
 const erpThemeTokens = {
   token: {
-    colorPrimary: '#0f766e',
-    colorPrimaryHover: '#115e59',
+    colorPrimary: '#714B67',
+    colorPrimaryHover: '#5d3d56',
     borderRadius: 10,
     fontFamily: "'Geist', 'Inter', system-ui, -apple-system, sans-serif",
     colorBgContainer: '#ffffff',
@@ -82,12 +82,12 @@ const erpThemeTokens = {
     Menu: {
       darkItemBg: '#0f172a',
       darkSubMenuItemBg: '#1e293b',
-      darkItemSelectedBg: '#115e59',
+      darkItemSelectedBg: '#714B67',
       darkItemHoverBg: '#1e293b',
     },
-    Input: { activeShadow: '0 0 0 3px rgba(15, 118, 110, 0.15)' },
-    Select: { optionSelectedBg: '#f0fdf9' },
-    DatePicker: { activeShadow: '0 0 0 3px rgba(15, 118, 110, 0.15)' },
+    Input: { activeShadow: '0 0 0 3px rgba(113, 75, 103, 0.15)' },
+    Select: { optionSelectedBg: '#f7eff4' },
+    DatePicker: { activeShadow: '0 0 0 3px rgba(113, 75, 103, 0.15)' },
     Modal: { borderRadiusLG: 14 },
     Tag: { borderRadiusSM: 6 },
   },

@@ -17,7 +17,7 @@ export default function ERPAssistantWidget() {
   const [messages, setMessages] = useState([
     {
       role: 'assistant',
-      content: 'Xin chào! Tôi là trợ lý ERP. Bạn có thể hỏi tôi về doanh thu, sản phẩm, đơn hàng, khách hàng...',
+      content: 'Xin chào! Tôi là trợ lý Aduu. Bạn có thể hỏi tôi về doanh thu, sản phẩm, đơn hàng, khách hàng...',
     },
   ]);
   const [input, setInput] = useState('');

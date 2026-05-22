@@ -206,8 +206,8 @@ export default function Sidebar({ collapsed, onToggleCollapse, mobileOpen, onMob
 
       {/* Logo */}
       <div className="sidebar__logo">
-        <div className="sidebar__logo-mark">E</div>
-        <div className="sidebar__logo-text">ERP System</div>
+        <div className="sidebar__logo-mark">A</div>
+        <div className="sidebar__logo-text">Aduu</div>
       </div>
 
       {/* Menu */}

@@ -1,7 +1,7 @@
 {
-  "name": "erp-system",
+  "name": "aduu",
   "version": "1.0.0",
-  "description": "ERP System for Retail Business",
+  "description": "Aduu — Hệ thống quản trị doanh nghiệp đa module",
   "main": "src/app.js",
   "scripts": {
     "dev": "nodemon src/app.js",
