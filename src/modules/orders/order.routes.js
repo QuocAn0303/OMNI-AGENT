@@ -222,4 +222,22 @@ router.patch(
   },
 );
 
+// GET /api/orders/:id/vietqr — tạo VietQR cho đơn hàng
+router.get("/:id/vietqr", authenticate, async (req, res, next) => {
+  try {
+    const { generateVietQRBase64, buildVietQRString, BANK_BINS } = require("../../utils/vietqr");
+    const order = await orderService.getById(req.params.id);
+    const bankBin  = req.query.bankBin  || BANK_BINS.VCB;
+    const accountNumber = req.query.accountNumber || "";
+    const accountName   = req.query.accountName   || "";
+    if (!accountNumber) throw { status: 400, message: "accountNumber là bắt buộc" };
+
+    const description = `TT ${order.orderCode}`.slice(0, 25);
+    const qrString = buildVietQRString({ bankBin, accountNumber, accountName, amount: Number(order.total), description });
+    const qrBase64 = await generateVietQRBase64({ bankBin, accountNumber, accountName, amount: Number(order.total), description });
+
+    success(res, { orderId: order.id, orderCode: order.orderCode, total: order.total, qrString, qrBase64 });
+  } catch (err) { next(err); }
+});
+
 module.exports = router;

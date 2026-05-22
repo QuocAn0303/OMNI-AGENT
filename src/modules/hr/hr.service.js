@@ -111,6 +111,7 @@ const generatePayrollForMonth = async (month, year) => {
       shiftCount,
       shiftMoney: shiftMoneyValue,
       violations,
+      dependents: emp.dependents || 0,
     });
 
     let finalSalary = 0;
@@ -124,6 +125,17 @@ const generatePayrollForMonth = async (month, year) => {
       finalSalary = calc.finalSalary;
     }
 
+    const payrollData = {
+      baseSalary: emp.baseSalary,
+      shiftMoney: shiftMoneyValue,
+      shiftCount,
+      attendanceCoefficient: calc.attendanceCoefficient,
+      penalties: calc.penalties,
+      finalSalary,
+      bhxhEmployee: calc.bhxhEmployee || 0,
+      pitAmount: calc.pitAmount || 0,
+    };
+
     const existing = await prisma.payroll.findFirst({
       where: { employeeId: emp.id, month, year },
     });
@@ -133,31 +145,9 @@ const generatePayrollForMonth = async (month, year) => {
         createdPayrolls.push(existing);
         continue;
       }
-      rec = await prisma.payroll.update({
-        where: { id: existing.id },
-        data: {
-          baseSalary: emp.baseSalary,
-          shiftMoney: shiftMoneyValue,
-          shiftCount,
-          attendanceCoefficient: calc.attendanceCoefficient,
-          penalties: calc.penalties,
-          finalSalary,
-        },
-      });
+      rec = await prisma.payroll.update({ where: { id: existing.id }, data: payrollData });
     } else {
-      rec = await prisma.payroll.create({
-        data: {
-          employeeId: emp.id,
-          month,
-          year,
-          baseSalary: emp.baseSalary,
-          shiftMoney: shiftMoneyValue,
-          shiftCount,
-          attendanceCoefficient: calc.attendanceCoefficient,
-          penalties: calc.penalties,
-          finalSalary,
-        },
-      });
+      rec = await prisma.payroll.create({ data: { employeeId: emp.id, month, year, ...payrollData } });
     }
 
     createdPayrolls.push(rec);
@@ -235,7 +225,9 @@ const listPayroll = async (monthKey) => {
     bonus: 0,
     deduction: Number(p.penalties),
     finalSalary: Number(p.finalSalary),
-    netSalary: Number(p.finalSalary),
+    bhxhEmployee: Number(p.bhxhEmployee),
+    pitAmount: Number(p.pitAmount),
+    netSalary: Math.max(0, Number(p.finalSalary) - Number(p.bhxhEmployee) - Number(p.pitAmount)),
     isLocked: p.isLocked,
   }));
 };

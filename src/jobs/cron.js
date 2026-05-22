@@ -7,6 +7,7 @@ const expenseAuto = require("../modules/accounting/expense-auto.service");
 const loyaltyService = require("../modules/loyalty/loyalty.service");
 const crmTasksService = require("../modules/crm/tasks.service");
 const crmCampaignsService = require("../modules/crm/campaigns.service");
+const fixedAssetsService = require("../modules/fixed-assets/fixed-assets.service");
 
 const startCrons = () => {
   cron.schedule("0 * * * *", async () => {
@@ -85,7 +86,18 @@ const startCrons = () => {
     }
   });
 
-  console.log("[cron] scheduled: orders hourly, debt 09:00, payroll 25th, period 28th, promo daily, recurring 1st, CRM tasks 08:00, CRM campaigns every minute");
+  // Khấu hao TSCD: ngày 28 mỗi tháng lúc 01:00
+  cron.schedule("0 1 28 * *", async () => {
+    const now = new Date();
+    try {
+      const result = await fixedAssetsService.runMonthlyDepreciation(now.getFullYear(), now.getMonth() + 1);
+      console.log(`[cron] depreciation ${result.period}: ${result.processed} assets processed`);
+    } catch (e) {
+      console.error("[cron] depreciation", e.message);
+    }
+  });
+
+  console.log("[cron] scheduled: orders hourly, debt 09:00, payroll 25th, period 28th, promo daily, recurring 1st, CRM tasks 08:00, CRM campaigns every minute, depreciation 28th 01:00");
 };
 
 module.exports = { startCrons };

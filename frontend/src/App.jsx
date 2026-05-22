@@ -47,6 +47,11 @@ const Projects = lazy(() => import("./pages/projects/Projects"));
 const ProjectDetail = lazy(() => import("./pages/projects/ProjectDetail"));
 const Production = lazy(() => import("./pages/production/Production"));
 const WorkOrderDetail = lazy(() => import("./pages/production/WorkOrderDetail"));
+const EInvoice = lazy(() => import("./pages/EInvoice"));
+const TaxReports = lazy(() => import("./pages/TaxReports"));
+const BankReco = lazy(() => import("./pages/BankReco"));
+const FixedAssets = lazy(() => import("./pages/FixedAssets"));
+const Currency = lazy(() => import("./pages/Currency"));
 
 const erpThemeTokens = {
   token: {
@@ -161,6 +166,11 @@ function App() {
             <Route path="/debts" element={<Debts />} />
             <Route path="/reports" element={<Reports />} />
             <Route path="/finance" element={<Finance />} />
+            <Route path="/einvoice" element={<EInvoice />} />
+            <Route path="/tax-reports" element={<TaxReports />} />
+            <Route path="/bank-reco" element={<BankReco />} />
+            <Route path="/fixed-assets" element={<FixedAssets />} />
+            <Route path="/currency" element={<Currency />} />
           </Route>
 
           {/* Chỉ ADMIN */}

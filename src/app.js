@@ -56,6 +56,11 @@ const adminRoutes = require("./modules/admin/admin.routes");
 const crmRoutes = require("./modules/crm");
 const projectRoutes = require("./modules/projects");
 const productionRoutes = require("./modules/production");
+const einvoiceRoutes = require("./modules/einvoice/einvoice.routes");
+const taxReportRoutes = require("./modules/tax-report/tax-report.routes");
+const bankRecoRoutes = require("./modules/bank-reco/bank-reco.routes");
+const fixedAssetsRoutes = require("./modules/fixed-assets/fixed-assets.routes");
+const currencyRoutes = require("./modules/currency/currency.routes");
 const deliveryService = require("./modules/delivery/delivery.service");
 const http = require("http");
 const { initSocket } = require("./realtime/socket");
@@ -166,6 +171,11 @@ app.use("/api/admin", adminRoutes);
 app.use("/api/crm", crmRoutes);
 app.use("/api/projects", projectRoutes);
 app.use("/api/production", productionRoutes);
+app.use("/api/einvoice", einvoiceRoutes);
+app.use("/api/tax-reports", taxReportRoutes);
+app.use("/api/bank-reco", bankRecoRoutes);
+app.use("/api/fixed-assets", fixedAssetsRoutes);
+app.use("/api/currencies", currencyRoutes);
 
 // Sentry error handler (phải trước error middleware)
 if (process.env.SENTRY_DSN) {

@@ -81,6 +81,36 @@ model User {
   @@map("users")
 }
 
+// ==================== MULTI-CURRENCY ====================
+
+model Currency {
+  id        String         @id @default(uuid())
+  code      String         @unique
+  name      String
+  symbol    String
+  isBase    Boolean        @default(false)
+  isActive  Boolean        @default(true)
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+  rates     ExchangeRate[]
+
+  @@map("currencies")
+}
+
+model ExchangeRate {
+  id         String   @id @default(uuid())
+  currencyId String
+  currency   Currency @relation(fields: [currencyId], references: [id], onDelete: Cascade)
+  date       DateTime @db.Date
+  rate       Decimal  @db.Decimal(18, 6)
+  source     String   @default("MANUAL")
+  createdAt  DateTime @default(now())
+
+  @@unique([currencyId, date])
+  @@index([date(sort: Desc)])
+  @@map("exchange_rates")
+}
+
 // ==================== COMPANY SETTINGS ====================
 
 model CompanySettings {
@@ -515,6 +545,8 @@ model Order {
   loyaltyDiscount    Decimal       @default(0) @db.Decimal(12, 2)
   loyaltyPointsUsed  Int           @default(0)
   total              Decimal       @db.Decimal(12, 2)
+  currency           String        @default("VND")
+  exchangeRate       Decimal       @default(1) @db.Decimal(18, 6)
   note          String?
   createdAt     DateTime      @default(now())
   updatedAt     DateTime      @updatedAt
@@ -533,8 +565,9 @@ model Order {
   returns          OrderReturn[]
   debt             Debt?
   promotionUsages  PromotionUsage[]
-  invoice          Invoice?
-  delivery         Delivery?
+  invoice           Invoice?
+  delivery          Delivery?
+  electronicInvoice ElectronicInvoice?
 
   @@index([status])
   @@index([customerId])
@@ -554,6 +587,30 @@ model Invoice {
   createdAt   DateTime @default(now())
 
   @@map("invoices")
+}
+
+model ElectronicInvoice {
+  id           String   @id @default(uuid())
+  invoiceNo    String   @unique
+  orderId      String?  @unique
+  order        Order?   @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  templateCode String   @default("1/001")
+  serial       String   @default("K24TVE")
+  issueDate    DateTime @default(now())
+  buyerName    String
+  buyerTaxCode String?
+  buyerAddress String?
+  signedXml    String?  @db.Text
+  pdfUrl       String?
+  cqtCode      String?
+  cqtStatus    String   @default("PENDING") // PENDING/SIGNED/SENT/ACCEPTED/REJECTED/CANCELLED
+  provider     String   @default("VNPT")    // VNPT/VIETTEL/FPT
+  rawResponse  Json?
+  createdAt    DateTime @default(now())
+  updatedAt    DateTime @updatedAt
+
+  @@index([cqtStatus])
+  @@map("electronic_invoices")
 }
 
 enum DeliveryProvider {
@@ -634,6 +691,8 @@ model Payment {
   orderId     String
   order       Order         @relation(fields: [orderId], references: [id])
   amount      Decimal       @db.Decimal(12, 2)
+  currency    String        @default("VND")
+  exchangeRate Decimal      @default(1) @db.Decimal(18, 6)
   method      PaymentMethod
   reference   String?
   note        String?
@@ -853,11 +912,13 @@ model Employee {
   position     String    @default("OTHER")
   hireDate     DateTime?
   address      String?
-  baseSalary   Decimal   @default(5000000) @db.Decimal(12, 2)
-  shiftMoney   Decimal   @default(0) @db.Decimal(12, 2)
-  isActive     Boolean   @default(true)
-  createdAt    DateTime  @default(now())
-  updatedAt    DateTime  @updatedAt
+  baseSalary          Decimal   @default(5000000) @db.Decimal(12, 2)
+  shiftMoney          Decimal   @default(0) @db.Decimal(12, 2)
+  dependents          Int       @default(0)
+  socialInsuranceCode String?
+  isActive            Boolean   @default(true)
+  createdAt           DateTime  @default(now())
+  updatedAt           DateTime  @updatedAt
 
   shifts     Shift[]
   violations Violation[]
@@ -902,6 +963,8 @@ model Payroll {
   attendanceCoefficient Float
   penalties             Decimal  @db.Decimal(12, 2)
   finalSalary           Decimal  @db.Decimal(12, 2)
+  bhxhEmployee          Decimal  @default(0) @db.Decimal(12, 2)
+  pitAmount             Decimal  @default(0) @db.Decimal(12, 2)
   isLocked              Boolean  @default(false)
   createdAt             DateTime @default(now())
   updatedAt             DateTime @updatedAt
@@ -1039,6 +1102,97 @@ model JournalLine {
   @@index([entryId])
   @@index([partyType, partyId])
   @@map("journal_lines")
+}
+
+// ==================== BANK RECONCILIATION ====================
+
+model BankStatement {
+  id           String             @id @default(uuid())
+  bankAccountId String
+  bankAccount  BankAccount        @relation(fields: [bankAccountId], references: [id])
+  fileName     String?
+  importedAt   DateTime           @default(now())
+  fromDate     DateTime?
+  toDate       DateTime?
+  lineCount    Int                @default(0)
+  status       String             @default("IMPORTED") // IMPORTED / RECONCILED
+  lines        BankStatementLine[]
+
+  @@index([bankAccountId])
+  @@map("bank_statements")
+}
+
+model BankStatementLine {
+  id              String       @id @default(uuid())
+  statementId     String
+  statement       BankStatement @relation(fields: [statementId], references: [id], onDelete: Cascade)
+  txDate          DateTime
+  description     String
+  debit           Decimal      @default(0) @db.Decimal(15, 2)
+  credit          Decimal      @default(0) @db.Decimal(15, 2)
+  balance         Decimal?     @db.Decimal(15, 2)
+  reference       String?
+  matchedEntryId  String?      // FK → JournalEntry.id (nullable until matched)
+  isMatched       Boolean      @default(false)
+  isAdjustment    Boolean      @default(false)
+
+  @@index([statementId, isMatched])
+  @@map("bank_statement_lines")
+}
+
+// ==================== FIXED ASSETS ====================
+
+model FixedAssetCategory {
+  id        String   @id @default(uuid())
+  code      String   @unique
+  name      String
+  accountId String   // TK 211/213...
+  deprAccountId String  // TK 214
+  expAccountId  String  // TK 6427/6421...
+  lifeMonths Int     @default(60)
+  method    String   @default("STRAIGHT_LINE")
+  createdAt DateTime @default(now())
+
+  assets FixedAsset[]
+
+  @@map("fixed_asset_categories")
+}
+
+model FixedAsset {
+  id                     String             @id @default(uuid())
+  code                   String             @unique
+  name                   String
+  categoryId             String
+  category               FixedAssetCategory @relation(fields: [categoryId], references: [id])
+  purchaseDate           DateTime
+  cost                   Decimal            @db.Decimal(15, 2)
+  salvageValue           Decimal            @default(0) @db.Decimal(15, 2)
+  lifeMonths             Int
+  method                 String             @default("STRAIGHT_LINE")
+  accumulatedDepreciation Decimal           @default(0) @db.Decimal(15, 2)
+  status                 String             @default("ACTIVE") // ACTIVE/DISPOSED/FULLY_DEPRECIATED
+  departmentId           String?
+  note                   String?
+  createdAt              DateTime           @default(now())
+  updatedAt              DateTime           @updatedAt
+
+  depreciationSchedules DepreciationSchedule[]
+
+  @@index([status])
+  @@map("fixed_assets")
+}
+
+model DepreciationSchedule {
+  id         String     @id @default(uuid())
+  assetId    String
+  asset      FixedAsset @relation(fields: [assetId], references: [id], onDelete: Cascade)
+  period     String     // "YYYY-MM"
+  amount     Decimal    @db.Decimal(15, 2)
+  journalEntryId String?
+  postedAt   DateTime?
+
+  @@unique([assetId, period])
+  @@map("depreciation_schedules")
 }
 
 // ==================== VENDORS / SUPPLIERS ====================
@@ -1249,8 +1403,9 @@ model BankAccount {
   createdAt      DateTime @default(now())
   updatedAt      DateTime @updatedAt
 
-  transactions BankTransaction[]
-  expensesPaid Expense[]         @relation("ExpensePaidFrom")
+  transactions  BankTransaction[]
+  expensesPaid  Expense[]         @relation("ExpensePaidFrom")
+  statements    BankStatement[]
 
   @@map("bank_accounts")
 }

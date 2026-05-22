@@ -400,13 +400,15 @@ const create = async (orderData, userId) => {
       entity: "Order",
       entityId: order.id,
       before: null,
-      after: {
-        orderCode: order.orderCode,
-        total: order.total,
-        items: order.items,
-      },
+      after: { orderCode: order.orderCode, total: order.total, items: order.items },
     })
     .catch((err) => console.error("Failed to write audit log for order:", err));
+
+  // Auto-issue e-invoice khi tạo đơn trực tiếp COMPLETED (POS)
+  if (status === "COMPLETED") {
+    const einvoiceService = require("../einvoice/einvoice.service");
+    einvoiceService.autoIssueForOrder(order.id, userId).catch(() => {});
+  }
 
   return order;
 };
@@ -632,6 +634,12 @@ const updateStatus = async (id, status, userId = null) => {
       after: { status },
     })
     .catch(() => {});
+
+  // Auto-issue e-invoice khi SHIPPING → COMPLETED
+  if (order.status === "SHIPPING" && status === "COMPLETED") {
+    const einvoiceService = require("../einvoice/einvoice.service");
+    einvoiceService.autoIssueForOrder(id, userId).catch(() => {});
+  }
 
   return updated;
 };
