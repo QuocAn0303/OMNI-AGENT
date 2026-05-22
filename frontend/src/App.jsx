@@ -54,6 +54,8 @@ const FixedAssets = lazy(() => import("./pages/FixedAssets"));
 const Currency = lazy(() => import("./pages/Currency"));
 const Marketplace = lazy(() => import("./pages/Marketplace"));
 const LotTracking = lazy(() => import("./pages/LotTracking"));
+const ReportBuilder = lazy(() => import("./pages/ReportBuilder"));
+const Workflows = lazy(() => import("./pages/Workflows"));
 
 const erpThemeTokens = {
   token: {
@@ -175,6 +177,8 @@ function App() {
             <Route path="/currency" element={<Currency />} />
             <Route path="/marketplace" element={<Marketplace />} />
             <Route path="/lot-tracking" element={<LotTracking />} />
+            <Route path="/report-builder" element={<ReportBuilder />} />
+            <Route path="/workflows" element={<Workflows />} />
           </Route>
 
           {/* Chỉ ADMIN */}

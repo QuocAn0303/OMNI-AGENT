@@ -74,10 +74,13 @@ model User {
   projectTasksAssigned ProjectTask[]   @relation("ProjectTaskAssignee")
   projectTasksCreated  ProjectTask[]   @relation("ProjectTaskCreatedBy")
 
-  bomsCreated       Bom[]       @relation("BomCreatedBy")
-  workOrdersCreated WorkOrder[] @relation("WorkOrderCreatedBy")
-  qualityChecks     QualityCheck[] @relation("QCCheckedBy")
-  timeEntries       TimeEntry[]    @relation("TimeEntryUser")
+  bomsCreated       Bom[]             @relation("BomCreatedBy")
+  workOrdersCreated WorkOrder[]       @relation("WorkOrderCreatedBy")
+  qualityChecks     QualityCheck[]    @relation("QCCheckedBy")
+  timeEntries       TimeEntry[]       @relation("TimeEntryUser")
+  savedReports      SavedReport[]     @relation("ReportCreatedBy")
+  workflowsCreated  Workflow[]        @relation("WorkflowCreatedBy")
+  workflowApprovals WorkflowApproval[] @relation("WorkflowApprover")
 
   @@index([tenantId])
   @@map("users")
@@ -339,11 +342,13 @@ model Customer {
   debts           Debt[]
   promotionUsages PromotionUsage[]
   loyaltyTxs      LoyaltyTransaction[]
-  notes           CustomerNote[]
-  tags            CustomerTagOnCustomer[]
-  tasks           CustomerTask[]
+  notes              CustomerNote[]
+  tags               CustomerTagOnCustomer[]
+  tasks              CustomerTask[]
   campaignRecipients CampaignRecipient[]
-  projectInvoices ProjectInvoice[]
+  projectInvoices    ProjectInvoice[]
+  portalSessions     PortalSession[]
+  campaignTrackings  CampaignTracking[]
 
   @@index([name])
   @@index([phone])
@@ -2007,4 +2012,141 @@ model ProjectInvoice {
 
   @@index([projectId])
   @@map("project_invoices")
+}
+
+// ==================== PHASE 4: REPORT BUILDER ====================
+
+model SavedReport {
+  id          String   @id @default(uuid())
+  name        String
+  description String?
+  config      Json
+  isPublic    Boolean  @default(false)
+  createdById String
+  createdBy   User     @relation("ReportCreatedBy", fields: [createdById], references: [id])
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  schedules ReportSchedule[]
+
+  @@map("saved_reports")
+}
+
+model ReportSchedule {
+  id         String      @id @default(uuid())
+  reportId   String
+  report     SavedReport @relation(fields: [reportId], references: [id], onDelete: Cascade)
+  cron       String
+  emailTo    String[]
+  lastRunAt  DateTime?
+  nextRunAt  DateTime?
+  isActive   Boolean     @default(true)
+  createdAt  DateTime    @default(now())
+
+  @@map("report_schedules")
+}
+
+// ==================== PHASE 4: WORKFLOW ENGINE ====================
+
+model Workflow {
+  id          String         @id @default(uuid())
+  name        String
+  trigger     String
+  config      Json           @default("{}")
+  isActive    Boolean        @default(true)
+  createdById String
+  createdBy   User           @relation("WorkflowCreatedBy", fields: [createdById], references: [id])
+  createdAt   DateTime       @default(now())
+  updatedAt   DateTime       @updatedAt
+
+  steps WorkflowStep[]
+  runs  WorkflowRun[]
+
+  @@map("workflows")
+}
+
+model WorkflowStep {
+  id         String   @id @default(uuid())
+  workflowId String
+  workflow   Workflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  sequence   Int
+  type       String
+  config     Json     @default("{}")
+  createdAt  DateTime @default(now())
+
+  approvals WorkflowApproval[]
+
+  @@map("workflow_steps")
+}
+
+model WorkflowRun {
+  id         String   @id @default(uuid())
+  workflowId String
+  workflow   Workflow @relation(fields: [workflowId], references: [id], onDelete: Cascade)
+  entity     String
+  entityId   String
+  status     String   @default("PENDING")
+  data       Json?
+  startedAt  DateTime @default(now())
+  endedAt    DateTime?
+
+  approvals WorkflowApproval[]
+
+  @@map("workflow_runs")
+}
+
+model WorkflowApproval {
+  id         String       @id @default(uuid())
+  runId      String
+  run        WorkflowRun  @relation(fields: [runId], references: [id], onDelete: Cascade)
+  stepId     String
+  step       WorkflowStep @relation(fields: [stepId], references: [id], onDelete: Cascade)
+  approverId String
+  approver   User         @relation("WorkflowApprover", fields: [approverId], references: [id])
+  status     String       @default("PENDING")
+  comment    String?
+  decidedAt  DateTime?
+  createdAt  DateTime     @default(now())
+
+  @@map("workflow_approvals")
+}
+
+// ==================== PHASE 4: CUSTOMER PORTAL ====================
+
+model PortalSession {
+  id         String   @id @default(uuid())
+  customerId String
+  customer   Customer @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  token      String   @unique
+  expiresAt  DateTime
+  createdAt  DateTime @default(now())
+
+  @@map("portal_sessions")
+}
+
+model PortalOtp {
+  id        String   @id @default(uuid())
+  phone     String
+  otp       String
+  expiresAt DateTime
+  used      Boolean  @default(false)
+  createdAt DateTime @default(now())
+
+  @@index([phone])
+  @@map("portal_otps")
+}
+
+// ==================== PHASE 4: CAMPAIGN TRACKING ====================
+
+model CampaignTracking {
+  id          String    @id @default(uuid())
+  campaignId  String
+  recipientId String?
+  recipient   Customer? @relation(fields: [recipientId], references: [id])
+  event       String
+  metadata    Json?
+  createdAt   DateTime  @default(now())
+
+  @@index([campaignId])
+  @@map("campaign_trackings")
 }

@@ -129,6 +129,8 @@ const MENU_GROUPS = [
       { key: '/fixed-assets', icon: <BankOutlined />, label: 'Tài sản cố định' },
       { key: '/currency', icon: <SwapOutlined />, label: 'Tỷ giá ngoại tệ' },
       { key: '/marketplace', icon: <ShoppingCartOutlined />, label: 'Sàn TMĐT' },
+      { key: '/report-builder', icon: <PieChartOutlined />, label: 'Report Builder' },
+      { key: '/workflows', icon: <FundOutlined />, label: 'Workflow' },
       { key: '/journal', icon: <AccountBookOutlined />, label: 'Sổ kế toán', roles: ['ADMIN'] },
     ],
   },
