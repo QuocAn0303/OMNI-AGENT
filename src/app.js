@@ -136,7 +136,9 @@ app.post("/api/webhooks/delivery/:provider", async (req, res) => {
   }
 });
 
-app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+if (process.env.NODE_ENV !== "production") {
+  app.use("/api-docs", swaggerUi.serve, swaggerUi.setup(swaggerSpec));
+}
 
 // ==================== Routes ====================
 app.use('/api', apiLimiter)

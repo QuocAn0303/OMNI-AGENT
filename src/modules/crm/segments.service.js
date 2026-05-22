@@ -113,8 +113,8 @@ const buildRuleWhere = (rule) => {
       // value: true/false
       const v = value === true || value === "true";
       return v
-        ? { debts: { some: { status: { not: "PAID" } } } }
-        : { debts: { none: { status: { not: "PAID" } } } };
+        ? { debts: { some: { status: { not: "CLOSED" } } } }
+        : { debts: { none: { status: { not: "CLOSED" } } } };
     }
     default:
       return null;

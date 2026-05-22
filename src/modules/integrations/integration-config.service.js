@@ -42,7 +42,10 @@ async function get(key) {
   let value = null;
   try {
     const row = await prisma.integrationConfig.findUnique({ where: { key } });
-    if (row && row.valueEnc) value = decrypt(row.valueEnc, row.iv);
+    if (row && row.valueEnc) {
+      // iv == null → giá trị non-secret lưu plain trong valueEnc; có iv → cần decrypt.
+      value = row.iv ? decrypt(row.valueEnc, row.iv) : row.valueEnc;
+    }
   } catch (_) { /* DB not ready — fall through */ }
 
   if (value == null || value === "") value = process.env[key] || null;

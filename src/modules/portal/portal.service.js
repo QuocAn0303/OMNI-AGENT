@@ -80,11 +80,14 @@ const getMyOrders = async (customerId, { page = 1, limit = 10 } = {}) => {
 
 const getMyDebt = async (customerId) => {
   const debts = await prisma.debt.findMany({
-    where: { customerId, status: { not: "PAID" } },
+    where: { customerId, status: { not: "CLOSED" } },
     include: { payments: { orderBy: { createdAt: "desc" }, take: 3 } },
     orderBy: { dueDate: "asc" },
   });
-  const totalOwed = debts.reduce((s, d) => s + Number(d.remaining || 0), 0);
+  const totalOwed = debts.reduce(
+    (s, d) => s + (Number(d.amount) - Number(d.paidAmount)),
+    0,
+  );
   return { debts, totalOwed };
 };
 
