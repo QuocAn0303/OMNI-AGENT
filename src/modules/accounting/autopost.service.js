@@ -326,6 +326,46 @@ const buildDebtPaymentEntry = ({ debt, payment, userId }) => {
 
 const postDebtPayment = (input, tx) => postBuiltEntry(buildDebtPaymentEntry(input), tx);
 
+/**
+ * Bút toán khi Lệnh sản xuất (Work Order) hoàn thành
+ *
+ * Luồng nghiệp vụ:
+ *   - Xuất nguyên liệu từ kho (156) -> đưa vào sản xuất (154 WIP)
+ *   - Hoàn thành -> chuyển 154 WIP -> thành phẩm (155)
+ *
+ * Để gọn (1 bút toán thay vì 2), ghi nhận trực tiếp:
+ *   DR 155 (Thành phẩm)        = totalCost
+ *   CR 156 (Hàng hóa tồn kho)   = totalCost  [phần nguyên liệu]
+ *
+ * totalCost = SUM(component.costPrice × requiredQty)
+ *
+ * Nếu totalCost = 0 (nguyên liệu chưa có giá vốn), không ghi bút toán.
+ */
+const buildWorkOrderCompletedEntry = ({ workOrder, items, userId }) => {
+  const totalCost = toNum(workOrder.totalCost);
+  if (totalCost <= 0) return null;
+
+  return {
+    date: workOrder.actualEndDate || new Date(),
+    description: `Hoàn thành sản xuất WO ${workOrder.code} - ${workOrder.product?.name || ""}`,
+    source: "INVENTORY",
+    sourceId: workOrder.id,
+    userId,
+    lines: [
+      {
+        accountCode: "155",
+        debit: totalCost,
+        description: `Nhập kho thành phẩm - WO ${workOrder.code} (SL: ${workOrder.quantity})`,
+      },
+      {
+        accountCode: "156",
+        credit: totalCost,
+        description: `Xuất nguyên liệu cho sản xuất - WO ${workOrder.code}`,
+      },
+    ],
+  };
+};
+
 const buildCapitalContributionEntry = ({ amount, method = "CASH", description = "Gop von chu so huu", userId }) => {
   if (amount <= 0) return null;
   return {
@@ -348,6 +388,7 @@ const postPurchaseReceived = (input, tx) => postBuiltEntry(buildPurchaseReceived
 const postPurchasePayment = (input, tx) => postBuiltEntry(buildPurchasePaymentEntry(input), tx);
 const postPayrollAccrual = (input, tx) => postBuiltEntry(buildPayrollAccrualEntry(input), tx);
 const postCapitalContribution = (input, tx) => postBuiltEntry(buildCapitalContributionEntry(input), tx);
+const postWorkOrderCompleted = (input, tx) => postBuiltEntry(buildWorkOrderCompletedEntry(input), tx);
 
 module.exports = {
   buildOrderCompletedEntry,
@@ -360,6 +401,7 @@ module.exports = {
   buildPayrollAccrualEntry,
   buildCapitalContributionEntry,
   buildDebtPaymentEntry,
+  buildWorkOrderCompletedEntry,
   postOrderCompleted,
   postPayment,
   postOrderReturn,
@@ -370,4 +412,5 @@ module.exports = {
   postPayrollAccrual,
   postCapitalContribution,
   postDebtPayment,
+  postWorkOrderCompleted,
 };

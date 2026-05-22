@@ -100,6 +100,18 @@ const REBUILDERS = {
       userId,
     });
   },
+  WORK_ORDER_COMPLETED: async (payload, userId) => {
+    const wo = await prisma.workOrder.findUnique({
+      where: { id: payload.sourceId },
+      include: { product: true, items: { include: { component: true } } },
+    });
+    if (!wo) throw { status: 404, message: "Work Order không còn tồn tại" };
+    return getAutopostService().postWorkOrderCompleted({
+      workOrder: wo,
+      items: wo.items,
+      userId,
+    });
+  },
 };
 
 /**

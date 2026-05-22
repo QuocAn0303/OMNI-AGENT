@@ -111,7 +111,7 @@ const create = async (projectId, data, userId) => {
   return task;
 };
 
-const update = async (taskId, data, userId) => {
+const update = async (taskId, data, userId, opts = {}) => {
   const before = await prisma.projectTask.findUnique({
     where: { id: taskId },
     select: {
@@ -126,6 +126,12 @@ const update = async (taskId, data, userId) => {
   });
   if (!before) {
     const err = new Error("Công việc không tồn tại");
+    err.status = 404;
+    throw err;
+  }
+  // Nếu URL chỉ định projectId, đảm bảo task thuộc đúng project đó
+  if (opts.projectId && before.projectId !== opts.projectId) {
+    const err = new Error("Công việc không thuộc dự án này");
     err.status = 404;
     throw err;
   }
@@ -196,13 +202,18 @@ const update = async (taskId, data, userId) => {
   return updated;
 };
 
-const remove = async (taskId, userId) => {
+const remove = async (taskId, userId, opts = {}) => {
   const task = await prisma.projectTask.findUnique({
     where: { id: taskId },
     select: { id: true, projectId: true, title: true },
   });
   if (!task) {
     const err = new Error("Công việc không tồn tại");
+    err.status = 404;
+    throw err;
+  }
+  if (opts.projectId && task.projectId !== opts.projectId) {
+    const err = new Error("Công việc không thuộc dự án này");
     err.status = 404;
     throw err;
   }

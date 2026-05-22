@@ -2,6 +2,15 @@
 const prisma = require("../../config/prisma");
 const auditService = require("../audit/audit.service");
 
+// State machine — chỉ cho phép các chuyển đổi trạng thái hợp lý
+const ALLOWED_TRANSITIONS = {
+  DRAFT: ["ACTIVE", "ARCHIVED"],
+  ACTIVE: ["ON_HOLD", "COMPLETED", "ARCHIVED"],
+  ON_HOLD: ["ACTIVE", "COMPLETED", "ARCHIVED"],
+  COMPLETED: ["ARCHIVED"],
+  ARCHIVED: [], // terminal
+};
+
 const PROJECT_LIST_SELECT = {
   id: true,
   code: true,
@@ -186,7 +195,19 @@ const update = async (id, data, userId) => {
   const patch = {};
   if (data.name !== undefined) patch.name = data.name;
   if (data.description !== undefined) patch.description = data.description;
-  if (data.status !== undefined) patch.status = data.status;
+  if (data.status !== undefined) {
+    if (data.status !== before.status) {
+      const allowed = ALLOWED_TRANSITIONS[before.status] || [];
+      if (!allowed.includes(data.status)) {
+        const err = new Error(
+          `Không thể chuyển dự án từ ${before.status} sang ${data.status}`
+        );
+        err.status = 400;
+        throw err;
+      }
+    }
+    patch.status = data.status;
+  }
   if (data.startDate !== undefined)
     patch.startDate = data.startDate ? new Date(data.startDate) : null;
   if (data.endDate !== undefined)
@@ -235,4 +256,90 @@ const remove = async (id, userId) => {
   return { id };
 };
 
-module.exports = { list, overview, getById, getStats, create, update, remove };
+/**
+ * Báo cáo tài chính của dự án: Budget vs Actual + danh sách expense
+ *
+ * @param {string} id - projectId
+ * @param {object} opts - { page=1, limit=20 } cho danh sách expense
+ */
+const getFinancial = async (id, { page = 1, limit = 20 } = {}) => {
+  const project = await prisma.project.findUnique({
+    where: { id },
+    select: { id: true, code: true, name: true, budget: true, status: true },
+  });
+  if (!project) {
+    const err = new Error("Dự án không tồn tại");
+    err.status = 404;
+    throw err;
+  }
+
+  const p = Math.max(1, Number(page) || 1);
+  const l = Math.max(1, Number(limit) || 20);
+
+  // Tổng chi phí thực tế (tính cả DRAFT/APPROVED/PAID, chỉ trừ CANCELLED)
+  const agg = await prisma.expense.aggregate({
+    where: { projectId: id, status: { not: "CANCELLED" } },
+    _sum: { totalAmount: true },
+    _count: { _all: true },
+  });
+  const actualCost = Number(agg._sum.totalAmount || 0);
+
+  // Tách thành 2 nhóm: đã chi (PAID) và chưa chi
+  const paidAgg = await prisma.expense.aggregate({
+    where: { projectId: id, status: "PAID" },
+    _sum: { totalAmount: true },
+  });
+  const paidCost = Number(paidAgg._sum.totalAmount || 0);
+
+  // Danh sách expense paginated
+  const [expenses, total] = await Promise.all([
+    prisma.expense.findMany({
+      where: { projectId: id },
+      select: {
+        id: true,
+        expenseCode: true,
+        date: true,
+        description: true,
+        amount: true,
+        taxAmount: true,
+        totalAmount: true,
+        status: true,
+        paymentMethod: true,
+        category: { select: { id: true, code: true, name: true } },
+        vendor: { select: { id: true, name: true } },
+        createdBy: { select: { id: true, fullName: true } },
+      },
+      orderBy: { date: "desc" },
+      skip: (p - 1) * l,
+      take: l,
+    }),
+    prisma.expense.count({ where: { projectId: id } }),
+  ]);
+
+  const budget = Number(project.budget || 0);
+  const variance = budget - actualCost; // dương = còn budget, âm = vượt
+  const utilization = budget > 0 ? Math.round((actualCost / budget) * 100) : 0;
+
+  return {
+    project: {
+      id: project.id,
+      code: project.code,
+      name: project.name,
+      status: project.status,
+    },
+    summary: {
+      budget,
+      actualCost,
+      paidCost,
+      pendingCost: actualCost - paidCost,
+      variance,
+      utilization,
+      isOverBudget: budget > 0 && actualCost > budget,
+      expenseCount: agg._count._all,
+    },
+    expenses,
+    pagination: { page: p, limit: l, total, totalPages: Math.ceil(total / l) },
+  };
+};
+
+module.exports = { list, overview, getById, getStats, getFinancial, create, update, remove };

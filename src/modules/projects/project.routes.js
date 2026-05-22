@@ -3,6 +3,7 @@ const router = require("express").Router();
 const { z } = require("zod");
 const service = require("./project.service");
 const { authenticate, authorize } = require("../../middleware/auth.middleware");
+const { requireProjectMember } = require("./project-access.middleware");
 const { paginated, created, success } = require("../../utils/response");
 
 router.use(authenticate);
@@ -46,8 +47,8 @@ router.get("/", async (req, res, next) => {
   }
 });
 
-// GET /api/projects/:id
-router.get("/:id", async (req, res, next) => {
+// GET /api/projects/:id — member only
+router.get("/:id", requireProjectMember(), async (req, res, next) => {
   try {
     success(res, await service.getById(req.params.id));
   } catch (err) {
@@ -55,10 +56,19 @@ router.get("/:id", async (req, res, next) => {
   }
 });
 
-// GET /api/projects/:id/stats
-router.get("/:id/stats", async (req, res, next) => {
+// GET /api/projects/:id/stats — member only
+router.get("/:id/stats", requireProjectMember(), async (req, res, next) => {
   try {
     success(res, await service.getStats(req.params.id));
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /api/projects/:id/financial — Budget vs Actual + danh sách chi phí
+router.get("/:id/financial", requireProjectMember(), async (req, res, next) => {
+  try {
+    success(res, await service.getFinancial(req.params.id, req.query));
   } catch (err) {
     next(err);
   }
@@ -78,10 +88,10 @@ router.post(
   }
 );
 
-// PATCH /api/projects/:id
+// PATCH /api/projects/:id — OWNER hoặc ADMIN/SUPER_ADMIN
 router.patch(
   "/:id",
-  authorize("ADMIN", "MANAGER"),
+  requireProjectMember({ requireRoles: ["OWNER"] }),
   async (req, res, next) => {
     try {
       const data = updateSchema.parse(req.body);
@@ -92,7 +102,7 @@ router.patch(
   }
 );
 
-// DELETE /api/projects/:id
+// DELETE /api/projects/:id — chỉ ADMIN trở lên (middleware bypass)
 router.delete(
   "/:id",
   authorize("ADMIN"),

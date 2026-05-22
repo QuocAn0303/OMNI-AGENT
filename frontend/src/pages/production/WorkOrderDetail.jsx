@@ -12,6 +12,7 @@ import axios from '../../api/axios';
 import PageHeader from '../../components/layout/PageHeader';
 import StatusTag from '../../components/shared/StatusTag';
 import EmptyState from '../../components/shared/EmptyState';
+import MoneyDisplay from '../../components/shared/MoneyDisplay';
 import useAuthStore from '../../stores/authStore';
 
 const WO_STATUS = [
@@ -176,6 +177,22 @@ export default function WorkOrderDetail() {
         </span>
       ),
     },
+    {
+      title: 'Giá vốn / ĐV',
+      dataIndex: ['component', 'costPrice'],
+      width: 130,
+      align: 'right',
+      render: (v) => v ? <MoneyDisplay value={Number(v)} /> : <span style={{ color: 'var(--text-muted)' }}>—</span>,
+    },
+    {
+      title: 'Thành tiền',
+      dataIndex: 'lineCost',
+      width: 140,
+      align: 'right',
+      render: (v) => v > 0
+        ? <span style={{ fontWeight: 500 }}><MoneyDisplay value={Number(v)} /></span>
+        : <span style={{ color: 'var(--text-muted)' }}>—</span>,
+    },
   ];
 
   const renderActions = () => {
@@ -295,6 +312,32 @@ export default function WorkOrderDetail() {
                 {wo.items?.filter((it) => it.availableQty >= it.requiredQty).length || 0} / {wo.items?.length || 0}
               </div>
             </div>
+            {(() => {
+              const estTotal = (wo.items || []).reduce((s, it) => s + Number(it.lineCost || 0), 0);
+              const actualTotal = Number(wo.totalCost || 0);
+              const shown = actualTotal > 0 ? actualTotal : estTotal;
+              if (shown <= 0) return null;
+              return (
+                <div style={{ marginBottom: 8, paddingTop: 12, borderTop: '1px solid var(--border)' }}>
+                  <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                    {wo.status === 'COMPLETED' ? 'Tổng giá vốn' : 'Dự kiến giá vốn'}
+                  </div>
+                  <div style={{ fontSize: 18, fontWeight: 600, color: 'var(--primary)' }}>
+                    <MoneyDisplay value={shown} />
+                  </div>
+                  {wo.status === 'COMPLETED' && wo.quantity > 0 && (
+                    <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                      Đơn vị: <MoneyDisplay value={shown / wo.quantity} /> / {wo.product?.unit || 'đv'}
+                    </div>
+                  )}
+                </div>
+              );
+            })()}
+            {wo.status === 'COMPLETED' && wo.journalEntryId && (
+              <div style={{ marginTop: 8, fontSize: 12 }}>
+                ✓ Đã ghi bút toán kế toán (ID: <span style={{ fontFamily: 'var(--font-mono)' }}>{wo.journalEntryId.slice(0, 8)}</span>)
+              </div>
+            )}
             {wo.items?.some((it) => it.availableQty < it.requiredQty) && wo.status === 'DRAFT' && (
               <div style={{
                 marginTop: 12, padding: 12, borderRadius: 8,

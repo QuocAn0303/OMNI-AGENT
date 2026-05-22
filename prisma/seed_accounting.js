@@ -25,6 +25,8 @@ const ACCOUNTS = [
   { code: "141", name: "Advances", nameVi: "Tạm ứng", type: "ASSET", normalBalance: "DEBIT" },
 
   // Hàng tồn kho
+  { code: "154", name: "Work in progress", nameVi: "Chi phí sản xuất dở dang", type: "ASSET", normalBalance: "DEBIT" },
+  { code: "155", name: "Finished goods", nameVi: "Thành phẩm", type: "ASSET", normalBalance: "DEBIT" },
   { code: "156", name: "Merchandise inventory", nameVi: "Hàng hóa tồn kho", type: "ASSET", normalBalance: "DEBIT" },
 
   // TSCĐ

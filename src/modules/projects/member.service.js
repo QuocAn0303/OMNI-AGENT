@@ -80,6 +80,20 @@ const updateRole = async (projectId, userId, role, actorId) => {
     throw err;
   }
 
+  // Nếu hạ cấp OWNER → MEMBER/VIEWER, đảm bảo còn ít nhất 1 OWNER khác
+  if (member.role === "OWNER" && role !== "OWNER") {
+    const otherOwners = await prisma.projectMember.count({
+      where: { projectId, role: "OWNER", NOT: { id: member.id } },
+    });
+    if (otherOwners === 0) {
+      const err = new Error(
+        "Không thể hạ cấp OWNER cuối cùng. Hãy bổ nhiệm OWNER khác trước."
+      );
+      err.status = 400;
+      throw err;
+    }
+  }
+
   const updated = await prisma.projectMember.update({
     where: { id: member.id },
     data: { role },

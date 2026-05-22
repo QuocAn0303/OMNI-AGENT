@@ -2,11 +2,11 @@ import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   Tabs, Button, Tag, Modal, Form, Input, Select, DatePicker, message,
-  Progress, Row, Col, Card, Table, Descriptions, Spin,
+  Progress, Row, Col, Card, Table, Descriptions, Spin, Alert,
 } from 'antd';
 import {
   ArrowLeftOutlined, PlusOutlined, EditOutlined, DeleteOutlined,
-  UserAddOutlined, CheckSquareOutlined,
+  UserAddOutlined, CheckSquareOutlined, DollarOutlined, WarningOutlined,
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import axios from '../../api/axios';
@@ -70,6 +70,8 @@ export default function ProjectDetail() {
   const [tasks, setTasks] = useState([]);
   const [members, setMembers] = useState([]);
   const [users, setUsers] = useState([]);
+  const [financial, setFinancial] = useState(null);
+  const [financialLoading, setFinancialLoading] = useState(false);
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState('overview');
 
@@ -138,6 +140,18 @@ export default function ProjectDetail() {
     }
   };
 
+  const loadFinancial = async () => {
+    setFinancialLoading(true);
+    try {
+      const res = await axios.get(`/projects/${id}/financial`, { params: { limit: 50 } });
+      setFinancial(res.data?.data);
+    } catch (err) {
+      message.error(err?.response?.data?.message || 'Không tải được dữ liệu tài chính');
+    } finally {
+      setFinancialLoading(false);
+    }
+  };
+
   useEffect(() => {
     (async () => {
       setLoading(true);
@@ -149,6 +163,12 @@ export default function ProjectDetail() {
   useEffect(() => {
     if (!loading) loadTasks();
   }, [taskStatusFilter, taskPriorityFilter]);
+
+  useEffect(() => {
+    if (activeTab === 'financial' && !financial) {
+      loadFinancial();
+    }
+  }, [activeTab]);
 
   // ===== Project actions =====
   const openEditProject = () => {
@@ -604,6 +624,142 @@ export default function ProjectDetail() {
     </>
   );
 
+  // ===== Tab: Financial (Budget vs Actual) =====
+  const expenseColumns = [
+    { title: 'Mã', dataIndex: 'expenseCode', width: 140,
+      render: (c) => <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12 }}>{c}</span> },
+    { title: 'Ngày', dataIndex: 'date', width: 100,
+      render: (d) => dayjs(d).format('DD/MM/YYYY') },
+    { title: 'Mô tả', dataIndex: 'description',
+      render: (t, row) => (
+        <div>
+          <div>{t}</div>
+          <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{row.category?.name}</div>
+        </div>
+      ) },
+    { title: 'Số tiền', dataIndex: 'totalAmount', width: 140, align: 'right',
+      render: (v) => <MoneyDisplay value={Number(v)} /> },
+    { title: 'Trạng thái', dataIndex: 'status', width: 130,
+      render: (s) => {
+        const map = {
+          DRAFT: { color: 'default', label: 'Nháp' },
+          PENDING_APPROVAL: { color: 'processing', label: 'Chờ duyệt' },
+          APPROVED: { color: 'blue', label: 'Đã duyệt' },
+          PAID: { color: 'success', label: 'Đã thanh toán' },
+          CANCELLED: { color: 'default', label: 'Đã hủy' },
+        };
+        const m = map[s] || { color: 'default', label: s };
+        return <Tag color={m.color}>{m.label}</Tag>;
+      } },
+  ];
+
+  const renderFinancial = () => {
+    if (financialLoading) {
+      return <div style={{ padding: 48, textAlign: 'center' }}><Spin size="large" /></div>;
+    }
+    if (!financial) return null;
+    const s = financial.summary;
+    const progressStatus = s.isOverBudget ? 'exception' : s.utilization >= 90 ? 'normal' : 'active';
+
+    return (
+      <>
+        {s.isOverBudget && (
+          <Alert
+            type="error"
+            showIcon
+            icon={<WarningOutlined />}
+            message="Dự án đã vượt ngân sách"
+            description={
+              <span>
+                Đã chi <b><MoneyDisplay value={s.actualCost} /></b>, vượt <b><MoneyDisplay value={Math.abs(s.variance)} /></b> so với ngân sách{' '}
+                <b><MoneyDisplay value={s.budget} /></b>.
+              </span>
+            }
+            style={{ marginBottom: 16 }}
+          />
+        )}
+
+        <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
+          <Col xs={24} md={6}>
+            <Card>
+              <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Ngân sách</div>
+              <div style={{ fontSize: 22, fontWeight: 600 }}>
+                <MoneyDisplay value={s.budget} />
+              </div>
+            </Card>
+          </Col>
+          <Col xs={24} md={6}>
+            <Card>
+              <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Thực chi</div>
+              <div style={{
+                fontSize: 22, fontWeight: 600,
+                color: s.isOverBudget ? 'var(--danger)' : 'var(--text-primary)',
+              }}>
+                <MoneyDisplay value={s.actualCost} />
+              </div>
+            </Card>
+          </Col>
+          <Col xs={24} md={6}>
+            <Card>
+              <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Đã thanh toán</div>
+              <div style={{ fontSize: 22, fontWeight: 600, color: 'var(--success)' }}>
+                <MoneyDisplay value={s.paidCost} />
+              </div>
+              <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                Chưa chi: <MoneyDisplay value={s.pendingCost} />
+              </div>
+            </Card>
+          </Col>
+          <Col xs={24} md={6}>
+            <Card>
+              <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>
+                {s.variance >= 0 ? 'Còn lại' : 'Vượt'}
+              </div>
+              <div style={{
+                fontSize: 22, fontWeight: 600,
+                color: s.variance >= 0 ? 'var(--success)' : 'var(--danger)',
+              }}>
+                <MoneyDisplay value={Math.abs(s.variance)} />
+              </div>
+              <div style={{ fontSize: 11, color: 'var(--text-muted)' }}>
+                {s.utilization}% đã dùng
+              </div>
+            </Card>
+          </Col>
+        </Row>
+
+        {s.budget > 0 && (
+          <Card style={{ marginBottom: 16 }}>
+            <Progress
+              percent={Math.min(s.utilization, 100)}
+              status={progressStatus}
+              format={() => `${s.utilization}%`}
+              strokeColor={s.isOverBudget ? '#dc2626' : undefined}
+            />
+          </Card>
+        )}
+
+        <Card title={`Chi phí (${s.expenseCount})`}>
+          <Table
+            columns={expenseColumns}
+            dataSource={financial.expenses}
+            rowKey="id"
+            pagination={false}
+            size="small"
+            locale={{
+              emptyText: (
+                <EmptyState
+                  title="Chưa có chi phí nào"
+                  description="Tạo chi phí và gắn projectId từ trang Chi phí để theo dõi ở đây"
+                />
+              ),
+            }}
+          />
+        </Card>
+      </>
+    );
+  };
+
   return (
     <>
       <PageHeader
@@ -636,6 +792,15 @@ export default function ProjectDetail() {
               </span>
             ),
             children: renderTasks(),
+          },
+          {
+            key: 'financial',
+            label: (
+              <span>
+                <DollarOutlined /> Tài chính
+              </span>
+            ),
+            children: renderFinancial(),
           },
           {
             key: 'members',

@@ -37,12 +37,13 @@ const computeAmounts = async ({ amount, taxRateId }) => {
   return { amount: base, taxAmount, totalAmount: round2(base + taxAmount) };
 };
 
-const list = async ({ page = 1, limit = 20, status, categoryId, vendorId, from, to } = {}) => {
+const list = async ({ page = 1, limit = 20, status, categoryId, vendorId, projectId, from, to } = {}) => {
   const skip = (Number(page) - 1) * Number(limit);
   const where = {};
   if (status) where.status = status;
   if (categoryId) where.categoryId = categoryId;
   if (vendorId) where.vendorId = vendorId;
+  if (projectId) where.projectId = projectId;
   if (from || to) {
     where.date = {};
     if (from) where.date.gte = new Date(from);
@@ -57,6 +58,7 @@ const list = async ({ page = 1, limit = 20, status, categoryId, vendorId, from, 
       include: {
         category: { select: { code: true, name: true, accountId: true } },
         vendor: { select: { id: true, name: true } },
+        project: { select: { id: true, code: true, name: true } },
         taxRate: true,
         bankAccount: true,
         createdBy: { select: { id: true, fullName: true } },
@@ -93,6 +95,7 @@ const create = async (data, userId) => {
         date: data.date ? new Date(data.date) : new Date(),
         categoryId: data.categoryId,
         vendorId: data.vendorId || null,
+        projectId: data.projectId || null,
         description: data.description,
         amount,
         taxRateId: data.taxRateId || null,

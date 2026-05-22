@@ -1092,6 +1092,8 @@ model Expense {
   category      ExpenseCategory @relation(fields: [categoryId], references: [id])
   vendorId      String?
   vendor        Vendor?         @relation(fields: [vendorId], references: [id])
+  projectId     String?
+  project       Project?        @relation("ProjectExpenses", fields: [projectId], references: [id])
   description   String
   amount        Decimal         @db.Decimal(15, 2) // số tiền chưa thuế
   taxRateId     String?
@@ -1122,6 +1124,7 @@ model Expense {
   @@unique([sourceType, sourceId])
   @@index([date])
   @@index([status])
+  @@index([projectId])
   @@map("expenses")
 }
 
@@ -1429,8 +1432,9 @@ model Project {
   createdById String
   createdBy   User          @relation("ProjectCreatedBy", fields: [createdById], references: [id])
 
-  tasks   ProjectTask[]
-  members ProjectMember[]
+  tasks    ProjectTask[]
+  members  ProjectMember[]
+  expenses Expense[]       @relation("ProjectExpenses")
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1542,6 +1546,11 @@ model WorkOrder {
 
   quantity    Int
   producedQty Int @default(0)
+
+  // Tổng giá vốn nguyên liệu tại thời điểm complete (đơn vị: VND)
+  totalCost      Decimal? @db.Decimal(15, 2)
+  // Tham chiếu tới bút toán kế toán khi complete
+  journalEntryId String?
 
   status WorkOrderStatus @default(DRAFT)
 

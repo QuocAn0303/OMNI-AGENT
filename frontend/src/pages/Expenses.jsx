@@ -8,6 +8,7 @@ import {
 import { PlusOutlined, CheckOutlined, DollarOutlined, CloseOutlined } from "@ant-design/icons";
 import dayjs from "dayjs";
 import PageHeader from "../components/layout/PageHeader";
+import axios from "../api/axios";
 import {
   getExpenses, createExpense, approveExpense, payExpense, rejectExpense,
   getExpenseCategories, getVendors, getTaxRates,
@@ -37,6 +38,7 @@ export default function Expenses() {
   const [showCreate, setShowCreate] = useState(false);
   const [categories, setCategories] = useState([]);
   const [vendors, setVendors] = useState([]);
+  const [projects, setProjects] = useState([]);
   const [taxRates, setTaxRates] = useState([]);
   const [form] = Form.useForm();
 
@@ -60,6 +62,10 @@ export default function Expenses() {
         setVendors(v?.vendors || []);
         setTaxRates(t || []);
       })
+      .catch(() => {});
+    // Load active projects để hiển thị trong picker (chỉ chọn project ACTIVE/DRAFT)
+    axios.get('/projects', { params: { limit: 200, status: 'ACTIVE' } })
+      .then((res) => setProjects(res.data?.data || []))
       .catch(() => {});
   }, []);
 
@@ -216,7 +222,23 @@ export default function Expenses() {
                 <Select allowClear showSearch optionFilterProp="label" options={vendors.map((v) => ({ value: v.id, label: v.name }))} />
               </Form.Item>
             </Col>
-            <Col span={6}>
+            <Col span={12}>
+              <Form.Item label="Dự án (tùy chọn)" name="projectId">
+                <Select
+                  allowClear
+                  showSearch
+                  optionFilterProp="label"
+                  placeholder="Gắn chi phí vào dự án để theo dõi Budget vs Actual"
+                  options={projects.map((p) => ({
+                    value: p.id,
+                    label: `${p.code} - ${p.name}`,
+                  }))}
+                />
+              </Form.Item>
+            </Col>
+          </Row>
+          <Row gutter={12}>
+            <Col span={12}>
               <Form.Item label="Phương thức" name="paymentMethod">
                 <Select options={[
                   { value: "CASH", label: "Tiền mặt" },
@@ -225,7 +247,7 @@ export default function Expenses() {
                 ]} />
               </Form.Item>
             </Col>
-            <Col span={6}>
+            <Col span={12}>
               <Form.Item label="Trạng thái" name="status">
                 <Select options={[
                   { value: "DRAFT", label: "Nháp" },

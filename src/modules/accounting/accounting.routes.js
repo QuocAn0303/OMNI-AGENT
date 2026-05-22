@@ -166,6 +166,7 @@ const expenseSchema = z.object({
   date: z.string().optional(),
   categoryId: z.string(),
   vendorId: z.string().optional().nullable(),
+  projectId: z.string().uuid().optional().nullable(),
   description: z.string().min(2),
   amount: z.number().positive(),
   taxRateId: z.string().optional().nullable(),

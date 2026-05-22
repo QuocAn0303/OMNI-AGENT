@@ -1,12 +1,24 @@
 // src/modules/production/work-order.service.js
 const prisma = require("../../config/prisma");
 const auditService = require("../audit/audit.service");
+const autopostService = require("../accounting/autopost.service");
+const postingErrorService = require("../accounting/posting-error.service");
+
+// State machine — cấu hình transition hợp lệ cho WorkOrderStatus
+const ALLOWED_TRANSITIONS = {
+  DRAFT: ["IN_PROGRESS", "CANCELLED"],
+  IN_PROGRESS: ["COMPLETED", "CANCELLED"],
+  COMPLETED: [], // terminal
+  CANCELLED: [], // terminal
+};
 
 const WO_LIST_SELECT = {
   id: true,
   code: true,
   quantity: true,
   producedQty: true,
+  totalCost: true,
+  journalEntryId: true,
   status: true,
   plannedStartDate: true,
   plannedEndDate: true,
@@ -35,6 +47,7 @@ const WO_DETAIL_SELECT = {
           sku: true,
           name: true,
           unit: true,
+          costPrice: true,
           inventories: {
             select: { warehouseId: true, quantity: true },
           },
@@ -110,10 +123,12 @@ const getById = async (id) => {
     throw err;
   }
   // Reduce inventories[] to stock at this WO's warehouse only for clarity
+  // Đồng thời tính lineCost = costPrice × requiredQty để hiển thị breakdown
   wo.items = wo.items.map((it) => {
     const inv = (it.component.inventories || []).find(
       (x) => x.warehouseId === wo.warehouse.id
     );
+    const costPrice = Number(it.component.costPrice || 0);
     return {
       ...it,
       component: {
@@ -121,8 +136,10 @@ const getById = async (id) => {
         sku: it.component.sku,
         name: it.component.name,
         unit: it.component.unit,
+        costPrice,
       },
       availableQty: inv ? inv.quantity : 0,
+      lineCost: costPrice * it.requiredQty,
     };
   });
   return wo;
@@ -290,8 +307,8 @@ const start = async (id, userId) => {
     err.status = 404;
     throw err;
   }
-  if (wo.status !== "DRAFT") {
-    const err = new Error("Chỉ có thể bắt đầu WO ở trạng thái DRAFT");
+  if (!ALLOWED_TRANSITIONS[wo.status]?.includes("IN_PROGRESS")) {
+    const err = new Error(`Không thể chuyển WO từ ${wo.status} sang IN_PROGRESS`);
     err.status = 400;
     throw err;
   }
@@ -342,6 +359,7 @@ const start = async (id, userId) => {
 };
 
 const complete = async (id, userId) => {
+  // Load WO + items + component costPrice + product info
   const wo = await prisma.workOrder.findUnique({
     where: { id },
     select: {
@@ -352,8 +370,14 @@ const complete = async (id, userId) => {
       warehouseId: true,
       quantity: true,
       items: {
-        select: { id: true, componentId: true, requiredQty: true },
+        select: {
+          id: true,
+          componentId: true,
+          requiredQty: true,
+          component: { select: { id: true, sku: true, name: true, costPrice: true } },
+        },
       },
+      product: { select: { id: true, sku: true, name: true, costPrice: true } },
     },
   });
   if (!wo) {
@@ -361,27 +385,49 @@ const complete = async (id, userId) => {
     err.status = 404;
     throw err;
   }
-  if (wo.status !== "IN_PROGRESS") {
-    const err = new Error("Chỉ có thể hoàn thành WO đang IN_PROGRESS");
+  if (!ALLOWED_TRANSITIONS[wo.status]?.includes("COMPLETED")) {
+    const err = new Error(`Không thể chuyển WO từ ${wo.status} sang COMPLETED`);
     err.status = 400;
     throw err;
   }
 
-  return prisma.$transaction(async (tx) => {
-    // 1. Re-check + deduct material inventories
+  // Tính tổng giá vốn ngay từ đầu (dùng costPrice hiện tại của component)
+  let totalCost = 0;
+  for (const it of wo.items) {
+    totalCost += Number(it.component?.costPrice || 0) * it.requiredQty;
+  }
+
+  // Thực hiện toàn bộ thao tác kho + cập nhật WO trong 1 transaction
+  const updated = await prisma.$transaction(async (tx) => {
+    // 1. Atomically deduct material inventories.
+    // Dùng updateMany với điều kiện quantity >= requiredQty và check count để
+    // đảm bảo không bị race condition khi 2 WO cùng complete trên cùng nguyên liệu.
     for (const it of wo.items) {
-      const inv = await tx.inventory.findUnique({
-        where: { productId_warehouseId: { productId: it.componentId, warehouseId: wo.warehouseId } },
-        select: { id: true, quantity: true },
+      const upd = await tx.inventory.updateMany({
+        where: {
+          productId: it.componentId,
+          warehouseId: wo.warehouseId,
+          quantity: { gte: it.requiredQty },
+        },
+        data: { quantity: { decrement: it.requiredQty } },
       });
-      if (!inv || inv.quantity < it.requiredQty) {
-        const err = new Error("Tồn kho nguyên liệu không còn đủ. Vui lòng nhập kho trước.");
+      if (upd.count === 0) {
+        const err = new Error(
+          `Tồn kho nguyên liệu "${it.component?.name || it.componentId}" không đủ ${it.requiredQty}. Vui lòng nhập kho trước.`
+        );
         err.status = 400;
         throw err;
       }
-      await tx.inventory.update({
-        where: { id: inv.id },
-        data: { quantity: { decrement: it.requiredQty } },
+
+      // Lấy inventory.id để ghi transaction
+      const inv = await tx.inventory.findUnique({
+        where: {
+          productId_warehouseId: {
+            productId: it.componentId,
+            warehouseId: wo.warehouseId,
+          },
+        },
+        select: { id: true },
       });
       await tx.inventoryTransaction.create({
         data: {
@@ -398,26 +444,22 @@ const complete = async (id, userId) => {
       });
     }
 
-    // 2. Add finished product to inventory (upsert)
-    let finishedInv = await tx.inventory.findUnique({
-      where: { productId_warehouseId: { productId: wo.productId, warehouseId: wo.warehouseId } },
-      select: { id: true },
-    });
-    if (!finishedInv) {
-      finishedInv = await tx.inventory.create({
-        data: {
+    // 2. Cộng kho thành phẩm (upsert)
+    const finishedInv = await tx.inventory.upsert({
+      where: {
+        productId_warehouseId: {
           productId: wo.productId,
           warehouseId: wo.warehouseId,
-          quantity: wo.quantity,
         },
-        select: { id: true },
-      });
-    } else {
-      await tx.inventory.update({
-        where: { id: finishedInv.id },
-        data: { quantity: { increment: wo.quantity } },
-      });
-    }
+      },
+      create: {
+        productId: wo.productId,
+        warehouseId: wo.warehouseId,
+        quantity: wo.quantity,
+      },
+      update: { quantity: { increment: wo.quantity } },
+      select: { id: true },
+    });
     await tx.inventoryTransaction.create({
       data: {
         inventoryId: finishedInv.id,
@@ -428,27 +470,86 @@ const complete = async (id, userId) => {
       },
     });
 
-    // 3. Update WO
-    const updated = await tx.workOrder.update({
+    // 3. Cập nhật costPrice của thành phẩm theo phương pháp bình quân gia quyền
+    //    newCostPrice = totalCost / quantity sản xuất
+    //    Nếu thành phẩm đã có giá vốn cũ, blend với số lượng tồn trước.
+    if (totalCost > 0) {
+      const unitCost = totalCost / wo.quantity;
+      const finishedFull = await tx.inventory.findUnique({
+        where: { id: finishedInv.id },
+        select: { quantity: true },
+      });
+      const qtyBefore = (finishedFull?.quantity || wo.quantity) - wo.quantity;
+      const currentCost = Number(wo.product?.costPrice || 0);
+      const newCost =
+        qtyBefore > 0
+          ? (currentCost * qtyBefore + totalCost) / (qtyBefore + wo.quantity)
+          : unitCost;
+      await tx.product.update({
+        where: { id: wo.productId },
+        data: { costPrice: newCost },
+      });
+    }
+
+    // 4. Update WO -> COMPLETED + lưu totalCost
+    return tx.workOrder.update({
       where: { id },
       data: {
         status: "COMPLETED",
         producedQty: wo.quantity,
         actualEndDate: new Date(),
+        totalCost,
       },
       select: WO_LIST_SELECT,
     });
-
-    auditService.log({
-      userId,
-      action: "COMPLETE_WORK_ORDER",
-      entity: "WorkOrder",
-      entityId: id,
-      after: { status: "COMPLETED", producedQty: wo.quantity },
-    });
-
-    return updated;
   });
+
+  // 5. Tạo bút toán kế toán SAU khi transaction nghiệp vụ commit
+  //    (nếu fail vẫn vào outbox để retry)
+  if (totalCost > 0) {
+    const postingPayload = autopostService.buildWorkOrderCompletedEntry({
+      workOrder: {
+        id: wo.id,
+        code: wo.code,
+        quantity: wo.quantity,
+        totalCost,
+        actualEndDate: new Date(),
+        product: wo.product,
+      },
+      items: wo.items,
+      userId,
+    });
+    await postingErrorService.tryPostOrQueue(
+      () =>
+        autopostService.postWorkOrderCompleted({
+          workOrder: {
+            id: wo.id,
+            code: wo.code,
+            quantity: wo.quantity,
+            totalCost,
+            actualEndDate: new Date(),
+            product: wo.product,
+          },
+          items: wo.items,
+          userId,
+        }),
+      {
+        source: "INVENTORY",
+        sourceId: wo.id,
+        payload: { ...postingPayload, operation: "WORK_ORDER_COMPLETED" },
+      }
+    );
+  }
+
+  auditService.log({
+    userId,
+    action: "COMPLETE_WORK_ORDER",
+    entity: "WorkOrder",
+    entityId: id,
+    after: { status: "COMPLETED", producedQty: wo.quantity, totalCost },
+  });
+
+  return updated;
 };
 
 const cancel = async (id, userId) => {
@@ -461,8 +562,8 @@ const cancel = async (id, userId) => {
     err.status = 404;
     throw err;
   }
-  if (!["DRAFT", "IN_PROGRESS"].includes(wo.status)) {
-    const err = new Error("Không thể hủy WO ở trạng thái này");
+  if (!ALLOWED_TRANSITIONS[wo.status]?.includes("CANCELLED")) {
+    const err = new Error(`Không thể chuyển WO từ ${wo.status} sang CANCELLED`);
     err.status = 400;
     throw err;
   }
