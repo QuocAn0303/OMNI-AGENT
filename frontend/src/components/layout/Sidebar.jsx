@@ -109,6 +109,7 @@ const MENU_GROUPS = [
     roles: ['ADMIN', 'MANAGER', 'WAREHOUSE'],
     items: [
       { key: '/production', icon: <ExperimentOutlined />, label: 'Sản xuất' },
+      { key: '/lot-tracking', icon: <DatabaseOutlined />, label: 'Lô / Hạn dùng', roles: ['ADMIN', 'MANAGER', 'WAREHOUSE'] },
     ],
   },
   {
@@ -127,6 +128,7 @@ const MENU_GROUPS = [
       { key: '/bank-reco', icon: <ReconciliationOutlined />, label: 'Đối soát NH' },
       { key: '/fixed-assets', icon: <BankOutlined />, label: 'Tài sản cố định' },
       { key: '/currency', icon: <SwapOutlined />, label: 'Tỷ giá ngoại tệ' },
+      { key: '/marketplace', icon: <ShoppingCartOutlined />, label: 'Sàn TMĐT' },
       { key: '/journal', icon: <AccountBookOutlined />, label: 'Sổ kế toán', roles: ['ADMIN'] },
     ],
   },

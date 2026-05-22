@@ -15,5 +15,8 @@ router.get("/overview", authenticate, async (req, res, next) => {
 
 router.use("/boms", require("./bom.routes"));
 router.use("/work-orders", require("./work-order.routes"));
+router.use("/work-centers", require("./work-center.routes"));
+router.use("/routings", require("./routing.routes"));
+router.use("/lots", require("./lot.routes"));
 
 module.exports = router;

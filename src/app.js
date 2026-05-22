@@ -61,6 +61,7 @@ const taxReportRoutes = require("./modules/tax-report/tax-report.routes");
 const bankRecoRoutes = require("./modules/bank-reco/bank-reco.routes");
 const fixedAssetsRoutes = require("./modules/fixed-assets/fixed-assets.routes");
 const currencyRoutes = require("./modules/currency/currency.routes");
+const marketplaceRoutes = require("./modules/marketplace/marketplace.routes");
 const deliveryService = require("./modules/delivery/delivery.service");
 const http = require("http");
 const { initSocket } = require("./realtime/socket");
@@ -176,6 +177,7 @@ app.use("/api/tax-reports", taxReportRoutes);
 app.use("/api/bank-reco", bankRecoRoutes);
 app.use("/api/fixed-assets", fixedAssetsRoutes);
 app.use("/api/currencies", currencyRoutes);
+app.use("/api/marketplace", marketplaceRoutes);
 
 // Sentry error handler (phải trước error middleware)
 if (process.env.SENTRY_DSN) {

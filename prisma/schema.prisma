@@ -76,6 +76,8 @@ model User {
 
   bomsCreated       Bom[]       @relation("BomCreatedBy")
   workOrdersCreated WorkOrder[] @relation("WorkOrderCreatedBy")
+  qualityChecks     QualityCheck[] @relation("QCCheckedBy")
+  timeEntries       TimeEntry[]    @relation("TimeEntryUser")
 
   @@index([tenantId])
   @@map("users")
@@ -171,10 +173,17 @@ model Product {
   promotions      Promotion[]
   exchangeItems   ExchangeItem[]
 
+  trackByLot    Boolean  @default(false)
+  trackBySerial Boolean  @default(false)
+  shelfLifeDays Int?
+
   bomsAsProduct             Bom[]           @relation("BomProduct")
   bomItemsAsComponent       BomItem[]       @relation("BomComponent")
   workOrdersAsProduct       WorkOrder[]     @relation("WorkOrderProduct")
   workOrderItemsAsComponent WorkOrderItem[] @relation("WorkOrderComponent")
+  inventoryLots             InventoryLot[]
+  marketplaceListings       MarketplaceListing[]
+  routings                  Routing[]
 
   @@index([name])
   @@index([sku])
@@ -199,6 +208,7 @@ model Warehouse {
   transfersFrom  StockTransfer[] @relation("TransferFrom")
   transfersTo    StockTransfer[] @relation("TransferTo")
   workOrders     WorkOrder[]     @relation("WorkOrderWarehouse")
+  inventoryLots  InventoryLot[]
 
   @@map("warehouses")
 }
@@ -333,6 +343,7 @@ model Customer {
   tags            CustomerTagOnCustomer[]
   tasks           CustomerTask[]
   campaignRecipients CampaignRecipient[]
+  projectInvoices ProjectInvoice[]
 
   @@index([name])
   @@index([phone])
@@ -1007,6 +1018,7 @@ model Account {
 
   lines             JournalLine[]
   expenseCategories ExpenseCategory[]
+  workCenters       WorkCenter[]
 
   @@index([type])
   @@map("accounts")
@@ -1594,9 +1606,11 @@ model Project {
   createdById String
   createdBy   User          @relation("ProjectCreatedBy", fields: [createdById], references: [id])
 
-  tasks    ProjectTask[]
-  members  ProjectMember[]
-  expenses Expense[]       @relation("ProjectExpenses")
+  tasks           ProjectTask[]
+  members         ProjectMember[]
+  expenses        Expense[]        @relation("ProjectExpenses")
+  timeEntries     TimeEntry[]
+  projectInvoices ProjectInvoice[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1607,20 +1621,27 @@ model Project {
 }
 
 model ProjectTask {
-  id          String              @id @default(uuid())
-  projectId   String
-  project     Project             @relation(fields: [projectId], references: [id], onDelete: Cascade)
-  title       String
-  description String?
-  status      ProjectTaskStatus   @default(TODO)
-  priority    ProjectTaskPriority @default(MEDIUM)
-  dueDate     DateTime?
+  id            String              @id @default(uuid())
+  projectId     String
+  project       Project             @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  title         String
+  description   String?
+  status        ProjectTaskStatus   @default(TODO)
+  priority      ProjectTaskPriority @default(MEDIUM)
+  dueDate       DateTime?
+  estimateHours Decimal?            @db.Decimal(8, 2)
+  actualHours   Decimal             @default(0) @db.Decimal(8, 2)
+  dependsOnId   String?
+  dependsOn     ProjectTask?        @relation("TaskDependency", fields: [dependsOnId], references: [id])
+  dependents    ProjectTask[]       @relation("TaskDependency")
 
   assigneeId String?
   assignee   User?   @relation("ProjectTaskAssignee", fields: [assigneeId], references: [id])
 
   createdById String
   createdBy   User   @relation("ProjectTaskCreatedBy", fields: [createdById], references: [id])
+
+  timeEntries TimeEntry[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
@@ -1661,16 +1682,21 @@ enum WorkOrderStatus {
 }
 
 model Bom {
-  id        String    @id @default(uuid())
-  code      String    @unique
-  productId String
-  product   Product   @relation("BomProduct", fields: [productId], references: [id])
-  version   String    @default("v1")
-  status    BomStatus @default(DRAFT)
-  notes     String?
+  id           String    @id @default(uuid())
+  code         String    @unique
+  productId    String
+  product      Product   @relation("BomProduct", fields: [productId], references: [id])
+  version      String    @default("v1")
+  status       BomStatus @default(DRAFT)
+  isSubAssembly Boolean  @default(false)
+  parentBomId  String?
+  parentBom    Bom?      @relation("BomParent", fields: [parentBomId], references: [id])
+  childBoms    Bom[]     @relation("BomParent")
+  notes        String?
 
   items      BomItem[]
   workOrders WorkOrder[]
+  routings   Routing[]
 
   createdById String
   createdBy   User   @relation("BomCreatedBy", fields: [createdById], references: [id])
@@ -1726,7 +1752,12 @@ model WorkOrder {
 
   notes String?
 
-  items WorkOrderItem[]
+  routingId String?
+  routing   Routing? @relation(fields: [routingId], references: [id])
+
+  items         WorkOrderItem[]
+  qualityChecks QualityCheck[]
+  lotTxs        LotTransaction[]
 
   createdById String
   createdBy   User   @relation("WorkOrderCreatedBy", fields: [createdById], references: [id])
@@ -1753,4 +1784,227 @@ model WorkOrderItem {
 
   @@unique([workOrderId, componentId])
   @@map("work_order_items")
+}
+
+// ==================== WORK CENTER & ROUTING ====================
+
+model WorkCenter {
+  id          String   @id @default(uuid())
+  code        String   @unique
+  name        String
+  description String?
+  capacity    Decimal  @default(8) @db.Decimal(10, 2)
+  isActive    Boolean  @default(true)
+  accountId   String?
+  account     Account? @relation(fields: [accountId], references: [id])
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  operations RoutingOperation[]
+
+  @@map("work_centers")
+}
+
+model Routing {
+  id        String   @id @default(uuid())
+  code      String   @unique
+  name      String
+  productId String
+  product   Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  bomId     String?
+  bom       Bom?     @relation(fields: [bomId], references: [id])
+  notes     String?
+  isActive  Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  operations  RoutingOperation[]
+  workOrders  WorkOrder[]
+
+  @@map("routings")
+}
+
+model RoutingOperation {
+  id              String      @id @default(uuid())
+  routingId       String
+  routing         Routing     @relation(fields: [routingId], references: [id], onDelete: Cascade)
+  sequence        Int
+  name            String
+  workCenterId    String?
+  workCenter      WorkCenter? @relation(fields: [workCenterId], references: [id])
+  durationMinutes Int         @default(60)
+  notes           String?
+  createdAt       DateTime    @default(now())
+
+  @@map("routing_operations")
+}
+
+model QualityCheck {
+  id          String    @id @default(uuid())
+  workOrderId String
+  workOrder   WorkOrder @relation(fields: [workOrderId], references: [id], onDelete: Cascade)
+  status      String    @default("PENDING")
+  checkedById String?
+  checkedBy   User?     @relation("QCCheckedBy", fields: [checkedById], references: [id])
+  checkedAt   DateTime?
+  notes       String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  items QualityCheckItem[]
+
+  @@map("quality_checks")
+}
+
+model QualityCheckItem {
+  id             String       @id @default(uuid())
+  qualityCheckId String
+  qualityCheck   QualityCheck @relation(fields: [qualityCheckId], references: [id], onDelete: Cascade)
+  name           String
+  result         String?
+  notes          String?
+  createdAt      DateTime     @default(now())
+
+  @@map("quality_check_items")
+}
+
+// ==================== LOT / SERIAL TRACKING ====================
+
+model InventoryLot {
+  id          String    @id @default(uuid())
+  lotCode     String
+  productId   String
+  product     Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+  warehouseId String
+  warehouse   Warehouse @relation(fields: [warehouseId], references: [id])
+  quantity    Int       @default(0)
+  originalQty Int       @default(0)
+  mfgDate     DateTime? @db.Date
+  expDate     DateTime? @db.Date
+  poId        String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  transactions LotTransaction[]
+
+  @@unique([lotCode, productId, warehouseId])
+  @@index([productId])
+  @@index([expDate])
+  @@map("inventory_lots")
+}
+
+model LotTransaction {
+  id          String        @id @default(uuid())
+  lotId       String
+  lot         InventoryLot  @relation(fields: [lotId], references: [id], onDelete: Cascade)
+  txId        String?
+  orderId     String?
+  workOrderId String?
+  workOrder   WorkOrder?    @relation(fields: [workOrderId], references: [id])
+  quantity    Int
+  type        String
+  createdAt   DateTime      @default(now())
+
+  @@map("lot_transactions")
+}
+
+// ==================== MARKETPLACE ====================
+
+model MarketplaceShop {
+  id          String   @id @default(uuid())
+  platform    String
+  shopName    String?
+  shopId      String?
+  isActive    Boolean  @default(true)
+  credentials Json?
+  lastSyncAt  DateTime?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  listings MarketplaceListing[]
+  syncLogs MarketplaceSyncLog[]
+
+  @@map("marketplace_shops")
+}
+
+model MarketplaceListing {
+  id          String           @id @default(uuid())
+  shopId      String
+  shop        MarketplaceShop  @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  productId   String
+  product     Product          @relation(fields: [productId], references: [id], onDelete: Cascade)
+  platform    String
+  externalId  String?
+  externalSku String?
+  status      String           @default("ACTIVE")
+  lastPushedAt DateTime?
+  syncErrors  String?
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  @@unique([shopId, productId])
+  @@map("marketplace_listings")
+}
+
+model MarketplaceSyncLog {
+  id        String          @id @default(uuid())
+  shopId    String
+  shop      MarketplaceShop @relation(fields: [shopId], references: [id], onDelete: Cascade)
+  direction String
+  entity    String
+  status    String
+  count     Int             @default(0)
+  errors    Json?
+  startedAt DateTime        @default(now())
+  endedAt   DateTime?
+
+  @@map("marketplace_sync_logs")
+}
+
+// ==================== TIME TRACKING & PROJECT INVOICING ====================
+
+model TimeEntry {
+  id          String       @id @default(uuid())
+  projectId   String
+  project     Project      @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  taskId      String?
+  task        ProjectTask? @relation(fields: [taskId], references: [id])
+  userId      String
+  user        User         @relation("TimeEntryUser", fields: [userId], references: [id])
+  startTime   DateTime
+  endTime     DateTime?
+  hours       Decimal?     @db.Decimal(8, 2)
+  description String?
+  billable    Boolean      @default(true)
+  hourlyRate  Decimal      @default(0) @db.Decimal(12, 2)
+  invoiced    Boolean      @default(false)
+  invoiceId   String?
+  invoice     ProjectInvoice? @relation(fields: [invoiceId], references: [id])
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  @@index([projectId])
+  @@index([userId])
+  @@map("time_entries")
+}
+
+model ProjectInvoice {
+  id          String    @id @default(uuid())
+  invoiceCode String    @unique
+  projectId   String
+  project     Project   @relation(fields: [projectId], references: [id], onDelete: Cascade)
+  customerId  String?
+  customer    Customer? @relation(fields: [customerId], references: [id])
+  amount      Decimal   @db.Decimal(15, 2)
+  status      String    @default("DRAFT")
+  issuedAt    DateTime?
+  dueDate     DateTime? @db.Date
+  notes       String?
+  createdAt   DateTime  @default(now())
+  updatedAt   DateTime  @updatedAt
+
+  timeEntries TimeEntry[]
+
+  @@index([projectId])
+  @@map("project_invoices")
 }

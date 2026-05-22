@@ -15,6 +15,7 @@ router.get("/assignable-users", authenticate, async (req, res, next) => {
 
 router.use("/:id/tasks", require("./task.routes"));
 router.use("/:id/members", require("./member.routes"));
+router.use("/:id/timesheet", require("./timesheet.routes"));
 router.use("/", require("./project.routes"));
 
 module.exports = router;

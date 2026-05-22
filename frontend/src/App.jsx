@@ -52,6 +52,8 @@ const TaxReports = lazy(() => import("./pages/TaxReports"));
 const BankReco = lazy(() => import("./pages/BankReco"));
 const FixedAssets = lazy(() => import("./pages/FixedAssets"));
 const Currency = lazy(() => import("./pages/Currency"));
+const Marketplace = lazy(() => import("./pages/Marketplace"));
+const LotTracking = lazy(() => import("./pages/LotTracking"));
 
 const erpThemeTokens = {
   token: {
@@ -171,6 +173,8 @@ function App() {
             <Route path="/bank-reco" element={<BankReco />} />
             <Route path="/fixed-assets" element={<FixedAssets />} />
             <Route path="/currency" element={<Currency />} />
+            <Route path="/marketplace" element={<Marketplace />} />
+            <Route path="/lot-tracking" element={<LotTracking />} />
           </Route>
 
           {/* Chỉ ADMIN */}

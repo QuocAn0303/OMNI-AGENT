@@ -8,6 +8,7 @@ const loyaltyService = require("../modules/loyalty/loyalty.service");
 const crmTasksService = require("../modules/crm/tasks.service");
 const crmCampaignsService = require("../modules/crm/campaigns.service");
 const fixedAssetsService = require("../modules/fixed-assets/fixed-assets.service");
+const lotService = require("../modules/production/lot.service");
 
 const startCrons = () => {
   cron.schedule("0 * * * *", async () => {
@@ -97,7 +98,18 @@ const startCrons = () => {
     }
   });
 
-  console.log("[cron] scheduled: orders hourly, debt 09:00, payroll 25th, period 28th, promo daily, recurring 1st, CRM tasks 08:00, CRM campaigns every minute, depreciation 28th 01:00");
+  // Lot expiry alert: 7h mỗi ngày — thông báo lô hàng hết hạn trong 30 ngày
+  cron.schedule("0 7 * * *", async () => {
+    try {
+      const lots = await lotService.getExpiringLots(30);
+      if (lots.length) console.log(`[cron] ${lots.length} lô hàng sắp hết hạn trong 30 ngày`);
+      // TODO: send notifications to ADMIN/MANAGER
+    } catch (e) {
+      console.error("[cron] lot expiry check", e.message);
+    }
+  });
+
+  console.log("[cron] scheduled: orders hourly, debt 09:00, payroll 25th, period 28th, promo daily, recurring 1st, CRM tasks 08:00, CRM campaigns every minute, depreciation 28th 01:00, lot expiry 07:00");
 };
 
 module.exports = { startCrons };
