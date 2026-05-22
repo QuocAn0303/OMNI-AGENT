@@ -36,4 +36,8 @@ const authorize = (...roles) => {
   };
 };
 
-module.exports = { authenticate, authorize };
+// Alias: nhận array of roles (vd: requireRole(["ADMIN", "MANAGER"]))
+const requireRole = (roles) =>
+  authorize(...(Array.isArray(roles) ? roles : [roles]));
+
+module.exports = { authenticate, authorize, requireRole };
