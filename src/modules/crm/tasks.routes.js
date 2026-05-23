@@ -5,7 +5,10 @@ const tasksService = require("./tasks.service");
 const { authenticate, authorize } = require("../../middleware/auth.middleware");
 const { paginated, created, success } = require("../../utils/response");
 
-router.use(authenticate, authorize("ADMIN", "MANAGER", "CASHIER"));
+router.use(authenticate, authorize("SUPER_ADMIN", "ADMIN", "MANAGER", "CASHIER"));
+
+// CASHIER chỉ được phép xem; tạo/sửa/xóa dành cho SUPER_ADMIN/ADMIN/MANAGER
+const requireManager = authorize("SUPER_ADMIN", "ADMIN", "MANAGER");
 
 const STATUS = ["PENDING", "IN_PROGRESS", "DONE", "CANCELLED"];
 const PRIORITY = ["LOW", "NORMAL", "HIGH"];
@@ -44,9 +47,12 @@ router.get("/assignable-users", async (req, res, next) => {
 });
 
 // GET /api/crm/tasks?status&priority&assignedTo&customerId&overdue
+// CASHIER: ép assignedTo = chính mình (chỉ thấy nhiệm vụ được giao)
 router.get("/", async (req, res, next) => {
   try {
-    const { tasks, pagination } = await tasksService.list(req.query);
+    const query = { ...req.query };
+    if (req.user.role === "CASHIER") query.assignedTo = req.user.id;
+    const { tasks, pagination } = await tasksService.list(query);
     paginated(res, tasks, pagination);
   } catch (err) {
     next(err);
@@ -72,8 +78,8 @@ router.get("/my/overdue-count", async (req, res, next) => {
   }
 });
 
-// POST /api/crm/tasks
-router.post("/", async (req, res, next) => {
+// POST /api/crm/tasks  (SUPER_ADMIN/ADMIN/MANAGER)
+router.post("/", requireManager, async (req, res, next) => {
   try {
     const data = createSchema.parse(req.body);
     created(res, await tasksService.create(data, req.user.id), "Đã tạo nhiệm vụ");
@@ -82,8 +88,8 @@ router.post("/", async (req, res, next) => {
   }
 });
 
-// PATCH /api/crm/tasks/:id
-router.patch("/:id", async (req, res, next) => {
+// PATCH /api/crm/tasks/:id  (SUPER_ADMIN/ADMIN/MANAGER)
+router.patch("/:id", requireManager, async (req, res, next) => {
   try {
     const data = updateSchema.parse(req.body);
     success(res, await tasksService.update(req.params.id, data, req.user.id), "Đã cập nhật");
@@ -93,7 +99,7 @@ router.patch("/:id", async (req, res, next) => {
 });
 
 // DELETE /api/crm/tasks/:id  (ADMIN/MANAGER only)
-router.delete("/:id", authorize("ADMIN", "MANAGER"), async (req, res, next) => {
+router.delete("/:id", requireManager, async (req, res, next) => {
   try {
     success(res, await tasksService.remove(req.params.id, req.user.id), "Đã xóa nhiệm vụ");
   } catch (err) {

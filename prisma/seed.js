@@ -132,6 +132,12 @@ async function main() {
 
   const seedUsers = [
     {
+      email: "superadmin@candory.com",
+      fullName: "Super Admin CANDORY",
+      role: "SUPER_ADMIN",
+      isActive: true,
+    },
+    {
       email: "admin@candory.com",
       fullName: "Admin CANDORY",
       role: "ADMIN",
@@ -192,7 +198,13 @@ async function main() {
 
   // ---- EMPLOYEES (linked to seeded users) ----
   const employees = [];
-  const salaryByRole = { ADMIN: 15000000, MANAGER: 10000000, CASHIER: 7000000 };
+  const salaryByRole = {
+    SUPER_ADMIN: 20000000,
+    ADMIN: 15000000,
+    MANAGER: 10000000,
+    CASHIER: 7000000,
+    WAREHOUSE: 7000000,
+  };
   for (const u of users) {
     const base = salaryByRole[u.role] || 7000000;
     const shiftMoney = +(base * 0.05).toFixed(2);
@@ -471,10 +483,12 @@ async function main() {
   }
 
   console.log("\n🎉 Seed finished successfully!");
-  console.log("📧 Sample logins:");
-  console.log("  - admin@candory.com / 123456");
-  console.log("  - manager@candory.com / 123456");
-  console.log("  - cashier@candory.com / 123456");
+  console.log("📧 Sample logins (mật khẩu: 123456):");
+  console.log("  - superadmin@candory.com  [SUPER_ADMIN]");
+  console.log("  - admin@candory.com       [ADMIN]");
+  console.log("  - manager@candory.com     [MANAGER]");
+  console.log("  - cashier@candory.com     [CASHIER]");
+  console.log("  - tanphat@gmail.com       [WAREHOUSE]");
 }
 
 main()

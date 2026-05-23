@@ -33,13 +33,16 @@ const priorityMeta = (v) => PRIORITY_OPTIONS.find((p) => p.value === v) || PRIOR
 export default function Tasks() {
   const navigate = useNavigate();
   const user = useAuthStore((s) => s.user);
+  const isCashier = user?.role === 'CASHIER';
+  const canManage = ['SUPER_ADMIN', 'ADMIN', 'MANAGER'].includes(user?.role);
 
   const [data, setData] = useState([]);
   const [total, setTotal] = useState(0);
   const [page, setPage] = useState(1);
   const [loading, setLoading] = useState(true);
 
-  const [scope, setScope] = useState('all'); // all | mine | overdue
+  // CASHIER mặc định chỉ xem nhiệm vụ của mình
+  const [scope, setScope] = useState(isCashier ? 'mine' : 'all'); // all | mine | overdue
   const [status, setStatus] = useState();
   const [priority, setPriority] = useState();
 
@@ -239,19 +242,23 @@ export default function Tasks() {
       fixed: 'right',
       render: (_, row) => (
         <Space size={0}>
-          {row.status !== 'DONE' && (
+          {canManage && row.status !== 'DONE' && (
             <Tooltip title="Hoàn thành">
               <Button size="small" type="text" icon={<CheckCircleOutlined />} onClick={() => setStatusQuick(row, 'DONE')} />
             </Tooltip>
           )}
-          <Button size="small" type="text" icon={<EditOutlined />} onClick={() => openModal(row)} />
-          <Popconfirm title="Xóa nhiệm vụ?" onConfirm={() => remove(row.id)} okText="Xóa" cancelText="Hủy">
-            <Button size="small" type="text" danger icon={<DeleteOutlined />} />
-          </Popconfirm>
+          {canManage && (
+            <>
+              <Button size="small" type="text" icon={<EditOutlined />} onClick={() => openModal(row)} />
+              <Popconfirm title="Xóa nhiệm vụ?" onConfirm={() => remove(row.id)} okText="Xóa" cancelText="Hủy">
+                <Button size="small" type="text" danger icon={<DeleteOutlined />} />
+              </Popconfirm>
+            </>
+          )}
         </Space>
       ),
     },
-  ], [users]);
+  ], [users, canManage]);
 
   return (
     <>
@@ -259,9 +266,11 @@ export default function Tasks() {
         title="Nhiệm vụ CSKH"
         subtitle={`${total} nhiệm vụ`}
         actions={
-          <Button type="primary" icon={<PlusOutlined />} onClick={() => openModal()}>
-            Tạo nhiệm vụ
-          </Button>
+          canManage && (
+            <Button type="primary" icon={<PlusOutlined />} onClick={() => openModal()}>
+              Tạo nhiệm vụ
+            </Button>
+          )
         }
       />
 
@@ -269,11 +278,18 @@ export default function Tasks() {
         <Segmented
           value={scope}
           onChange={setScope}
-          options={[
-            { value: 'all', label: 'Tất cả' },
-            { value: 'mine', label: 'Của tôi' },
-            { value: 'overdue', label: 'Quá hạn' },
-          ]}
+          options={
+            isCashier
+              ? [
+                  { value: 'mine', label: 'Của tôi' },
+                  { value: 'overdue', label: 'Quá hạn' },
+                ]
+              : [
+                  { value: 'all', label: 'Tất cả' },
+                  { value: 'mine', label: 'Của tôi' },
+                  { value: 'overdue', label: 'Quá hạn' },
+                ]
+          }
         />
         <Select
           allowClear placeholder="Trạng thái" style={{ width: 160 }}
@@ -299,7 +315,14 @@ export default function Tasks() {
             emptyText: (
               <EmptyState
                 title="Chưa có nhiệm vụ"
-                action={<Button type="primary" icon={<PlusOutlined />} onClick={() => openModal()}>Tạo nhiệm vụ đầu tiên</Button>}
+                description={isCashier ? 'Hiện chưa có nhiệm vụ nào được giao cho bạn.' : undefined}
+                action={
+                  canManage ? (
+                    <Button type="primary" icon={<PlusOutlined />} onClick={() => openModal()}>
+                      Tạo nhiệm vụ đầu tiên
+                    </Button>
+                  ) : null
+                }
               />
             ),
           }}
