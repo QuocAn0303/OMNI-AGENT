@@ -2,12 +2,28 @@
 const express = require("express");
 const router  = express.Router();
 const multer  = require("multer");
+const prisma  = require("../../config/prisma");
 const { authenticate, authorize } = require("../../middleware/auth.middleware");
 const svc = require("./bank-reco.service");
 
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
 const ok   = (res, data) => res.json({ success: true, data });
 const fail = (res, err)  => res.status(err.status || 500).json({ success: false, message: err.message || "Lỗi server" });
+
+// GET /api/bank-reco/bank-accounts — danh sách TK ngân hàng để chọn khi import sao kê
+router.get("/bank-accounts", authenticate, async (req, res) => {
+  try {
+    const accounts = await prisma.bankAccount.findMany({
+      where: { isActive: true },
+      orderBy: [{ isDefault: "desc" }, { bankName: "asc" }],
+      select: {
+        id: true, accountNumber: true, bankName: true, accountName: true,
+        currentBalance: true, isDefault: true,
+      },
+    });
+    ok(res, accounts);
+  } catch (e) { fail(res, e); }
+});
 
 // GET /api/bank-reco/statements
 router.get("/statements", authenticate, authorize("ADMIN", "MANAGER"), async (req, res) => {
