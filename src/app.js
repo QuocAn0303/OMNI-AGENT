@@ -38,8 +38,7 @@ const reportRoutes = require("./modules/reports/report.routes");
 const auditRoutes = require("./modules/audit/audit.routes");
 const hrRoutes = require("./modules/hr/hr.routes");
 const analyticsRoutes = require("./modules/analytics/analytics.routes");
-//chưa hoạt động được
-//const aiRoutes = require("./modules/ai/ai.routes");
+const aiRoutes = require("./modules/ai/ai.routes");
 const accountingRoutes = require("./modules/accounting/accounting.routes");
 const debtRoutes = require("./modules/debt/debt.routes");
 const notificationRoutes = require("./modules/notifications/notification.routes");
@@ -148,6 +147,65 @@ app.get("/", (req, res) => {
   res.json({ message: "Aduu API đang chạy", version: "1.0.0" });
 });
 
+// Health check endpoint
+app.get("/api/health", async (req, res) => {
+  const health = {
+    status: "ok",
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
+    environment: process.env.NODE_ENV || "development",
+    version: "1.0.0",
+    checks: {},
+  };
+
+  // Check database
+  try {
+    const prisma = require("./config/prisma");
+    await prisma.$queryRawUnsafe("SELECT 1");
+    health.checks.database = { status: "ok" };
+  } catch (e) {
+    health.checks.database = { status: "error", message: e.message };
+    health.status = "degraded";
+  }
+
+  // Check Redis
+  try {
+    const { redis } = require("./config/redis");
+    if (redis && redis.status === "ready") {
+      await redis.ping();
+      health.checks.redis = { status: "ok" };
+    } else {
+      health.checks.redis = { status: "not_configured" };
+    }
+  } catch (e) {
+    health.checks.redis = { status: "error", message: e.message };
+    health.status = "degraded";
+  }
+
+  // Check Ollama
+  try {
+    const { checkOllamaHealth } = require("./modules/ai/ai.service");
+    health.checks.ollama = await checkOllamaHealth();
+    if (health.checks.ollama.status !== "ok") {
+      health.status = "degraded";
+    }
+  } catch (e) {
+    health.checks.ollama = { status: "error", message: e.message };
+    health.status = "degraded";
+  }
+
+  // Memory usage
+  const mem = process.memoryUsage();
+  health.checks.memory = {
+    rss: `${Math.round(mem.rss / 1024 / 1024)}MB`,
+    heapUsed: `${Math.round(mem.heapUsed / 1024 / 1024)}MB`,
+    heapTotal: `${Math.round(mem.heapTotal / 1024 / 1024)}MB`,
+  };
+
+  const statusCode = health.status === "ok" ? 200 : 503;
+  res.status(statusCode).json(health);
+});
+
 app.use("/api/auth", authRoutes);
 app.use("/api/users", userRoutes);
 app.use("/api/products", productRoutes);
@@ -161,7 +219,16 @@ app.use("/api/reports", reportRoutes);
 app.use("/api/audit", auditRoutes);
 app.use("/api/hr", hrRoutes);
 app.use("/api/analytics", analyticsRoutes);
-//app.use("/api/ai", aiRoutes);
+const aiLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: 10,
+  standardHeaders: true,
+  legacyHeaders: false,
+  message: { success: false, message: 'Qua nhieu request AI, vui long thu lai sau' },
+});
+app.use("/api/ai/chat", aiLimiter);
+app.use("/api/ai/sync", aiLimiter);
+app.use("/api/ai", aiRoutes);
 app.use("/api/accounting", accountingRoutes);
 app.use("/api/debts", debtRoutes);
 app.use("/api/notifications", notificationRoutes);
