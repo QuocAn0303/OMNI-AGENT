@@ -5,12 +5,10 @@ import {
   RobotOutlined, UserOutlined,
 } from '@ant-design/icons';
 import axios from '../api/axios';
-//phần này chưa sử dụng được, vì backend chưa xử lý được request này
+
 /**
- * ERPAssistantWidget — Floating chatbot widget
- * Đồng bộ theme Slate Emerald với phần còn lại
- *
- * Endpoint: POST /assistant/chat { message, history }
+ * ERPAssistantWidget — Floating chatbot widget (RAG-powered)
+ * Endpoint: POST /api/ai/chat { message, history }
  */
 export default function ERPAssistantWidget() {
   const [open, setOpen] = useState(false);
@@ -39,9 +37,9 @@ export default function ERPAssistantWidget() {
     setSending(true);
 
     try {
-      const res = await axios.post('/assistant/chat', {
+      const res = await axios.post('/ai/chat', {
         message: text,
-        history: newMessages.slice(-10), // Gửi 10 tin gần nhất làm context
+        history: newMessages.slice(-10),
       });
       setMessages([
         ...newMessages,
