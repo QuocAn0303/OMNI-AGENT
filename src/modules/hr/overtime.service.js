@@ -1,4 +1,4 @@
-const prisma = require("../../config/prisma");
+﻿const prisma = require("../../config/prisma");
 const workflowService = require("../workflow/workflow.service");
 const notifService = require("../notifications/notification.service");
 
@@ -9,7 +9,7 @@ const create = async (employeeId, userId, data) => {
     where: { id: employeeId },
     include: { user: { select: { fullName: true } } },
   });
-  if (!employee || !employee.isActive) throw { status: 404, message: "Khong tim thay nhan vien" };
+  if (!employee || !employee.isActive) throw { status: 404, message: "Khong tìm thấy nhân viên" };
 
   const otDate = new Date(date);
   const otAmount = Math.round((Number(employee.baseSalary || 5000000) / 26 / 8) * hours * rate);

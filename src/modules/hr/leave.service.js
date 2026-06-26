@@ -1,4 +1,4 @@
-const prisma = require("../../config/prisma");
+﻿const prisma = require("../../config/prisma");
 const workflowService = require("../workflow/workflow.service");
 const notifService = require("../notifications/notification.service");
 
@@ -8,19 +8,19 @@ const create = async (employeeId, userId, data) => {
   const { startDate, endDate, type = "PAID", reason = "" } = data;
 
   if (!startDate || !endDate) {
-    throw { status: 400, message: "Vui long nhap ngay bat dau va ngay ket thuc" };
+    throw { status: 400, message: "Vui long nhap ngày bắt đầu va ngày kết thúc" };
   }
 
   const employee = await prisma.employee.findUnique({
     where: { id: employeeId },
     include: { user: { select: { id: true, fullName: true } } },
   });
-  if (!employee) throw { status: 404, message: "Khong tim thay nhan vien" };
+  if (!employee) throw { status: 404, message: "Khong tìm thấy nhân viên" };
   if (!employee.isActive) throw { status: 400, message: "Nhan vien da nghi viec" };
 
   const start = new Date(startDate);
   const end = new Date(endDate);
-  if (end < start) throw { status: 400, message: "Ngay ket thuc phai sau ngay bat dau" };
+  if (end < start) throw { status: 400, message: "Ngay ket thuc phai sau ngày bắt đầu" };
 
   const days = Math.ceil((end - start) / (86400000)) + 1;
 
@@ -86,7 +86,7 @@ const approveLeave = async (runId, userId) => {
     where: { id: runId },
     include: { data: true },
   });
-  if (!run || run.entity !== "Leave") throw { status: 404, message: "Khong tim thay yeu cau nghi phep" };
+  if (!run || run.entity !== "Leave") throw { status: 404, message: "Khong tìm thấy yeu cau nghi phep" };
 
   const leaveData = run.data;
   try {
@@ -114,7 +114,7 @@ const approveLeave = async (runId, userId) => {
   }
 
   console.log(`${LOG} approved: ${leaveData.employeeName}, ${leaveData.days} days`);
-  return { success: true, message: "Da phe duyet nghi phep" };
+  return { success: true, message: "Da phê duyệt nghi phep" };
 };
 
 module.exports = { create, list, approveLeave };

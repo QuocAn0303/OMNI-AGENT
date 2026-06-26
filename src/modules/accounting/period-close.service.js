@@ -1,4 +1,4 @@
-const prisma = require("../../config/prisma");
+﻿const prisma = require("../../config/prisma");
 const journalService = require("./journal.service");
 const auditService = require("../audit/audit.service");
 
@@ -69,13 +69,13 @@ const closeExpenses = async ({ year, month, userId }) => {
 
     const entry = await journalService.postEntry({
       date: to,
-      description: `Ket chuyen chi phi ${acc.name} thang ${periodDesc}`,
+      description: `Ket chuyen chi phí ${acc.name} thang ${periodDesc}`,
       source: "CLOSING",
       sourceId: `close-expense-${code}-${year}-${month}`,
       operation: "EXPENSE_CLOSE",
       userId,
       lines: [
-        { accountCode: "911", debit: netBalance, description: `Ket chuyen chi phi thang ${periodDesc}` },
+        { accountCode: "911", debit: netBalance, description: `Ket chuyen chi phí thang ${periodDesc}` },
         { accountCode: code, credit: netBalance, description: `Ket chuyen ${acc.name}` },
       ],
     });
@@ -139,7 +139,7 @@ const runPeriodClose = async ({ year, month, userId }) => {
     where: { source: "CLOSING", sourceId: `close-pl-${year}-${month}` },
   });
   if (existing) {
-    throw { status: 400, message: `Thang ${month}/${year} da duoc ket chuyen roi` };
+    throw { status: 400, message: `Thang ${month}/${year} da duoc kết chuyển roi` };
   }
 
   const results = { year, month, revenue: null, expenses: null, profitLoss: null };
@@ -168,7 +168,7 @@ const runPeriodClose = async ({ year, month, userId }) => {
 const createPrepaid = async (userId, data) => {
   const { description, amount, totalMonths, startMonth, startYear, paymentAccountCode, vendorId } = data;
   if (!amount || !totalMonths || totalMonths < 1) {
-    throw { status: 400, message: "Vui long nhap so tien va so thang phan bo" };
+    throw { status: 400, message: "Vui long nhap so tien va so thang phân bổ" };
   }
 
   const monthlyAmount = Math.round(amount / totalMonths);
@@ -228,7 +228,7 @@ const runMonthlyAllocation = async (year, month, userId) => {
 
     await journalService.postEntry({
       date: new Date(year, month - 1, 1),
-      description: `Phan bo chi phi tra truoc: ${p.description} (thang ${month}/${year})`,
+      description: `Phan bo chi phí tra truoc: ${p.description} (thang ${month}/${year})`,
       source: "PREPAID",
       sourceId: `prepaid-alloc-${p.id}-${year}-${month}`,
       operation: "PRIMARY",
@@ -333,7 +333,7 @@ const runMonthlyDepreciation = async (year, month, userId) => {
       operation: "PRIMARY",
       userId,
       lines: [
-        { accountCode: "642", debit: monthlyDep, description: `Chi phi khau hao ${asset.name}` },
+        { accountCode: "642", debit: monthlyDep, description: `Chi phi khấu hao ${asset.name}` },
         { accountCode: "214", credit: monthlyDep, description: `Hao mon luy ke ${asset.name}` },
       ],
     });
@@ -403,14 +403,14 @@ const reversePeriodClose = async ({ year, month, userId }) => {
   });
 
   if (!closingEntries.length) {
-    throw { status: 400, message: `Thang ${month}/${year} chua duoc ket chuyen` };
+    throw { status: 400, message: `Thang ${month}/${year} chua duoc kết chuyển` };
   }
 
   const reversed = [];
   for (const entry of closingEntries) {
     const rev = await journalService.postEntry({
       date: new Date(),
-      description: `Dao but toan ket chuyen: ${entry.description}`,
+      description: `Dao but toan kết chuyển: ${entry.description}`,
       source: "CLOSING",
       sourceId: `reverse-${entry.id}`,
       operation: "REVERSE_CLOSE",
@@ -419,7 +419,7 @@ const reversePeriodClose = async ({ year, month, userId }) => {
         accountCode: l.account.code,
         debit: Number(l.credit),
         credit: Number(l.debit),
-        description: `Dao ket chuyen ${l.account.code}`,
+        description: `Dao kết chuyển ${l.account.code}`,
       })),
     });
     reversed.push(rev);

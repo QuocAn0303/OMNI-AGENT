@@ -1,4 +1,4 @@
-/**
+﻿/**
  * modules/accounting/financial-report.service.js — Báo cáo tài chính
  * 
  * Tổng quan:
@@ -781,13 +781,13 @@ const profitAndLossB02 = async ({ year, month }) => {
       { code: "21", name: "6. Doanh thu tai chinh", value: finRevenue },
       { code: "22", name: "7. Chi phi tai chinh", value: finExpense },
       { code: "23", name: "8. Chi phi ban hang", value: sellingExp },
-      { code: "24", name: "9. Chi phi quan ly DN", value: adminExp },
+      { code: "24", name: "9. Chi phi quản lý DN", value: adminExp },
       { code: "30", name: "10. Loi nhuan thuan tu HDSXKD", value: operatingProfit, bold: true },
       { code: "31", name: "11. Thu nhap khac", value: otherIncome },
       { code: "32", name: "12. Chi phi khac", value: otherExpense },
       { code: "40", name: "13. Loi nhuan khac", value: otherProfit, bold: true },
-      { code: "50", name: "14. Tong loi nhuan truoc thue", value: profitBeforeTax, bold: true },
-      { code: "51", name: "15. Chi phi thue TNDN", value: citExpense },
+      { code: "50", name: "14. Tong lợi nhuận truoc thue", value: profitBeforeTax, bold: true },
+      { code: "51", name: "15. Chi phi thuế TNDN", value: citExpense },
       { code: "60", name: "16. Loi nhuan sau thue", value: netProfit, bold: true },
     ],
     summary: { netRevenue: netRevenueActual, grossProfit, operatingProfit, profitBeforeTax, netProfit },

@@ -1160,6 +1160,7 @@ model Employee {
   shifts     Shift[]
   violations Violation[]
   payrolls   Payroll[]
+  overtimeRequests OvertimeRequest[]
 
   @@map("employees")
 }

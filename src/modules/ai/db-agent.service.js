@@ -1,4 +1,4 @@
-/**
+﻿/**
  * modules/ai/db-agent.service.js — DB Agent: truy vấn database bằng ngôn ngữ tự nhiên
  * 
  * Tổng quan:
@@ -653,14 +653,14 @@ const INTENT_MAP = [
   { patterns: ['lương', 'nhân sự', 'nhân viên', 'employee', 'hr', 'hiệu suất', 'chấm công'], tool: 'search_hr' },
   { patterns: ['chi phí', 'expense', 'khoản chi', 'các khoản chi', 'bút toán', 'số dư', 'tài khoản kế toán'], tool: 'search_finance' },
   { patterns: ['tài chính', 'kế toán', 'finance', 'accounting'], tool: 'search_finance' },
-  { patterns: ['tồn kho', 'hàng tồn', 'hàng trong kho', 'low stock', 'sap het', 'hết hàng', 'ton kho', 'cảnh báo tồn', 'inventory'], tool: 'search_inventory' },
+  { patterns: ['tồn kho', 'hàng tồn', 'hàng trong kho', 'low stock', 'sap het', 'hết hàng', 'tồn kho', 'cảnh báo tồn', 'inventory'], tool: 'search_inventory' },
   { patterns: ['sản phẩm', 'hàng hóa', 'product', 'giá', 'còn hàng', 'bán chạy', 'lợi nhuận cao'], tool: 'search_products' },
-  { patterns: ['khách hàng', 'customer', 'khach hang'], tool: 'search_customers' },
+  { patterns: ['khách hàng', 'customer', 'khách hàng'], tool: 'search_customers' },
   { patterns: ['doanh thu', 'revenue', 'bán được', 'thu nhập', 'doanh số', 'lợi nhuận', 'profit'], tool: 'get_revenue' },
   { patterns: ['sản xuất', 'production'], tool: 'search_production' },
   { patterns: ['dự án', 'project', 'task', 'tiến độ'], tool: 'search_projects' },
   { patterns: ['công nợ', 'nợ', 'debt', 'no', 'con no'], tool: 'search_debts' },
-  { patterns: ['nhà cung cấp', 'vendor', 'nha cung cap', 'supplier'], tool: 'search_vendors' },
+  { patterns: ['nhà cung cấp', 'vendor', 'nhà cung cấp', 'supplier'], tool: 'search_vendors' },
   { patterns: ['khuyến mãi', 'promotion', 'giảm giá', 'voucher', 'coupon'], tool: 'search_promotions' },
   { patterns: ['hóa đơn', 'invoice', 'hoa don', 'vat'], tool: 'search_invoices' },
   { patterns: ['giao hàng', 'delivery', 'vận chuyển', 'ship', 'đang giao'], tool: 'search_deliveries' },

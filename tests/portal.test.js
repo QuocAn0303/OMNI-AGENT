@@ -197,7 +197,7 @@ describe("portal — customer self-service", () => {
 
       expect(result.totalOwed).toBe(0);
       expect(result.qrCode).toBeNull();
-      expect(result.message).toContain("Khong co cong no");
+      expect(result.message).toContain("Không có công nợ");
     });
 
     test("should calculate total owed from multiple debts", async () => {

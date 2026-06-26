@@ -1,4 +1,4 @@
-const zaloConfig = require("../modules/integrations/integration-config.service");
+﻿const zaloConfig = require("../modules/integrations/integration-config.service");
 
 const ZALO_API = {
   CS: "https://openapi.zalo.me/v3.0/oa/message/cs",
@@ -100,16 +100,16 @@ const sendDebtReminder = async (customer) => {
 const sendOrderStatusUpdate = async (customerName, phone, orderCode, status) => {
   if (!phone) return { ok: false, error: "Khong co SDT" };
 
-  const statusText = { CONFIRMED: "da xac nhan", SHIPPING: "dang giao hang", COMPLETED: "da hoan thanh", CANCELLED: "da bi huy" };
+  const statusText = { CONFIRMED: "da xác nhận", SHIPPING: "dang giao hang", COMPLETED: "da hoan thanh", CANCELLED: "da bi huy" };
 
-  const text = `Kinh gui ${customerName},\nDon hang ${orderCode} cua ban ${statusText[status] || "da cap nhat trang thai"}.\nCam on ban da mua hang tai Aduu ERP!`;
+  const text = `Kinh gui ${customerName},\nDon hang ${orderCode} cua ban ${statusText[status] || "da cập nhật trang thai"}.\nCam on ban da mua hang tai Aduu ERP!`;
   return sendZaloMessage({ userId: phone, text });
 };
 
 const sendPayrollNotification = async (employeeName, phone, month, year, finalSalary) => {
   if (!phone) return { ok: false, error: "Khong co SDT" };
 
-  const text = `Kinh gui ${employeeName},\nLuong thang ${month}/${year} cua ban: ${Number(finalSalary).toLocaleString("vi-VN")} VND.\nVui long kiem tra phieu luong tren he thong.\nTran trong, Aduu ERP`;
+  const text = `Kinh gui ${employeeName},\nLuong thang ${month}/${year} cua ban: ${Number(finalSalary).toLocaleString("vi-VN")} VND.\nVui long kiem tra phieu luong tren hệ thống.\nTran trong, Aduu ERP`;
   return sendZaloMessage({ userId: phone, text });
 };
 

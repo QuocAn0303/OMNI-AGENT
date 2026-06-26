@@ -1,4 +1,4 @@
-const prisma = require("../../config/prisma");
+﻿const prisma = require("../../config/prisma");
 
 const LOG = "[automation]";
 
@@ -29,7 +29,7 @@ const checkAutoReorder = async (productIds, warehouseId) => {
 
       const vendor = lastPO?.purchaseOrder?.vendor;
       if (!vendor || !vendor.isActive) {
-        console.log(`${LOG} auto-reorder: khong tim thay vendor cho ${inv.product.sku}, skip`);
+        console.log(`${LOG} auto-reorder: không tìm thấy vendor cho ${inv.product.sku}, skip`);
         continue;
       }
 
@@ -82,7 +82,7 @@ const checkAutoReorder = async (productIds, warehouseId) => {
         await notif.notifyRoles(["MANAGER", "ADMIN"], {
           type: "SYSTEM",
           severity: "INFO",
-          title: "PO tu dong da duyet",
+          title: "PO tự động đã duyệt",
           message: `PO ${poCode}: nhap ${reorderQty} x ${inv.product.name} tu ${vendor.name} (${subtotal.toLocaleString()} VND)`,
           link: "/purchase-orders",
           meta: { poId: po.id, autoApproved: true },
@@ -91,7 +91,7 @@ const checkAutoReorder = async (productIds, warehouseId) => {
         await notif.notifyRoles(["MANAGER", "ADMIN"], {
           type: "PO_PENDING_APPROVAL",
           severity: "WARNING",
-          title: "PO tu dong can duyet",
+          title: "PO tự động cần duyệt",
           message: `PO ${poCode}: nhap ${reorderQty} x ${inv.product.name} tu ${vendor.name} (${subtotal.toLocaleString()} VND). Vui long duyet.`,
           link: "/purchase-orders",
           meta: { poId: po.id, autoApproved: false },
@@ -125,7 +125,7 @@ const autoPayroll = async () => {
     const payrolls = await hrService.generatePayrollForMonth(month, year);
 
     if (!payrolls.length) {
-      console.log(`${LOG} auto-payroll: khong co nhan vien active`);
+      console.log(`${LOG} auto-payroll: không co nhân viên active`);
       return;
     }
 
@@ -149,7 +149,7 @@ const autoPayroll = async () => {
 
         await journalService.postEntry({
           date: now,
-          description: `Tinh luong thang ${month}/${year} - ${payrolls.length} nhan vien`,
+          description: `Tinh luong thang ${month}/${year} - ${payrolls.length} nhân viên`,
           source: "PAYROLL",
           sourceId: `payroll-${year}-${month}`,
           operation: "PRIMARY",
@@ -166,12 +166,12 @@ const autoPayroll = async () => {
       type: "PAYROLL_DUE",
       severity: "INFO",
       title: `Luong thang ${month}/${year} da tinh xong`,
-      message: `${payrolls.length} nhan vien, tong luong: ${totalSalary.toLocaleString()} VND. Vao HR de xem chi tiet va khoa bang luong.`,
+      message: `${payrolls.length} nhân viên, tong luong: ${totalSalary.toLocaleString()} VND. Vao HR de xem chi tiet va khoa bang luong.`,
       link: "/hr",
       meta: { month, year, count: payrolls.length, total: totalSalary },
     });
 
-    console.log(`${LOG} auto-payroll: hoan tat ${payrolls.length} nhan vien, tong ${totalSalary.toLocaleString()} VND`);
+    console.log(`${LOG} auto-payroll: hoan tat ${payrolls.length} nhân viên, tong ${totalSalary.toLocaleString()} VND`);
   } catch (err) {
     console.error(`${LOG} auto-payroll error:`, err.message);
   }
@@ -277,7 +277,7 @@ const debtAutoCollection = async () => {
       await notif.notifyRoles(["ADMIN"], {
         type: "DEBT_OVERDUE",
         severity: "CRITICAL",
-        title: `KHẨN: Cong no qua han ${daysOverdue} ngay`,
+        title: `KHẨN: Cong no quá hạn ${daysOverdue} ngay`,
         message: `${debt.type === "RECEIVABLE" ? "Phai thu" : "Phai tra"} ${partyName}: ${remaining.toLocaleString()} VND. Can xu ly gap!`,
         link: "/debts",
         meta: { debtId: debt.id, level: "escalated", daysOverdue },
@@ -313,7 +313,7 @@ const debtAutoCollection = async () => {
       await notif.notifyRoles(["ADMIN"], {
         type: "DEBT_OVERDUE",
         severity: "CRITICAL",
-        title: "Cong no qua han 30+ ngay",
+        title: "Cong no quá hạn 30+ ngay",
         message: `Debt ${debt.id.slice(0, 8)}: ${(Number(debt.amount) - Number(debt.paidAmount)).toLocaleString()} VND. Da danh dau can xu ly dac biet.`,
         link: "/debts",
         meta: { debtId: debt.id, level: "critical_flag" },
@@ -400,13 +400,13 @@ const morningBriefing = async () => {
       anomaly += `⚠️ Doanh thu hom nay giam ${Math.abs(changeD)}% so voi hom qua.\n`;
     }
     if (lowStock > 20) {
-      anomaly += `⚠️ Co ${lowStock} san pham sap het hang – can nhap gap.\n`;
+      anomaly += `⚠️ Co ${lowStock} sản phẩm sắp hết hàng – can nhap gap.\n`;
     }
     if (overdueDebts > 10) {
-      anomaly += `⚠️ ${overdueDebts} khoan cong no sap den han (7 ngay toi).\n`;
+      anomaly += `⚠️ ${overdueDebts} khoan công nợ sap den han (7 ngay toi).\n`;
     }
     if (pendingPO > 5) {
-      anomaly += `📋 ${pendingPO} PO dang cho duyet.\n`;
+      anomaly += `📋 ${pendingPO} PO dang chờ duyệt.\n`;
     }
 
     const message = [
@@ -417,7 +417,7 @@ const morningBriefing = async () => {
       ``,
       `👤 Khach hang: ${activeCustomers} (moi: ${newCustomersThisMonth} thang nay)`,
       `📦 Ton kho thap: ${lowStock} SP`,
-      `📋 PO cho duyet: ${pendingPO}`,
+      `📋 PO chờ duyệt: ${pendingPO}`,
       `💰 No sap den han: ${overdueDebts}`,
       anomaly ? `\n🚨 **Canh bao:**\n${anomaly}` : '',
       `✅ Goi y hom nay:`,
@@ -518,7 +518,7 @@ const anomalyDetection = async () => {
     if (dormantCustomers > 10) {
       alerts.push({
         type: 'DORMANT_CUSTOMERS',
-        message: `${dormantCustomers} khach hang khong mua hang trong 60 ngay qua`,
+        message: `${dormantCustomers} khách hàng không mua hang trong 60 ngay qua`,
       });
     }
 
@@ -527,7 +527,7 @@ const anomalyDetection = async () => {
       await notif.notifyRoles(['ADMIN'], {
         type: 'ANOMALY',
         severity: 'WARNING',
-        title: `Phat hien ${alerts.length} bat thuong`,
+        title: `Phat hien ${alerts.length} bất thường`,
         message: alertMsg,
         link: '/analytics',
         meta: { alerts },

@@ -1,4 +1,4 @@
-/**
+﻿/**
  * modules/portal/portal.service.js — Cổng thông tin khách hàng tự phục vụ
  * 
  * Tổng quan:
@@ -43,7 +43,7 @@ const requestOtp = async (phone) => {
   await prisma.portalOtp.create({ data: { phone, otp, expiresAt } });
 
   try {
-    await sendSms(phone, `Ma OTP dang nhap Aduu ERP: ${otp}. Co hieu luc ${OTP_EXPIRY_MINUTES} phut.`);
+    await sendSms(phone, `Ma OTP đăng nhập Aduu ERP: ${otp}. Co hieu luc ${OTP_EXPIRY_MINUTES} phut.`);
   } catch (e) {
     console.warn(`[portal-otp] SMS thất bại, fallback log: ${e.message}`);
     console.log(`[portal-otp] Phone: ${phone} OTP: ${otp}`);
@@ -134,7 +134,7 @@ const getMyInvoices = async (customerId, { page = 1, limit = 10 } = {}) => {
 // ════════════════ PHASE E: SELF-SERVICE ════════════════
 
 const createMyOrder = async (customerId, { items, note, paymentMethod = "BANK_TRANSFER" }) => {
-  if (!items || !items.length) throw { status: 400, message: "Vui long chon it nhat 1 san pham" };
+  if (!items || !items.length) throw { status: 400, message: "Vui long chon it nhat 1 sản phẩm" };
 
   const orderService = require("../orders/order.service");
   const resolvedItems = [];
@@ -144,7 +144,7 @@ const createMyOrder = async (customerId, { items, note, paymentMethod = "BANK_TR
       where: { id: item.productId, isActive: true },
       select: { id: true, name: true, price: true },
     });
-    if (!product) throw { status: 404, message: `San pham ${item.productId} khong ton tai` };
+    if (!product) throw { status: 404, message: `San pham ${item.productId} không ton tai` };
     resolvedItems.push({
       productId: product.id,
       quantity: Math.max(1, parseInt(item.quantity) || 1),
@@ -170,7 +170,7 @@ const payMyDebt = async (customerId) => {
     include: { payments: true },
   });
 
-  if (!debts.length) return { totalOwed: 0, message: "Khong co cong no", qrCode: null };
+  if (!debts.length) return { totalOwed: 0, message: "Không có công nợ", qrCode: null };
 
   const totalOwed = debts.reduce((s, d) => s + (Number(d.amount) - Number(d.paidAmount)), 0);
   const bankAccount = await prisma.bankAccount.findFirst({
@@ -178,7 +178,7 @@ const payMyDebt = async (customerId) => {
     select: { accountNumber: true, bankName: true, accountName: true },
   });
 
-  const description = `Thanh toan cong no — KH ${customerId.slice(0, 8)}`;
+  const description = `Thanh toan công nợ — KH ${customerId.slice(0, 8)}`;
   let qrCode = null;
 
   if (bankAccount) {
@@ -287,7 +287,7 @@ const redeemReward = async (customerId, rewardId) => {
   };
 
   const reward = rewards[rewardId];
-  if (!reward) throw { status: 404, message: "Phan thuong khong ton tai" };
+  if (!reward) throw { status: 404, message: "Phan thuong không ton tai" };
 
   const customer = await prisma.customer.findUnique({ where: { id: customerId } });
   if (customer.loyaltyPoints < reward.points) {
