@@ -1,4 +1,4 @@
-﻿/**
+/**
  * modules/ai/llm-chat.service.js — Kết nối DB Agent với LLM (Qwen)
  * 
  * Tổng quan:
@@ -41,7 +41,7 @@ const TOOL_DESCRIPTIONS = [
 ];
 
 function buildToolPrompt(query) {
-  return `Ban la tro ly ERP Aduu chuyen mon. Nhiem vu: chon cong cu (tool) phu hop nhat va trich xuat tham so tu cau hoi.
+  return `Ban la tro ly ERP Aduu chuyen mon. Nhiem vu: chon cong cu (tool) phu hop nhat va trich xuat tham so tu câu hỏi.
 
 Cac cong cu:
 - search_products: Tim kiem sản phẩm. Tham so: search (ten/SKU), categoryId, minPrice, maxPrice, limit, sortBy (price/name/createdAt), sortOrder (asc/desc)
@@ -64,8 +64,8 @@ Cac cong cu:
 - send_reminder: GUI nhắc nợ cho khach (can ADMIN/MANAGER). Tham so: customerName, debtId, message
 
 Quy tac:
-1. Chon cong cu phu hop nhat voi cau hoi
-2. Trich xuat tham so tu cau hoi (ten, thời gian, trang thai, số lượng...)
+1. Chon cong cu phu hop nhat voi câu hỏi
+2. Trich xuat tham so tu câu hỏi (ten, thời gian, trang thai, số lượng...)
 3. Neu co "top N" hoac "N moi nhat" → set limit = N
 4. Neu co "thang nay/tuan nay/hom nay" → set period tuong ung
 5. Neu co "ke toan", "sổ cái", "kết chuyển", "khau hao", "thue" → dung search_finance
@@ -74,7 +74,7 @@ Quy tac:
 Tra ve JSON DUY NHAT dang: { "tool": "ten_tool", "params": { ... } }
 KHONG them text nao khac ngoai JSON.
 
-Cau hoi: "${query}"`;
+Câu hỏi: "${query}"`;
 }
 
 async function inferTool(query) {

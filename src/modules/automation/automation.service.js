@@ -1,4 +1,4 @@
-﻿const prisma = require("../../config/prisma");
+const prisma = require("../../config/prisma");
 
 const LOG = "[automation]";
 
@@ -92,7 +92,7 @@ const checkAutoReorder = async (productIds, warehouseId) => {
           type: "PO_PENDING_APPROVAL",
           severity: "WARNING",
           title: "PO tự động cần duyệt",
-          message: `PO ${poCode}: nhap ${reorderQty} x ${inv.product.name} tu ${vendor.name} (${subtotal.toLocaleString()} VND). Vui long duyet.`,
+          message: `PO ${poCode}: nhap ${reorderQty} x ${inv.product.name} tu ${vendor.name} (${subtotal.toLocaleString()} VND). Vui lòng duyet.`,
           link: "/purchase-orders",
           meta: { poId: po.id, autoApproved: false },
         });
@@ -211,7 +211,7 @@ const debtAutoCollection = async () => {
       await notif.notifyRoles(["MANAGER"], {
         type: "DEBT_OVERDUE",
         severity: "WARNING",
-        title: `Cong no sap den han (${daysLeft} ngay)`,
+        title: `Công nợ sap den han (${daysLeft} ngay)`,
         message: `${debt.type === "RECEIVABLE" ? "Phai thu" : "Phai tra"} ${partyName}: ${remaining.toLocaleString()} VND, han ${new Date(debt.dueDate).toLocaleDateString("vi-VN")}`,
         link: "/debts",
         meta: { debtId: debt.id, level: "upcoming", daysLeft },
@@ -234,7 +234,7 @@ const debtAutoCollection = async () => {
         await prisma.customerNote.create({
           data: {
             customerId: debt.customer.id,
-            content: `[Tu dong] Nhac no: con ${remaining.toLocaleString()} VND, han ${new Date(debt.dueDate).toLocaleDateString("vi-VN")}`,
+            content: `[Tự động] Nhắc nợ: con ${remaining.toLocaleString()} VND, han ${new Date(debt.dueDate).toLocaleDateString("vi-VN")}`,
             type: "NOTE",
             createdById: await getSystemUserId(),
           },
@@ -277,7 +277,7 @@ const debtAutoCollection = async () => {
       await notif.notifyRoles(["ADMIN"], {
         type: "DEBT_OVERDUE",
         severity: "CRITICAL",
-        title: `KHẨN: Cong no quá hạn ${daysOverdue} ngay`,
+        title: `KHẨN: Công nợ quá hạn ${daysOverdue} ngay`,
         message: `${debt.type === "RECEIVABLE" ? "Phai thu" : "Phai tra"} ${partyName}: ${remaining.toLocaleString()} VND. Can xu ly gap!`,
         link: "/debts",
         meta: { debtId: debt.id, level: "escalated", daysOverdue },
@@ -313,7 +313,7 @@ const debtAutoCollection = async () => {
       await notif.notifyRoles(["ADMIN"], {
         type: "DEBT_OVERDUE",
         severity: "CRITICAL",
-        title: "Cong no quá hạn 30+ ngay",
+        title: "Công nợ quá hạn 30+ ngay",
         message: `Debt ${debt.id.slice(0, 8)}: ${(Number(debt.amount) - Number(debt.paidAmount)).toLocaleString()} VND. Da danh dau can xu ly dac biet.`,
         link: "/debts",
         meta: { debtId: debt.id, level: "critical_flag" },
@@ -410,20 +410,20 @@ const morningBriefing = async () => {
     }
 
     const message = [
-      `📊 **Bao cao sang ${now.toLocaleDateString('vi-VN')}**`,
+      `📊 **Báo cáo sang ${now.toLocaleDateString('vi-VN')}**`,
       ``,
       `📦 Hom nay: ${ordersToday} don — ${revenueT.toLocaleString()} VND (${changeD >= 0 ? '+' : ''}${changeD}% vs hom qua)`,
       `📅 Thang nay: ${ordersThisMonth} don — ${revenueTM.toLocaleString()} VND`,
       ``,
-      `👤 Khach hang: ${activeCustomers} (moi: ${newCustomersThisMonth} thang nay)`,
-      `📦 Ton kho thap: ${lowStock} SP`,
+      `👤 Khách hàng: ${activeCustomers} (moi: ${newCustomersThisMonth} thang nay)`,
+      `📦 Tồn kho thap: ${lowStock} SP`,
       `📋 PO chờ duyệt: ${pendingPO}`,
       `💰 No sap den han: ${overdueDebts}`,
-      anomaly ? `\n🚨 **Canh bao:**\n${anomaly}` : '',
+      anomaly ? `\n🚨 **Cảnh báo:**\n${anomaly}` : '',
       `✅ Goi y hom nay:`,
       pendingPO > 0 ? `  → Duyet ${pendingPO} PO dang cho` : '',
-      lowStock > 0 ? `  → Nhap hang cho ${lowStock} SP ton thap` : '',
-      overdueDebts > 0 ? `  → Nhac no ${overdueDebts} KH sap den han` : '',
+      lowStock > 0 ? `  → Nhập hàng cho ${lowStock} SP ton thap` : '',
+      overdueDebts > 0 ? `  → Nhắc nợ ${overdueDebts} KH sap den han` : '',
     ].filter(Boolean).join('\n');
 
     const severity = anomaly ? 'WARNING' : 'INFO';

@@ -182,14 +182,14 @@ const parseMonthKey = (monthKey) => {
 
   const [year, month] = String(monthKey).split("-").map(Number);
   if (!year || !month || month < 1 || month > 12) {
-    throw { status: 400, message: "Thang bang luong khong hop le" };
+    throw { status: 400, message: "Thang bang luong không hop le" };
   }
   return { month, year };
 };
 
 const listAttendance = async ({ from, to, employeeId }) => {
   if (!from || !to) {
-    throw { status: 400, message: "Vui long chon khoang thoi gian" };
+    throw { status: 400, message: "Vui lòng chon khoang thoi gian" };
   }
 
   const start = new Date(from);

@@ -1,4 +1,4 @@
-﻿/**
+/**
  * modules/portal/portal.service.js — Cổng thông tin khách hàng tự phục vụ
  * 
  * Tổng quan:
@@ -134,7 +134,7 @@ const getMyInvoices = async (customerId, { page = 1, limit = 10 } = {}) => {
 // ════════════════ PHASE E: SELF-SERVICE ════════════════
 
 const createMyOrder = async (customerId, { items, note, paymentMethod = "BANK_TRANSFER" }) => {
-  if (!items || !items.length) throw { status: 400, message: "Vui long chon it nhat 1 sản phẩm" };
+  if (!items || !items.length) throw { status: 400, message: "Vui lòng chon it nhat 1 sản phẩm" };
 
   const orderService = require("../orders/order.service");
   const resolvedItems = [];
@@ -144,7 +144,7 @@ const createMyOrder = async (customerId, { items, note, paymentMethod = "BANK_TR
       where: { id: item.productId, isActive: true },
       select: { id: true, name: true, price: true },
     });
-    if (!product) throw { status: 404, message: `San pham ${item.productId} không ton tai` };
+    if (!product) throw { status: 404, message: `Sản phẩm ${item.productId} không ton tai` };
     resolvedItems.push({
       productId: product.id,
       quantity: Math.max(1, parseInt(item.quantity) || 1),
@@ -291,7 +291,7 @@ const redeemReward = async (customerId, rewardId) => {
 
   const customer = await prisma.customer.findUnique({ where: { id: customerId } });
   if (customer.loyaltyPoints < reward.points) {
-    throw { status: 400, message: `Khong du diem. Can ${reward.points}, hien co ${customer.loyaltyPoints}` };
+    throw { status: 400, message: `Không du diem. Can ${reward.points}, hien co ${customer.loyaltyPoints}` };
   }
 
   await prisma.$transaction([

@@ -67,7 +67,7 @@ describe("vietqr — webhook processing", () => {
       });
 
       const matches = await matchTransaction({
-        amount: 500000, description: "TT don hang ORD-20260625-0001", reference: "T1",
+        amount: 500000, description: "TT đơn hàng ORD-20260625-0001", reference: "T1",
       });
 
       expect(matches).toHaveLength(1);

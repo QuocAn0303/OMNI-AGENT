@@ -242,7 +242,7 @@ describe("accounting — TT200 reports", () => {
   describe("trialBalance6Col", () => {
     test("should return 6-column format with totals", async () => {
       prisma.account.findMany.mockResolvedValue([
-        { id: "a1", code: "111", name: "Tien mat", nameVi: "Tiền mặt", type: "ASSET", normalBalance: "DEBIT" },
+        { id: "a1", code: "111", name: "Tiền mặt", nameVi: "Tiền mặt", type: "ASSET", normalBalance: "DEBIT" },
         { id: "a2", code: "331", name: "Phai tra NB", nameVi: "Phải trả NB", type: "LIABILITY", normalBalance: "CREDIT" },
       ]);
       journalService.getAccountBalance.mockResolvedValue({ debit: 10000000, credit: 0, balance: 10000000 });

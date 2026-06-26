@@ -1,4 +1,4 @@
-﻿/**
+/**
  * modules/accounting/financial-report.service.js — Báo cáo tài chính
  * 
  * Tổng quan:
@@ -776,19 +776,19 @@ const profitAndLossB02 = async ({ year, month }) => {
       { code: "01", name: "1. Doanh thu ban hang", value: netRevenue },
       { code: "02", name: "2. Cac khoan giam tru", value: deductions },
       { code: "10", name: "3. Doanh thu thuan", value: netRevenueActual, bold: true },
-      { code: "11", name: "4. Gia von hang ban", value: cogs },
-      { code: "20", name: "5. Loi nhuan gop", value: grossProfit, bold: true },
+      { code: "11", name: "4. Giá vốn hang ban", value: cogs },
+      { code: "20", name: "5. Lợi nhuận gop", value: grossProfit, bold: true },
       { code: "21", name: "6. Doanh thu tai chinh", value: finRevenue },
       { code: "22", name: "7. Chi phi tai chinh", value: finExpense },
       { code: "23", name: "8. Chi phi ban hang", value: sellingExp },
       { code: "24", name: "9. Chi phi quản lý DN", value: adminExp },
-      { code: "30", name: "10. Loi nhuan thuan tu HDSXKD", value: operatingProfit, bold: true },
+      { code: "30", name: "10. Lợi nhuận thuan tu HDSXKD", value: operatingProfit, bold: true },
       { code: "31", name: "11. Thu nhap khac", value: otherIncome },
       { code: "32", name: "12. Chi phi khac", value: otherExpense },
-      { code: "40", name: "13. Loi nhuan khac", value: otherProfit, bold: true },
+      { code: "40", name: "13. Lợi nhuận khac", value: otherProfit, bold: true },
       { code: "50", name: "14. Tong lợi nhuận truoc thue", value: profitBeforeTax, bold: true },
       { code: "51", name: "15. Chi phi thuế TNDN", value: citExpense },
-      { code: "60", name: "16. Loi nhuan sau thue", value: netProfit, bold: true },
+      { code: "60", name: "16. Lợi nhuận sau thue", value: netProfit, bold: true },
     ],
     summary: { netRevenue: netRevenueActual, grossProfit, operatingProfit, profitBeforeTax, netProfit },
   };

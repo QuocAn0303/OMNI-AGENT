@@ -98,7 +98,7 @@ describe("portal — customer self-service", () => {
   describe("createMyOrder", () => {
     test("should create order with valid items", async () => {
       prisma.product.findUnique.mockResolvedValue({
-        id: "p1", name: "San pham A", price: 200000, isActive: true,
+        id: "p1", name: "Sản phẩm A", price: 200000, isActive: true,
       });
       orderService.create.mockResolvedValue({
         orderCode: "ORD-20260625-0010", total: 400000, items: [],

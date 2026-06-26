@@ -11,7 +11,7 @@ router.post("/chat", authenticate, aiService.chat);
 // Goi y proactive
 router.get("/suggestions", authenticate, aiService.getSuggestions);
 
-// Trigger sync du lieu ERP -> vector store (admin only)
+// Trigger sync dữ liệu ERP -> vector store (admin only)
 router.post("/sync", authenticate, authorize("ADMIN"), aiService.triggerSync);
 
 module.exports = router;

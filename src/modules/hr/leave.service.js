@@ -1,4 +1,4 @@
-﻿const prisma = require("../../config/prisma");
+const prisma = require("../../config/prisma");
 const workflowService = require("../workflow/workflow.service");
 const notifService = require("../notifications/notification.service");
 
@@ -8,15 +8,15 @@ const create = async (employeeId, userId, data) => {
   const { startDate, endDate, type = "PAID", reason = "" } = data;
 
   if (!startDate || !endDate) {
-    throw { status: 400, message: "Vui long nhap ngày bắt đầu va ngày kết thúc" };
+    throw { status: 400, message: "Vui lòng nhap ngày bắt đầu va ngày kết thúc" };
   }
 
   const employee = await prisma.employee.findUnique({
     where: { id: employeeId },
     include: { user: { select: { id: true, fullName: true } } },
   });
-  if (!employee) throw { status: 404, message: "Khong tìm thấy nhân viên" };
-  if (!employee.isActive) throw { status: 400, message: "Nhan vien da nghi viec" };
+  if (!employee) throw { status: 404, message: "Không tìm thấy nhân viên" };
+  if (!employee.isActive) throw { status: 400, message: "Nhân viên da nghi viec" };
 
   const start = new Date(startDate);
   const end = new Date(endDate);
@@ -48,7 +48,7 @@ const create = async (employeeId, userId, data) => {
       type: "LEAVE_REQUEST",
       severity: "INFO",
       title: `Yeu cau nghi phep: ${employee.user.fullName}`,
-      message: `${employee.user.fullName} xin nghi ${days} ngay (${start.toLocaleDateString("vi-VN")} - ${end.toLocaleDateString("vi-VN")}). Ly do: ${reason || "Khong co"}`,
+      message: `${employee.user.fullName} xin nghi ${days} ngay (${start.toLocaleDateString("vi-VN")} - ${end.toLocaleDateString("vi-VN")}). Ly do: ${reason || "Không co"}`,
       link: "/hr",
       meta: { employeeId, leaveData },
     });
@@ -86,7 +86,7 @@ const approveLeave = async (runId, userId) => {
     where: { id: runId },
     include: { data: true },
   });
-  if (!run || run.entity !== "Leave") throw { status: 404, message: "Khong tìm thấy yeu cau nghi phep" };
+  if (!run || run.entity !== "Leave") throw { status: 404, message: "Không tìm thấy yeu cau nghi phep" };
 
   const leaveData = run.data;
   try {

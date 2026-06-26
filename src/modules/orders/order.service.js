@@ -702,7 +702,7 @@ const updateStatusInTx = async (tx, id, status, userId = null) => {
     const invoiceService = require("./invoice.service");
     invoiceService.generateInvoice(id, {}, userId).catch(() => {});
 
-    // Auto-reorder: kiem tra ton kho thap sau khi xuat hang
+    // Auto-reorder: kiem tra tồn kho thap sau khi xuat hang
     const automation = require("../automation/automation.service");
     automation.onOrderCompleted(updated, userId);
   }

@@ -3,7 +3,7 @@
 //
 // NOTE: Cac bang ai_documents va ai_embeddings duoc tao bang raw SQL migration
 // (prisma/migrations/20260620100000_add_ai_vector_tables/migration.sql)
-// va KHONG co trong Prisma schema. Moi truy van deu dung $queryRawUnsafe/$executeRawUnsafe.
+// va KHONG co trong Prisma schema. Moi truy vấn deu dung $queryRawUnsafe/$executeRawUnsafe.
 const prisma = require("../../config/prisma");
 
 // --------------- Ollama Config ---------------
@@ -67,7 +67,7 @@ const createEmbedding = async (text) => {
 };
 
 /**
- * Kiem tra Ollama co dang chay khong.
+ * Kiem tra Ollama co dang chay không.
  */
 const checkOllamaHealth = async () => {
   try {
@@ -181,7 +181,7 @@ const processBatch = async (items, batchSize, processFn, label) => {
 const syncERPData = async () => {
   const stats = { products: 0, customers: 0, knowledge: 0 };
   const startTime = Date.now();
-  console.log("[ai:sync] Bat dau dong bo du lieu ERP...");
+  console.log("[ai:sync] Bat dau dong bo dữ liệu ERP...");
 
   // Sync products
   const products = await prisma.product.findMany({
@@ -192,11 +192,11 @@ const syncERPData = async () => {
 
   stats.products = await processBatch(products, SYNC_BATCH_SIZE, async (p) => {
     const content = [
-      `San pham: ${p.name}`,
+      `Sản phẩm: ${p.name}`,
       `SKU: ${p.sku}`,
       `Danh muc: ${p.category?.name || "Chua phan loai"}`,
       `Gia ban: ${p.price} VND`,
-      `Gia von: ${p.costPrice} VND`,
+      `Giá vốn: ${p.costPrice} VND`,
       `Don vi: ${p.unit}`,
       p.description ? `Mo ta: ${p.description}` : "",
     ].filter(Boolean).join(". ");
@@ -217,12 +217,12 @@ const syncERPData = async () => {
 
   stats.customers = await processBatch(customers, SYNC_BATCH_SIZE, async (c) => {
     const content = [
-      `Khach hang: ${c.name}`,
+      `Khách hàng: ${c.name}`,
       c.phone ? `SDT: ${c.phone}` : "",
       c.email ? `Email: ${c.email}` : "",
       `Hang: ${c.tier}`,
       `Tong chi tieu: ${c.totalSpent} VND`,
-      `Cong no: ${c.totalDebt} VND`,
+      `Công nợ: ${c.totalDebt} VND`,
       `Diem tich luy: ${c.loyaltyPoints}`,
     ].filter(Boolean).join(". ");
 
@@ -236,63 +236,63 @@ const syncERPData = async () => {
   const knowledgeDocs = [
     {
       id: "vas-accounting",
-      content: "He thong ke toan Aduu tuan theo Chuan muc Ke toan Viet Nam (VAS) va Thong tu 200. He thong tai khoan 33+ TK gom: 111 (Tien mat), 112 (TGNH), 131 (Phai thu KH), 133 (Thue GTGT duoc khau tru), 138 (Phai thu khac), 141 (Tam ung), 154 (Chi phi SXDD), 155 (Thanh pham), 156 (Hang hoa), 211 (TSCD), 214 (Hao mon TSCD), 242 (CP tra truoc), 331 (Phai tra NB), 333 (Thue phai nop), 334 (Phai tra NV), 338 (Phai tra khac), 341 (Vay), 411 (Von CSH), 421 (LN chua PP), 511 (Doanh thu), 515 (DT tai chinh), 521 (Giam tru DT), 632 (GVHB), 635 (CP tai chinh), 641 (CP ban hang), 642 (CP quan ly), 711 (Thu nhap khac), 811 (Chi phi khac), 821 (CP thue TNDN), 911 (Xac dinh KQKD). Moi giao dich tu dong tao but toan kep (double-entry) voi nguyen tac No bang Co.",
+      content: "Hệ thống ke toan Aduu tuan theo Chuan muc Ke toan Viet Nam (VAS) va Thong tu 200. Hệ thống tài khoản 33+ TK gom: 111 (Tiền mặt), 112 (TGNH), 131 (Phai thu KH), 133 (Thue GTGT duoc khau tru), 138 (Phai thu khac), 141 (Tam ung), 154 (Chi phi SXDD), 155 (Thanh pham), 156 (Hang hoa), 211 (TSCD), 214 (Hao mon TSCD), 242 (CP tra truoc), 331 (Phai tra NB), 333 (Thue phai nop), 334 (Phai tra NV), 338 (Phai tra khac), 341 (Vay), 411 (Von CSH), 421 (LN chua PP), 511 (Doanh thu), 515 (DT tai chinh), 521 (Giam tru DT), 632 (GVHB), 635 (CP tai chinh), 641 (CP ban hang), 642 (CP quản lý), 711 (Thu nhap khac), 811 (Chi phi khac), 821 (CP thue TNDN), 911 (Xac dinh KQKD). Moi giao dich tự động tao but toan kep (double-entry) voi nguyen tac No bang Co.",
     },
     {
       id: "accounting-period-close",
-      content: "Ket chuyen cuoi ky (period-close): Cuoi moi thang, he thong tu dong ket chuyen: (1) Doanh thu 511/515/711 → No 511/515/711, Co 911. (2) Chi phi 632/635/641/642/811/821 → No 911, Co 632/635/641/642/811/821. (3) Xac dinh KQKD: Neu Co 911 > No 911 → lai (No 911/Co 421). Neu No 911 > Co 911 → lo (No 421/Co 911). Co cron chay ngay dau thang de phan bo CP tra truoc (No 642/Co 242) va khau hao TSCD (No 642/Co 214).",
+      content: "Kết chuyển cuoi ky (period-close): Cuoi moi thang, hệ thống tự động kết chuyển: (1) Doanh thu 511/515/711 → No 511/515/711, Co 911. (2) Chi phi 632/635/641/642/811/821 → No 911, Co 632/635/641/642/811/821. (3) Xac dinh KQKD: Neu Co 911 > No 911 → lai (No 911/Co 421). Neu No 911 > Co 911 → lo (No 421/Co 911). Co cron chay ngay dau thang de phan bo CP tra truoc (No 642/Co 242) va khau hao TSCD (No 642/Co 214).",
     },
     {
       id: "accounting-reports",
-      content: "Bao cao tai chinh theo TT200: (1) B01-DN Bang can doi ke toan: Tai san ngan han + Tai san dai han = No phai tra + Von chu so huu. (2) B02-DN Bao cao KQKD gom 16 dong: Doanh thu thuan, GVHB, Loi nhuan gop, DT tai chinh, CP tai chinh, CP ban hang, CP quan ly, LN thuan HDSXKD, Thu nhap khac, Chi phi khac, LN khac, Tong LN truoc thue, CP thue TNDN, LN sau thue. (3) B03-DN Bao cao luu chuyen tien te phan loai theo hoat dong kinh doanh/dau tu/tai chinh. (4) Bang can doi so phat sinh 6 cot: Du dau ky No/Co, Phat sinh No/Co, Du cuoi ky No/Co.",
+      content: "Báo cáo tai chinh theo TT200: (1) B01-DN Bang can doi ke toan: Tai san ngan han + Tai san dai han = No phai tra + Von chu so huu. (2) B02-DN Báo cáo KQKD gom 16 dong: Doanh thu thuan, GVHB, Lợi nhuận gop, DT tai chinh, CP tai chinh, CP ban hang, CP quản lý, LN thuan HDSXKD, Thu nhap khac, Chi phi khac, LN khac, Tong LN truoc thue, CP thue TNDN, LN sau thue. (3) B03-DN Báo cáo luu chuyen tien te phan loai theo hoat dong kinh doanh/dau tu/tai chinh. (4) Bang can doi so phat sinh 6 cot: Du dau ky No/Co, Phat sinh No/Co, Du cuoi ky No/Co.",
     },
     {
       id: "accounting-tax",
-      content: "Thue GTGT: Thue dau ra (TK 3331) - Thue dau vao duoc khau tru (TK 1331) = Thue phai nop. VAT rates: 0%, 5%, 8%, 10%. Thue TNDN: Loi nhuan ke toan truoc thue x 20% = Thue TNDN tam tinh quy. But toan: No 821/Co 3334. Moi quy tinh 1 lan vao cuoi quy. Bao cao thue HTKK ho tro xuat XML va Excel dung dinh dang nop thue online.",
+      content: "Thue GTGT: Thue dau ra (TK 3331) - Thue dau vao duoc khau tru (TK 1331) = Thue phai nop. VAT rates: 0%, 5%, 8%, 10%. Thue TNDN: Lợi nhuận ke toan truoc thue x 20% = Thue TNDN tam tinh quy. But toan: No 821/Co 3334. Moi quy tinh 1 lan vao cuoi quy. Báo cáo thue HTKK ho tro xuat XML va Excel dung dinh dang nop thue online.",
     },
     {
       id: "accounting-costing",
-      content: "Tinh gia von hang ban (COGS): Su dung phuong phap binh quan gia quyen (weighted average cost). Khi nhap hang: costPrice = (tonCu x giaCu + nhap x giaMoi) / (tonCu + nhap). Khi xuat hang: tu dong tinh COGS dua tren costPrice hien tai. Dinh gia ton kho cuoi ky: so luong ton x costPrice hien tai. He thong theo doi costPrice tren tung san pham.",
+      content: "Tinh giá vốn hang ban (COGS): Su dung phuong phap binh quan gia quyen (weighted average cost). Khi nhập hàng: costPrice = (tonCu x giaCu + nhap x giaMoi) / (tonCu + nhap). Khi xuat hang: tự động tinh COGS dua tren costPrice hien tai. Dinh gia tồn kho cuoi ky: so luong ton x costPrice hien tai. Hệ thống theo doi costPrice tren tung sản phẩm.",
     },
     {
       id: "accounting-prepaid",
-      content: "Phan bo chi phi tra truoc (TK 242): Khi tra tien cho dich vu keo dai nhieu thang (thue van phong, bao hiem, phan mem): No 242/Co 112. Hang thang phan bo: No 642/Co 242 cho den khi het. Moi thang phan bo mot phan bang nhau: so tien / so thang. Cron tu dong phan bo vao ngay 1 hang thang.",
+      content: "Phan bo chi phi tra truoc (TK 242): Khi tra tien cho dich vu keo dai nhieu thang (thue van phong, bao hiem, phan mem): No 242/Co 112. Hang thang phan bo: No 642/Co 242 cho den khi het. Moi thang phan bo mot phan bang nhau: so tien / so thang. Cron tự động phan bo vao ngay 1 hang thang.",
     },
     {
       id: "accounting-fixed-assets",
-      content: "Khau hao TSCD: Phuong phap duong thang (straight-line). Moi TSCD co thoi gian su dung (thang). Khau hao hang thang = Nguyen gia / So thang su dung. But toan hang thang: No 642/Co 214 (Hao mon TSCD). Khi mua TSCD: No 211/Co 112. Khi thanh ly: ghi giam nguyen gia (Co 211) va hao mon luy ke (No 214), phan chenh lech dua vao thu nhap khac (No 711) hoac chi phi khac (Co 811). Cron tu dong khau hao vao ngay 1 hang thang.",
+      content: "Khau hao TSCD: Phuong phap duong thang (straight-line). Moi TSCD co thoi gian su dung (thang). Khau hao hang thang = Nguyen gia / So thang su dung. But toan hang thang: No 642/Co 214 (Hao mon TSCD). Khi mua TSCD: No 211/Co 112. Khi thanh ly: ghi giam nguyen gia (Co 211) va hao mon luy ke (No 214), phan chenh lech dua vao thu nhap khac (No 711) hoac chi phi khac (Co 811). Cron tự động khau hao vao ngay 1 hang thang.",
     },
     {
       id: "inventory-rules",
-      content: "Quan ly ton kho: Ho tro da kho (multi-warehouse), chuyen kho (stock transfer), kiem ke (cycle count). Theo doi lo hang (lot tracking) voi ngay san xuat va han su dung. Canh bao ton kho thap khi quantity <= minStock. Ho tro reservation (dat truoc hang cho don hang). Giao dich kho: IMPORT, EXPORT, ADJUSTMENT, RETURN. Moi giao dich deu ghi nhan vao InventoryTransaction va tu dong tao but toan ke toan.",
+      content: "Quản lý tồn kho: Ho tro da kho (multi-warehouse), chuyen kho (stock transfer), kiem ke (cycle count). Theo doi lo hang (lot tracking) voi ngay san xuat va han su dung. Cảnh báo tồn kho thap khi quantity <= minStock. Ho tro reservation (dat truoc hang cho đơn hàng). Giao dich kho: IMPORT, EXPORT, ADJUSTMENT, RETURN. Moi giao dich deu ghi nhan vao InventoryTransaction va tự động tao but toan ke toan.",
     },
     {
       id: "order-flow",
-      content: "Quy trinh don hang: PENDING -> CONFIRMED -> SHIPPING -> COMPLETED hoac CANCELLED. Thanh toan ho tro: CASH, BANK_TRANSFER, CARD. Trang thai thanh toan: UNPAID, PARTIAL, PAID. Ho tro tra hang (return) voi hoan tien hoac doi hang. Khi don COMPLETED: tu dong phat hanh hoa don dien tu (VNPT), sinh PDF invoice, kiem tra ton kho thap de tao PO tu dong.",
+      content: "Quy trinh đơn hàng: PENDING -> CONFIRMED -> SHIPPING -> COMPLETED hoac CANCELLED. Thanh toan ho tro: CASH, BANK_TRANSFER, CARD. Trang thai thanh toan: UNPAID, PARTIAL, PAID. Ho tro tra hang (return) voi hoan tien hoac doi hang. Khi don COMPLETED: tự động phat hanh hoa don dien tu (VNPT), sinh PDF invoice, kiem tra tồn kho thap de tao PO tự động.",
     },
     {
       id: "automation-workflow",
-      content: "Automation: (1) Auto-reorder: khi ton kho <= minStock, tu dong tao Purchase Order cho vendor mac dinh. Neu PO < 5 trieu VND → auto-approve. (2) Auto-payroll: ngay 25 hang thang tu dong tinh luong va tao but toan ke toan (No 642/Co 334/338/333). (3) Debt collection: 3 cap nhac no tu dong — sap den han 3 ngay (notify MANAGER), qua han 7 ngay (escalate ADMIN), qua han 30 ngay (flag xu ly dac biet). (4) Invoice PDF: tu dong sinh PDF khi don COMPLETED. (5) Bank reco: tu dong doi soat sao ke moi ngay.",
+      content: "Automation: (1) Auto-reorder: khi tồn kho <= minStock, tự động tao Purchase Order cho vendor mac dinh. Neu PO < 5 trieu VND → auto-approve. (2) Auto-payroll: ngay 25 hang thang tự động tinh luong va tao but toan ke toan (No 642/Co 334/338/333). (3) Debt collection: 3 cap nhắc nợ tự động — sap den han 3 ngay (notify MANAGER), qua han 7 ngay (escalate ADMIN), qua han 30 ngay (flag xu ly dac biet). (4) Invoice PDF: tự động sinh PDF khi don COMPLETED. (5) Bank reco: tự động doi soat sao ke moi ngay.",
     },
     {
       id: "workflow-engine",
-      content: "Workflow/Approval engine: 4 triggers — EXPENSE_ABOVE (chi phi > nguong), PO_ABOVE (don nhap > nguong), LEAVE_REQUEST (xin nghi phep), CUSTOM. Moi workflow co nhieu buoc duyet (APPROVAL/NOTIFICATION), nguoi duyet duoc phan cong theo step. Khi tat ca cac buoc duyet APPROVED, he thong tu dong approve entity goc (expense/PO/leave). Ho tro frontend Approvals dashboard de xem pending va lich su runs.",
+      content: "Workflow/Approval engine: 4 triggers — EXPENSE_ABOVE (chi phi > nguong), PO_ABOVE (don nhap > nguong), LEAVE_REQUEST (xin nghi phep), CUSTOM. Moi workflow co nhieu buoc duyet (APPROVAL/NOTIFICATION), nguoi duyet duoc phan cong theo step. Khi tat ca cac buoc duyet APPROVED, hệ thống tự động approve entity goc (expense/PO/leave). Ho tro frontend Approvals dashboard de xem pending va lich su runs.",
     },
     {
       id: "hr-payroll",
-      content: "Quan ly nhan su: Cham cong theo ca (sang/chieu/toi), tinh luong tu dong theo he so cham cong. Tru vi pham (di muon, ve som, loi dong goi). Tinh BHXH (8% NV + 17.5% DN), BHYT (1.5%), BHTN (1%). TNCN theo bieu luy tien 7 bac. Cong thuc: Luong = (Luong co ban x He so) + Phu cap ca - Vi pham - BHXH - Thue TNCN. Ho tro xin nghi phep qua workflow: POST /api/hr/leave → trigger LEAVE_REQUEST → manager duyet → tu dong update shift.",
+      content: "Quản lý nhan su: Cham cong theo ca (sang/chieu/toi), tinh luong tự động theo he so cham cong. Tru vi pham (di muon, ve som, loi dong goi). Tinh BHXH (8% NV + 17.5% DN), BHYT (1.5%), BHTN (1%). TNCN theo bieu luy tien 7 bac. Cong thuc: Luong = (Luong co ban x He so) + Phu cap ca - Vi pham - BHXH - Thue TNCN. Ho tro xin nghi phep qua workflow: POST /api/hr/leave → trigger LEAVE_REQUEST → manager duyet → tự động update shift.",
     },
     {
       id: "crm-features",
-      content: "CRM: Phan hang khach hang (Bronze/Silver/Gold/Platinum) dua tren tong chi tieu. Tich diem loyalty: moi 1000 VND = 1 diem. Doi diem lay uu dai: 100 diem = giam 10,000 VND, 500 diem = giam 50,000 VND, 1000 diem = giam 100,000 VND. Ghi chu khach hang (goi dien, email, gap mat, Zalo). Gan tag phan loai. Phan khuc khach hang (segment) theo rules. Chien dich marketing qua Email va Zalo OA.",
+      content: "CRM: Phan hang khách hàng (Bronze/Silver/Gold/Platinum) dua tren tong chi tieu. Tich diem loyalty: moi 1000 VND = 1 diem. Doi diem lay uu dai: 100 diem = giam 10,000 VND, 500 diem = giam 50,000 VND, 1000 diem = giam 100,000 VND. Ghi chu khách hàng (goi dien, email, gap mat, Zalo). Gan tag phan loai. Phan khuc khách hàng (segment) theo rules. Chien dich marketing qua Email va Zalo OA.",
     },
     {
       id: "vietqr-payment",
-      content: "VietQR Payment: Ho tro webhook tu Casso va SePay de tu dong xac nhan chuyen khoan ngan hang. Khi co giao dich chuyen tien, he thong tu dong match voi don hang (theo ma ORD- hoac amount) hoac cong no (theo ma DEBT-). Sau do tu dong ghi nhan thanh toan hoac cap nhat trang thai cong no. PayOS cung duoc ho tro qua verifyWebhook. Portal khach hang co endpoint GET /api/portal/debt/pay de sinh QR thanh toan cong no.",
+      content: "VietQR Payment: Ho tro webhook tu Casso va SePay de tự động xác nhận chuyển khoản ngân hàng. Khi co giao dich chuyen tien, hệ thống tự động match voi đơn hàng (theo ma ORD- hoac amount) hoac công nợ (theo ma DEBT-). Sau do tự động ghi nhan thanh toan hoac cập nhật trang thai công nợ. PayOS cung duoc ho tro qua verifyWebhook. Portal khách hàng co endpoint GET /api/portal/debt/pay de sinh QR thanh toan công nợ.",
     },
     {
       id: "portal-self-service",
-      content: "Portal khach hang: khach hang dang nhap bang OTP qua SMS. Sau khi dang nhap co the: (1) Xem lich su don hang, hoa don dien tu. (2) Xem cong no va QR thanh toan. (3) Dat hang moi qua portal (B2B). (4) Xem diem loyalty va doi thuong. (5) Xem thong tin ca nhan. Portal dung x-portal-token thay vi JWT.",
+      content: "Portal khách hàng: khách hàng đăng nhập bang OTP qua SMS. Sau khi đăng nhập co the: (1) Xem lich su đơn hàng, hoa don dien tu. (2) Xem công nợ va QR thanh toan. (3) Dat hang moi qua portal (B2B). (4) Xem diem loyalty va doi thuong. (5) Xem thong tin ca nhan. Portal dung x-portal-token thay vi JWT.",
     },
   ];
 
@@ -309,16 +309,16 @@ const syncERPData = async () => {
 
 // --------------- Chat (RAG) ---------------
 
-const SYSTEM_PROMPT = `Ban la tro ly AI chuyen mon cua Aduu ERP — he thong quan tri doanh nghiep cho SME Viet Nam.
-Kien thuc chuyen sau: Ke toan VAS/TT200 (B01-DN, B02-DN 16 dong, so cai, CDSPS 6 cot), thue GTGT/TNDN/TNCN, ton kho binh quan gia quyen, workflow duyet, auto-reorder, payroll, CRM loyalty.
+const SYSTEM_PROMPT = `Ban la tro ly AI chuyen mon cua Aduu ERP — hệ thống quan tri doanh nghiep cho SME Viet Nam.
+Kien thuc chuyen sau: Ke toan VAS/TT200 (B01-DN, B02-DN 16 dong, sổ cái, CDSPS 6 cot), thue GTGT/TNDN/TNCN, tồn kho binh quan gia quyen, workflow duyet, auto-reorder, payroll, CRM loyalty.
 
 Quy tac:
-- Tra loi bang tieng Viet, ngan gon, chinh xac, co the dung markdown.
+- Trả lời bang tieng Viet, ngan gon, chinh xac, co the dung markdown.
 - Neu co context data, trich dan so lieu cu the.
-- VOI CAU HOI KE TOAN: tra loi theo dung Chuan muc VAS va Thong tu 200, neu can dua cong thuc.
+- VOI CAU HOI KE TOAN: trả lời theo dung Chuan muc VAS va Thong tu 200, neu can dua cong thuc.
 - VOI CAU HOI THUE: trich dan dung luat thue hien hanh, dua ra cach tinh.
-- Neu khong co du lieu, noi ro va goi y API/trang ERP tuong ung.
-- Khong bia so lieu. Neu khong biet, noi "Toi chua co du lieu nay".
+- Neu không co dữ liệu, noi ro va goi y API/trang ERP tuong ung.
+- Không bia so lieu. Neu không biet, noi "Toi chua co dữ liệu nay".
 - Format tien te VND, dung dau cham phan cach hang nghin.`;
 
 const chat = async (req, res) => {
@@ -326,7 +326,7 @@ const chat = async (req, res) => {
     const { message, history = [] } = req.body;
 
     if (!message || !message.trim()) {
-      return res.status(400).json({ success: false, message: "Vui long nhap cau hoi" });
+      return res.status(400).json({ success: false, message: "Vui lòng nhap câu hỏi" });
     }
 
     // 1. Vector search
@@ -356,7 +356,7 @@ const chat = async (req, res) => {
     if (orderStats) {
       contextParts.push(
         "\n=== THONG KE NHANH ===",
-        `Don hang hom nay: ${orderStats.todayCount} don, doanh thu: ${orderStats.todayRevenue} VND`,
+        `Đơn hàng hom nay: ${orderStats.todayCount} don, doanh thu: ${orderStats.todayRevenue} VND`,
         `Don cho xu ly: ${orderStats.pendingCount}`,
       );
     }
@@ -391,7 +391,7 @@ const chat = async (req, res) => {
 
     res.json({
       success: true,
-      reply: reply || "Xin loi, toi khong the tra loi luc nay.",
+      reply: reply || "Xin loi, toi không the trả lời luc nay.",
       model: CHAT_MODEL,
       sources: contextDocs.map((d) => ({
         type: d.entity_type,
@@ -404,7 +404,7 @@ const chat = async (req, res) => {
 
     let errorMsg = "Loi xu ly AI";
     if (error.cause?.code === "ECONNREFUSED" || error.message?.includes("ECONNREFUSED")) {
-      errorMsg = `Khong the ket noi Ollama tai ${OLLAMA_BASE}. Vui long kiem tra Ollama da chay chua (ollama serve).`;
+      errorMsg = `Không the ket noi Ollama tai ${OLLAMA_BASE}. Vui lòng kiem tra Ollama da chay chua (ollama serve).`;
     } else if (error.message?.includes("model")) {
       errorMsg = `Model '${CHAT_MODEL}' chua duoc tai. Chay: ollama pull ${CHAT_MODEL}`;
     }
@@ -416,20 +416,20 @@ const chat = async (req, res) => {
 const triggerSync = async (req, res) => {
   try {
     const stats = await syncERPData();
-    res.json({ success: true, message: "Dong bo du lieu AI thanh cong", stats });
+    res.json({ success: true, message: "Dong bo dữ liệu AI thành công", stats });
   } catch (error) {
     console.error("[ai] sync error:", error);
 
-    let errorMsg = "Loi dong bo du lieu AI";
+    let errorMsg = "Loi dong bo dữ liệu AI";
     if (error.message?.includes("ECONNREFUSED")) {
-      errorMsg = `Khong the ket noi Ollama tai ${OLLAMA_BASE}. Can Ollama de tao embeddings. Chay: ollama serve && ollama pull ${EMBED_MODEL}`;
+      errorMsg = `Không the ket noi Ollama tai ${OLLAMA_BASE}. Can Ollama de tao embeddings. Chay: ollama serve && ollama pull ${EMBED_MODEL}`;
     }
 
     res.status(500).json({ success: false, message: errorMsg });
   }
 };
 
-// getSuggestions: Chi query DB, khong can Ollama.
+// getSuggestions: Chi query DB, không can Ollama.
 const getSuggestions = async (req, res) => {
   try {
     const suggestions = [];
@@ -445,9 +445,9 @@ const getSuggestions = async (req, res) => {
     if (lowStockItems.length > 0) {
       suggestions.push({
         type: "warning",
-        title: "San pham sap het hang",
-        message: `Co ${lowStockItems.length} san pham can nhap them hang`,
-        action: { label: "Xem ton kho", path: "/inventory" },
+        title: "Sản phẩm sap het hang",
+        message: `Co ${lowStockItems.length} sản phẩm can nhap them hang`,
+        action: { label: "Xem tồn kho", path: "/inventory" },
       });
     }
 
@@ -462,9 +462,9 @@ const getSuggestions = async (req, res) => {
     if (pendingOrders > 0) {
       suggestions.push({
         type: "info",
-        title: "Don hang cho xu ly",
-        message: `${pendingOrders} don hang da cho hon 24 gio`,
-        action: { label: "Xem don hang", path: "/orders" },
+        title: "Đơn hàng cho xu ly",
+        message: `${pendingOrders} đơn hàng da cho hon 24 gio`,
+        action: { label: "Xem đơn hàng", path: "/orders" },
       });
     }
 
@@ -479,9 +479,9 @@ const getSuggestions = async (req, res) => {
     if (overdueDebts > 0) {
       suggestions.push({
         type: "critical",
-        title: "Cong no qua han",
-        message: `${overdueDebts} khoan cong no da qua han thanh toan`,
-        action: { label: "Xem cong no", path: "/debts" },
+        title: "Công nợ qua han",
+        message: `${overdueDebts} khoan công nợ da qua han thanh toan`,
+        action: { label: "Xem công nợ", path: "/debts" },
       });
     }
 

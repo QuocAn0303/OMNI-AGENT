@@ -108,7 +108,7 @@ const buildOrderCompletedEntry = ({ order, items, paidAmount = 0, payments = [],
     lines.push({ accountCode: "521", debit: totalDiscount, description: `Chiet khau/KM don ${order.orderCode}` });
   }
 
-  lines.push({ accountCode: "632", debit: totalCost, description: `Gia von don ${order.orderCode}` });
+  lines.push({ accountCode: "632", debit: totalCost, description: `Giá vốn don ${order.orderCode}` });
   lines.push({ accountCode: "156", credit: totalCost, description: `Xuat kho don ${order.orderCode}` });
 
   return {
@@ -172,7 +172,7 @@ const buildOrderReturnEntry = ({ orderReturn, order, items, userId }) => {
 
   if (totalCost > 0) {
     lines.push({ accountCode: "156", debit: totalCost, description: `Nhap lai kho - tra hang ${orderReturn.returnCode}` });
-    lines.push({ accountCode: "632", credit: totalCost, description: `Hoan nhap gia von - ${orderReturn.returnCode}` });
+    lines.push({ accountCode: "632", credit: totalCost, description: `Hoan nhap giá vốn - ${orderReturn.returnCode}` });
   }
 
   return {
@@ -273,7 +273,7 @@ const buildPurchaseReceivedEntry = ({ purchaseOrder, vendor, userId }) => {
 
   return {
     date: purchaseOrder.receivedAt || new Date(),
-    description: `Nhap hang tu ${vendor.name} - PO ${purchaseOrder.poCode}`,
+    description: `Nhập hàng tu ${vendor.name} - PO ${purchaseOrder.poCode}`,
     source: "PURCHASE",
     sourceId: purchaseOrder.id,
     operation: "RECEIVE",

@@ -1,4 +1,4 @@
-﻿const zaloConfig = require("../modules/integrations/integration-config.service");
+const zaloConfig = require("../modules/integrations/integration-config.service");
 
 const ZALO_API = {
   CS: "https://openapi.zalo.me/v3.0/oa/message/cs",
@@ -91,30 +91,30 @@ const getQuota = async () => {
 
 const sendDebtReminder = async (customer) => {
   const phone = customer.phone || "";
-  if (!phone) return { ok: false, error: "Khong co SDT" };
+  if (!phone) return { ok: false, error: "Không co SDT" };
 
   const text = `Kinh gui ${customer.name},\nBan con khoan no ${Number(customer.debtAmount || 0).toLocaleString("vi-VN")} VND den han ngay ${new Date(customer.dueDate).toLocaleDateString("vi-VN")}.\nVui long thanh toan de tranh phat sinh lai.\nTran trong, Aduu ERP`;
   return sendZaloMessage({ userId: phone, text });
 };
 
 const sendOrderStatusUpdate = async (customerName, phone, orderCode, status) => {
-  if (!phone) return { ok: false, error: "Khong co SDT" };
+  if (!phone) return { ok: false, error: "Không co SDT" };
 
   const statusText = { CONFIRMED: "da xác nhận", SHIPPING: "dang giao hang", COMPLETED: "da hoan thanh", CANCELLED: "da bi huy" };
 
-  const text = `Kinh gui ${customerName},\nDon hang ${orderCode} cua ban ${statusText[status] || "da cập nhật trang thai"}.\nCam on ban da mua hang tai Aduu ERP!`;
+  const text = `Kinh gui ${customerName},\nĐơn hàng ${orderCode} cua ban ${statusText[status] || "da cập nhật trang thai"}.\nCam on ban da mua hang tai Aduu ERP!`;
   return sendZaloMessage({ userId: phone, text });
 };
 
 const sendPayrollNotification = async (employeeName, phone, month, year, finalSalary) => {
-  if (!phone) return { ok: false, error: "Khong co SDT" };
+  if (!phone) return { ok: false, error: "Không co SDT" };
 
   const text = `Kinh gui ${employeeName},\nLuong thang ${month}/${year} cua ban: ${Number(finalSalary).toLocaleString("vi-VN")} VND.\nVui long kiem tra phieu luong tren hệ thống.\nTran trong, Aduu ERP`;
   return sendZaloMessage({ userId: phone, text });
 };
 
 const sendPaymentConfirmation = async (customerName, phone, amount) => {
-  if (!phone) return { ok: false, error: "Khong co SDT" };
+  if (!phone) return { ok: false, error: "Không co SDT" };
 
   const text = `Kinh gui ${customerName},\nAduu ERP da nhan duoc khoan thanh toan ${Number(amount).toLocaleString("vi-VN")} VND.\nCam on ban da thanh toan dung han!`;
   return sendZaloMessage({ userId: phone, text });

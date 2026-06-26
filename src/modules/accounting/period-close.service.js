@@ -1,4 +1,4 @@
-﻿const prisma = require("../../config/prisma");
+const prisma = require("../../config/prisma");
 const journalService = require("./journal.service");
 const auditService = require("../audit/audit.service");
 
@@ -30,14 +30,14 @@ const closeRevenue = async ({ year, month, userId }) => {
 
     const entry = await journalService.postEntry({
       date: to,
-      description: `Ket chuyen doanh thu ${acc.name} thang ${periodDesc}`,
+      description: `Kết chuyển doanh thu ${acc.name} thang ${periodDesc}`,
       source: "CLOSING",
       sourceId: `close-revenue-${code}-${year}-${month}`,
       operation: "REVENUE_CLOSE",
       userId,
       lines: [
-        { accountCode: code, debit: netBalance, description: `Ket chuyen ${acc.name}` },
-        { accountCode: "911", credit: netBalance, description: `Ket chuyen doanh thu thang ${periodDesc}` },
+        { accountCode: code, debit: netBalance, description: `Kết chuyển ${acc.name}` },
+        { accountCode: "911", credit: netBalance, description: `Kết chuyển doanh thu thang ${periodDesc}` },
       ],
     });
     entries.push(entry);
@@ -69,14 +69,14 @@ const closeExpenses = async ({ year, month, userId }) => {
 
     const entry = await journalService.postEntry({
       date: to,
-      description: `Ket chuyen chi phí ${acc.name} thang ${periodDesc}`,
+      description: `Kết chuyển chi phí ${acc.name} thang ${periodDesc}`,
       source: "CLOSING",
       sourceId: `close-expense-${code}-${year}-${month}`,
       operation: "EXPENSE_CLOSE",
       userId,
       lines: [
-        { accountCode: "911", debit: netBalance, description: `Ket chuyen chi phí thang ${periodDesc}` },
-        { accountCode: code, credit: netBalance, description: `Ket chuyen ${acc.name}` },
+        { accountCode: "911", debit: netBalance, description: `Kết chuyển chi phí thang ${periodDesc}` },
+        { accountCode: code, credit: netBalance, description: `Kết chuyển ${acc.name}` },
       ],
     });
     entries.push(entry);
@@ -110,18 +110,18 @@ const closeProfitLoss = async ({ year, month, userId }) => {
 
   const entry = await journalService.postEntry({
     date: to,
-    description: `Ket chuyen ${isProfit ? "lai" : "lo"} thang ${periodDesc}`,
+    description: `Kết chuyển ${isProfit ? "lai" : "lo"} thang ${periodDesc}`,
     source: "CLOSING",
     sourceId: `close-pl-${year}-${month}`,
     operation: "PROFIT_LOSS_CLOSE",
     userId,
     lines: isProfit
       ? [
-          { accountCode: "911", debit: profitAmount, description: `Ket chuyen lai` },
+          { accountCode: "911", debit: profitAmount, description: `Kết chuyển lai` },
           { accountCode: "421", credit: profitAmount, description: `Lai thang ${periodDesc}` },
         ]
       : [
-          { accountCode: "421", debit: profitAmount, description: `Ket chuyen lo` },
+          { accountCode: "421", debit: profitAmount, description: `Kết chuyển lo` },
           { accountCode: "911", credit: profitAmount, description: `Lo thang ${periodDesc}` },
         ],
   });
@@ -168,7 +168,7 @@ const runPeriodClose = async ({ year, month, userId }) => {
 const createPrepaid = async (userId, data) => {
   const { description, amount, totalMonths, startMonth, startYear, paymentAccountCode, vendorId } = data;
   if (!amount || !totalMonths || totalMonths < 1) {
-    throw { status: 400, message: "Vui long nhap so tien va so thang phân bổ" };
+    throw { status: 400, message: "Vui lòng nhap so tien va so thang phân bổ" };
   }
 
   const monthlyAmount = Math.round(amount / totalMonths);
@@ -276,7 +276,7 @@ const calculateCIT = async ({ year, quarter, userId }) => {
   const citRate = Number(process.env.CIT_RATE || 20) / 100;
   const citAmount = Math.round(Math.max(0, profitBeforeTax) * citRate);
 
-  if (citAmount <= 0) return { profitBeforeTax, citAmount: 0, message: "Khong phat sinh thue TNDN" };
+  if (citAmount <= 0) return { profitBeforeTax, citAmount: 0, message: "Không phat sinh thue TNDN" };
 
   // Check if already posted
   const existing = await prisma.journalEntry.findFirst({
