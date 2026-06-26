@@ -1,4 +1,18 @@
-// frontend/src/pages/FixedAssets.jsx
+/**
+ * Frontend: pages/FixedAssets.jsx — Tài sản cố định (TSCĐ)
+ * 
+ * Tổng quan:
+ * - Quản lý TSCĐ: danh sách (getAssets), thêm mới (createAsset), thanh lý (disposeAsset), xem chi tiết + lịch khấu hao (getAsset)
+ * - Quản lý loại tài sản (getCategories, createCategory)
+ * - Chạy khấu hao theo tháng (runDepreciation), cập nhật giá trị còn lại
+ * - Hiển thị summary: tổng tài sản, đang hoạt động, nguyên giá, giá trị còn lại
+ * - Modal: tạo tài sản (form nhập nguyên giá, thời hạn KH, ngày mua), thanh lý, thêm loại
+ * - State: assets/categories/loading/statusFilter — các modal state riêng
+ * - Bọc trong PlanGate
+ * 
+ * Components/Hooks/Exports:
+ * - FixedAssets (default): Page chính — stats + table + các modal CRUD
+ */
 import { useState, useEffect } from "react";
 import {
   Table, Button, Space, Tag, Select, Modal, Form, Input, InputNumber,
@@ -7,6 +21,7 @@ import {
 import { PlusOutlined, DeleteOutlined, PlayCircleOutlined, EyeOutlined } from "@ant-design/icons";
 import dayjs from "dayjs";
 import PageHeader from "../components/layout/PageHeader";
+import PlanGate from "../components/PlanGate";
 import {
   getAssets, getAsset, createAsset, disposeAsset,
   getCategories, createCategory, runDepreciation,
@@ -172,6 +187,7 @@ export default function FixedAssets() {
   const catOpts = categories.map((c) => ({ value: c.id, label: c.name }));
 
   return (
+    <PlanGate moduleKey="fixed-assets" moduleName="Tài sản cố định">
     <div>
       <PageHeader title="Tài sản cố định" subtitle="Quản lý TSCD và khấu hao theo đường thẳng" />
 
@@ -349,5 +365,6 @@ export default function FixedAssets() {
         </Form>
       </Modal>
     </div>
+    </PlanGate>
   );
 }

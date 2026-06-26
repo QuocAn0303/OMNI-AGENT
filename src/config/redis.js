@@ -1,3 +1,13 @@
+/**
+ * config/redis.js — Kết nối Redis qua ioredis (cho Socket.IO adapter)
+ * 
+ * Tổng quan:
+ * - Singleton: tạo main client, pub client, sub client từ REDIS_URL
+ * - Retry strategy: tối đa 5 lần, exponential backoff (200ms → 2000ms)
+ * - Nếu REDIS_URL không set → tất cả client = null, fallback in-memory
+ * - Dùng cho Socket.IO Redis adapter để scale ngang nhiều instance
+ */
+
 const Redis = require("ioredis");
 
 const url = process.env.REDIS_URL;

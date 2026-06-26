@@ -1,4 +1,16 @@
-// frontend/src/pages/ReportBuilder.jsx
+/**
+ * Frontend: pages/ReportBuilder.jsx — Report Builder (tạo báo cáo kéo-thả)
+ * 
+ * Tổng quan:
+ * - Chọn bảng dữ liệu (getTables), chọn cột hiển thị, thêm bộ lọc, nhóm & tổng hợp
+ * - Chạy ad-hoc query (runAdHoc), lưu báo cáo (createReport), chạy báo cáo đã lưu (runSavedReport), xóa (deleteReport)
+ * - Panel trái: danh sách báo cáo đã lưu (getReports); panel phải: builder
+ * - State: tables/savedReports/selectedTable/selectedFields/filters/groupBy/aggregate/results
+ * - Bọc trong PlanGate
+ * 
+ * Components/Hooks/Exports:
+ * - ReportBuilder (default): Page chính — builder UI + saved reports + modal lưu
+ */
 import { useState, useEffect } from "react";
 import {
   Table, Button, Space, Select, Form, Input, Modal, message,
@@ -6,6 +18,7 @@ import {
 } from "antd";
 import { PlayCircleOutlined, SaveOutlined, PlusOutlined, DeleteOutlined } from "@ant-design/icons";
 import PageHeader from "../components/layout/PageHeader";
+import PlanGate from "../components/PlanGate";
 import { getTables, getReports, createReport, deleteReport, runAdHoc, runSavedReport } from "../api/reportBuilder";
 
 const AGG_FNS = ["SUM", "COUNT", "AVG", "MIN", "MAX"];
@@ -102,6 +115,7 @@ export default function ReportBuilder() {
   ];
 
   return (
+    <PlanGate moduleKey="report-builder" moduleName="Report Builder">
     <div>
       <PageHeader title="Report Builder" subtitle="Tạo báo cáo kéo-thả, không cần lập trình" />
 
@@ -212,5 +226,6 @@ export default function ReportBuilder() {
         </Form>
       </Modal>
     </div>
+    </PlanGate>
   );
 }

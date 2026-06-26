@@ -1,3 +1,15 @@
+/**
+ * Frontend: pages/PurchaseOrders.jsx — Danh sách đơn nhập hàng (PO)
+ * 
+ * Tổng quan:
+ * - Trang danh sách PO với bộ lọc trạng thái, NCC, ngày
+ * - API: getPurchaseOrders, getVendors, receivePurchaseOrder, payPurchaseOrder, cancelPurchaseOrder, submitPurchaseOrder, approvePurchaseOrder
+ * - State: data, filters, vendors, paying modal
+ * - Logic: Workflow DRAFT → gửi duyệt → APPROVED → nhập kho → thanh toán. Phân quyền thao tác theo role
+ * 
+ * Components/Hooks/Exports:
+ * - PurchaseOrders (default export): Bảng PO + filter + action buttons + modal thanh toán
+ */
 import { useEffect, useState } from "react";
 import { Table, Button, Modal, Form, Select, InputNumber, Space, message, Tag, DatePicker, Card } from "antd";
 import { PlusOutlined, InboxOutlined, DollarOutlined, MinusCircleOutlined, EyeOutlined, SendOutlined, CheckOutlined } from "@ant-design/icons";

@@ -1,9 +1,24 @@
-// frontend/src/pages/TaxReports.jsx
+/**
+ * Frontend: pages/TaxReports.jsx — Báo cáo thuế
+ * 
+ * Tổng quan:
+ * - Tabs: VAT (01/GTGT), TNCN (05/KK-TNCN), BHXH (D02-LT)
+ * - VATTab: Gọi getVATReport, xuất Excel/XML (downloadVATExcel, downloadVATXML). Hiển thị bảng kê bán ra/mua vào
+ * - PITTab: Gọi getPITReport, hiển thị bảng lương gross, BHXH, thuế TNCN từng nhân viên
+ * - BHXHTab: Xuất file D02-LT Excel (downloadBHXHExcel)
+ * - State: mỗi tab quản lý year/month/data/loading riêng
+ * - Bọc trong PlanGate (giới hạn gói dịch vụ)
+ * 
+ * Components/Hooks/Exports:
+ * - TaxReports (default): Container chính + PeriodSelector
+ * - VATTab, PITTab, BHXHTab: Các tab con
+ */
 import { useState, useCallback } from "react";
 import { Tabs, Card, Row, Col, Statistic, Button, Space, Table, Select, DatePicker, message, Spin, Empty } from "antd";
 import { DownloadOutlined, ReloadOutlined, FileExcelOutlined, FileTextOutlined } from "@ant-design/icons";
 import dayjs from "dayjs";
 import PageHeader from "../components/layout/PageHeader";
+import PlanGate from "../components/PlanGate";
 import { getVATReport, getPITReport, downloadVATExcel, downloadVATXML, downloadBHXHExcel } from "../api/taxReport";
 
 const fmtVND = (v) => Number(v || 0).toLocaleString("vi-VN") + "đ";
@@ -35,6 +50,7 @@ export default function TaxReports() {
   );
 
   return (
+    <PlanGate moduleKey="tax" moduleName="Báo cáo thuế">
     <div>
       <PageHeader title="Báo cáo thuế" subtitle="01/GTGT, TNCN, BHXH — xuất Excel + XML HTKK" />
       <Tabs
@@ -45,6 +61,7 @@ export default function TaxReports() {
         ]}
       />
     </div>
+    </PlanGate>
   );
 }
 

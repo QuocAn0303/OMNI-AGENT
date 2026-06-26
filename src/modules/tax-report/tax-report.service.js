@@ -1,3 +1,21 @@
+/**
+ * modules/tax-report/tax-report.service.js — Báo cáo thuế GTGT, TNCN, BHXH
+ * 
+ * Tổng quan:
+ * - Tạo báo cáo thuế GTGT (01/GTGT), bảng kê bán ra (01-1), mua vào (01-2)
+ * - Tạo báo cáo thuế TNCN (05/KK-TNCN) từ payroll
+ * - Xuất Excel multi-sheet và XML đúng chuẩn HTKK
+ * - Xuất file BHXH D02-LT
+ * 
+ * Hàm:
+ * - generateVAT(year, month): Tổng hợp thuế GTGT từ journal (TK 3331/1331) hoặc fallback từ đơn hàng
+ * - generateSalesList(year, month): Bảng kê hoá đơn bán ra 01-1/GTGT
+ * - generatePurchaseList(year, month): Bảng kê hoá đơn mua vào 01-2/GTGT
+ * - generatePIT(year, month): Báo cáo thuế TNCN từ payroll
+ * - exportExcel(year, month): Xuất Excel 4 sheet (01-GTGT, 01-1 Bán ra, 01-2 Mua vào, TNCN)
+ * - exportXML(year, month, companyInfo): Xuất XML 01/GTGT schema HTKK
+ * - exportBHXH(year, month): Xuất file BHXH D02-LT dạng Excel
+ */
 // src/modules/tax-report/tax-report.service.js
 // Tạo báo cáo thuế GTGT (01/GTGT), TNCN (05/KK-TNCN), BHXH (D02-LT)
 // và xuất XML đúng schema HTKK.
@@ -197,7 +215,7 @@ const exportExcel = async (year, month) => {
   ]);
 
   const wb = new ExcelJS.Workbook();
-  wb.creator = "Aduu ERP";
+  wb.creator = "Aduu - Hệ thống hoạch định nguồn lực doanh nghiệp v.2.0";
   wb.created = new Date();
 
   // Sheet 1: 01/GTGT

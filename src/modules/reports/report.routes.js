@@ -1,8 +1,25 @@
+/**
+ * modules/reports/report.routes.js — Routes cho báo cáo & xuất Excel
+ * 
+ * Tổng quan:
+ * - Yêu cầu authenticate + authorize ADMIN/MANAGER + requireModule("reports") cho tất cả route.
+ * - Hỗ trợ xuất JSON và Excel (xlsx/csv).
+ * 
+ * Route:
+ * - GET /revenue: Báo cáo doanh thu theo ngày (query: from, to)
+ * - GET /revenue-monthly: Báo cáo doanh thu 12 tháng gần nhất
+ * - GET /top-products: Top sản phẩm bán chạy (query: limit, default 10)
+ * - GET /inventory: Báo cáo tồn kho (JSON hoặc export nếu có format)
+ * - GET /revenue/export: Export Excel báo cáo doanh thu (query: from, to)
+ * - GET /inventory/export: Export Excel báo cáo tồn kho
+ * - GET /:type(sales|orders|inventory|customers|hr|profit): Export Excel theo loại báo cáo (query: from, to, format)
+ */
 // src/modules/reports/report.routes.js
 const router = require("express").Router();
 const { z } = require("zod");
 const reportService = require("./report.service");
 const { authenticate, authorize } = require("../../middleware/auth.middleware");
+const { requireModule } = require("../../middleware/plan.middleware");
 const { success } = require("../../utils/response");
 const {
   exportRevenueExcel,
@@ -10,7 +27,7 @@ const {
 } = require("./report.service");
 
 // Báo cáo là dữ liệu nhạy cảm, chỉ ADMIN và MANAGER mới được xem
-router.use(authenticate, authorize("ADMIN", "MANAGER"));
+router.use(authenticate, authorize("ADMIN", "MANAGER"), requireModule("reports"));
 
 // GET /api/reports/revenue?from=2024-01-01&to=2024-01-31
 router.get("/revenue", async (req, res, next) => {

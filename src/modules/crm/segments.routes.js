@@ -1,11 +1,30 @@
+/**
+ * modules/crm/segments.routes.js — Định tuyến phân khúc khách hàng
+ * 
+ * Tổng quan:
+ * - REST endpoints cho CustomerSegment (phân khúc khách hàng theo rules).
+ * - Hỗ trợ preview segment (xem trước khách hàng matching) trước khi lưu.
+ * - Tích hợp Zod validation, authenticate + authorize + requireModule middleware.
+ * 
+ * Hàm:
+ * - GET /: Danh sách segment (segmentsService.list)
+ * - GET /fields: Schema fields để frontend render rule builder (segmentsService.SUPPORTED_FIELDS)
+ * - POST /preview: Xem trước segment từ rules chưa lưu (segmentsService.previewByRules)
+ * - GET /:id: Chi tiết segment (segmentsService.getById)
+ * - GET /:id/preview: Xem trước segment đã lưu (segmentsService.preview)
+ * - POST /: Tạo segment mới (segmentsService.create)
+ * - PUT /:id: Cập nhật segment (segmentsService.update)
+ * - DELETE /:id: Xóa segment (segmentsService.remove)
+ */
 // src/modules/crm/segments.routes.js
 const router = require("express").Router();
 const { z } = require("zod");
 const segmentsService = require("./segments.service");
 const { authenticate, authorize } = require("../../middleware/auth.middleware");
-const { created, success } = require("../../utils/response");
+const { requireModule } = require("../../middleware/plan.middleware");
+const { success, created } = require("../../utils/response");
 
-router.use(authenticate, authorize("ADMIN", "MANAGER"));
+router.use(authenticate, authorize("ADMIN", "MANAGER"), requireModule("segments"));
 
 const ruleSchema = z.object({
   field: z.string(),

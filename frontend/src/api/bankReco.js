@@ -1,3 +1,14 @@
+/**
+ * Frontend: src/api/bankReco.js — API module Đối chiếu ngân hàng (Bank Reconciliation)
+ *
+ * Tổng quan:
+ * - Quản lý sao kê ngân hàng: lấy danh sách, import file, autoMatch
+ * - Đối chiếu thủ công (manualMatch), huỷ đối chiếu (unmatch)
+ * - Tạo điều chỉnh (createAdjustment) cho từng dòng sao kê
+ *
+ * Exports:
+ * - getStatements, getStatementLines, importStatement, autoMatch, manualMatch, unmatch, createAdjustment
+ */
 // frontend/src/api/bankReco.js
 import axios from "./axios";
 

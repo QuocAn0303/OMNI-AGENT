@@ -1,6 +1,18 @@
-// src/utils/template.js
-// Simple mustache-style renderer: thay {{var}} bằng giá trị từ vars.
-// Hỗ trợ dot-path: {{customer.name}}, fallback rỗng nếu không có.
+/**
+ * utils/template.js — Mustache-style template renderer
+ * 
+ * Tổng quan:
+ * - Render template string: thay {{var}} và {{nested.var}} bằng giá trị từ object vars
+ * - Hỗ trợ dot-path: {{customer.name}} → vars.customer.name
+ * - Fallback rỗng nếu key không tồn tại
+ * - Dùng cho email/SMS template, nội dung thông báo
+ * 
+ * Hàm:
+ * - get(obj, path): Lấy giá trị theo dot-path từ object (an toàn, null → "")
+ * - render(template, vars): Thay tất cả {{key}} trong template bằng giá trị từ vars
+ * - customerVars(customer): Tạo vars object tiêu chuẩn từ customer (name, phone, email, tier, points, totalSpent)
+ */
+
 const get = (obj, path) => {
   const parts = path.split(".");
   let v = obj;

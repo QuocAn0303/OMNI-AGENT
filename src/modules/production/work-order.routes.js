@@ -1,11 +1,31 @@
+/**
+ * modules/production/work-order.routes.js — Định tuyến module Work Order (lệnh sản xuất)
+ *
+ * Tổng quan:
+ * - REST endpoints cho quản lý lệnh sản xuất (Work Order)
+ * - Yêu cầu authenticate + requireModule("production")
+ * - Validate body bằng Zod schemas (createSchema, updateSchema)
+ * - Hỗ trợ vòng đời: DRAFT → IN_PROGRESS → COMPLETED / CANCELLED
+ *
+ * Hàm:
+ * - GET / → service.list: Danh sách WO phân trang, lọc theo status/productId/search
+ * - GET /:id → service.getById: Chi tiết WO kèm items, available stock, line cost
+ * - POST / → service.create (ADMIN/MANAGER/WAREHOUSE): Tạo WO từ BOM đang ACTIVE
+ * - PATCH /:id → service.update (ADMIN/MANAGER/WAREHOUSE): Cập nhật WO ở DRAFT, tính lại quantity items
+ * - POST /:id/start → service.start: Bắt đầu sản xuất, kiểm tra tồn kho và costPrice
+ * - POST /:id/complete → service.complete: Hoàn thành, trừ nguyên liệu, nhập thành phẩm, tính giá vốn, tạo bút toán
+ * - POST /:id/cancel → service.cancel (ADMIN/MANAGER): Hủy WO
+ * - DELETE /:id → service.remove (ADMIN/MANAGER): Xóa WO ở DRAFT
+ */
 // src/modules/production/work-order.routes.js
 const router = require("express").Router();
 const { z } = require("zod");
 const service = require("./work-order.service");
 const { authenticate, authorize } = require("../../middleware/auth.middleware");
+const { requireModule } = require("../../middleware/plan.middleware");
 const { paginated, created, success } = require("../../utils/response");
 
-router.use(authenticate);
+router.use(authenticate, requireModule("production"));
 
 const createSchema = z.object({
   bomId: z.string().uuid("bomId phải là uuid"),

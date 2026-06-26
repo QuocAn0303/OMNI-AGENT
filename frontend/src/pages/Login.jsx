@@ -1,7 +1,19 @@
+/**
+ * Frontend: pages/Login.jsx — Đăng nhập
+ * 
+ * Tổng quan:
+ * - Trang đăng nhập với split layout (brand bên trái, form bên phải)
+ * - API: POST /auth/login
+ * - State: loading, error message
+ * - Logic: Gọi login() từ authStore, lưu token vào axios header, điều hướng theo role
+ * 
+ * Components/Hooks/Exports:
+ * - Login (default export): Form đăng nhập, xử lý auth, điều hướng dashboard/admin
+ */
 import { useState } from "react";
 import { Form, Input, Button, Alert } from "antd";
 import { UserOutlined, LockOutlined, LoginOutlined } from "@ant-design/icons";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import useAuthStore from "../stores/authStore";
 import axiosInstance from "../api/axios";
 
@@ -30,7 +42,11 @@ export default function Login() {
       login(user, token, refreshToken);
       if (token)
         axiosInstance.defaults.headers.common.Authorization = `Bearer ${token}`;
-      navigate("/dashboard");
+      if (user?.role === "SUPER_OMEGA_ULTRA_ADMIN") {
+        navigate("/admin");
+      } else {
+        navigate("/dashboard");
+      }
     } catch (err) {
       setError(
         err?.response?.data?.message ||
@@ -55,10 +71,10 @@ export default function Login() {
                 letterSpacing: "-0.02em",
               }}
             >
-              Aduu
+              Aduu ERP
             </div>
             <div style={{ fontSize: 12, color: "rgba(255,255,255,0.5)" }}>
-              Business Management Platform
+              Hệ thống hoạch định nguồn lực doanh nghiệp
             </div>
           </div>
         </div>
@@ -75,7 +91,7 @@ export default function Login() {
         </div>
 
         <div className="login-brand__footer">
-          © {new Date().getFullYear()} Aduu · v1.0
+          © {new Date().getFullYear()} Aduu ERP · v2.0
         </div>
       </section>
 
@@ -147,12 +163,15 @@ export default function Login() {
               marginTop: 24,
               paddingTop: 16,
               borderTop: "1px solid var(--border-light)",
-              fontSize: 12,
+              fontSize: 13,
               color: "var(--text-muted)",
               textAlign: "center",
             }}
           >
-            Cần hỗ trợ? Liên hệ quản trị viên hệ thống.
+            Chưa có tài khoản?{" "}
+            <Link to="/register" style={{ color: "var(--color-primary)", fontWeight: 500 }}>
+              Đăng ký miễn phí
+            </Link>
           </div>
         </div>
       </section>

@@ -1,3 +1,14 @@
+/**
+ * Frontend: src/api/fixedAssets.js — API module Tài sản cố định
+ *
+ * Tổng quan:
+ * - Quản lý tài sản cố định: CRUD, thanh lý (dispose)
+ * - Quản lý danh mục tài sản (categories)
+ * - runDepreciation: chạy tính khấu hao cho tài sản
+ *
+ * Exports:
+ * - getAssets, getAsset, createAsset, disposeAsset, getCategories, createCategory, runDepreciation
+ */
 // frontend/src/api/fixedAssets.js
 import axios from "./axios";
 

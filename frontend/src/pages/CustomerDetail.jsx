@@ -1,53 +1,97 @@
-import { useEffect, useState } from 'react';
-import { useParams, useNavigate } from 'react-router-dom';
+/**
+ * Frontend: pages/CustomerDetail.jsx — Chi tiết khách hàng (CRM)
+ * 
+ * Tổng quan:
+ * - Trang chi tiết khách hàng với RFM, tags, notes timeline, nhiệm vụ CSKH, đơn hàng, công nợ, loyalty
+ * - API: GET /customers/:id/full, GET/POST/PUT/DELETE /crm/notes, /crm/tags, /crm/tasks
+ * - State: data (customer + orders + notes + tags + rfm), tasks, tags
+ * - Logic: Quản lý ghi chú (timeline), gắn/gỡ tag, tạo/sửa/xoá nhiệm vụ CSKH, theo dõi công nợ
+ * 
+ * Components/Hooks/Exports:
+ * - CustomerDetail (default export): Giao diện chi tiết KH với tabs tương tác
+ */
+import { useEffect, useState } from "react";
+import { useParams, useNavigate } from "react-router-dom";
 import {
-  Tabs, Card, Avatar, Tag, Button, Input, Select, Modal,
-  Form, message, Timeline, Spin, Table, Empty, Popconfirm, Space,
+  Tabs,
+  Card,
+  Avatar,
+  Tag,
+  Button,
+  Input,
+  Select,
+  Modal,
+  Form,
+  message,
+  Timeline,
+  Spin,
+  Table,
+  Empty,
+  Popconfirm,
+  Space,
   DatePicker,
-} from 'antd';
+} from "antd";
 import {
-  ArrowLeftOutlined, PhoneOutlined, MailOutlined, EnvironmentOutlined,
-  PlusOutlined, EditOutlined, DeleteOutlined, MessageOutlined,
-  TagOutlined, CheckSquareOutlined, CheckCircleOutlined, ClockCircleOutlined,
-} from '@ant-design/icons';
-import dayjs from 'dayjs';
-import axios from '../api/axios';
-import PageHeader from '../components/layout/PageHeader';
-import MoneyDisplay from '../components/shared/MoneyDisplay';
-import useAuthStore from '../stores/authStore';
+  ArrowLeftOutlined,
+  PhoneOutlined,
+  MailOutlined,
+  EnvironmentOutlined,
+  PlusOutlined,
+  EditOutlined,
+  DeleteOutlined,
+  MessageOutlined,
+  TagOutlined,
+  CheckSquareOutlined,
+  CheckCircleOutlined,
+  ClockCircleOutlined,
+} from "@ant-design/icons";
+import dayjs from "dayjs";
+import axios from "../api/axios";
+import PageHeader from "../components/layout/PageHeader";
+import MoneyDisplay from "../components/shared/MoneyDisplay";
+import useAuthStore from "../stores/authStore";
+
 
 const NOTE_TYPES = [
-  { value: 'NOTE', label: 'Ghi chú', color: 'default' },
-  { value: 'CALL', label: 'Gọi điện', color: 'blue' },
-  { value: 'EMAIL', label: 'Email', color: 'green' },
-  { value: 'MEETING', label: 'Gặp mặt', color: 'purple' },
-  { value: 'ZALO', label: 'Zalo', color: 'cyan' },
+  { value: "NOTE", label: "Ghi chú", color: "default" },
+  { value: "CALL", label: "Gọi điện", color: "blue" },
+  { value: "EMAIL", label: "Email", color: "green" },
+  { value: "MEETING", label: "Gặp mặt", color: "purple" },
+  { value: "ZALO", label: "Zalo", color: "cyan" },
 ];
 
 const TIER_COLOR = {
-  BRONZE: '#a16207',
-  SILVER: '#64748b',
-  GOLD: '#ca8a04',
-  PLATINUM: '#0f766e',
+  BRONZE: "#a16207",
+  SILVER: "#64748b",
+  GOLD: "#ca8a04",
+  PLATINUM: "#0f766e",
+};
+const TIER_LABEL = {
+  BRONZE: "Đồng",
+  SILVER: "Bạc",
+  GOLD: "Vàng",
+  PLATINUM: "Kim cương",
 };
 
 const TASK_STATUS = [
-  { value: 'PENDING', label: 'Chờ xử lý', color: 'default' },
-  { value: 'IN_PROGRESS', label: 'Đang làm', color: 'processing' },
-  { value: 'DONE', label: 'Hoàn thành', color: 'success' },
-  { value: 'CANCELLED', label: 'Đã hủy', color: 'default' },
+  { value: "PENDING", label: "Chờ xử lý", color: "default" },
+  { value: "IN_PROGRESS", label: "Đang làm", color: "processing" },
+  { value: "DONE", label: "Hoàn thành", color: "success" },
+  { value: "CANCELLED", label: "Đã hủy", color: "default" },
 ];
 const TASK_PRIORITY = [
-  { value: 'LOW', label: 'Thấp', color: 'default' },
-  { value: 'NORMAL', label: 'Bình thường', color: 'blue' },
-  { value: 'HIGH', label: 'Cao', color: 'red' },
+  { value: "LOW", label: "Thấp", color: "default" },
+  { value: "NORMAL", label: "Bình thường", color: "blue" },
+  { value: "HIGH", label: "Cao", color: "red" },
 ];
-const taskStatusMeta = (v) => TASK_STATUS.find((s) => s.value === v) || TASK_STATUS[0];
-const taskPriorityMeta = (v) => TASK_PRIORITY.find((p) => p.value === v) || TASK_PRIORITY[1];
+const taskStatusMeta = (v) =>
+  TASK_STATUS.find((s) => s.value === v) || TASK_STATUS[0];
+const taskPriorityMeta = (v) =>
+  TASK_PRIORITY.find((p) => p.value === v) || TASK_PRIORITY[1];
 
-const AVATAR_COLORS = ['#0f766e', '#0891b2', '#7c3aed', '#db2777', '#d97706'];
+const AVATAR_COLORS = ["#0f766e", "#0891b2", "#7c3aed", "#db2777", "#d97706"];
 const getColor = (id) => {
-  if (!id || typeof id !== 'string') return AVATAR_COLORS[0];
+  if (!id || typeof id !== "string") return AVATAR_COLORS[0];
   let hash = 0;
   for (let i = 0; i < id.length; i++) hash = (hash * 31 + id.charCodeAt(i)) | 0;
   return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length];
@@ -77,7 +121,9 @@ export default function CustomerDetail() {
   const loadTasks = async () => {
     setTasksLoading(true);
     try {
-      const res = await axios.get('/crm/tasks', { params: { customerId: id, limit: 50 } });
+      const res = await axios.get("/crm/tasks", {
+        params: { customerId: id, limit: 50 },
+      });
       setTasks(res.data?.data || []);
     } catch {
       /* ignore */
@@ -91,25 +137,27 @@ export default function CustomerDetail() {
     try {
       const [resFull, resTags, resUsers] = await Promise.all([
         axios.get(`/customers/${id}/full`),
-        axios.get('/crm/tags'),
-        axios.get('/crm/tasks/assignable-users'),
+        axios.get("/crm/tags"),
+        axios.get("/crm/tasks/assignable-users"),
       ]);
       setData(resFull.data?.data || null);
       setAllTags(resTags.data?.data || []);
       setUsers(resUsers.data?.data || []);
       await loadTasks();
     } catch (err) {
-      message.error('Không tải được thông tin khách hàng');
+      message.error("Không tải được thông tin khách hàng");
     } finally {
       setLoading(false);
     }
   };
 
-  useEffect(() => { load(); }, [id]);
+  useEffect(() => {
+    load();
+  }, [id]);
 
   const openNoteModal = (note = null) => {
     setEditingNote(note);
-    noteForm.setFieldsValue(note || { type: 'NOTE', content: '' });
+    noteForm.setFieldsValue(note || { type: "NOTE", content: "" });
     setNoteModalOpen(true);
   };
 
@@ -118,26 +166,26 @@ export default function CustomerDetail() {
       const values = await noteForm.validateFields();
       if (editingNote) {
         await axios.put(`/crm/notes/${editingNote.id}`, values);
-        message.success('Đã cập nhật ghi chú');
+        message.success("Đã cập nhật ghi chú");
       } else {
         await axios.post(`/crm/notes/customer/${id}`, values);
-        message.success('Đã thêm ghi chú');
+        message.success("Đã thêm ghi chú");
       }
       setNoteModalOpen(false);
       load();
     } catch (err) {
       if (err.errorFields) return;
-      message.error('Lưu ghi chú thất bại');
+      message.error("Lưu ghi chú thất bại");
     }
   };
 
   const deleteNote = async (noteId) => {
     try {
       await axios.delete(`/crm/notes/${noteId}`);
-      message.success('Đã xóa ghi chú');
+      message.success("Đã xóa ghi chú");
       load();
     } catch {
-      message.error('Xóa thất bại');
+      message.error("Xóa thất bại");
     }
   };
 
@@ -146,7 +194,7 @@ export default function CustomerDetail() {
       await axios.post(`/crm/tags/customer/${id}/assign/${tagId}`);
       load();
     } catch {
-      message.error('Gắn tag thất bại');
+      message.error("Gắn tag thất bại");
     }
   };
 
@@ -155,7 +203,7 @@ export default function CustomerDetail() {
       await axios.delete(`/crm/tags/customer/${id}/unassign/${tagId}`);
       load();
     } catch {
-      message.error('Gỡ tag thất bại');
+      message.error("Gỡ tag thất bại");
     }
   };
 
@@ -172,8 +220,8 @@ export default function CustomerDetail() {
       });
     } else {
       taskForm.setFieldsValue({
-        priority: 'NORMAL',
-        status: 'PENDING',
+        priority: "NORMAL",
+        status: "PENDING",
         assignedToId: currentUser?.id,
       });
     }
@@ -190,41 +238,45 @@ export default function CustomerDetail() {
       };
       if (editingTask) {
         await axios.patch(`/crm/tasks/${editingTask.id}`, payload);
-        message.success('Đã cập nhật');
+        message.success("Đã cập nhật");
       } else {
-        await axios.post('/crm/tasks', payload);
-        message.success('Đã tạo nhiệm vụ');
+        await axios.post("/crm/tasks", payload);
+        message.success("Đã tạo nhiệm vụ");
       }
       setTaskModalOpen(false);
       loadTasks();
     } catch (err) {
       if (err.errorFields) return;
-      message.error(err.response?.data?.message || 'Lưu thất bại');
+      message.error(err.response?.data?.message || "Lưu thất bại");
     }
   };
 
   const completeTask = async (taskId) => {
     try {
-      await axios.patch(`/crm/tasks/${taskId}`, { status: 'DONE' });
-      message.success('Đã hoàn thành');
+      await axios.patch(`/crm/tasks/${taskId}`, { status: "DONE" });
+      message.success("Đã hoàn thành");
       loadTasks();
     } catch {
-      message.error('Cập nhật thất bại');
+      message.error("Cập nhật thất bại");
     }
   };
 
   const deleteTask = async (taskId) => {
     try {
       await axios.delete(`/crm/tasks/${taskId}`);
-      message.success('Đã xóa');
+      message.success("Đã xóa");
       loadTasks();
     } catch (err) {
-      message.error(err.response?.data?.message || 'Xóa thất bại');
+      message.error(err.response?.data?.message || "Xóa thất bại");
     }
   };
 
   if (loading) {
-    return <div style={{ padding: 48, textAlign: 'center' }}><Spin size="large" /></div>;
+    return (
+      <div style={{ padding: 48, textAlign: "center" }}>
+        <Spin size="large" />
+      </div>
+    );
   }
   if (!data) {
     return <Empty description="Không tìm thấy khách hàng" />;
@@ -235,108 +287,151 @@ export default function CustomerDetail() {
   const availableTags = allTags.filter((t) => !assignedTagIds.has(t.id));
 
   const orderColumns = [
-    { title: 'Mã đơn', dataIndex: 'orderCode', width: 140 },
+    { title: "Mã đơn", dataIndex: "orderCode", width: 140 },
     {
-      title: 'Trạng thái',
-      dataIndex: 'status',
+      title: "Trạng thái",
+      dataIndex: "status",
       width: 120,
       render: (s) => <Tag>{s}</Tag>,
     },
     {
-      title: 'Thanh toán',
-      dataIndex: 'paymentStatus',
+      title: "Thanh toán",
+      dataIndex: "paymentStatus",
       width: 120,
-      render: (s) => <Tag color={s === 'PAID' ? 'green' : s === 'UNPAID' ? 'red' : 'orange'}>{s}</Tag>,
+      render: (s) => (
+        <Tag color={s === "PAID" ? "green" : s === "UNPAID" ? "red" : "orange"}>
+          {s}
+        </Tag>
+      ),
     },
     {
-      title: 'Tổng tiền',
-      dataIndex: 'total',
-      align: 'right',
+      title: "Tổng tiền",
+      dataIndex: "total",
+      align: "right",
       render: (v) => <MoneyDisplay value={v} />,
     },
     {
-      title: 'Ngày',
-      dataIndex: 'createdAt',
+      title: "Ngày",
+      dataIndex: "createdAt",
       width: 140,
-      render: (d) => dayjs(d).format('DD/MM/YYYY HH:mm'),
+      render: (d) => dayjs(d).format("DD/MM/YYYY HH:mm"),
     },
   ];
 
   const debtColumns = [
     {
-      title: 'Số tiền',
-      dataIndex: 'amount',
+      title: "Số tiền",
+      dataIndex: "amount",
       render: (v) => <MoneyDisplay value={v} />,
     },
     {
-      title: 'Đã trả',
-      dataIndex: 'paidAmount',
+      title: "Đã trả",
+      dataIndex: "paidAmount",
       render: (v) => <MoneyDisplay value={v} />,
     },
     {
-      title: 'Còn lại',
+      title: "Còn lại",
       render: (_, row) => (
         <MoneyDisplay value={Number(row.amount) - Number(row.paidAmount)} />
       ),
     },
     {
-      title: 'Trạng thái',
-      dataIndex: 'status',
-      render: (s) => <Tag color={s === 'PAID' ? 'green' : 'orange'}>{s}</Tag>,
+      title: "Trạng thái",
+      dataIndex: "status",
+      render: (s) => <Tag color={s === "PAID" ? "green" : "orange"}>{s}</Tag>,
     },
     {
-      title: 'Hạn',
-      dataIndex: 'dueDate',
-      render: (d) => d ? dayjs(d).format('DD/MM/YYYY') : '—',
+      title: "Hạn",
+      dataIndex: "dueDate",
+      render: (d) => (d ? dayjs(d).format("DD/MM/YYYY") : "—"),
     },
   ];
 
   const taskColumns = [
     {
-      title: 'Tiêu đề',
-      dataIndex: 'title',
+      title: "Tiêu đề",
+      dataIndex: "title",
       render: (t, row) => (
         <div>
           <div style={{ fontWeight: 500 }}>{t}</div>
           {row.description && (
-            <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{row.description}</div>
+            <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
+              {row.description}
+            </div>
           )}
         </div>
       ),
     },
     {
-      title: 'Trạng thái', dataIndex: 'status', width: 130,
-      render: (v) => { const m = taskStatusMeta(v); return <Tag color={m.color}>{m.label}</Tag>; },
+      title: "Trạng thái",
+      dataIndex: "status",
+      width: 130,
+      render: (v) => {
+        const m = taskStatusMeta(v);
+        return <Tag color={m.color}>{m.label}</Tag>;
+      },
     },
     {
-      title: 'Ưu tiên', dataIndex: 'priority', width: 110,
-      render: (v) => { const m = taskPriorityMeta(v); return <Tag color={m.color}>{m.label}</Tag>; },
+      title: "Ưu tiên",
+      dataIndex: "priority",
+      width: 110,
+      render: (v) => {
+        const m = taskPriorityMeta(v);
+        return <Tag color={m.color}>{m.label}</Tag>;
+      },
     },
     {
-      title: 'Giao cho', width: 140,
-      render: (_, row) => row.assignedTo?.fullName || '—',
+      title: "Giao cho",
+      width: 140,
+      render: (_, row) => row.assignedTo?.fullName || "—",
     },
     {
-      title: 'Hạn', dataIndex: 'dueAt', width: 140,
+      title: "Hạn",
+      dataIndex: "dueAt",
+      width: 140,
       render: (d, row) => {
-        if (!d) return <span style={{ color: 'var(--text-muted)' }}>—</span>;
-        const overdue = dayjs(d).isBefore(dayjs()) && !['DONE', 'CANCELLED'].includes(row.status);
+        if (!d) return <span style={{ color: "var(--text-muted)" }}>—</span>;
+        const overdue =
+          dayjs(d).isBefore(dayjs()) &&
+          !["DONE", "CANCELLED"].includes(row.status);
         return (
-          <span style={{ color: overdue ? 'var(--error, #dc2626)' : undefined, fontWeight: overdue ? 600 : undefined }}>
-            <ClockCircleOutlined /> {dayjs(d).format('DD/MM HH:mm')}
+          <span
+            style={{
+              color: overdue ? "var(--error, #dc2626)" : undefined,
+              fontWeight: overdue ? 600 : undefined,
+            }}
+          >
+            <ClockCircleOutlined /> {dayjs(d).format("DD/MM HH:mm")}
           </span>
         );
       },
     },
     {
-      title: '', width: 130, align: 'right',
+      title: "",
+      width: 130,
+      align: "right",
       render: (_, row) => (
         <Space size={0}>
-          {row.status !== 'DONE' && (
-            <Button size="small" type="text" icon={<CheckCircleOutlined />} onClick={() => completeTask(row.id)} />
+          {row.status !== "DONE" && (
+            <Button
+              size="small"
+              type="text"
+              icon={<CheckCircleOutlined />}
+              onClick={() => completeTask(row.id)}
+            />
           )}
-          <Button size="small" type="text" icon={<EditOutlined />} onClick={() => openTaskModal(row)} />
-          <Popconfirm title="Xóa?" onConfirm={() => deleteTask(row.id)} okText="Xóa" cancelText="Hủy">
+          <Button
+            size="small"
+            type="text"
+            icon={<EditOutlined />}
+            onClick={() => openTaskModal(row)}
+          />
+          <Popconfirm
+            title="Xóa?"
+            onConfirm={() => deleteTask(row.id)}
+            okText="Xóa"
+            cancelText="Hủy"
+          >
             <Button size="small" type="text" danger icon={<DeleteOutlined />} />
           </Popconfirm>
         </Space>
@@ -346,27 +441,33 @@ export default function CustomerDetail() {
 
   const loyaltyColumns = [
     {
-      title: 'Loại',
-      dataIndex: 'type',
+      title: "Loại",
+      dataIndex: "type",
       width: 110,
       render: (t) => <Tag>{t}</Tag>,
     },
     {
-      title: 'Điểm',
-      dataIndex: 'points',
-      align: 'right',
+      title: "Điểm",
+      dataIndex: "points",
+      align: "right",
       render: (p) => (
-        <span style={{ color: p > 0 ? 'var(--success, #059669)' : 'var(--error, #dc2626)', fontWeight: 500 }}>
-          {p > 0 ? '+' : ''}{p}
+        <span
+          style={{
+            color: p > 0 ? "var(--success, #059669)" : "var(--error, #dc2626)",
+            fontWeight: 500,
+          }}
+        >
+          {p > 0 ? "+" : ""}
+          {p}
         </span>
       ),
     },
-    { title: 'Ghi chú', dataIndex: 'note' },
+    { title: "Ghi chú", dataIndex: "note" },
     {
-      title: 'Ngày',
-      dataIndex: 'createdAt',
+      title: "Ngày",
+      dataIndex: "createdAt",
       width: 160,
-      render: (d) => dayjs(d).format('DD/MM/YYYY HH:mm'),
+      render: (d) => dayjs(d).format("DD/MM/YYYY HH:mm"),
     },
   ];
 
@@ -375,65 +476,141 @@ export default function CustomerDetail() {
       <PageHeader
         title={
           <Space>
-            <Button icon={<ArrowLeftOutlined />} type="text" onClick={() => navigate('/customers')} />
+            <Button
+              icon={<ArrowLeftOutlined />}
+              type="text"
+              onClick={() => navigate("/customers")}
+            />
             {customer.name}
           </Space>
         }
         subtitle={
           <Space size={16}>
-            {customer.phone && <span><PhoneOutlined /> {customer.phone}</span>}
-            {customer.email && <span><MailOutlined /> {customer.email}</span>}
-            {customer.address && <span><EnvironmentOutlined /> {customer.address}</span>}
+            {customer.phone && (
+              <span>
+                <PhoneOutlined /> {customer.phone}
+              </span>
+            )}
+            {customer.email && (
+              <span>
+                <MailOutlined /> {customer.email}
+              </span>
+            )}
+            {customer.address && (
+              <span>
+                <EnvironmentOutlined /> {customer.address}
+              </span>
+            )}
           </Space>
         }
       />
 
       {/* RFM + tier header */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(180px, 1fr))', gap: 12, marginBottom: 16 }}>
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "repeat(auto-fit, minmax(180px, 1fr))",
+          gap: 12,
+          marginBottom: 16,
+        }}
+      >
         <Card size="small">
-          <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Hạng</div>
-          <div style={{ fontSize: 20, fontWeight: 600, color: TIER_COLOR[customer.tier] }}>
-            {customer.tier}
+          <div style={{ fontSize: 12, color: "var(--text-muted)" }}>Hạng</div>
+          <div
+            style={{
+              fontSize: 20,
+              fontWeight: 600,
+              color: TIER_COLOR[customer.tier],
+            }}
+          >
+            {TIER_LABEL[customer.tier] || customer.tier}
           </div>
         </Card>
         <Card size="small">
-          <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Tổng chi tiêu</div>
-          <div style={{ fontSize: 20, fontWeight: 600, color: 'var(--primary)' }}>
+          <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
+            Tổng chi tiêu
+          </div>
+          <div
+            style={{ fontSize: 20, fontWeight: 600, color: "var(--primary)" }}
+          >
             <MoneyDisplay value={rfm.monetary} />
           </div>
         </Card>
         <Card size="small">
-          <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Số đơn (đã chốt)</div>
+          <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
+            Số đơn (đã chốt)
+          </div>
           <div style={{ fontSize: 20, fontWeight: 600 }}>{rfm.frequency}</div>
         </Card>
         <Card size="small">
-          <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Lần mua cuối</div>
+          <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
+            Lần mua cuối
+          </div>
           <div style={{ fontSize: 20, fontWeight: 600 }}>
-            {rfm.recencyDays !== null ? `${rfm.recencyDays} ngày trước` : '—'}
+            {rfm.recencyDays !== null ? `${rfm.recencyDays} ngày trước` : "—"}
           </div>
         </Card>
         <Card size="small">
-          <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Điểm thưởng</div>
-          <div style={{ fontSize: 20, fontWeight: 600 }}>{customer.loyaltyPoints}</div>
+          <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
+            Điểm thưởng
+          </div>
+          <div style={{ fontSize: 20, fontWeight: 600 }}>
+            {customer.loyaltyPoints}
+          </div>
         </Card>
         <Card size="small">
-          <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Công nợ</div>
-          <div style={{ fontSize: 20, fontWeight: 600, color: Number(customer.totalDebt) > 0 ? 'var(--error, #dc2626)' : undefined }}>
+          <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
+            Công nợ
+          </div>
+          <div
+            style={{
+              fontSize: 20,
+              fontWeight: 600,
+              color:
+                Number(customer.totalDebt) > 0
+                  ? "var(--error, #dc2626)"
+                  : undefined,
+            }}
+          >
             <MoneyDisplay value={customer.totalDebt} />
           </div>
         </Card>
       </div>
 
       {/* Tags hiển thị */}
-      <div style={{ marginBottom: 16, display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
-        <TagOutlined style={{ color: 'var(--text-muted)' }} />
-        {tags.length === 0 && <span style={{ fontSize: 13, color: 'var(--text-muted)' }}>Chưa có tag</span>}
+      <div
+        style={{
+          marginBottom: 16,
+          display: "flex",
+          flexWrap: "wrap",
+          gap: 8,
+          alignItems: "center",
+        }}
+      >
+        <TagOutlined style={{ color: "var(--text-muted)" }} />
+        {tags.length === 0 && (
+          <span style={{ fontSize: 13, color: "var(--text-muted)" }}>
+            Chưa có tag
+          </span>
+        )}
         {tags.map((t) => (
-          <Tag key={t.id} color={t.color} closable onClose={(e) => { e.preventDefault(); unassignTag(t.id); }}>
+          <Tag
+            key={t.id}
+            color={t.color}
+            closable
+            onClose={(e) => {
+              e.preventDefault();
+              unassignTag(t.id);
+            }}
+          >
             {t.name}
           </Tag>
         ))}
-        <Button size="small" icon={<PlusOutlined />} onClick={() => setTagModalOpen(true)}>
+        <Button
+          size="small"
+          icon={<PlusOutlined />}
+          onClick={() => setTagModalOpen(true)}
+        >
           Gắn tag
         </Button>
       </div>
@@ -442,34 +619,81 @@ export default function CustomerDetail() {
         defaultActiveKey="interactions"
         items={[
           {
-            key: 'interactions',
-            label: <span><MessageOutlined /> Tương tác</span>,
+            key: "interactions",
+            label: (
+              <span>
+                <MessageOutlined /> Tương tác
+              </span>
+            ),
             children: (
               <Card
                 title={`Ghi chú & tương tác (${notes.length})`}
-                extra={<Button type="primary" icon={<PlusOutlined />} onClick={() => openNoteModal()}>Thêm ghi chú</Button>}
+                extra={
+                  <Button
+                    type="primary"
+                    icon={<PlusOutlined />}
+                    onClick={() => openNoteModal()}
+                  >
+                    Thêm ghi chú
+                  </Button>
+                }
               >
                 {notes.length === 0 ? (
                   <Empty description="Chưa có ghi chú" />
                 ) : (
                   <Timeline
                     items={notes.map((n) => {
-                      const typeMeta = NOTE_TYPES.find((t) => t.value === n.type) || NOTE_TYPES[0];
+                      const typeMeta =
+                        NOTE_TYPES.find((t) => t.value === n.type) ||
+                        NOTE_TYPES[0];
                       return {
-                        color: typeMeta.color === 'default' ? 'gray' : typeMeta.color,
+                        color:
+                          typeMeta.color === "default"
+                            ? "gray"
+                            : typeMeta.color,
                         children: (
                           <div>
-                            <div style={{ display: 'flex', gap: 8, alignItems: 'center', marginBottom: 4 }}>
+                            <div
+                              style={{
+                                display: "flex",
+                                gap: 8,
+                                alignItems: "center",
+                                marginBottom: 4,
+                              }}
+                            >
                               <Tag color={typeMeta.color}>{typeMeta.label}</Tag>
-                              <span style={{ fontSize: 12, color: 'var(--text-muted)' }}>
-                                {n.createdBy?.fullName || '—'} · {dayjs(n.createdAt).format('DD/MM/YYYY HH:mm')}
+                              <span
+                                style={{
+                                  fontSize: 12,
+                                  color: "var(--text-muted)",
+                                }}
+                              >
+                                {n.createdBy?.fullName || "—"} ·{" "}
+                                {dayjs(n.createdAt).format("DD/MM/YYYY HH:mm")}
                               </span>
-                              <Button size="small" type="text" icon={<EditOutlined />} onClick={() => openNoteModal(n)} />
-                              <Popconfirm title="Xóa ghi chú?" onConfirm={() => deleteNote(n.id)} okText="Xóa" cancelText="Hủy">
-                                <Button size="small" type="text" danger icon={<DeleteOutlined />} />
+                              <Button
+                                size="small"
+                                type="text"
+                                icon={<EditOutlined />}
+                                onClick={() => openNoteModal(n)}
+                              />
+                              <Popconfirm
+                                title="Xóa ghi chú?"
+                                onConfirm={() => deleteNote(n.id)}
+                                okText="Xóa"
+                                cancelText="Hủy"
+                              >
+                                <Button
+                                  size="small"
+                                  type="text"
+                                  danger
+                                  icon={<DeleteOutlined />}
+                                />
                               </Popconfirm>
                             </div>
-                            <div style={{ whiteSpace: 'pre-wrap' }}>{n.content}</div>
+                            <div style={{ whiteSpace: "pre-wrap" }}>
+                              {n.content}
+                            </div>
                           </div>
                         ),
                       };
@@ -480,12 +704,24 @@ export default function CustomerDetail() {
             ),
           },
           {
-            key: 'tasks',
-            label: <span><CheckSquareOutlined /> Nhiệm vụ ({tasks.length})</span>,
+            key: "tasks",
+            label: (
+              <span>
+                <CheckSquareOutlined /> Nhiệm vụ ({tasks.length})
+              </span>
+            ),
             children: (
               <Card
                 title={`Nhiệm vụ CSKH (${tasks.length})`}
-                extra={<Button type="primary" icon={<PlusOutlined />} onClick={() => openTaskModal()}>Tạo nhiệm vụ</Button>}
+                extra={
+                  <Button
+                    type="primary"
+                    icon={<PlusOutlined />}
+                    onClick={() => openTaskModal()}
+                  >
+                    Tạo nhiệm vụ
+                  </Button>
+                }
               >
                 <Table
                   columns={taskColumns}
@@ -494,13 +730,13 @@ export default function CustomerDetail() {
                   loading={tasksLoading}
                   pagination={false}
                   size="small"
-                  locale={{ emptyText: 'Chưa có nhiệm vụ' }}
+                  locale={{ emptyText: "Chưa có nhiệm vụ" }}
                 />
               </Card>
             ),
           },
           {
-            key: 'orders',
+            key: "orders",
             label: `Đơn hàng (${recentOrders.length})`,
             children: (
               <Card>
@@ -510,13 +746,13 @@ export default function CustomerDetail() {
                   rowKey="id"
                   pagination={false}
                   size="small"
-                  locale={{ emptyText: 'Chưa có đơn hàng' }}
+                  locale={{ emptyText: "Chưa có đơn hàng" }}
                 />
               </Card>
             ),
           },
           {
-            key: 'debts',
+            key: "debts",
             label: `Công nợ (${debts.length})`,
             children: (
               <Card>
@@ -526,13 +762,13 @@ export default function CustomerDetail() {
                   rowKey="id"
                   pagination={false}
                   size="small"
-                  locale={{ emptyText: 'Không có công nợ' }}
+                  locale={{ emptyText: "Không có công nợ" }}
                 />
               </Card>
             ),
           },
           {
-            key: 'loyalty',
+            key: "loyalty",
             label: `Loyalty (${loyaltyTxs.length})`,
             children: (
               <Card>
@@ -542,16 +778,21 @@ export default function CustomerDetail() {
                   rowKey="id"
                   pagination={false}
                   size="small"
-                  locale={{ emptyText: 'Chưa có giao dịch điểm' }}
+                  locale={{ emptyText: "Chưa có giao dịch điểm" }}
                 />
               </Card>
             ),
+          },
+          {
+            key: "store-credit",
+            label: `Store Credit (${data?.storeCredit ? Number(data.storeCredit).toLocaleString("vi-VN") + "đ" : "0đ"})`,
+            children: <StoreCreditTab customerId={id} />,
           },
         ]}
       />
 
       <Modal
-        title={editingNote ? 'Sửa ghi chú' : 'Thêm ghi chú'}
+        title={editingNote ? "Sửa ghi chú" : "Thêm ghi chú"}
         open={noteModalOpen}
         onCancel={() => setNoteModalOpen(false)}
         onOk={saveNote}
@@ -561,20 +802,28 @@ export default function CustomerDetail() {
       >
         <Form form={noteForm} layout="vertical" style={{ marginTop: 16 }}>
           <Form.Item label="Loại" name="type" rules={[{ required: true }]}>
-            <Select options={NOTE_TYPES.map((t) => ({ value: t.value, label: t.label }))} />
+            <Select
+              options={NOTE_TYPES.map((t) => ({
+                value: t.value,
+                label: t.label,
+              }))}
+            />
           </Form.Item>
           <Form.Item
             label="Nội dung"
             name="content"
-            rules={[{ required: true, message: 'Nhập nội dung' }]}
+            rules={[{ required: true, message: "Nhập nội dung" }]}
           >
-            <Input.TextArea rows={5} placeholder="Nội dung tương tác / ghi chú..." />
+            <Input.TextArea
+              rows={5}
+              placeholder="Nội dung tương tác / ghi chú..."
+            />
           </Form.Item>
         </Form>
       </Modal>
 
       <Modal
-        title={editingTask ? 'Sửa nhiệm vụ' : 'Tạo nhiệm vụ CSKH'}
+        title={editingTask ? "Sửa nhiệm vụ" : "Tạo nhiệm vụ CSKH"}
         open={taskModalOpen}
         onCancel={() => setTaskModalOpen(false)}
         onOk={saveTask}
@@ -583,28 +832,55 @@ export default function CustomerDetail() {
         width={560}
       >
         <Form form={taskForm} layout="vertical" style={{ marginTop: 16 }}>
-          <Form.Item label="Tiêu đề" name="title" rules={[{ required: true, message: 'Nhập tiêu đề' }]}>
+          <Form.Item
+            label="Tiêu đề"
+            name="title"
+            rules={[{ required: true, message: "Nhập tiêu đề" }]}
+          >
             <Input placeholder="VD: Gọi xác nhận đơn hàng" />
           </Form.Item>
           <Form.Item label="Mô tả" name="description">
             <Input.TextArea rows={3} placeholder="Chi tiết..." />
           </Form.Item>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
-            <Form.Item label="Giao cho" name="assignedToId" rules={[{ required: true }]}>
+          <div
+            style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}
+          >
+            <Form.Item
+              label="Giao cho"
+              name="assignedToId"
+              rules={[{ required: true }]}
+            >
               <Select
-                options={users.map((u) => ({ value: u.id, label: `${u.fullName} (${u.role})` }))}
+                options={users.map((u) => ({
+                  value: u.id,
+                  label: `${u.fullName} (${u.role})`,
+                }))}
                 placeholder="Chọn người"
               />
             </Form.Item>
             <Form.Item label="Hạn" name="dueAt">
-              <DatePicker showTime style={{ width: '100%' }} format="DD/MM/YYYY HH:mm" />
+              <DatePicker
+                showTime
+                style={{ width: "100%" }}
+                format="DD/MM/YYYY HH:mm"
+              />
             </Form.Item>
             <Form.Item label="Ưu tiên" name="priority">
-              <Select options={TASK_PRIORITY.map((p) => ({ value: p.value, label: p.label }))} />
+              <Select
+                options={TASK_PRIORITY.map((p) => ({
+                  value: p.value,
+                  label: p.label,
+                }))}
+              />
             </Form.Item>
             {editingTask && (
               <Form.Item label="Trạng thái" name="status">
-                <Select options={TASK_STATUS.map((s) => ({ value: s.value, label: s.label }))} />
+                <Select
+                  options={TASK_STATUS.map((s) => ({
+                    value: s.value,
+                    label: s.label,
+                  }))}
+                />
               </Form.Item>
             )}
           </div>
@@ -618,15 +894,31 @@ export default function CustomerDetail() {
         footer={null}
       >
         {availableTags.length === 0 ? (
-          <Empty description="Không còn tag để gắn (tạo tag mới ở trang quản lý)" />
+          <Empty
+            description="Không còn tag để gắn"
+            image={Empty.PRESENTED_IMAGE_SIMPLE}
+          >
+            <Button
+              type="primary"
+              onClick={() => {
+                setTagModalOpen(false);
+                navigate("/tags");
+              }}
+            >
+              Đến trang quản lý Tag
+            </Button>
+          </Empty>
         ) : (
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 8 }}>
+          <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
             {availableTags.map((t) => (
               <Tag
                 key={t.id}
                 color={t.color}
-                style={{ cursor: 'pointer', padding: '4px 10px' }}
-                onClick={() => { assignTag(t.id); setTagModalOpen(false); }}
+                style={{ cursor: "pointer", padding: "4px 10px" }}
+                onClick={() => {
+                  assignTag(t.id);
+                  setTagModalOpen(false);
+                }}
               >
                 {t.name}
               </Tag>
@@ -635,5 +927,53 @@ export default function CustomerDetail() {
         )}
       </Modal>
     </>
+  );
+}
+
+function StoreCreditTab({ customerId }) {
+  const [txs, setTxs] = useState([]);
+  const [scLoading, setScLoading] = useState(false);
+
+  useEffect(() => {
+    if (!customerId) return;
+    (async () => {
+      setScLoading(true);
+      try {
+        const res = await axios.get(`/store-credits/${customerId}`, { params: { limit: 50 } });
+        setTxs(res.data?.data || []);
+      } catch { setTxs([]); }
+      finally { setScLoading(false); }
+    })();
+  }, [customerId]);
+
+  const columns = [
+    { title: "Ngày", dataIndex: "createdAt", width: 140,
+      render: (v) => dayjs(v).format("DD/MM/YYYY HH:mm"),
+    },
+    { title: "Loại", dataIndex: "type", width: 120,
+      render: (v) => {
+        const m = { EARN: { c: "green", l: "Cộng" }, SPEND: { c: "red", l: "Trừ" }, ADJUST: { c: "orange", l: "Điều chỉnh" }, REFUND: { c: "blue", l: "Hoàn tiền" } };
+        return <Tag color={m[v]?.c}>{m[v]?.l || v}</Tag>;
+      },
+    },
+    { title: "Số tiền", dataIndex: "amount", width: 140,
+      render: (v) => <MoneyDisplay value={v} />,
+    },
+    { title: "Ghi chú", dataIndex: "note", render: (v) => v || "—" },
+    { title: "NV", dataIndex: ["createdBy", "name"], width: 120 },
+  ];
+
+  return (
+    <Card>
+      <Table
+        columns={columns}
+        dataSource={txs}
+        rowKey="id"
+        loading={scLoading}
+        pagination={false}
+        size="small"
+        locale={{ emptyText: "Chưa có giao dịch store credit" }}
+      />
+    </Card>
   );
 }

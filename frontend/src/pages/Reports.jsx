@@ -1,3 +1,15 @@
+/**
+ * Frontend: pages/Reports.jsx — Trung tâm báo cáo
+ * 
+ * Tổng quan:
+ * - Grid card chọn loại báo cáo (doanh thu, đơn hàng, tồn kho, KH, nhân sự, lợi nhuận)
+ * - Chọn khoảng thời gian + định dạng (xlsx/csv) → tải file Excel về
+ * - Mỗi báo cáo có endpoint riêng (GET /reports/sales, /reports/orders, ...)
+ * - State: dateRange/format/downloading — tự quản lý
+ * 
+ * Components/Hooks/Exports:
+ * - Reports (default): Page chính — filter bar + grid card + download handler
+ */
 import { useState } from 'react';
 import { DatePicker, Select, Button, message, Spin } from 'antd';
 import {
@@ -8,7 +20,6 @@ import {
 import dayjs from 'dayjs';
 import axios from '../api/axios';
 import PageHeader from '../components/layout/PageHeader';
-
 const { RangePicker } = DatePicker;
 
 /**

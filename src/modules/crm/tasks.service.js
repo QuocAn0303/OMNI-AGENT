@@ -1,3 +1,25 @@
+/**
+ * modules/crm/tasks.service.js — Service nhiệm vụ CSKH
+ * 
+ * Tổng quan:
+ * - Quản lý nhiệm vụ chăm sóc khách hàng (CustomerTask).
+ * - Hỗ trợ: gán người xử lý, ưu tiên (LOW/NORMAL/HIGH), hạn hoàn thành, quá hạn.
+ * - Tích hợp audit log, notification realtime khi giao/chuyển nhiệm vụ.
+ * - Cron job nhắc nhiệm vụ sắp/quá hạn.
+ * 
+ * Hàm:
+ * - list({page, limit, status, priority, assignedTo, customerId, overdue}):
+ *   Danh sách nhiệm vụ có phân trang và lọc; hỗ trợ filter overdue.
+ * - create(data, userId): Tạo nhiệm vụ; kiểm tra customer + assignee tồn tại;
+ *   gửi notification cho người được giao.
+ * - update(id, data, userId): Cập nhật nhiệm vụ; tự động set completedAt khi DONE;
+ *   gửi notification nếu chuyển người được giao.
+ * - remove(id, userId): Xóa nhiệm vụ.
+ * - myTasks(userId, opts): Nhiệm vụ của user (wrapper list với assignedTo = userId).
+ * - overdueCountForUser(userId): Đếm nhiệm vụ quá hạn chưa xong.
+ * - cronRemindUpcoming(): Cron job nhắc nhiệm vụ đến hạn/quá hạn trong 24h tới;
+ *   tránh gửi trùng trong ngày.
+ */
 // src/modules/crm/tasks.service.js
 const prisma = require("../../config/prisma");
 const auditService = require("../audit/audit.service");

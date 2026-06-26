@@ -1,3 +1,17 @@
+/**
+ * Frontend: src/components/RequireRole.jsx — RequireRole
+ * 
+ * Tổng quan:
+ * - Kiểm tra role của user hiện tại, chỉ cho phép truy cập nếu role nằm trong danh sách roles.
+ * - Nếu chưa đăng nhập → redirect /login.
+ * - Nếu không đủ quyền → redirect /403.
+ * 
+ * Props:
+ * - roles: string[] — danh sách role được phép
+ * 
+ * Hàm/Exports:
+ * - RequireRole: Component kiểm tra phân quyền
+ */
 import { Navigate, Outlet } from 'react-router-dom'
 import useAuthStore from '../stores/authStore'
 

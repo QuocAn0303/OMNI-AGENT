@@ -1,3 +1,26 @@
+/**
+ * modules/orders/order.routes.js — Routes quản lý đơn hàng
+ * 
+ * Tổng quan:
+ * - CRUD đơn hàng, in hóa đơn, quản lý giao hàng, khuyến mãi, trả hàng, VietQR
+ * - Yêu cầu authenticate + role ADMIN/MANAGER/CASHIER
+ * 
+ * Endpoints:
+ * - GET /: Danh sách đơn hàng phân trang
+ * - POST /:id/invoice: Tạo/download hóa đơn PDF
+ * - GET /:id/invoice: Tải hóa đơn PDF (hoặc redirect Cloudinary)
+ * - POST /:id/delivery: Tạo thông tin giao hàng (ADMIN, MANAGER)
+ * - POST /preview-promotions: Xem trước khuyến mãi tự động
+ * - POST /validate-voucher: Kiểm tra mã giảm giá
+ * - GET /:id/returnable-items: Lấy danh sách sản phẩm có thể trả
+ * - GET /:id: Chi tiết đơn hàng
+ * - POST /: Tạo đơn hàng mới
+ * - PATCH /:id/status: Cập nhật trạng thái (ADMIN, MANAGER)
+ * - GET /:id/vietqr: Tạo mã VietQR thanh toán
+ * 
+ * Validation:
+ * - createOrderSchema: items, payments, discount, voucherCode, loyaltyPoints, warehouseId
+ */
 const router = require("express").Router();
 const { z } = require("zod");
 const orderService = require("./order.service");
@@ -36,6 +59,7 @@ const createOrderSchema = z.object({
         quantity: z.number().int().positive("Số lượng phải lớn hơn 0"),
         discountType: z.enum(["NONE", "PERCENT", "FIXED"]).default("NONE"),
         discountValue: z.number().min(0).default(0),
+        serials: z.array(z.string().uuid()).optional(),
       }),
     )
     .min(1, "Đơn hàng phải có ít nhất 1 sản phẩm"),

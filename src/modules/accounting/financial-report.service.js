@@ -1,6 +1,24 @@
+/**
+ * modules/accounting/financial-report.service.js — Báo cáo tài chính
+ * 
+ * Tổng quan:
+ * - Xây dựng các báo cáo tài chính từ dữ liệu journal entries đã POSTED.
+ * - Sử dụng aggregateByAccount làm hàm cốt lõi để tổng hợp số phát sinh debit/credit theo tài khoản.
+ * - Xác thực số liệu bằng nguyên tắc kế toán: tổng debit = tổng credit, tài sản = nợ + vốn chủ.
+ * 
+ * Hàm:
+ * - aggregateByAccount({from, to}): Map<accountId, {account, debit, credit, balance}> — tổng hợp số phát sinh.
+ * - profitAndLoss({from, to}): Báo cáo lãi/lỗ (P&L): doanh thu - giảm trừ - giá vốn - chi phí = lợi nhuận.
+ * - balanceSheet({asOf}): Bảng cân đối kế toán: tài sản = nợ phải trả + vốn chủ; tính lợi nhuận chưa phân phối.
+ * - cashFlow({from, to}): Báo cáo lưu chuyển tiền tệ dựa trên tài khoản isCash, phân loại theo nguồn (OPERATING/INVESTING/FINANCING).
+ * - generalLedger({accountId, from, to, page, limit}): Sổ cái chi tiết tài khoản với số dư running và phân trang.
+ * - trialBalance({from, to}): Bảng cân đối tài khoản: tất cả tài khoản với debit/credit/balance, kiểm tra cân bằng.
+ * - agingReport({accountCode}): Báo cáo tuổi nợ (AR/AP) theo phương pháp FIFO: mỗi dòng tăng giao dịch là hóa đơn, dòng giảm cấn trừ dần.
+ */
 // src/modules/accounting/financial-report.service.js
 // Tổng hợp số liệu từ journal_lines để xây các báo cáo tài chính.
 const prisma = require("../../config/prisma");
+const journalService = require("./journal.service");
 
 const toNum = (v) => Number(v || 0);
 const round2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
@@ -533,6 +551,249 @@ const agingReport = async ({ accountCode = "131" } = {}) => {
   };
 };
 
+// ══════════════════════════════════════════════════════════════
+// TT200-COMPLIANT REPORTS
+// ══════════════════════════════════════════════════════════════
+
+const trialBalance6Col = async ({ year, month }) => {
+  const from = new Date(year, month - 1, 1);
+  const to = new Date(year, month, 0, 23, 59, 59);
+  const prevMonthEnd = new Date(year, month - 1, 0, 23, 59, 59);
+
+  const accounts = await prisma.account.findMany({
+    orderBy: { code: "asc" },
+    select: { id: true, code: true, name: true, nameVi: true, type: true, normalBalance: true },
+  });
+
+  const hasOpening = month > 1;
+  const rows = [];
+  for (const acc of accounts) {
+    const [op, period] = await Promise.all([
+      hasOpening ? journalService.getAccountBalance(acc.id, new Date(0), prevMonthEnd) : { debit: 0, credit: 0, balance: 0 },
+      journalService.getAccountBalance(acc.id, from, to),
+    ]);
+
+    const opDebit = acc.normalBalance === "DEBIT" ? Math.max(0, op.balance || 0) : Math.max(0, -(op.balance || 0));
+    const opCredit = acc.normalBalance === "DEBIT" ? Math.max(0, -(op.balance || 0)) : Math.max(0, op.balance || 0);
+    const closingBalance = (op.balance || 0) + (acc.normalBalance === "DEBIT" ? period.debit - period.credit : period.credit - period.debit);
+    const clDebit = acc.normalBalance === "DEBIT" ? Math.max(0, closingBalance) : Math.max(0, -closingBalance);
+    const clCredit = acc.normalBalance === "DEBIT" ? Math.max(0, -closingBalance) : Math.max(0, closingBalance);
+
+    rows.push({
+      code: acc.code, name: acc.nameVi || acc.name, type: acc.type,
+      opDebit: round2(opDebit), opCredit: round2(opCredit),
+      periodDebit: round2(period.debit), periodCredit: round2(period.credit),
+      clDebit: round2(clDebit), clCredit: round2(clCredit),
+    });
+  }
+
+  const totals = rows.reduce((s, r) => ({
+    opDebit: s.opDebit + r.opDebit, opCredit: s.opCredit + r.opCredit,
+    periodDebit: s.periodDebit + r.periodDebit, periodCredit: s.periodCredit + r.periodCredit,
+    clDebit: s.clDebit + r.clDebit, clCredit: s.clCredit + r.clCredit,
+  }), { opDebit: 0, opCredit: 0, periodDebit: 0, periodCredit: 0, clDebit: 0, clCredit: 0 });
+
+  return { period: { year, month }, rows, totals };
+};
+
+const generalJournal = async ({ year, month, page = 1, limit = 100 }) => {
+  const from = new Date(year, month - 1, 1);
+  const to = new Date(year, month, 0, 23, 59, 59);
+  const entries = await prisma.journalEntry.findMany({
+    where: { date: { gte: from, lte: to }, status: "POSTED" },
+    include: { lines: { include: { account: { select: { code: true, name: true } } } } },
+    orderBy: [{ date: "asc" }, { entryCode: "asc" }],
+    skip: (page - 1) * limit, take: limit,
+  });
+  const rows = [];
+  for (const entry of entries) {
+    for (const line of entry.lines) {
+      const counterpartCodes = entry.lines.filter((l) => l.id !== line.id).map((l) => l.account.code).join(", ");
+      rows.push({
+        date: entry.date.toISOString().slice(0, 10),
+        entryCode: entry.entryCode, description: entry.description,
+        accountCode: line.account.code, accountName: line.account.name,
+        debit: round2(Number(line.debit)), credit: round2(Number(line.credit)),
+        counterpart: counterpartCodes,
+      });
+    }
+  }
+  const total = await prisma.journalEntry.count({ where: { date: { gte: from, lte: to }, status: "POSTED" } });
+  return { period: { year, month }, rows, pagination: { page, limit, total } };
+};
+
+const accountLedger = async ({ accountId, year, month }) => {
+  const account = await prisma.account.findUnique({
+    where: { id: accountId },
+    select: { id: true, code: true, name: true, nameVi: true, type: true, normalBalance: true },
+  });
+  if (!account) throw { status: 404, message: "Account not found" };
+
+  const from = new Date(year, month - 1, 1);
+  const to = new Date(year, month, 0, 23, 59, 59);
+  const prevMonthEnd = new Date(year, month - 1, 0, 23, 59, 59);
+
+  const op = month > 1 ? await journalService.getAccountBalance(accountId, new Date(0), prevMonthEnd) : { balance: 0 };
+  const lines = await prisma.journalLine.findMany({
+    where: { accountId, entry: { status: "POSTED", date: { gte: from, lte: to } } },
+    include: { entry: { select: { id: true, entryCode: true, date: true, description: true, source: true, lines: { include: { account: { select: { code: true, name: true } } } } } } },
+    orderBy: [{ entry: { date: "asc" } }],
+  });
+
+  let running = op.balance || 0;
+  const rows = [];
+  for (const line of lines) {
+    running = account.normalBalance === "DEBIT"
+      ? round2(running + Number(line.debit) - Number(line.credit))
+      : round2(running + Number(line.credit) - Number(line.debit));
+    const counterparts = line.entry.lines.filter((l) => l.accountId !== accountId)
+      .map((l) => `${l.account.code} (${Number(l.debit) > 0 ? `No ${round2(Number(l.debit))}` : `Co ${round2(Number(l.credit))}`})`).join("; ");
+    rows.push({
+      date: line.entry.date.toISOString().slice(0, 10), entryCode: line.entry.entryCode,
+      description: line.entry.description, counterpart: counterparts,
+      debit: round2(Number(line.debit)), credit: round2(Number(line.credit)),
+      balance: running, source: line.entry.source,
+    });
+  }
+  return { account, period: { year, month }, openingBalance: round2(op.balance || 0), closingBalance: running, rows };
+};
+
+const subLedger = async ({ accountCode, partyId, year, month }) => {
+  const account = await prisma.account.findUnique({ where: { code: accountCode } });
+  if (!account) throw { status: 404, message: "Account not found" };
+  const from = new Date(year, month - 1, 1);
+  const to = new Date(year, month, 0, 23, 59, 59);
+  const prevMonthEnd = new Date(year, month - 1, 0, 23, 59, 59);
+
+  const opLines = await prisma.journalLine.findMany({
+    where: {
+      accountId: account.id, entry: { status: "POSTED", date: { lte: prevMonthEnd } },
+      ...(partyId ? { partyId } : {}),
+    },
+    select: { debit: true, credit: true },
+  });
+  const opBalance = account.normalBalance === "DEBIT"
+    ? round2(opLines.reduce((s, l) => s + Number(l.debit) - Number(l.credit), 0))
+    : round2(opLines.reduce((s, l) => s + Number(l.credit) - Number(l.debit), 0));
+
+  const lines = await prisma.journalLine.findMany({
+    where: {
+      accountId: account.id, entry: { status: "POSTED", date: { gte: from, lte: to } },
+      ...(partyId ? { partyId } : {}),
+    },
+    include: { entry: { select: { entryCode: true, date: true, description: true, source: true } } },
+    orderBy: [{ entry: { date: "asc" } }],
+  });
+
+  let running = opBalance;
+  const rows = [];
+  for (const line of lines) {
+    running = account.normalBalance === "DEBIT"
+      ? round2(running + Number(line.debit) - Number(line.credit))
+      : round2(running + Number(line.credit) - Number(line.debit));
+    rows.push({
+      date: line.entry.date.toISOString().slice(0, 10), entryCode: line.entry.entryCode,
+      description: line.entry.description,
+      debit: round2(Number(line.debit)), credit: round2(Number(line.credit)),
+      balance: running, source: line.entry.source,
+    });
+  }
+  return { account, period: { year, month }, openingBalance: opBalance, closingBalance: running, rows };
+};
+
+const balanceSheetB01 = async ({ year, month }) => {
+  const to = new Date(year, month, 0, 23, 59, 59);
+  const getNet = (codes = []) => journalService.getAccountBalance("aggregate", new Date(0), to).then(() => {
+    return Promise.all(codes.map((c) => prisma.account.findUnique({ where: { code: c } }).then((a) => {
+      if (!a) return 0;
+      return journalService.getAccountBalance(a.id, new Date(0), to).then((b) => {
+        if (["214"].includes(c)) return -(b.credit - b.debit);
+        return a.normalBalance === "CREDIT" ? b.credit - b.debit : b.debit - b.credit;
+      });
+    }))).then((arr) => arr.reduce((s, v) => s + (typeof v === "number" ? v : 0), 0));
+  });
+
+  // Actually simpler approach: aggregate everything by type
+  const accounts = await prisma.account.findMany({ select: { id: true, code: true, nameVi: true, type: true, normalBalance: true } });
+  const balances = {};
+  for (const acc of accounts) {
+    const b = await journalService.getAccountBalance(acc.id, new Date(0), to);
+    balances[acc.code] = acc.normalBalance === "CREDIT" ? b.credit - b.debit : b.debit - b.credit;
+  }
+
+  const sumOf = (codes) => codes.reduce((s, c) => s + round2(balances[c] || 0), 0);
+
+  const totalShortAssets = sumOf(["111", "112", "131", "138", "133", "141", "154", "155", "156"]);
+  const totalLongAssets = sumOf(["211"]) + sumOf(["214"]); // 214 is negative
+  const totalLiabilities = sumOf(["331", "333", "3331", "3334", "3335", "334", "338", "341"]);
+  const totalEquity = sumOf(["411", "421"]);
+
+  return {
+    period: { year, month },
+    assets: { short: totalShortAssets, long: totalLongAssets, total: round2(totalShortAssets + totalLongAssets) },
+    liabilities: { total: round2(totalLiabilities) },
+    equity: { total: round2(totalEquity) },
+    totalLiabilitiesEquity: round2(totalLiabilities + totalEquity),
+    balanced: Math.abs(round2(totalShortAssets + totalLongAssets) - round2(totalLiabilities + totalEquity)) < 100,
+  };
+};
+
+const profitAndLossB02 = async ({ year, month }) => {
+  const from = new Date(year, month - 1, 1);
+  const to = new Date(year, month, 0, 23, 59, 59);
+
+  const getAcc = async (code) => {
+    const acc = await prisma.account.findUnique({ where: { code } });
+    if (!acc) return { debit: 0, credit: 0 };
+    return journalService.getAccountBalance(acc.id, from, to);
+  };
+
+  const netOf = async (code, isRevenue) => {
+    const b = await getAcc(code);
+    return isRevenue ? (b.credit - b.debit) : (b.debit - b.credit);
+  };
+
+  const netRevenue = await netOf("511", true);
+  const deductions = Math.abs(await netOf("521", false));
+  const netRevenueActual = round2(Math.max(0, netRevenue - deductions));
+  const cogs = await netOf("632", false);
+  const grossProfit = round2(netRevenueActual - cogs);
+  const finRevenue = await netOf("515", true);
+  const finExpense = await netOf("635", false);
+  const sellingExp = await netOf("641", false);
+  const adminExp = await netOf("642", false);
+  const operatingProfit = round2(grossProfit + finRevenue - finExpense - sellingExp - adminExp);
+  const otherIncome = await netOf("711", true);
+  const otherExpense = await netOf("811", false);
+  const otherProfit = round2(otherIncome - otherExpense);
+  const profitBeforeTax = round2(operatingProfit + otherProfit);
+  const citExpense = await netOf("821", false);
+  const netProfit = round2(profitBeforeTax - citExpense);
+
+  return {
+    period: { year, month },
+    rows: [
+      { code: "01", name: "1. Doanh thu ban hang", value: netRevenue },
+      { code: "02", name: "2. Cac khoan giam tru", value: deductions },
+      { code: "10", name: "3. Doanh thu thuan", value: netRevenueActual, bold: true },
+      { code: "11", name: "4. Gia von hang ban", value: cogs },
+      { code: "20", name: "5. Loi nhuan gop", value: grossProfit, bold: true },
+      { code: "21", name: "6. Doanh thu tai chinh", value: finRevenue },
+      { code: "22", name: "7. Chi phi tai chinh", value: finExpense },
+      { code: "23", name: "8. Chi phi ban hang", value: sellingExp },
+      { code: "24", name: "9. Chi phi quan ly DN", value: adminExp },
+      { code: "30", name: "10. Loi nhuan thuan tu HDSXKD", value: operatingProfit, bold: true },
+      { code: "31", name: "11. Thu nhap khac", value: otherIncome },
+      { code: "32", name: "12. Chi phi khac", value: otherExpense },
+      { code: "40", name: "13. Loi nhuan khac", value: otherProfit, bold: true },
+      { code: "50", name: "14. Tong loi nhuan truoc thue", value: profitBeforeTax, bold: true },
+      { code: "51", name: "15. Chi phi thue TNDN", value: citExpense },
+      { code: "60", name: "16. Loi nhuan sau thue", value: netProfit, bold: true },
+    ],
+    summary: { netRevenue: netRevenueActual, grossProfit, operatingProfit, profitBeforeTax, netProfit },
+  };
+};
+
 module.exports = {
   profitAndLoss,
   balanceSheet,
@@ -541,4 +802,10 @@ module.exports = {
   trialBalance,
   agingReport,
   aggregateByAccount,
+  trialBalance6Col,
+  generalJournal,
+  accountLedger,
+  subLedger,
+  balanceSheetB01,
+  profitAndLossB02,
 };

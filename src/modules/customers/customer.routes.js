@@ -1,10 +1,31 @@
-const router = require('express').Router();
+/**
+ * modules/customers/customer.routes.js — Routes quản lý khách hàng
+ *
+ * Tổng quan:
+ * - Định nghĩa các endpoint CRUD cho khách hàng
+ * - Yêu cầu authenticate + authorize(ADMIN, MANAGER, CASHIER) cho tất cả routes
+ * - Tích hợp validation bằng Zod schema
+ * - Cung cấp các route phụ: loyalty summary, redeem, debts
+ *
+ * Hàm:
+ * - GET /: Gọi customerService.getAll() — trả về danh sách khách hàng phân trang
+ * - GET /:id/full: Gọi customerService.getCustomer360() — trả về Customer 360°
+ * - GET /:id/loyalty: Gọi loyaltyService.getLoyaltySummary() — trả về tổng quan loyalty
+ * - POST /:id/loyalty/redeem: Gọi loyaltyService.redeemForOrder() — đổi điểm loyalty
+ * - GET /:id/debts: Gọi debtService.listByCustomer() — danh sách công nợ
+ * - POST /: Tạo khách hàng mới — validate createSchema (name, phone, email, address)
+ * - PUT /:id: Cập nhật khách hàng — validate updateSchema
+ * - DELETE /:id: Soft delete khách hàng — gọi customerService.remove()
+ */
+const express = require('express');
 const { z } = require('zod');
 const customerService = require('./customer.service');
 const debtService = require('../debt/debt.service');
 const loyaltyService = require('../loyalty/loyalty.service');
 const { authenticate, authorize } = require('../../middleware/auth.middleware');
 const { paginated, created, success } = require('../../utils/response');
+
+const router = express.Router();
 
 // Yêu cầu đăng nhập để thao tác với dữ liệu khách hàng, chỉ admin, manager, cashier mới được truy cập
 router.use(authenticate, authorize('ADMIN', 'MANAGER', 'CASHIER'));

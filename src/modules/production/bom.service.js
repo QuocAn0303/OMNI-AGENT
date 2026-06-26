@@ -1,3 +1,24 @@
+/**
+ * modules/production/bom.service.js — Service quản lý BOM (Bill of Materials)
+ *
+ * Tổng quan:
+ * - Cung cấp logic nghiệp vụ CRUD cho BOM và các items của nó
+ * - BOM gồm mã, phiên bản, trạng thái (DRAFT/ACTIVE/INACTIVE), danh sách nguyên liệu
+ * - Tích hợp auditService để ghi log mọi thao tác
+ * - Chỉ sửa/xóa được BOM ở trạng thái DRAFT
+ * - Chỉ kích hoạt được BOM có ít nhất 1 nguyên liệu
+ * - Sinh mã BOM tự động theo format BOM-{timestamp}{random}
+ *
+ * Hàm:
+ * - generateCode(): Sinh mã BOM dạng BOM- + 8 số timestamp + 3 số random
+ * - list({ page, limit, productId, status, search }): Liệt kê BOM phân trang, lọc theo sản phẩm/trạng thái/tìm kiếm
+ * - getById(id): Lấy chi tiết BOM kèm danh sách nguyên liệu (component)
+ * - validateItems(items): Kiểm tra danh sách nguyên liệu — không trống, không trùng componentId, số lượng > 0
+ * - create(data, userId): Tạo BOM mới, kiểm tra sản phẩm/components tồn tại, không cho thành phẩm làm nguyên liệu của chính nó
+ * - update(id, data, userId): Cập nhật BOM (DRAFT), thay thế toàn bộ items trong transaction
+ * - changeStatus(id, status, userId): Đổi trạng thái (ACTIVE/INACTIVE), kiểm tra items trước khi kích hoạt
+ * - remove(id, userId): Xóa BOM (DRAFT, không có workOrders), ghi audit log
+ */
 // src/modules/production/bom.service.js
 const prisma = require("../../config/prisma");
 const auditService = require("../audit/audit.service");

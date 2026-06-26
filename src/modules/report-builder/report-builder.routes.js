@@ -1,7 +1,26 @@
+/**
+ * modules/report-builder/report-builder.routes.js — Routes cho báo cáo động
+ * 
+ * Tổng quan:
+ * - Định nghĩa REST API cho report-builder module
+ * - Yêu cầu module "report-builder" trong plan
+ * 
+ * Routes:
+ * - GET /tables: Danh sách bảng được phép (public)
+ * - GET /: Danh sách báo cáo đã lưu
+ * - POST /: Tạo báo cáo mới (ADMIN/MANAGER)
+ * - PATCH /:id: Cập nhật báo cáo (ADMIN/MANAGER)
+ * - DELETE /:id: Xoá báo cáo (ADMIN)
+ * - POST /run: Chạy truy vấn động (ADMIN/MANAGER)
+ * - POST /:id/run: Chạy báo cáo đã lưu
+ */
 const router = require("express").Router();
 const { authenticate, requireRole } = require("../../middleware/auth.middleware");
+const { requireModule } = require("../../middleware/plan.middleware");
 const svc = require("./report-builder.service");
 const mgr = ["ADMIN", "MANAGER"];
+
+router.use(requireModule("report-builder"));
 
 router.get("/tables", authenticate, (req, res) => res.json({ success: true, data: svc.getTables() }));
 

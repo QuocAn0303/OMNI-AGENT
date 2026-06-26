@@ -1,9 +1,22 @@
-// frontend/src/pages/EInvoice.jsx
+/**
+ * Frontend: pages/EInvoice.jsx — Hóa đơn điện tử (HĐĐT)
+ * 
+ * Tổng quan:
+ * - Danh sách HĐĐT (getEInvoices) với filter trạng thái CQT, khoảng thời gian
+ * - Xem chi tiết HĐ (getEInvoice), đồng bộ trạng thái (syncEInvoice), hủy HĐ (cancelEInvoice)
+ * - Hiển thị thông tin: số HĐ, ký hiệu, MST người mua, trạng thái CQT, mã CQT
+ * - State: data/loading/filters/detail — tự quản lý
+ * - Bọc trong PlanGate
+ * 
+ * Components/Hooks/Exports:
+ * - EInvoice (default): Page chính — filter bar + table + modal chi tiết
+ */
 import { useState, useEffect, useCallback } from "react";
 import { Table, Tag, Button, Space, Select, DatePicker, message, Tooltip, Modal, Descriptions } from "antd";
 import { ReloadOutlined, CheckCircleOutlined, StopOutlined, SyncOutlined, EyeOutlined } from "@ant-design/icons";
 import dayjs from "dayjs";
 import PageHeader from "../components/layout/PageHeader";
+import PlanGate from "../components/PlanGate";
 import { getEInvoices, getEInvoice, cancelEInvoice, syncEInvoice, issueEInvoice } from "../api/einvoice";
 
 const { RangePicker } = DatePicker;
@@ -111,6 +124,7 @@ export default function EInvoice() {
   ];
 
   return (
+    <PlanGate moduleKey="einvoice" moduleName="Hóa đơn điện tử">
     <div>
       <PageHeader
         title="Hóa đơn điện tử"
@@ -199,5 +213,6 @@ export default function EInvoice() {
         )}
       </Modal>
     </div>
+    </PlanGate>
   );
 }

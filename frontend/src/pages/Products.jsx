@@ -1,3 +1,17 @@
+/**
+ * Page: Products — Danh sách sản phẩm
+ *
+ * Tổng quan:
+ * - Hiển thị danh sách sản phẩm dạng table với ảnh, SKU, giá bán, tồn kho, trạng thái
+ * - Bộ lọc: tìm kiếm theo tên/SKU, lọc theo danh mục, lọc theo tình trạng tồn kho
+ * - Chức năng: xem, sửa (điều hướng), xóa (Popconfirm), xuất Excel
+ * - Gọi API: GET /products, GET /categories, DELETE /products/:id
+ * - Tích hợp Joyride tour và i18n
+ * - Sử dụng StatusTag, MoneyDisplay, EmptyState, PageHeader
+ *
+ * Exports:
+ * - Products: React functional component (default export)
+ */
 import { useEffect, useState } from 'react';
 import useDebounce from '../hooks/useDebounce';
 import { Table, Input, Select, Button, Image, Popconfirm, message, Space } from 'antd';
@@ -201,18 +215,8 @@ export default function Products() {
   ];
 
   return (
+
     <>
-      <Joyride
-        steps={getProductsTour(t)}
-        run={tour.run}
-        continuous
-        showSkipButton
-        showProgress
-        callback={({ status }) => {
-          if (status === 'finished' || status === 'skipped') tour.markDone();
-        }}
-        styles={{ options: { primaryColor: '#0f766e', zIndex: 2000 } }}
-      />
       <PageHeader
         title="Sản phẩm"
         subtitle={`${total} sản phẩm`}

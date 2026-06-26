@@ -1,3 +1,20 @@
+/**
+ * modules/projects/member.service.js — Service quản lý thành viên dự án
+ *
+ * Tổng quan:
+ * - Cung cấp logic CRUD cho ProjectMember
+ * - Mỗi thành viên có role: OWNER / MEMBER / VIEWER
+ * - Bảo vệ OWNER cuối cùng — không thể hạ cấp hoặc xóa
+ * - Tích hợp auditService ghi log mọi thao tác
+ *
+ * Hàm:
+ * - ensureProject(projectId): Kiểm tra dự án tồn tại, throw 404 nếu không
+ * - list(projectId): Danh sách thành viên kèm thông tin user
+ * - add(projectId, { userId, role }, actorId): Thêm thành viên, kiểm tra user tồn tại và chưa là member
+ * - updateRole(projectId, userId, role, actorId): Cập nhật role, bảo vệ OWNER cuối cùng
+ * - remove(projectId, userId, actorId): Xóa thành viên, bảo vệ OWNER cuối cùng
+ * - assignableUsers(): Danh sách user active để chọn thêm vào dự án
+ */
 // src/modules/projects/member.service.js
 const prisma = require("../../config/prisma");
 const auditService = require("../audit/audit.service");

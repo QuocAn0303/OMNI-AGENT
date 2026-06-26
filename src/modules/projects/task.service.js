@@ -1,3 +1,20 @@
+/**
+ * modules/projects/task.service.js — Service quản lý công việc dự án
+ *
+ * Tổng quan:
+ * - Cung cấp logic CRUD cho ProjectTask
+ * - Mỗi task gồm tiêu đề, mô tả, trạng thái, độ ưu tiên, hạn chót, người được giao
+ * - Tự động gửi notification khi tạo task mới hoặc đổi assignee
+ * - Kiểm tra task thuộc đúng project khi URL có projectId
+ * - Tích hợp auditService ghi log
+ *
+ * Hàm:
+ * - ensureProject(projectId): Kiểm tra dự án tồn tại, trả về thông tin dự án
+ * - list(projectId, { page, limit, status, priority, assigneeId }): Danh sách task phân trang, lọc
+ * - create(projectId, data, userId): Tạo task, kiểm tra assignee hợp lệ, gửi notification
+ * - update(taskId, data, userId, opts): Cập nhật task, kiểm tra projectId nếu có, gửi notification khi đổi assignee
+ * - remove(taskId, userId, opts): Xóa task, kiểm tra quyền sở hữu project
+ */
 // src/modules/projects/task.service.js
 const prisma = require("../../config/prisma");
 const auditService = require("../audit/audit.service");

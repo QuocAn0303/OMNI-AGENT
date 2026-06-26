@@ -1,3 +1,15 @@
+/**
+ * Frontend: src/api/reportBuilder.js — API module Xây dựng báo cáo (Report Builder)
+ *
+ * Tổng quan:
+ * - Cho phép tạo, sửa, xoá, chạy báo cáo tuỳ chỉnh
+ * - getTables: lấy danh sách bảng có sẵn để xây dựng query
+ * - runAdHoc: chạy báo cáo ad-hoc với config động
+ * - runSavedReport: chạy lại báo cáo đã lưu
+ *
+ * Exports:
+ * - getTables, getReports, createReport, updateReport, deleteReport, runAdHoc, runSavedReport
+ */
 // frontend/src/api/reportBuilder.js
 import axios from "./axios";
 const unwrap = (res) => res.data?.data ?? res.data;

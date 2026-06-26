@@ -1,5 +1,18 @@
-// src/utils/sms.js — SMS gateway wrapper. Đọc cấu hình từ IntegrationConfig.
-// Provider hỗ trợ: "ESMS", "TWILIO", "LOG" (mặc định — log ra console).
+/**
+ * utils/sms.js — Gửi SMS qua nhiều provider (ESMS / Twilio / LOG)
+ * 
+ * Tổng quan:
+ * - Đọc cấu hình SMS từ IntegrationConfig (DB) → fallback .env
+ * - Provider: ESMS (Việt Nam), Twilio (quốc tế), LOG (mặc định — chỉ log console)
+ * - Nếu thiếu API key → tự động fallback sang LOG mode
+ * 
+ * Hàm:
+ * - sendSms(phone, message): Gửi SMS theo provider đã cấu hình
+ *     - LOG: ghi log console, trả mock=true
+ *     - ESMS: gọi API rest.esms.vn, check CodeResult=100
+ *     - TWILIO: gọi API Twilio Messages
+ */
+
 const config = require("../modules/integrations/integration-config.service");
 const logger = require("./logger");
 
@@ -19,7 +32,7 @@ async function sendSms(phone, message) {
       SecretKey: cfg.SMS_API_SECRET,
       Phone: phone,
       Content: message,
-      Brandname: cfg.SMS_BRAND_NAME || "Aduu",
+      Brandname: cfg.SMS_BRAND_NAME || "AduuERP",
       SmsType: 2,
     };
     const res = await fetch(url, { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) });

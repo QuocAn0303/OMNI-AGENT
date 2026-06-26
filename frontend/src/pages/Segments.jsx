@@ -1,4 +1,20 @@
-import { useEffect, useState } from 'react';
+/**
+ * Frontend: pages/Segments.jsx — Phân khúc khách hàng (Segments)
+ * 
+ * Tổng quan:
+ * - Danh sách segment dạng Card grid (GET /crm/segments), mỗi segment hiển thị số KH
+ * - Tạo/sửa segment qua modal với Rule Builder (kết hợp các điều kiện: hạng KH, chi tiêu, điểm, số đơn, lần mua cuối, tag, công nợ)
+ * - Combinator: ALL (tất cả) hoặc ANY (bất kỳ)
+ * - Preview khách hàng match (POST /crm/segments/preview) trước khi lưu
+ * - Xóa segment (DELETE /crm/segments/:id)
+ * - State: segments/loading/tagOptions — modal state (name/description/combinator/rules/previewData)
+ * - Bọc trong PlanGate
+ * 
+ * Components/Hooks/Exports:
+ * - Segments (default): Page chính — Card list + modal rule builder
+ * - RuleValueInput: Component con — render input tương ứng với từng field/operator
+ */
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   List, Card, Button, Input, Select, InputNumber, Form, Modal, Tag,
@@ -12,6 +28,7 @@ import axios from '../api/axios';
 import PageHeader from '../components/layout/PageHeader';
 import MoneyDisplay from '../components/shared/MoneyDisplay';
 import EmptyState from '../components/shared/EmptyState';
+import PlanGate from '../components/PlanGate';
 
 // Định nghĩa fields + ops cho rule builder
 const FIELD_DEFS = {
@@ -75,10 +92,10 @@ const FIELD_DEFS = {
 };
 
 const TIER_OPTIONS = [
-  { value: 'BRONZE', label: 'BRONZE' },
-  { value: 'SILVER', label: 'SILVER' },
-  { value: 'GOLD', label: 'GOLD' },
-  { value: 'PLATINUM', label: 'PLATINUM' },
+  { value: 'BRONZE', label: 'Đồng' },
+  { value: 'SILVER', label: 'Bạc' },
+  { value: 'GOLD', label: 'Vàng' },
+  { value: 'PLATINUM', label: 'Kim cương' },
 ];
 
 function RuleValueInput({ field, op, value, onChange, tagOptions }) {
@@ -230,6 +247,7 @@ export default function Segments() {
   };
 
   return (
+    <PlanGate moduleKey="segments" moduleName="Phân khúc khách hàng">
     <>
       <PageHeader
         title="Phân khúc khách hàng"
@@ -396,5 +414,6 @@ export default function Segments() {
         )}
       </Modal>
     </>
+    </PlanGate>
   );
 }

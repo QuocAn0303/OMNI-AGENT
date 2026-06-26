@@ -1,3 +1,18 @@
+/**
+ * Frontend: src/api/accounting.js — API module Kế toán
+ *
+ * Tổng quan:
+ * - Định nghĩa các hàm gọi endpoint kế toán: tài khoản (Chart of Accounts), nhật ký (Journal)
+ * - Quản lý nhà cung cấp (Vendors), chi phí (Expenses), đơn mua hàng (Purchase Orders)
+ * - Báo cáo tài chính: Balance Sheet, Profit & Loss, Cash Flow, Trial Balance, General Ledger, Aging
+ * - Quản lý kỳ kế toán (Fiscal Periods) và dashboard founder
+ * - Mỗi hàm đều unwrap response qua res.data?.data ?? res.data
+ *
+ * Exports:
+ * - getAccounts, getAccountTree, getAccountBalance, getJournalEntries, createJournalEntry, ...
+ * - getVendors, getExpenses, getPurchaseOrders, getTaxRates, getBalanceSheet, getProfitLoss, ...
+ * - getFiscalPeriods, closeFiscalPeriod, reopenFiscalPeriod, ...
+ */
 // frontend/src/api/accounting.js
 import axios from "./axios";
 
@@ -34,9 +49,9 @@ export const rejectExpense = (id) => axios.post(`/accounting/expenses/${id}/reje
 export const getExpenseCategories = () => axios.get("/accounting/expense-categories").then(unwrap);
 
 // ===== Purchase Orders =====
-export const getPurchaseOrders = (params) => axios.get("/accounting/purchase-orders", { params }).then(unwrap);
-export const getPurchaseOrder = (id) => axios.get(`/accounting/purchase-orders/${id}`).then(unwrap);
-export const createPurchaseOrder = (data) => axios.post("/accounting/purchase-orders", data).then(unwrap);
+export const getPurchaseOrders = (params) => axios.get("/purchase-orders", { params }).then(unwrap);
+export const getPurchaseOrder = (id) => axios.get(`/purchase-orders/${id}`).then(unwrap);
+export const createPurchaseOrder = (data) => axios.post("/purchase-orders", data).then(unwrap);
 export const submitPurchaseOrder = (id) => axios.post(`/purchase-orders/${id}/submit`).then(unwrap);
 export const approvePurchaseOrder = (id) => axios.post(`/purchase-orders/${id}/approve`).then(unwrap);
 export const receivePurchaseOrder = (id) => axios.post(`/purchase-orders/${id}/receive`).then(unwrap);

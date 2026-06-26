@@ -1,3 +1,14 @@
+/**
+ * Frontend: pages/Forbidden.jsx — 403 Forbidden
+ * 
+ * Tổng quan:
+ * - Trang hiển thị lỗi 403 khi người dùng không có quyền truy cập
+ * - Không gọi API, không state
+ * - Logic: Nút "Về Dashboard" điều hướng về /
+ * 
+ * Components/Hooks/Exports:
+ * - Forbidden (default export): Màn hình 403 với nút quay về
+ */
 import { Button, Result } from 'antd'
 import { useNavigate } from 'react-router-dom'
 

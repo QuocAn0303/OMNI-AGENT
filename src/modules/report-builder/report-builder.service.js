@@ -1,3 +1,20 @@
+/**
+ * modules/report-builder/report-builder.service.js — Safe query builder cho báo cáo
+ * 
+ * Tổng quan:
+ * - Xây dựng truy vấn an toàn với whitelist bảng + cột, parameterized queries
+ * - CRUD báo cáo đã lưu (saved reports)
+ * 
+ * Hàm:
+ * - getTables(): Trả về danh sách bảng + cột được phép truy vấn
+ * - validateConfig(config): Kiểm tra table/fields/groupBy/orderBy/aggregate có hợp lệ không
+ * - runQuery(config, {limit}): Thực thi truy vấn raw an toàn qua prisma.$queryRawUnsafe với tham số hoá
+ * - listReports(userId): Lấy danh sách báo cáo của user hoặc public
+ * - createReport(userId, data): Tạo báo cáo mới, kèm validate config
+ * - updateReport(id, userId, data): Cập nhật báo cáo, validate lại config nếu có
+ * - deleteReport(id): Xoá báo cáo
+ * - executeReport(id, params): Chạy báo cáo đã lưu dựa trên config
+ */
 // src/modules/report-builder/report-builder.service.js
 // Safe query builder — whitelist tables + columns, parameterized queries
 const prisma = require("../../config/prisma");

@@ -1,3 +1,18 @@
+/**
+ * modules/accounting/tax.service.js — Service quản lý thuế
+ * 
+ * Tổng quan:
+ * - Quản lý danh sách thuế suất (TaxRate) và báo cáo VAT.
+ * - Báo cáo VAT tính: VAT đầu ra (TK 3331) - VAT đầu vào (TK 1331) = thuế phải nộp.
+ * 
+ * Hàm:
+ * - list(): Danh sách thuế suất đang hoạt động (isActive).
+ * - create(data): Tạo thuế suất mới.
+ * - update(id, data): Cập nhật thuế suất.
+ * - remove(id): Vô hiệu hóa thuế suất (soft delete).
+ * - vatReport({from, to}): Báo cáo VAT trong kỳ: tổng hợp số phát sinh TK 3331 và 1331,
+ *   tính VAT phải nộp (hoặc được khấu trừ kỳ sau).
+ */
 // src/modules/accounting/tax.service.js
 const prisma = require("../../config/prisma");
 

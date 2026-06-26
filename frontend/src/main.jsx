@@ -1,3 +1,15 @@
+/**
+ * Frontend: src/main.jsx — Entry point của ứng dụng ERP
+ *
+ * Tổng quan:
+ * - File khởi tạo React root, mount ứng dụng vào DOM
+ * - Import i18n, styles (variable.css, global.css, layout.css, pages.css)
+ * - Cấu hình Sentry (error tracking) nếu có VITE_SENTRY_DSN
+ * - Bọc App trong StrictMode + Sentry.ErrorBoundary với FallbackUI
+ *
+ * Components/Hooks/Exports:
+ * - FallbackUI: Component hiển thị khi Sentry bắt được lỗi, có nút tải lại trang
+ */
 import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import * as Sentry from '@sentry/react'

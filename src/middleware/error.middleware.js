@@ -1,4 +1,21 @@
-// src/middleware/error.middleware.js
+/**
+ * middleware/error.middleware.js — Global error handler (phải đặt cuối app.js)
+ * 
+ * Tổng quan:
+ * - Bắt tất cả lỗi từ next(err) trong toàn bộ app
+ * - Xử lý theo thứ tự ưu tiên: ZodError → PrismaError → ApiError → object error → fallback 500
+ * - Trả về response JSON chuẩn: { success: false, message, errors?, details? }
+ * 
+ * Hàm:
+ * - errorHandler(err, req, res, next):
+ *     1. ZodError (validation): 400 + danh sách field lỗi
+ *     2. Prisma P2002 (unique): 409 "Dữ liệu đã tồn tại"
+ *     3. Prisma P2025 (not found): 404
+ *     4. ApiError: status + message tùy chỉnh
+ *     5. Object error { status, message }: trả về tương ứng
+ *     6. Fallback: 500 "Lỗi máy chủ nội bộ"
+ */
+
 const { ZodError } = require("zod");
 const { Prisma } = require("@prisma/client");
 const logger = require("../utils/logger");

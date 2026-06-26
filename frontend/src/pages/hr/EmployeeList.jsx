@@ -1,3 +1,14 @@
+/**
+ * Frontend: pages/hr/EmployeeList.jsx — Danh sách nhân viên
+ *
+ * Tổng quan:
+ * - Bảng quản lý nhân viên với CRUD, tìm kiếm theo tên/SĐT/email
+ * - API: GET /hr/employees, POST /hr/employees, PUT /hr/employees/:id, DELETE /hr/employees/:id
+ * - State chính: data, search, editing, modalOpen; filter client-side qua useMemo
+ *
+ * Components/Hooks/Exports:
+ * - EmployeeList: Component chính (xuất mặc định)
+ */
 import { useEffect, useState, useMemo } from 'react';
 import {
   Table, Input, Button, Avatar, message, Modal, Form, InputNumber, Select, DatePicker,
@@ -11,6 +22,7 @@ import axios from '../../api/axios';
 import StatusTag from '../../components/shared/StatusTag';
 import MoneyDisplay from '../../components/shared/MoneyDisplay';
 import EmptyState from '../../components/shared/EmptyState';
+
 
 const POSITION_COLORS = {
   MANAGER:  '#7c3aed',

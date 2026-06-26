@@ -1,11 +1,26 @@
+/**
+ * modules/crm/notes.routes.js — Định tuyến ghi chú khách hàng
+ * 
+ * Tổng quan:
+ * - REST endpoints cho CustomerNote (ghi chú về khách hàng: NOTE, CALL, EMAIL, MEETING, ZALO).
+ * - Hỗ trợ CRUD ghi chú theo khách hàng.
+ * - Tích hợp Zod validation, authenticate + authorize + requireModule middleware.
+ * 
+ * Hàm:
+ * - GET /customer/:customerId: Danh sách ghi chú của khách hàng (notesService.listByCustomer)
+ * - POST /customer/:customerId: Tạo ghi chú mới cho khách hàng (notesService.create)
+ * - PUT /:id: Cập nhật ghi chú (notesService.update)
+ * - DELETE /:id: Xóa ghi chú (notesService.remove)
+ */
 // src/modules/crm/notes.routes.js
 const router = require("express").Router();
 const { z } = require("zod");
 const notesService = require("./notes.service");
 const { authenticate, authorize } = require("../../middleware/auth.middleware");
+const { requireModule } = require("../../middleware/plan.middleware");
 const { paginated, created, success } = require("../../utils/response");
 
-router.use(authenticate, authorize("ADMIN", "MANAGER", "CASHIER"));
+router.use(authenticate, authorize("ADMIN", "MANAGER", "CASHIER"), requireModule("crm"));
 
 const NOTE_TYPES = ["NOTE", "CALL", "EMAIL", "MEETING", "ZALO"];
 

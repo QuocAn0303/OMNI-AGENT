@@ -1,3 +1,28 @@
+/**
+ * modules/crm/segments.service.js — Service phân khúc khách hàng
+ * 
+ * Tổng quan:
+ * - Quản lý phân khúc khách hàng (CustomerSegment) dựa trên rules engine.
+ * - Rules cho phép lọc theo: tier, totalSpent, loyaltyPoints, lastOrderDate,
+ *   orderCount, tag, hasDebt.
+ * - Hỗ trợ tổ hợp AND/OR giữa các rules, post-filter cho orderCount không thể
+ *   biểu diễn trực tiếp bằng Prisma where.
+ * - Ghi audit log cho mọi thao tác CRUD.
+ * 
+ * Hàm:
+ * - SUPPORTED_FIELDS: Mảng các field được hỗ trợ trong rule builder.
+ * - buildRuleWhere(rule): Build Prisma where fragment từ một rule (field, op, value).
+ * - compileRules(rules): Compile mảng rules thành Prisma where + postFilter.
+ * - evaluateSegment(rules, {limit}): Đánh giá segment, trả về {customers, total}.
+ * - countMatching(rules): Đếm số khách hàng matching rules.
+ * - list(): Danh sách tất cả segment.
+ * - getById(id): Chi tiết segment.
+ * - create(data, userId): Tạo segment mới, tính customerCount.
+ * - update(id, data, userId): Cập nhật segment; recalculate customerCount nếu rules thay đổi.
+ * - remove(id, userId): Xóa segment.
+ * - preview(id, limit): Xem trước khách hàng matching segment đã lưu.
+ * - previewByRules(rules, limit): Xem trước khách hàng matching rules chưa lưu.
+ */
 // src/modules/crm/segments.service.js
 const prisma = require("../../config/prisma");
 const auditService = require("../audit/audit.service");

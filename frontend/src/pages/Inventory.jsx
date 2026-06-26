@@ -1,6 +1,20 @@
+/**
+ * Page: Inventory — Quản lý kho hàng
+ *
+ * Tổng quan:
+ * - 4 tabs: Tồn kho hiện tại / Nhập kho / Xuất kho / Lịch sử giao dịch
+ * - Tab Stock: hiển thị tồn kho từng sản phẩm, cảnh báo hết hàng/sắp hết
+ * - Tab Import/Export: form nhập/xuất kho với chọn sản phẩm, số lượng, đơn giá
+ * - Tab History: lịch sử giao dịch (IMPORT/EXPORT/ADJUSTMENT/RETURN...)
+ * - Gọi API: GET /inventory, GET /inventory/transactions, POST /inventory/import|export
+ * - Tích hợp Joyride tour và i18n
+ *
+ * Exports:
+ * - Inventory: React functional component (default export)
+ */
 import { useEffect, useState } from 'react';
 import useDebounce from '../hooks/useDebounce';
-import { Tabs, Table, Button, Input, Select, message, Modal, Form, InputNumber, Alert } from 'antd';
+import { Tabs, Table, Button, Input, Select, message, Modal, Form, InputNumber, Alert, DatePicker } from 'antd';
 import {
   PlusOutlined, MinusOutlined, SearchOutlined, ImportOutlined, ExportOutlined,
 } from '@ant-design/icons';
@@ -32,17 +46,6 @@ export default function Inventory() {
 
   return (
     <>
-      <Joyride
-        steps={getInventoryTour(t)}
-        run={tour.run}
-        continuous
-        showSkipButton
-        showProgress
-        callback={({ status }) => {
-          if (status === 'finished' || status === 'skipped') tour.markDone();
-        }}
-        styles={{ options: { primaryColor: '#0f766e', zIndex: 2000 } }}
-      />
       <PageHeader
         title="Kho hàng"
         subtitle="Quản lý tồn kho, nhập xuất, lịch sử giao dịch"
@@ -52,10 +55,11 @@ export default function Inventory() {
         activeKey={activeTab}
         onChange={setActiveTab}
         items={[
-          { key: 'stock',   label: 'Tồn kho',     children: <StockTab /> },
-          { key: 'import',  label: 'Nhập kho',    children: <ImportTab /> },
-          { key: 'export',  label: 'Xuất kho',    children: <ExportTab /> },
-          { key: 'history', label: 'Lịch sử',     children: <HistoryTab /> },
+          { key: 'stock',     label: 'Tồn kho',     children: <StockTab /> },
+          { key: 'import',    label: 'Nhập kho',    children: <ImportTab /> },
+          { key: 'export',    label: 'Xuất kho',    children: <ExportTab /> },
+          { key: 'adjust',    label: 'Kiểm kho',    children: <AdjustTab /> },
+          { key: 'history',   label: 'Lịch sử',     children: <HistoryTab /> },
         ]}
       />
     </>
@@ -217,15 +221,20 @@ function TransactionForm({ type }) {
   const isImport = type === 'import';
 
   useEffect(() => {
-    axios.get('/products').then((res) => setProducts(Array.isArray(res.data) ? res.data : (res.data?.data || [])));
+    axios.get('/products').then((res) => {
+      const list = Array.isArray(res.data) ? res.data : (res.data?.data || []);
+      setProducts(list.map((p) => ({ ...p, quantity: p.inventory?.quantity ?? 0 })));
+    });
   }, []);
 
   const handleSubmit = async (values) => {
     setSubmitting(true);
     try {
-      const { notes, unitCost, productId, quantity } = values;
+      const { notes, unitCost, productId, quantity, lotCode, expDate } = values;
       const body = { productId, quantity, note: notes || undefined };
       if (isImport && unitCost != null) body.unitCost = unitCost;
+      if (isImport && lotCode) body.lotCode = lotCode;
+      if (isImport && expDate) body.expDate = expDate.toISOString();
       await axios.post(`/inventory/${type}`, body);
       message.success(isImport ? 'Đã nhập kho' : 'Đã xuất kho');
       form.resetFields();
@@ -290,6 +299,18 @@ function TransactionForm({ type }) {
           )}
         </div>
 
+        {isImport && (
+          <>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+              <Form.Item label="Mã lô" name="lotCode">
+                <Input placeholder="LOT-2024-001" />
+              </Form.Item>
+              <Form.Item label="Hạn sử dụng" name="expDate">
+                <DatePicker style={{ width: '100%' }} format="DD/MM/YYYY" />
+              </Form.Item>
+            </div>
+          </>
+        )}
         <Form.Item label="Ghi chú" name="notes">
           <Input.TextArea
             rows={3}
@@ -312,7 +333,56 @@ function TransactionForm({ type }) {
   );
 }
 
-// ===== TAB 4: History =====
+// ===== TAB 4: Adjust =====
+function AdjustTab() {
+  const [form] = Form.useForm();
+  const [products, setProducts] = useState([]);
+  const [submitting, setSubmitting] = useState(false);
+
+  useEffect(() => {
+    axios.get('/products').then((res) => setProducts(Array.isArray(res.data) ? res.data : (res.data?.data || [])));
+  }, []);
+
+  const handleSubmit = async (values) => {
+    setSubmitting(true);
+    try {
+      const body = { productId: values.productId, actualQuantity: values.actualQuantity, note: values.note || undefined };
+      await axios.post('/inventory/adjust', body);
+      message.success('Đã điều chỉnh tồn kho');
+      form.resetFields();
+    } catch (err) {
+      message.error(err?.response?.data?.message || 'Điều chỉnh thất bại');
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
+  return (
+    <div style={{ maxWidth: 560, background: 'var(--bg-secondary)', border: '1px solid var(--border-light)', borderRadius: 'var(--radius-lg)', padding: 24, marginTop: 8 }}>
+      <p style={{ color: 'var(--text-muted)', marginBottom: 16 }}>Nhập số lượng thực tế kiểm đếm được. Hệ thống tự tính chênh lệch và ghi nhận.</p>
+      <Form form={form} layout="vertical" onFinish={handleSubmit} size="large">
+        <Form.Item label="Sản phẩm" name="productId" rules={[{ required: true, message: 'Chọn sản phẩm' }]}>
+          <Select
+            showSearch placeholder="Tìm và chọn sản phẩm..."
+            filterOption={(input, option) => (option?.label || '').toLowerCase().includes(input.toLowerCase())}
+            options={products.map((p) => ({ value: p.id, label: `${p.sku} — ${p.name}` }))}
+          />
+        </Form.Item>
+        <Form.Item label="Số lượng thực tế" name="actualQuantity" rules={[{ required: true, message: 'Nhập số lượng' }]}>
+          <InputNumber min={0} style={{ width: '100%' }} />
+        </Form.Item>
+        <Form.Item label="Ghi chú" name="note">
+          <Input.TextArea rows={3} placeholder="Lý do chênh lệch..." />
+        </Form.Item>
+        <Button type="primary" htmlType="submit" loading={submitting} size="large" style={{ marginTop: 8 }}>
+          Xác nhận kiểm kho
+        </Button>
+      </Form>
+    </div>
+  );
+}
+
+// ===== TAB 5: History =====
 function HistoryTab() {
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);

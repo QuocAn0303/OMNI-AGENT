@@ -1,3 +1,20 @@
+/**
+ * modules/products/product.service.js — Service quản lý sản phẩm
+ * 
+ * Tổng quan:
+ * - Cung cấp logic CRUD cho sản phẩm + cập nhật tồn kho + upload ảnh
+ * - Tích hợp audit log cho mọi thao tác
+ * 
+ * Hàm:
+ * - getAll({page, limit, search, categoryId}): Lấy danh sách sản phẩm phân trang, search theo tên/SKU, lọc theo danh mục
+ * - getById(id): Lấy chi tiết sản phẩm kèm tồn kho theo warehouse mặc định
+ * - findBySku(sku): Tìm sản phẩm theo SKU (dùng cho POS quét barcode)
+ * - create(data, userId): Tạo sản phẩm mới + khởi tạo inventory với số lượng 0, ghi audit log
+ * - update(id, data, userId): Cập nhật thông tin sản phẩm, chỉ update các field được gửi lên, ghi audit log
+ * - remove(id, userId): Soft delete (isActive = false), ghi audit log
+ * - updateInventorySettings(id, {minStock, delta, warehouseId}): Cập nhật minStock và/hoặc điều chỉnh số lượng tồn, ghi InventoryTransaction
+ * - updateImage(id, imageUrl): Cập nhật riêng cột imageUrl cho sản phẩm
+ */
 // src/modules/products/product.service.js
 const prisma = require('../../config/prisma');
 const auditService = require('../audit/audit.service');
@@ -73,9 +90,21 @@ const create = async (data, userId = null) => {
       price: data.price,
       costPrice: data.costPrice,
       categoryId: data.categoryId,
-      inventories: { create: { quantity: 0, warehouseId: whId } },
+      inventories: { create: { quantity: data.initialStock ?? 0, warehouseId: whId } },
     },
   });
+
+  if ((data.initialStock ?? 0) > 0) {
+    await prisma.inventoryTransaction.create({
+      data: {
+        inventoryId: (await findInventory(prisma, product.id, whId)).id,
+        type: "IMPORT",
+        quantity: data.initialStock,
+        note: `Nhập kho ban đầu - ${product.name}`,
+        createdById: userId,
+      },
+    });
+  }
 
   auditService.log({
     userId,

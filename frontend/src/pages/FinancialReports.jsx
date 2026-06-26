@@ -1,10 +1,23 @@
-// frontend/src/pages/FinancialReports.jsx
-// Báo cáo tài chính: BS, P&L, Cash Flow, VAT, Aging, GL
+/**
+ * Frontend: pages/FinancialReports.jsx — Báo cáo tài chính đa tab
+ * 
+ * Tổng quan:
+ * - Tabs: Lãi/lỗ (P&L), Bảng cân đối kế toán (BS), Lưu chuyển tiền tệ (CF), VAT, Công nợ phải thu/phải trả (Aging), Bảng cân đối phát sinh (TB), Sổ cái (GL)
+ * - Mỗi tab là một component riêng, tự gọi API (getProfitLoss, getBalanceSheet, getCashFlow, getVatReport, getAgingReport, getTrialBalance, getGeneralLedger)
+ * - Dùng PeriodPicker chung để chọn khoảng thời gian
+ * - State: mỗi tab quản lý range/data/loading riêng
+ * 
+ * Components/Hooks/Exports:
+ * - FinancialReports (default): Container chính với Tabs
+ * - PeriodPicker: Component chọn khoảng thời gian + nút tải lại
+ * - PnLTab, BSTab, CashFlowTab, VATTab, AgingTab, TBTab, GLTab: Các tab con
+ */
 import { useEffect, useState } from "react";
 import { Tabs, Card, DatePicker, Space, Button, Table, Tag, Statistic, Row, Col, Select, message, Empty } from "antd";
 import { ReloadOutlined } from "@ant-design/icons";
 import dayjs from "dayjs";
 import PageHeader from "../components/layout/PageHeader";
+
 import {
   getBalanceSheet, getProfitLoss, getCashFlow, getVatReport,
   getAgingReport, getTrialBalance, getGeneralLedger, getAccounts,

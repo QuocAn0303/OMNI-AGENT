@@ -1,3 +1,22 @@
+/**
+ * modules/projects/timesheet.service.js — Service quản lý Timesheet & Hóa đơn dự án
+ *
+ * Tổng quan:
+ * - Cung cấp logic CRUD cho TimeEntry và ProjectInvoice
+ * - TimeEntry ghi nhận thời gian làm việc, tự động tính hours từ startTime/endTime
+ * - Không cho sửa/xóa timesheet đã xuất hóa đơn (invoiced)
+ * - Hóa đơn được generate từ timesheet billable, hỗ trợ trạng thái DRAFT/SENT/PAID/CANCELLED
+ * - Tất cả xử lý hóa đơn trong transaction để đảm bảo consistency
+ *
+ * Hàm:
+ * - listEntries({ projectId, userId, invoiced, page, limit }): Danh sách time entries phân trang
+ * - createEntry(userId, { projectId, taskId, startTime, endTime, hours, description, billable, hourlyRate }): Tạo entry, tự tính hours nếu có endTime
+ * - updateEntry(id, userId, data): Cập nhật entry, chặn nếu đã invoiced
+ * - deleteEntry(id): Xóa entry, chặn nếu đã invoiced
+ * - listInvoices(projectId): Danh sách hóa đơn của dự án
+ * - generateInvoice(projectId, { customerId, dueDate, notes, entryIds, userId }): Tạo hóa đơn từ timesheet trong transaction
+ * - updateInvoiceStatus(id, status): Cập nhật trạng thái hóa đơn, tự set issuedAt khi SENT
+ */
 // src/modules/projects/timesheet.service.js
 const prisma = require("../../config/prisma");
 

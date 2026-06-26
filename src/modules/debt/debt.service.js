@@ -1,4 +1,25 @@
-// src/modules/debt/debt.service.js
+/**
+ * modules/debt/debt.service.js — Service quản lý công nợ (Debt)
+ *
+ * Tổng quan:
+ * - Quản lý 2 loại công nợ: RECEIVABLE (phải thu từ khách) và PAYABLE (phải trả nhà cung cấp)
+ * - Tự động tạo công nợ khi tạo đơn hàng/PO chưa thanh toán hết
+ * - Ghi nhận thanh toán công nợ, tự động cập nhật trạng thái (OPEN/PARTIAL/OVERDUE/CLOSED)
+ * - Tích hợp audit log, accounting auto-post, expense tracking
+ * - Cung cấp cron job đánh dấu quá hạn và tổng hợp số liệu
+ *
+ * Hàm:
+ * - statusFromAmounts(amount, paidAmount, dueDate): Xác định trạng thái công nợ (CLOSED/PARTIAL/OVERDUE/OPEN) dựa trên số tiền, đã trả, hạn
+ * - createReceivableForOrderInTx(tx, { order, userId }): Tạo công nợ phải thu cho đơn hàng trong transaction, cập nhật totalDebt của customer, ghi audit log
+ * - createPayableForPoInTx(tx, { po, userId }): Tạo công nợ phải trả cho PO trong transaction, cập nhật totalDebt của vendor, ghi audit log
+ * - applyOrderPaymentToDebtInTx(tx, { orderId, paymentAmount, method, userId, note }): Ghi nhận thanh toán vào công nợ đơn hàng, tạo DebtPayment, cập nhật paidAmount/status, giảm totalDebt customer
+ * - list({ page, limit, type, status, customerId, vendorId, overdue }): Lấy danh sách công nợ có phân trang, lọc theo type/status/khách hàng/nhà cung cấp/quá hạn
+ * - summary(): Tính tổng dư nợ phải thu/phải trả đang mở và quá hạn
+ * - listByCustomer(customerId): Lấy danh sách công nợ của 1 khách hàng kèm order và payments
+ * - listByVendor(vendorId): Lấy danh sách công nợ của 1 nhà cung cấp kèm PO và payments
+ * - recordDebtPayment(debtId, { amount, method, note }, userId): Ghi nhận thanh toán công nợ trong transaction — cập nhật debt, tạo payment cho đơn hàng (RECEIVABLE) hoặc cập nhật PO (PAYABLE), auto-post accounting & expense
+ * - markOverdueCron(): Cron job đánh dấu công nợ quá hạn (OPEN/PARTIAL → OVERDUE)
+ */
 const { randomUUID } = require("crypto");
 const prisma = require("../../config/prisma");
 const auditService = require("../audit/audit.service");

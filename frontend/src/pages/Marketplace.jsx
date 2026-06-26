@@ -1,4 +1,16 @@
-// frontend/src/pages/Marketplace.jsx
+/**
+ * Frontend: pages/Marketplace.jsx — Tích hợp sàn thương mại điện tử
+ * 
+ * Tổng quan:
+ * - Quản lý các shop trên Shopee/Lazada/TikTok Shop: getShops, createShop, toggleShop
+ * - Chọn shop → xem listings (getListings) và lịch sử đồng bộ (getSyncLogs)
+ * - Push tồn kho lên sàn (pushInventory), pull đơn hàng từ sàn (pullOrders)
+ * - State: shops/activeShop/listings/syncLogs/loading — form modal riêng
+ * - Bọc trong PlanGate
+ * 
+ * Components/Hooks/Exports:
+ * - Marketplace (default): Page chính — shop panel + chi tiết shop (listings/logs tabs)
+ */
 import { useState, useEffect } from "react";
 import {
   Table, Button, Space, Tag, Modal, Form, Input, Select, Switch,
@@ -8,7 +20,8 @@ import { PlusOutlined, SyncOutlined, UploadOutlined, DownloadOutlined, SettingOu
 import dayjs from "dayjs";
 import relativeTime from "dayjs/plugin/relativeTime";
 import PageHeader from "../components/layout/PageHeader";
-import { getShops, createShop, toggleShop, getListings, getSyncLogs, pushInventory, pullOrders } from "../api/marketplace";
+import PlanGate from "../components/PlanGate";
+import { getShops, createShop, toggleShop, updateCredentials, getListings, getSyncLogs, pushInventory, pullOrders } from "../api/marketplace";
 
 dayjs.extend(relativeTime);
 
@@ -26,9 +39,16 @@ export default function Marketplace() {
   const [createOpen, setCreateOpen] = useState(false);
   const [createForm] = Form.useForm();
   const [creating, setCreating] = useState(false);
+  const createPlatform = Form.useWatch('platform', createForm);
 
   const [pushing, setPushing]   = useState(false);
   const [pulling, setPulling]   = useState(false);
+
+  // Credentials modal
+  const [credOpen, setCredOpen] = useState(false);
+  const [credShop, setCredShop] = useState(null);
+  const [credForm] = Form.useForm();
+  const [credSaving, setCredSaving] = useState(false);
 
   useEffect(() => { loadShops(); }, []);
 
@@ -88,6 +108,24 @@ export default function Marketplace() {
     finally { setPulling(false); }
   };
 
+  const openCreds = (shop) => {
+    setCredShop(shop);
+    credForm.setFieldsValue(shop.credentials || {});
+    setCredOpen(true);
+  };
+
+  const saveCreds = async () => {
+    const vals = await credForm.validateFields();
+    setCredSaving(true);
+    try {
+      await updateCredentials(credShop.id, vals);
+      message.success("Đã lưu credentials");
+      setCredOpen(false);
+      await loadShops();
+    } catch (e) { message.error(e?.response?.data?.message || "Lỗi"); }
+    finally { setCredSaving(false); }
+  };
+
   const shopCols = [
     {
       title: "Shop", key: "shop",
@@ -107,11 +145,14 @@ export default function Marketplace() {
       render: (v) => v ? dayjs(v).fromNow() : "Chưa sync",
     },
     {
-      title: "", key: "sel", width: 80,
+      title: "", key: "sel", width: 130,
       render: (_, r) => (
-        <Button size="small" type={activeShop?.id === r.id ? "primary" : "default"} onClick={() => selectShop(r)}>
-          Chọn
-        </Button>
+        <Space size={0}>
+          <Button size="small" icon={<SettingOutlined />} onClick={() => openCreds(r)}>API</Button>
+          <Button size="small" type={activeShop?.id === r.id ? "primary" : "default"} onClick={() => selectShop(r)}>
+            Chọn
+          </Button>
+        </Space>
       ),
     },
   ];
@@ -133,6 +174,7 @@ export default function Marketplace() {
   ];
 
   return (
+    <PlanGate moduleKey="marketplace" moduleName="Sàn TMĐT">
     <div>
       <PageHeader title="Tích hợp sàn TMĐT" subtitle="Shopee · Lazada · TikTok — sync tồn kho và đơn hàng" />
 
@@ -196,8 +238,83 @@ export default function Marketplace() {
           <Form.Item name="shopId" label="Shop ID (từ nền tảng)">
             <Input placeholder="123456789" />
           </Form.Item>
+          {createPlatform === "SHOPEE" && (
+            <>
+              <Form.Item name={['credentials', 'partnerId']} label="Partner ID" rules={[{ required: true }]}>
+                <Input placeholder="VD: 123456" />
+              </Form.Item>
+              <Form.Item name={['credentials', 'partnerKey']} label="Partner Key" rules={[{ required: true }]}>
+                <Input.Password placeholder="API Key từ Shopee" />
+              </Form.Item>
+              <Form.Item name={['credentials', 'shopId']} label="Shop ID" rules={[{ required: true }]}>
+                <Input placeholder="VD: 789012" />
+              </Form.Item>
+              <Form.Item name={['credentials', 'accessToken']} label="Access Token" rules={[{ required: true }]}>
+                <Input.Password placeholder="Token từ Shopee OAuth" />
+              </Form.Item>
+            </>
+          )}
+          {createPlatform === "TIKTOK" && (
+            <>
+              <Form.Item name={['credentials', 'appKey']} label="App Key" rules={[{ required: true }]}>
+                <Input placeholder="App Key từ TikTok Shop" />
+              </Form.Item>
+              <Form.Item name={['credentials', 'appSecret']} label="App Secret" rules={[{ required: true }]}>
+                <Input.Password placeholder="App Secret" />
+              </Form.Item>
+              <Form.Item name={['credentials', 'accessToken']} label="Access Token" rules={[{ required: true }]}>
+                <Input.Password placeholder="Token từ TikTok OAuth" />
+              </Form.Item>
+              <Form.Item name={['credentials', 'shopCipher']} label="Shop Cipher">
+                <Input placeholder="Mã shop (nếu có)" />
+              </Form.Item>
+            </>
+          )}
+        </Form>
+      </Modal>
+
+      <Modal title={`API credentials — ${credShop?.shopName || credShop?.platform || ""}`}
+        open={credOpen} onCancel={() => setCredOpen(false)}
+        onOk={saveCreds} confirmLoading={credSaving} okText="Lưu" width={480}>
+        <Form form={credForm} layout="vertical" requiredMark={false}>
+          {credShop?.platform === "SHOPEE" && (
+            <>
+              <Form.Item name="partnerId" label="Partner ID" rules={[{ required: true }]}>
+                <Input placeholder="VD: 123456" />
+              </Form.Item>
+              <Form.Item name="partnerKey" label="Partner Key" rules={[{ required: true }]}>
+                <Input.Password placeholder="API Key từ Shopee" />
+              </Form.Item>
+              <Form.Item name="shopId" label="Shop ID" rules={[{ required: true }]}>
+                <Input placeholder="VD: 789012" />
+              </Form.Item>
+              <Form.Item name="accessToken" label="Access Token" rules={[{ required: true }]}>
+                <Input.Password placeholder="Token từ Shopee OAuth" />
+              </Form.Item>
+            </>
+          )}
+          {credShop?.platform === "TIKTOK" && (
+            <>
+              <Form.Item name="appKey" label="App Key" rules={[{ required: true }]}>
+                <Input placeholder="App Key từ TikTok Shop" />
+              </Form.Item>
+              <Form.Item name="appSecret" label="App Secret" rules={[{ required: true }]}>
+                <Input.Password placeholder="App Secret" />
+              </Form.Item>
+              <Form.Item name="accessToken" label="Access Token" rules={[{ required: true }]}>
+                <Input.Password placeholder="Token từ TikTok OAuth" />
+              </Form.Item>
+              <Form.Item name="shopCipher" label="Shop Cipher">
+                <Input placeholder="Mã shop (nếu có)" />
+              </Form.Item>
+            </>
+          )}
+          {credShop?.platform === "LAZADA" && (
+            <p style={{ color: "#94a3b8" }}>Lazada integration coming soon</p>
+          )}
         </Form>
       </Modal>
     </div>
+    </PlanGate>
   );
 }

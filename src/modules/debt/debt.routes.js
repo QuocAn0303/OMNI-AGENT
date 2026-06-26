@@ -1,11 +1,24 @@
-// src/modules/debt/debt.routes.js
+/**
+ * modules/debt/debt.routes.js — Routes quản lý công nợ
+ *
+ * Tổng quan:
+ * - Định nghĩa các endpoint CRUD cho công nợ (debt)
+ * - Yêu cầu authenticate + requireModule("debts") cho tất cả routes
+ * - Phân quyền theo role cho từng action
+ *
+ * Hàm:
+ * - GET /: Danh sách công nợ có phân trang, lọc — gọi debtService.list() (ADMIN, MANAGER, CASHIER)
+ * - GET /summary: Tổng hợp số liệu công nợ — gọi debtService.summary() (ADMIN, MANAGER)
+ * - POST /:id/payments: Ghi nhận thanh toán cho 1 công nợ — validate paySchema (amount, method, note), gọi debtService.recordDebtPayment() (ADMIN, MANAGER, CASHIER)
+ */
 const router = require("express").Router();
 const { z } = require("zod");
 const { authenticate, authorize } = require("../../middleware/auth.middleware");
+const { requireModule } = require("../../middleware/plan.middleware");
 const { success, created } = require("../../utils/response");
 const debtService = require("./debt.service");
 
-router.use(authenticate);
+router.use(authenticate, requireModule("debts"));
 
 router.get("/", authorize("ADMIN", "MANAGER", "CASHIER"), async (req, res, next) => {
   try {

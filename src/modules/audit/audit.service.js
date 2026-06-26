@@ -1,3 +1,15 @@
+/**
+ * modules/audit/audit.service.js — Ghi và truy vấn audit log
+ * 
+ * Tổng quan:
+ * - Ghi lại mọi hành động quan trọng (CRUD order, product, user, inventory...)
+ * - Truy vấn audit log phân trang, lọc theo action/userId/tenant
+ * - Tự động lọc tenant dựa trên role user
+ * 
+ * Hàm:
+ * - log({userId, action, entity, entityId, before, after, meta}): Ghi một bản ghi audit, không throw lỗi
+ * - getAll({page, limit, action, userId, user}): Lấy danh sách audit log, phân trang, lọc tenant theo role
+ */
 // src/modules/audit/audit.service.js
 // Chức năng: ghi và truy vấn audit log (activity trail)
 // Ghi chú (tiếng Việt) có trong hàm để người khác dễ hiểu
@@ -42,7 +54,7 @@ const log = async ({
 };
 
 // Lấy danh sách audit log (phân trang, admin)
-const getAll = async ({ page = 1, limit = 50, action, userId } = {}) => {
+const getAll = async ({ page = 1, limit = 50, action, userId, user: currentUser } = {}) => {
   const p = Math.max(1, Number(page) || 1);
   const l = Math.max(1, Math.min(200, Number(limit) || 50));
   const skip = (p - 1) * l;
@@ -51,13 +63,23 @@ const getAll = async ({ page = 1, limit = 50, action, userId } = {}) => {
   if (action) where.action = action;
   if (userId) where.userId = userId;
 
+  // Tenant filtering:
+  // - SUPER_OMEGA_ULTRA_ADMIN: xem tất cả audit log (không filter)
+  // - ADMIN / SUPER_ADMIN: chỉ xem audit log của tenant mình
+  if (currentUser && currentUser.role !== "SUPER_OMEGA_ULTRA_ADMIN") {
+    const userTenantId = currentUser.tenantId;
+    if (userTenantId) {
+      where.user = { tenantId: userTenantId };
+    }
+  }
+
   const [rows, total] = await Promise.all([
     prisma.auditLog.findMany({
       where,
       skip,
       take: l,
       orderBy: { createdAt: "desc" },
-      include: { user: { select: { id: true, email: true, fullName: true, role: true } } },
+      include: { user: { select: { id: true, email: true, fullName: true, role: true, tenantId: true } } },
     }),
     prisma.auditLog.count({ where }),
   ]);
@@ -79,6 +101,7 @@ const getAll = async ({ page = 1, limit = 50, action, userId } = {}) => {
       userName: log.user?.fullName ?? (log.userId ? "—" : "System"),
       userEmail: log.user?.email ?? null,
       userRole: log.user?.role ?? null,
+      userTenantId: log.user?.tenantId ?? null,
       description: meta.description ?? note,
       ipAddress: meta.ipAddress ?? meta.ip ?? null,
       userAgent: meta.userAgent ?? null,

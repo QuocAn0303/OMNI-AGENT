@@ -1,3 +1,24 @@
+/**
+ * modules/promotions/promotion.engine.js — Engine tính khuyến mãi & chiết khấu
+ * 
+ * Tổng quan:
+ * - Xây dựng giỏ hàng từ items, tính chiết khấu theo nhiều loại promotion.
+ * - Hỗ trợ auto-apply nhiều promotion theo thứ tự ưu tiên và apply voucher đơn lẻ.
+ * 
+ * Hàm:
+ * - buildCart(items, products): Xây dựng cart object { lines, subtotal, totalQty } từ items và products
+ * - calcDiscount(promo, cart): Tính chiết khấu cho 1 promotion — hỗ trợ PERCENTAGE, FIXED_AMOUNT, CATEGORY_DISCOUNT, PRODUCT_DISCOUNT, BUY_X_GET_Y, FREE_SHIPPING
+ * - applyAutoPromotions(promotions, cart): Áp dụng tự động nhiều promotion theo PRIORITY, discount stack dần
+ * - applyVoucher(promo, cart): Áp dụng voucher đơn lẻ, trả về { promotion, discount, eligible }
+ * - toNum(v): Chuyển giá trị sang number (default 0)
+ * - round2(n): Làm tròn đến 2 chữ số thập phân
+ * 
+ * Helper:
+ * - meetsMinOrder(promo, cart): Kiểm tra đơn hàng đạt giá trị tối thiểu
+ * - meetsMinQty(promo, cart): Kiểm tra đơn hàng đạt số lượng tối thiểu
+ * - sortByPriority(promos): Sắp xếp promotion theo PRIORITY array
+ * - PRIORITY: Mảng thứ tự ưu tiên các loại khuyến mãi
+ */
 const toNum = (v) => Number(v || 0);
 const round2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
 

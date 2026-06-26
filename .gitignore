@@ -50,3 +50,9 @@ structure.txt
 # Prisma
 prisma/*.db
 prisma/*.db-journal
+
+database/
+
+*.safetensors
+
+__pycache__/

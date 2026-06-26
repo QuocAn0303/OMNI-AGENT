@@ -1,4 +1,24 @@
+/**
+ * modules/inventory/inventory.service.js — Service quản lý tồn kho
+ * 
+ * Tổng quan:
+ * - Quản lý nhập/xuất/kiểm kho, cảnh báo tồn thấp, xem lịch sử giao dịch
+ * - Mọi thao tác đều ghi InventoryTransaction kèm userId
+ * 
+ * Hàm:
+ * - getByProduct(productId, warehouseId): Lấy thông tin tồn kho của 1 sản phẩm theo warehouse
+ * - listByWarehouse(warehouseId): Liệt kê tồn kho theo warehouse, chỉ lấy sản phẩm đang active
+ * - importStock({productId, quantity, note, warehouseId}, userId): Nhập kho — tăng quantity, ghi giao dịch IMPORT trong transaction
+ * - exportStock({productId, quantity, note, warehouseId}, userId): Xuất kho — kiểm tra tồn khả dụng, giảm quantity, ghi giao dịch EXPORT, kiểm tra ngưỡng cảnh báo sau xuất
+ * - adjustment({productId, actualQuantity, note, warehouseId}, userId): Kiểm kho/điều chỉnh — tính diff, cập nhật quantity, ghi giao dịch ADJUSTMENT
+ * - getLowStock(threshold): Lọc danh sách sản phẩm có tồn khả dụng <= threshold, sắp xếp tăng dần
+ * - checkAlerts(): Phân loại tồn kho thành critical (available <= 0) và warning (available <= minStock nhưng > 0)
+ * - getTransactions(query): Lấy lịch sử giao dịch phân trang, lọc theo inventoryId và type
+ */
 const prisma = require('../../config/prisma');
+const auditService = require('../audit/audit.service');
+const postingErrorService = require('../accounting/posting-error.service');
+const autopostService = require('../accounting/autopost.service');
 const { findInventory, resolveWarehouseId } = require('../../utils/warehouse.helper');
 
 const inventoryService = {
@@ -25,7 +45,7 @@ const inventoryService = {
   },
 
   importStock: async (data, userId) => {
-    const { productId, quantity, note, warehouseId } = data;
+    const { productId, quantity, unitCost, note, warehouseId, lotCode, expDate, mfgDate } = data;
     if (!quantity || quantity <= 0) throw { status: 400, message: "Số lượng nhập phải lớn hơn 0" };
 
     return await prisma.$transaction(async (tx) => {
@@ -37,13 +57,51 @@ const inventoryService = {
         data: { quantity: { increment: quantity } }
       });
 
-      //Ghi nhận chính xác ai nhập kho
+      if (unitCost != null) {
+        const product = await tx.product.findUnique({ where: { id: productId }, select: { costPrice: true } });
+        if (product) {
+          const oldQty = inventory.quantity;
+          const oldCost = Number(product.costPrice || 0);
+          const newQty = oldQty + quantity;
+          const newCost = newQty > 0 ? Math.round(((oldQty * oldCost + quantity * unitCost) / newQty) * 100) / 100 : unitCost;
+          await tx.product.update({
+            where: { id: productId },
+            data: { costPrice: newCost },
+          });
+        }
+      }
+
+      if (lotCode) {
+        const existingLot = await tx.inventoryLot.findFirst({
+          where: { lotCode, productId, warehouseId: inventory.warehouseId },
+        });
+        if (existingLot) {
+          await tx.inventoryLot.update({
+            where: { id: existingLot.id },
+            data: { quantity: { increment: quantity } },
+          });
+        } else {
+          await tx.inventoryLot.create({
+            data: {
+              lotCode,
+              productId,
+              warehouseId: inventory.warehouseId,
+              quantity,
+              originalQty: quantity,
+              mfgDate: mfgDate ? new Date(mfgDate) : null,
+              expDate: expDate ? new Date(expDate) : null,
+            },
+          });
+        }
+      }
+
       await tx.inventoryTransaction.create({
         data: {
           inventoryId: updatedInventory.id,
           type: "IMPORT",
           quantity: quantity,
           note: note,
+          unitCost: unitCost ? Math.round(unitCost * 100) / 100 : null,
           createdById: userId 
         }
       });
@@ -89,12 +147,11 @@ const inventoryService = {
     return updatedInventory;
   },
 
-  // Truyền thêm userId vào để tracking
   adjustment: async (data, userId) => {
     const { productId, actualQuantity, note, warehouseId } = data;
     if (actualQuantity == null || actualQuantity < 0) throw { status: 400, message: "Số lượng thực tế không được âm" };
 
-    return await prisma.$transaction(async (tx) => {
+    const result = await prisma.$transaction(async (tx) => {
       const inventory = await findInventory(tx, productId, warehouseId);
       if (!inventory) throw { status: 404, message: "Không tìm thấy thông tin kho của sản phẩm này." };
       if (actualQuantity < (inventory.reserved || 0)) {
@@ -103,12 +160,11 @@ const inventoryService = {
 
       const diff = actualQuantity - inventory.quantity;
 
-      const updatedInventory = await tx.inventory.update({
+      const updated = await tx.inventory.update({
         where: { id: inventory.id },
         data: { quantity: actualQuantity }
       });
 
-      //Ghi nhận chính xác ai kiểm kho
       await tx.inventoryTransaction.create({
         data: {
           inventoryId: inventory.id,
@@ -119,8 +175,27 @@ const inventoryService = {
         }
       });
 
-      return updatedInventory;
+      return updated;
     });
+
+    auditService.log({
+      userId,
+      action: "INVENTORY_ADJUST",
+      entity: "Inventory",
+      entityId: productId,
+      before: null,
+      after: { actualQuantity, note, warehouseId },
+    }).catch(() => {});
+
+    if (diff !== 0) {
+      const product = await prisma.product.findUnique({ where: { id: productId }, select: { name: true } }).catch(() => null);
+      postingErrorService.tryPostOrQueue(
+        () => autopostService.postInventoryAdjustment({ diff, productId, inventoryId: result.id, product, userId }),
+        { source: "INVENTORY", sourceId: result.id, payload: { operation: "INVENTORY_ADJUSTMENT", diff, productId, inventoryId: result.id } },
+      );
+    }
+
+    return result;
   },
 
   getLowStock: async (threshold = 10) => {

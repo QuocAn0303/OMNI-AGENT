@@ -1,3 +1,27 @@
+/**
+ * modules/accounting/expense.service.js — Service quản lý chi phí
+ * 
+ * Tổng quan:
+ * - Xử lý toàn bộ logic nghiệp vụ cho module Expense (chi phí doanh nghiệp).
+ * - Hỗ trợ luồng: DRAFT → PENDING_APPROVAL → APPROVED → PAID (hoặc REJECTED).
+ * - Tích hợp: tự động sinh mã expense, tính thuế, kiểm tra hạn mức duyệt theo role,
+ *   cập nhật công nợ vendor, auto-post bút toán kế toán qua autopostService.
+ * 
+ * Hàm:
+ * - generateCode(tx): Sinh mã chi phí dạng EXP-YYYYMMDD-XXXX.
+ * - computeAmounts({amount, taxRateId}): Tính taxAmount + totalAmount từ số tiền và thuế suất.
+ * - list(query): Danh sách expense có phân trang, lọc theo status/category/vendor/project/ngày.
+ * - getById(id): Chi tiết expense.
+ * - create(data, userId): Tạo expense mới trong transaction; auto-post nếu APPROVED/PAID.
+ * - submit(id, userId): Gửi duyệt — tự động approve nếu dưới ngưỡng auto.
+ * - approve(id, userId, {role}): Phê duyệt expense, cập nhật công nợ vendor, auto-post.
+ * - markPaid(id, {method, bankAccountId}, userId): Đánh dấu đã thanh toán; auto-post expense hoặc payment entry.
+ * - reject(id, userId): Từ chối expense, ghi audit log.
+ * - listCategories(): Danh sách danh mục chi phí đang hoạt động.
+ * - summary({year, month}): Thống kê tổng chi phí theo danh mục trong kỳ.
+ * - requiredRoleForAmount(amount, userRole): Trả danh sách role được duyệt theo hạn mức.
+ * - APPROVAL_THRESHOLDS: Ngưỡng duyệt tự động (1tr), quản lý (10tr).
+ */
 // src/modules/accounting/expense.service.js
 const prisma = require("../../config/prisma");
 const autopostService = require("./autopost.service");
@@ -196,6 +220,19 @@ const submit = async (id, userId) => {
     const notif = require("../notifications/notification.service");
     await notif.notifyExpensePending(updated);
   } catch (_) {}
+
+  // Trigger workflow engine for EXPENSE_ABOVE workflows
+  try {
+    const workflowService = require("../workflow/workflow.service");
+    await workflowService.trigger("EXPENSE_ABOVE", {
+      entityType: "Expense",
+      entityId: id,
+      data: { amount: amt, expenseId: id, categoryId: expense.categoryId },
+    });
+  } catch (e) {
+    console.error("[expense] workflow trigger error:", e.message);
+  }
+
   return updated;
 };
 

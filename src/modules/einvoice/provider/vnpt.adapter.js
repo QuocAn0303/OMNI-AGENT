@@ -1,3 +1,23 @@
+/**
+ * modules/einvoice/provider/vnpt.adapter.js — Adapter kết nối VNPT eInvoice API
+ * 
+ * Tổng quan:
+ - Đọc cấu hình từ IntegrationConfig (DB) → fallback .env; nếu chưa cấu hình credentials thì chạy mock mode.
+ * - Cung cấp các hàm phát hành, huỷ, tra cứu hoá đơn điện tử VNPT.
+ * 
+ * Hàm:
+ * - issueInvoice(p): Phát hành hoá đơn — nếu mock mode trả về dữ liệu giả; ngược lại gọi POST /api/invoice/create với token Bearer
+ * - cancelInvoice({invoiceNo, reason}): Huỷ hoá đơn — gọi POST /api/invoice/cancel
+ * - getInvoiceStatus({invoiceNo}): Tra cứu trạng thái hoá đơn — gọi GET /api/invoice/{invoiceNo}
+ * - isMockMode(): Kiểm tra có đủ credentials không (mock nếu thiếu)
+ * - testConnection(): Test kết nối VNPT bằng cách login lấy token
+ * 
+ * Internal:
+ * - _readCfg(): Đọc config (VNPT_EINVOICE_URL, USERNAME, PASSWORD, COM_CODE, TEMPLATE, SERIAL) từ IntegrationConfig
+ * - _fetch(baseUrl, path, options): HTTP request wrapper (hỗ trợ http/https), parse JSON response
+ * - _getToken(c): Lấy JWT token từ /auth/login, cache với TTL 50 phút
+ * - _mockInvoiceNo(): Sinh số hoá đơn mock tăng dần
+ */
 // src/modules/einvoice/provider/vnpt.adapter.js
 // VNPT eInvoice REST adapter. Đọc cấu hình từ IntegrationConfig (DB) → fallback .env.
 // Khi credentials chưa cấu hình → mock mode.

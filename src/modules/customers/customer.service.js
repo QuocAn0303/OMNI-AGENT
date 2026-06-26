@@ -1,4 +1,18 @@
-// src/modules/customers/customer.service.js
+/**
+ * modules/customers/customer.service.js — Service xử lý nghiệp vụ khách hàng
+ *
+ * Tổng quan:
+ * - Cung cấp các hàm CRUD cho khách hàng (customer)
+ * - Tích hợp audit log cho mọi thao tác
+ * - Hỗ trợ truy vấn Customer 360° tổng hợp đơn hàng, công nợ, loyalty, ghi chú, tags, RFM
+ *
+ * Hàm:
+ * - getAll({ page, limit, search }): Lấy danh sách khách hàng có phân trang, hỗ trợ tìm kiếm theo name/phone/email, flatten tags, chỉ lấy isActive: true
+ * - create(data, userId): Tạo khách hàng mới, clean phone/email rỗng thành null, ghi audit log
+ * - update(id, data, userId): Cập nhật thông tin khách hàng, kiểm tra tồn tại & isActive, ghi audit log before/after
+ * - remove(id, userId): Soft delete (isActive = false), kiểm tra ràng buộc đơn hàng đang xử lý hoặc còn nợ, ghi audit log
+ * - getCustomer360(id): Trả về tổng hợp dữ liệu khách hàng gồm thông tin cơ bản, 10 đơn gần nhất, 10 công nợ, 5 loyalty giao dịch, 10 ghi chú, tags, chỉ số RFM (recency/frequency/monetary)
+ */
 const prisma = require("../../config/prisma");
 const auditService = require("../audit/audit.service");
 

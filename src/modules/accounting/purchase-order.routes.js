@@ -1,12 +1,31 @@
+/**
+ * modules/accounting/purchase-order.routes.js — Định tuyến đơn nhập hàng (PO)
+ * 
+ * Tổng quan:
+ * - Định nghĩa REST endpoints cho Purchase Order (đơn đặt hàng nhà cung cấp).
+ * - Tích hợp Zod validation, authenticate + authorize + requireModule middleware.
+ * - Logic nghiệp vụ được xử lý bởi purchaseService.
+ * 
+ * Hàm:
+ * - GET /: Danh sách PO (purchaseService.list)
+ * - GET /:id: Chi tiết PO (purchaseService.getById)
+ * - POST /: Tạo PO mới (purchaseService.create)
+ * - POST /:id/submit: Gửi duyệt PO (purchaseService.submit)
+ * - POST /:id/approve: Phê duyệt PO (purchaseService.approve)
+ * - POST /:id/receive: Nhập kho từ PO (purchaseService.receive)
+ * - POST /:id/payment: Thanh toán PO (purchaseService.pay)
+ * - POST /:id/cancel: Hủy PO (purchaseService.cancel)
+ */
 // src/modules/accounting/purchase-order.routes.js
 // Alias REST paths theo spec: /api/purchase-orders (logic dùng chung purchase.service)
 const router = require("express").Router();
 const { z } = require("zod");
 const { authenticate, authorize } = require("../../middleware/auth.middleware");
+const { requireModule } = require("../../middleware/plan.middleware");
 const { success, created } = require("../../utils/response");
 const purchaseService = require("./purchase.service");
 
-router.use(authenticate);
+router.use(authenticate, requireModule("purchase-orders"));
 
 const poSchema = z.object({
   vendorId: z.string(),
@@ -25,7 +44,7 @@ const poSchema = z.object({
     .min(1),
 });
 
-router.get("/", async (req, res, next) => {
+router.get("/", authorize("ADMIN", "MANAGER", "WAREHOUSE"), async (req, res, next) => {
   try {
     success(res, await purchaseService.list(req.query));
   } catch (e) {
@@ -33,7 +52,7 @@ router.get("/", async (req, res, next) => {
   }
 });
 
-router.get("/:id", async (req, res, next) => {
+router.get("/:id", authorize("ADMIN", "MANAGER", "WAREHOUSE"), async (req, res, next) => {
   try {
     success(res, await purchaseService.getById(req.params.id));
   } catch (e) {

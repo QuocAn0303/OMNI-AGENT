@@ -1,6 +1,18 @@
+/**
+ * modules/analytics/analytics.routes.js — Routes cho phân tích dữ liệu
+ * 
+ * Tổng quan:
+ * - REST API cho analytics module
+ * - Yêu cầu module "analytics" trong plan
+ * 
+ * Routes:
+ * - GET /: Dữ liệu analytics theo khoảng thời gian (from, to, groupBy) (ADMIN/MANAGER)
+ * - GET /sales-insights: Legacy — analytics 30 ngày (ADMIN/MANAGER)
+ */
 const express = require("express");
 const router = express.Router();
 const { authenticate, authorize } = require("../../middleware/auth.middleware");
+const { requireModule } = require("../../middleware/plan.middleware");
 const analyticsService = require("./analytics.service");
 
 /**
@@ -8,6 +20,8 @@ const analyticsService = require("./analytics.service");
  * Query params: from (YYYY-MM-DD), to (YYYY-MM-DD), groupBy (day|week|month)
  * Used by frontend Analytics.jsx
  */
+router.use(requireModule("analytics"));
+
 router.get("/", authenticate, authorize("ADMIN", "MANAGER"), async (req, res, next) => {
   try {
     const now = new Date();

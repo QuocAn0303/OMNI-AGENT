@@ -1,3 +1,16 @@
+/**
+ * modules/projects/project-access.middleware.js — Middleware kiểm tra quyền truy cập dự án
+ *
+ * Tổng quan:
+ * - Middleware kiểm tra user có quyền truy cập vào project hay không
+ * - ADMIN/SUPER_ADMIN luôn bypass — được truy cập mọi project
+ * - Các role khác phải là thành viên của project (có ProjectMember record)
+ * - Tùy chọn requireRoles ràng buộc thêm vai trò trong project (vd chỉ OWNER)
+ * - Gắn req.projectMembership để handler dùng thêm
+ *
+ * Hàm:
+ * - requireProjectMember({ requireRoles }): Middleware factory — kiểm tra membership, optional role restriction
+ */
 // src/modules/projects/project-access.middleware.js
 // Middleware kiểm tra user có quyền truy cập project hay không.
 //

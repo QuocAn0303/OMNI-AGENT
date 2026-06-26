@@ -1,3 +1,15 @@
+/**
+ * Frontend: pages/PurchaseOrderDetail.jsx — Chi tiết đơn nhập hàng (PO)
+ * 
+ * Tổng quan:
+ * - Trang chi tiết PO với thông tin NCC, trạng thái, danh sách sản phẩm, action buttons
+ * - API: getPurchaseOrder, submitPurchaseOrder, approvePurchaseOrder, receivePurchaseOrder, payPurchaseOrder, cancelPurchaseOrder
+ * - State: po, loading, payOpen
+ * - Logic: Workflow thao tác trên PO theo role (gửi duyệt, duyệt, nhập kho, thanh toán, hủy)
+ * 
+ * Components/Hooks/Exports:
+ * - PurchaseOrderDetail (default export): Chi tiết + action workflow + modal thanh toán
+ */
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { Button, Card, Descriptions, Table, Space, message, Tag, Modal, Form, InputNumber, Select } from "antd";

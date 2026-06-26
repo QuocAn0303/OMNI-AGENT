@@ -1,43 +1,62 @@
+/**
+ * modules/import/import.routes.js — Routes cho import dữ liệu từ Excel
+ * 
+ * Tổng quan:
+ * - Import sản phẩm, khách hàng, nhà cung cấp từ file Excel
+ * - Tải file mẫu (template) cho từng loại
+ * - Yêu cầu module "import" trong plan
+ * 
+ * Routes:
+ * - GET /template/:type: Tải file Excel mẫu (products/customers/vendors)
+ * - POST /products: Import sản phẩm từ Excel (ADMIN/MANAGER), upsert theo SKU
+ * - POST /customers: Import khách hàng từ Excel (ADMIN/MANAGER)
+ * - POST /vendors: Import nhà cung cấp từ Excel (ADMIN/MANAGER), upsert theo code
+ */
 const express = require('express');
 const multer = require('multer');
 const ExcelJS = require('exceljs');
 const prisma = require('../../config/prisma');
 const { authenticate, authorize } = require('../../middleware/auth.middleware');
+const { requireModule } = require('../../middleware/plan.middleware');
 
 const router = express.Router();
 const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
 
+router.use(requireModule("import"));
+
 // GET /api/import/template/:type — tải file mẫu
-router.get('/template/:type', authenticate, async (req, res) => {
-  const templates = {
-    products: {
-      headers: ['name', 'sku', 'category', 'price', 'costPrice', 'unit', 'description'],
-      sample: ['Áo thun nam', 'AT-001', 'Áo', 150000, 80000, 'cái', 'Mô tả sản phẩm'],
-    },
-    customers: {
-      headers: ['name', 'phone', 'email', 'address'],
-      sample: ['Nguyễn Văn A', '0901234567', 'a@email.com', '123 Nguyễn Huệ, Q1'],
-    },
-    vendors: {
-      headers: ['code', 'name', 'contactPerson', 'phone', 'email', 'address', 'taxCode'],
-      sample: ['NCC-001', 'Công ty ABC', 'Trần Văn B', '0912345678', 'b@email.com', '456 Lê Lợi, Q1', '0123456789'],
-    },
-  };
+router.get('/template/:type', authenticate, async (req, res, next) => {
+  try {
+    const templates = {
+      products: {
+        headers: ['name', 'sku', 'category', 'price', 'costPrice', 'unit', 'description'],
+        sample: ['Áo thun nam', 'AT-001', 'Áo', 150000, 80000, 'cái', 'Mô tả sản phẩm'],
+      },
+      customers: {
+        headers: ['name', 'phone', 'email', 'address'],
+        sample: ['Nguyễn Văn A', '0901234567', 'a@email.com', '123 Nguyễn Huệ, Q1'],
+      },
+      vendors: {
+        headers: ['code', 'name', 'contactPerson', 'phone', 'email', 'address', 'taxCode'],
+        sample: ['NCC-001', 'Công ty ABC', 'Trần Văn B', '0912345678', 'b@email.com', '456 Lê Lợi, Q1', '0123456789'],
+      },
+    };
 
-  const t = templates[req.params.type];
-  if (!t) return res.status(400).json({ success: false, message: 'Loại không hợp lệ' });
+    const t = templates[req.params.type];
+    if (!t) return res.status(400).json({ success: false, message: 'Loại không hợp lệ' });
 
-  const wb = new ExcelJS.Workbook();
-  const ws = wb.addWorksheet('Data');
-  ws.addRow(t.headers);
-  ws.addRow(t.sample);
-  ws.getRow(1).font = { bold: true };
-  ws.columns = t.headers.map((h) => ({ header: h, key: h, width: 20 }));
+    const wb = new ExcelJS.Workbook();
+    const ws = wb.addWorksheet('Data');
+    ws.addRow(t.headers);
+    ws.addRow(t.sample);
+    ws.getRow(1).font = { bold: true };
+    ws.columns = t.headers.map((h) => ({ header: h, key: h, width: 20 }));
 
-  res.setHeader('Content-Disposition', `attachment; filename=mau_${req.params.type}.xlsx`);
-  res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
-  await wb.xlsx.write(res);
-  res.end();
+    res.setHeader('Content-Disposition', `attachment; filename=mau_${req.params.type}.xlsx`);
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    await wb.xlsx.write(res);
+    res.end();
+  } catch (err) { next(err); }
 });
 
 // POST /api/import/products

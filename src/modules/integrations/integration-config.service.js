@@ -1,3 +1,22 @@
+/**
+ * modules/integrations/integration-config.service.js — Quản lý cấu hình tích hợp
+ * 
+ * Tổng quan:
+ * - Lưu trữ cấu hình các dịch vụ tích hợp (VNPT, Cloudinary, SMS, EMAIL)
+ * - Ưu tiên: DB (mã hoá secret) > process.env
+ * - Cache in-memory 60s, tự động invalidate khi set
+ * - Che secrets khi trả về client
+ * 
+ * Hàm:
+ * - isSecret(key): Kiểm tra key có phải secret không
+ * - get(key): Lấy giá trị từ cache/DB/ env, hỗ trợ decrypt
+ * - getMany(keys): Lấy nhiều key cùng lúc
+ * - set(key, value, userId): Lưu giá trị, tự động mã hoá nếu là secret
+ * - setMany(values, userId): Lưu nhiều key cùng lúc
+ * - getCategoryMasked(category): Lấy cấu hình một nhóm, secrets bị che (••••••••)
+ * - getAllMasked(): Lấy tất cả cấu hình, secrets bị che
+ * - invalidateCache(): Xoá toàn bộ cache
+ */
 // src/modules/integrations/integration-config.service.js
 // Quản lý cấu hình tích hợp (VNPT, Cloudinary, SMS, SMTP).
 // Ưu tiên: DB > process.env. Cache in-memory 60s, invalidate khi set().

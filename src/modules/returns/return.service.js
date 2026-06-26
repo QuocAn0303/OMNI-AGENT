@@ -1,9 +1,37 @@
+/**
+ * modules/returns/return.service.js — Service xử lý nghiệp vụ trả hàng (Order Return)
+ *
+ * Tổng quan:
+ - Quản lý toàn bộ quy trình trả hàng: tạo yêu cầu, duyệt, hoàn tất, từ chối
+ * - Tự động sinh mã phiếu trả (RET-YYYYMMDD-xxxx)
+ * - Tính toán số tiền hoàn trả dựa trên tỷ lệ giá trị đơn hàng
+ * - Kiểm tra chính sách thời gian trả hàng (7 ngày mặc định, có ghi đè)
+ * - Xử lý hoàn kho, cập nhật store credit, exchange hàng, giảm công nợ
+ * - Tích hợp audit log, accounting auto-post, expense tracking
+ *
+ * Hàm:
+ * - generateReturnCode(): Tự sinh mã phiếu trả dạng RET-YYYYMMDD-xxxx dựa trên số phiếu trong ngày
+ * - getReturnedQuantity(orderItemId, tx): Lấy tổng số lượng đã trả của 1 order item (không tính REJECTED)
+ * - calcUnitRefund(orderItem, order): Tính số tiền hoàn trả cho 1 đơn vị sản phẩm dựa trên tỷ lệ order.total / order.subtotal
+ * - assertPolicyWindow(order, overridePolicy, userRole): Kiểm tra thời gian trả hàng trong 7 ngày, cho phép ADMIN/MANAGER ghi đè
+ * - getReturnableItems(orderId): Trả về danh sách sản phẩm có thể trả của 1 đơn hàng (kèm số lượng đã trả, còn được trả, unitRefund)
+ * - create(data, userId, { overridePolicy, userRole }): Tạo phiếu trả hàng, kiểm tra đơn COMPLETED, policy window, số lượng, cap tiền hoàn không vượt tổng đơn, hỗ trợ exchange items
+ * - approve(returnId, userId, userRole): Duyệt phiếu trả (PENDING → APPROVED), kiểm tra four-eyes nếu > 5tr
+ * - complete(returnId, userId): Hoàn tất phiếu trả trong transaction: hoàn kho (restockable), cập nhật store credit, xử lý exchange/chênh lệch, giảm totalSpent, cập nhật công nợ, paymentStatus, auto-post accounting & expense
+ * - reject(returnId, userId): Từ chối phiếu trả (→ REJECTED)
+ * - getAll({ page, limit, status }): Lấy danh sách phiếu trả có phân trang, lọc theo status
+ * - getById(id): Lấy chi tiết 1 phiếu trả kèm items, exchange items, người tạo/duyệt
+ * - getByOrderId(orderId): Lấy tất cả phiếu trả của 1 đơn hàng
+ * - debtServiceReduceOrCreate(tx, order, amount, userId): Helper cập nhật công nợ khi exchange chênh lệch
+ * - RETURN_POLICY_DAYS: Hằng số 7 ngày
+ */
 const prisma = require("../../config/prisma");
 const auditService = require("../audit/audit.service");
 const paymentService = require("../payments/payment.service");
 const autopostService = require("../accounting/autopost.service");
 const postingErrorService = require("../accounting/posting-error.service");
 const expenseAuto = require("../accounting/expense-auto.service");
+const { findInventory } = require("../../utils/warehouse.helper");
 const { withCodeRetry } = require("../accounting/journal.service");
 
 const RETURN_POLICY_DAYS = 7;
@@ -236,6 +264,28 @@ const complete = async (returnId, userId) => {
 
     if (ret.refundMethod === "EXCHANGE" && ret.exchangeItems.length) {
       const exchangeTotal = ret.exchangeItems.reduce((s, e) => s + toNumber(e.subtotal), 0);
+      for (const ex of ret.exchangeItems) {
+        const exInv = await findInventory(tx, ex.productId, ret.order.warehouseId);
+        if (exInv) {
+          const exAvailable = exInv.quantity - (exInv.reserved || 0);
+          if (exAvailable < ex.quantity) {
+            throw { status: 400, message: `Sản phẩm đổi "${ex.product?.name}" không đủ tồn kho` };
+          }
+          await tx.inventory.update({
+            where: { id: exInv.id },
+            data: { quantity: { decrement: ex.quantity } },
+          });
+          await tx.inventoryTransaction.create({
+            data: {
+              inventoryId: exInv.id,
+              type: "EXPORT",
+              quantity: ex.quantity,
+              note: `Đổi hàng - ${ret.returnCode}`,
+              createdById: userId,
+            },
+          });
+        }
+      }
       const diff = round2(exchangeTotal - refund);
       if (diff > 0 && ret.order.customerId) {
         await debtServiceReduceOrCreate(tx, ret.order, diff, userId);

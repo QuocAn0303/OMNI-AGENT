@@ -1,3 +1,17 @@
+/**
+ * Frontend: pages/Import.jsx — Import dữ liệu từ Excel
+ * 
+ * Tổng quan:
+ * - Tabs: Import sản phẩm, khách hàng, nhà cung cấp
+ * - Mỗi tab dùng Dragger để upload file .xlsx/.xls, gửi lên POST /import/{type}
+ * - Tải file mẫu (GET /import/template/{type}) trước khi import
+ * - Hiển thị kết quả: số bản ghi đã import, danh sách lỗi (dòng + message)
+ * - State: mỗi ImportTab quản lý result/loading riêng
+ * 
+ * Components/Hooks/Exports:
+ * - Import (default): Page chính — Tabs container
+ * - ImportTab: Component con — upload + kết quả
+ */
 import { useState } from 'react';
 import { Upload, Table, Alert, Button, Tabs, Typography, Space, Tag } from 'antd';
 import { InboxOutlined, DownloadOutlined, CheckCircleOutlined, CloseCircleOutlined } from '@ant-design/icons';

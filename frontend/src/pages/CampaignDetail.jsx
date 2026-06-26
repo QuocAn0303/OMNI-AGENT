@@ -1,4 +1,18 @@
-import { useEffect, useState } from 'react';
+/**
+ * Frontend: pages/CampaignDetail.jsx — Chi tiết chiến dịch CSKH
+ * 
+ * Tổng quan:
+ * - Xem thông tin chiến dịch (GET /crm/campaigns/:id) và danh sách người nhận (GET /crm/campaigns/:id/recipients)
+ * - Hiển thị stats: tổng người nhận, đã gửi, thất bại
+ * - Bảng người nhận có filter trạng thái (ALL/PENDING/SENT/FAILED), phân trang
+ * - Cho phép gửi lại (send-now) nếu chiến dịch ở trạng thái DRAFT/SCHEDULED/FAILED
+ * - State: campaign/recipients/total/page/filterStatus/loading/sending
+ * - Bọc trong PlanGate
+ * 
+ * Components/Hooks/Exports:
+ * - CampaignDetail (default): Page chi tiết — stats cards + nội dung + bảng người nhận
+ */
+import { useState, useEffect } from 'react';
 import { useParams, useNavigate } from 'react-router-dom';
 import {
   Card, Tag, Button, Table, Space, Spin, Empty, Segmented, message,
@@ -7,6 +21,7 @@ import { ArrowLeftOutlined, SendOutlined, ReloadOutlined } from '@ant-design/ico
 import dayjs from 'dayjs';
 import axios from '../api/axios';
 import PageHeader from '../components/layout/PageHeader';
+import PlanGate from '../components/PlanGate';
 
 const STATUS_META = {
   DRAFT: { label: 'Nháp', color: 'default' },
@@ -104,6 +119,7 @@ export default function CampaignDetail() {
   ];
 
   return (
+    <PlanGate moduleKey="marketing" moduleName="Chi tiết chiến dịch">
     <>
       <PageHeader
         title={
@@ -178,5 +194,6 @@ export default function CampaignDetail() {
         />
       </Card>
     </>
+    </PlanGate>
   );
 }

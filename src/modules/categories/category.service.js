@@ -1,3 +1,15 @@
+/**
+ * modules/categories/category.service.js — Service quản lý danh mục sản phẩm
+ * 
+ * Tổng quan:
+ * - CRUD danh mục sản phẩm, kiểm tra trùng tên, chặn xóa danh mục đang chứa sản phẩm
+ * 
+ * Hàm:
+ * - getAll(): Lấy tất cả danh mục đang hoạt động (isActive: true), kèm số lượng sản phẩm, sắp xếp theo ngày tạo
+ * - create(data): Tạo danh mục mới, kiểm tra trùng tên, throw 400 nếu đã tồn tại
+ * - update(id, data): Cập nhật tên/mô tả danh mục, throw 404 nếu không tìm thấy hoặc đã bị xóa
+ * - remove(id): Soft delete danh mục, chặn xóa nếu danh mục còn chứa sản phẩm (throw 400)
+ */
 const prisma = require("../../config/prisma");
 
 const categoryService = {

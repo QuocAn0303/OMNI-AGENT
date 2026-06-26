@@ -1,5 +1,21 @@
-// src/modules/production/bom-resolver.js
-// Recursive BOM flattener: handles multi-level sub-assemblies
+/**
+ * modules/production/bom-resolver.js — Giải nén BOM đệ quy
+ * 
+ * Tổng quan:
+ * - Nhận một BOM (Bill of Materials) và flatten nó thành danh sách nguyên vật liệu phẳng
+ * - Hỗ trợ BOM đa cấp (sub-assembly có BOM riêng)
+ * - Depth tối đa 10 để tránh vòng lặp vô hạn
+ * 
+ * Hàm:
+ * - expandBOM(bomId, maxDepth = 10): Trả về [{ productId, productName, sku, unit, quantity, level, isSubAssembly }]
+ *     - Gọi đệ quy expandNode cho từng BOM item
+ *     - Nếu item là sub-assembly có BOM active → đệ quy tiếp
+ * - expandNode(parentId, multiplier, depth, maxDepth): Đệ quy giải nén từng node
+ *     - multiplier nhân với quantity của từng item
+ *     - skip nếu depth > maxDepth
+ * - flattenBomItem(bomItemId, maxDepth = 10): API public — lấy BOM item + giải nén đệ quy
+ */
+
 const prisma = require("../../config/prisma");
 
 /**

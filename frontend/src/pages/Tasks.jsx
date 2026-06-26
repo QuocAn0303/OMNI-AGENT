@@ -1,4 +1,19 @@
-import { useEffect, useMemo, useState } from 'react';
+/**
+ * Frontend: pages/Tasks.jsx — Nhiệm vụ CSKH
+ * 
+ * Tổng quan:
+ * - Danh sách nhiệm vụ (GET /crm/tasks) với filter: scope (all/mine/overdue), trạng thái, ưu tiên
+ * - CRUD qua modal: tạo (POST), sửa (PATCH), xóa (DELETE) — có phân quyền (CASHIER chỉ xem nhiệm vụ của mình)
+ * - Tìm kiếm khách hàng (GET /customers) với debounce 250ms
+ * - Gán nhiệm vụ cho user (GET /crm/tasks/assignable-users), set hạn, ưu tiên
+ * - Quick action: đánh dấu hoàn thành (setStatusQuick)
+ * - Hiển thị cảnh báo quá hạn (màu đỏ) nếu dueAt < now và chưa DONE/CANCELLED
+ * - State: data/total/page/loading/scope/status/priority/users/customerOptions — form modal riêng
+ * 
+ * Components/Hooks/Exports:
+ * - Tasks (default): Page chính — filter bar + table + modal CRUD
+ */
+import { useState, useEffect, useMemo } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Table, Button, Tag, Modal, Form, Input, Select, DatePicker,
@@ -13,6 +28,7 @@ import axios from '../api/axios';
 import PageHeader from '../components/layout/PageHeader';
 import EmptyState from '../components/shared/EmptyState';
 import useAuthStore from '../stores/authStore';
+
 
 const STATUS_OPTIONS = [
   { value: 'PENDING', label: 'Chờ xử lý', color: 'default' },

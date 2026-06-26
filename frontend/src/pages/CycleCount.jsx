@@ -1,5 +1,18 @@
+/**
+ * Frontend: pages/CycleCount.jsx — Kiểm kê hàng hóa
+ * 
+ * Tổng quan:
+ * - Trang quản lý phiếu kiểm kê kho (cycle count) với chức năng tạo, nhập số liệu thực tế, áp dụng điều chỉnh
+ * - API: GET /inventory/cycle-counts, POST /inventory/cycle-counts, PATCH .../complete, PATCH .../items
+ * - State: rows (danh sách), selected (chi tiết), products
+ * - Logic: Compare số lượng hệ thống vs thực tế, tính chênh lệch, áp dụng điều chỉnh tồn kho
+ * 
+ * Components/Hooks/Exports:
+ * - CycleCount (default export): Danh sách + drawer chi tiết + modal tạo phiếu
+ */
 import { useEffect, useMemo, useState } from "react";
 import { Button, Drawer, Form, InputNumber, Modal, Select, Space, Table, Tag, message } from "antd";
+import PlanGate from "../components/PlanGate";
 import api from "../api/axios";
 
 const statusColor = {
@@ -91,6 +104,7 @@ export default function CycleCount() {
   };
 
   return (
+    <PlanGate moduleKey="cycle-count" moduleName="Kiểm kê hàng hóa">
     <div>
       <Space style={{ marginBottom: 16 }}>
         <Button type="primary" onClick={() => setCreateOpen(true)}>Tạo phiếu</Button>
@@ -175,5 +189,6 @@ export default function CycleCount() {
         )}
       </Drawer>
     </div>
+    </PlanGate>
   );
 }

@@ -1,4 +1,19 @@
-// src/utils/email.js — SMTP wrapper, đọc cấu hình từ IntegrationConfig (fallback .env).
+/**
+ * utils/email.js — Gửi email qua SMTP (Nodemailer)
+ * 
+ * Tổng quan:
+ * - Đọc cấu hình SMTP từ IntegrationConfig (DB) → fallback .env
+ * - Cache transporter theo config (chỉ tạo lại khi config thay đổi)
+ * - Nếu chưa cấu hình SMTP → log ra console (mock mode), không crash
+ * - Hỗ trợ gửi text và HTML
+ * 
+ * Hàm:
+ * - sendEmail({ to, subject, text, html }): Gửi email, trả { messageId, mock? }
+ * - verifyEmail(): Kiểm tra kết nối SMTP (dùng cho Test Connection trong UI Integration)
+ * - resetTransporter(): Reset cache transporter (gọi khi config thay đổi)
+ * - getTransporter(): Lấy transporter hiện tại (internal)
+ */
+
 const config = require("../modules/integrations/integration-config.service");
 const logger = require("./logger");
 

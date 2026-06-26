@@ -1,3 +1,17 @@
+/**
+ * Frontend: src/components/ProtectedRoute.jsx — ProtectedRoute
+ * 
+ * Tổng quan:
+ * - Bảo vệ route yêu cầu xác thực. Nếu chưa đăng nhập → redirect /login.
+ * - Tự động gọi GET /auth/me để lấy thông tin user nếu store có token nhưng chưa có user.
+ * - Hiển thị Spin loading trong khi đang xác thực.
+ * 
+ * Props:
+ * - children: ReactNode — component con được render nếu đã xác thực
+ * 
+ * Hàm/Exports:
+ * - ProtectedRoute: Component kiểm tra isAuthenticated và fetch user
+ */
 import { Navigate } from "react-router-dom";
 import useAuthStore from "../stores/authStore";
 import { useEffect, useState } from "react";

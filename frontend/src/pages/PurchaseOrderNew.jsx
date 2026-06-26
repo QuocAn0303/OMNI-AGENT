@@ -1,3 +1,15 @@
+/**
+ * Frontend: pages/PurchaseOrderNew.jsx — Tạo đơn nhập hàng (PO)
+ * 
+ * Tổng quan:
+ * - Form tạo PO mới với danh sách sản phẩm nhập, số lượng, đơn giá, thuế
+ * - API: createPurchaseOrder, getVendors, getTaxRates, GET /products
+ * - State: vendors, products, taxRates, submitting
+ * - Logic: Form.List cho items động, gửi PO sau khi validate
+ * 
+ * Components/Hooks/Exports:
+ * - PurchaseOrderNew (default export): Form tạo PO với danh sách mặt hàng động
+ */
 import { useEffect, useState } from "react";
 import { Form, Select, InputNumber, Button, DatePicker, Input, Space, message, Card } from "antd";
 import { PlusOutlined, MinusCircleOutlined, ArrowLeftOutlined } from "@ant-design/icons";

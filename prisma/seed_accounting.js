@@ -1,3 +1,21 @@
+/**
+ * prisma/seed_accounting.js — Seed dữ liệu kế toán cơ bản
+ *
+ * Tổng quan:
+ * - Tạo hệ thống tài khoản kế toán (Chart of Accounts) theo Thông tư 200/2014 rút gọn,
+ *   các mức thuế suất VAT, danh mục chi phí và tài khoản ngân hàng mặc định
+ * - Chạy khi: npm run db:seed (hoặc riêng lẻ), cần chạy SAU seed.js
+ * - Dữ liệu tạo: ~40 tài khoản (111..911), 4 thuế suất (VAT0/5/8/10),
+ *   15 danh mục chi phí, 1 tài khoản ngân hàng mẫu
+ *
+ * Hàm:
+ * - seedAccounts(): Upsert tất cả tài khoản kế toán — pass 1 tạo tài khoản gốc,
+ *   pass 2 gán parentId cho tài khoản con (1331, 3331, 6411...)
+ * - seedTaxRates(): Upsert 4 mức thuế VAT (0%, 5%, 8%, 10%)
+ * - seedExpenseCategories(): Upsert danh mục chi phí, liên kết với tài khoản tương ứng
+ * - seedDefaultBank(): Tạo tài khoản ngân hàng Vietcombank mặc định nếu chưa có
+ * - main(): Hàm chính — chạy lần lượt các seed functions trên
+ */
 // prisma/seed_accounting.js
 // Seed Chart of Accounts (VAS rút gọn), Tax rates, Expense categories
 require("dotenv").config();

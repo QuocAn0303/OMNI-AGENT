@@ -1,3 +1,19 @@
+/**
+ * modules/hr/hr.validation.js — Zod schemas cho module HR
+ * 
+ * Tổng quan:
+ * - Định nghĩa các Zod schema để validate dữ liệu đầu vào cho các endpoint HR.
+ * 
+ * Hàm:
+ * - createEmployeeSchema: Validate tạo nhân viên (employeeCode, fullName, phone, email, position, baseSalary, hireDate, address)
+ * - createShiftSchema: Validate tạo ca làm (employeeId UUID, date optional, type enum MORNING/AFTERNOON/NIGHT)
+ * - createViolationSchema: Validate tạo vi phạm (employeeId UUID, type enum, note optional)
+ * - updateViolationSchema: Validate cập nhật vi phạm (type, note, penalty đều optional)
+ * - generatePayrollSchema: Validate generate payroll (month 1-12, year >= 2000)
+ * - updateEmployeeSchema: Validate cập nhật nhân viên (employeeCode, fullName, phone, email, position, baseSalary, shiftMoney, hireDate, address, isActive)
+ * - setCountsSchema: Validate set số ca làm & vi phạm cho 1 employee (shiftCount, violationCount, month, year, violationType, shiftType, note)
+ * - setCountsBulkSchema: Validate set số ca làm & vi phạm hàng loạt (employeeIds array, shiftCount, violationCount...)
+ */
 const { z } = require("zod");
 
 const POSITIONS = ["MANAGER", "CASHIER", "SALES", "WAREHOUSE", "OTHER"];

@@ -1,4 +1,16 @@
-// frontend/src/pages/Vendors.jsx
+/**
+ * Frontend: pages/Vendors.jsx — Quản lý nhà cung cấp (NCC)
+ * 
+ * Tổng quan:
+ * - Danh sách NCC với phân trang, tìm kiếm theo tên/SĐT/MST
+ * - CRUD: getVendors, createVendor, updateVendor, deleteVendor (soft delete)
+ * - Hiển thị công nợ đang nợ NCC (totalDebt)
+ * - Modal thêm/sửa NCC với các trường: tên, MST, SĐT, email, địa chỉ, hạn thanh toán
+ * - State: data/loading/filters/editing — tự quản lý
+ * 
+ * Components/Hooks/Exports:
+ * - Vendors (default): Page chính — table + search + modal CRUD
+ */
 import { useEffect, useState } from "react";
 import { Table, Button, Modal, Form, Input, InputNumber, Space, message, Tag, Popconfirm } from "antd";
 import { PlusOutlined, EditOutlined, DeleteOutlined } from "@ant-design/icons";

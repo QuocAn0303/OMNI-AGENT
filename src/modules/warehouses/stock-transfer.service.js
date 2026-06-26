@@ -1,3 +1,15 @@
+/**
+ * modules/warehouses/stock-transfer.service.js — Service chuyển kho
+ * 
+ * Tổng quan:
+ * - Quản lý phiếu chuyển kho giữa các warehouse
+ * - Khi hoàn thành, tự động xuất kho nguồn và nhập kho đích
+ * 
+ * Hàm:
+ * - generateCode(): Sinh mã phiếu chuyển tự động ST-YYYYMMDD-XXXX
+ * - create({fromWarehouseId, toWarehouseId, note, items}, userId): Tạo phiếu chuyển mới, kiểm tra kho nguồn/đích khác nhau, ghi audit log
+ * - complete(id, userId): Hoàn thành chuyển kho — kiểm tra tồn kho nguồn, decrement kho nguồn, increment (hoặc tạo mới) kho đích, ghi InventoryTransaction, ghi audit log
+ */
 const prisma = require("../../config/prisma");
 const auditService = require("../audit/audit.service");
 const { findInventory } = require("../../utils/warehouse.helper");

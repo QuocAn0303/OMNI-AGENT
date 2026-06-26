@@ -1,9 +1,20 @@
+/**
+ * Frontend: pages/Returns.jsx — Quản lý trả hàng
+ * 
+ * Tổng quan:
+ * - Trang danh sách yêu cầu trả hàng với chi tiết drawer, duyệt/từ chối
+ * - API: GET /returns, PATCH /returns/:id/approve, PATCH /returns/:id/reject
+ * - State: rows, selected (drawer detail)
+ * - Logic: ADMIN/MANAGER có thể duyệt hoặc từ chối yêu cầu trả hàng
+ * 
+ * Components/Hooks/Exports:
+ * - Returns (default export): Bảng trả hàng + drawer chi tiết + action duyệt
+ */
 import { useEffect, useState } from "react";
 import { Button, Drawer, Space, Table, Tag, message } from "antd";
 import api from "../api/axios";
 import MoneyDisplay from "../components/shared/MoneyDisplay";
 import useAuthStore from "../stores/authStore";
-
 const statusColor = {
   PENDING: "gold",
   APPROVED: "blue",
@@ -37,8 +48,16 @@ export default function Returns() {
 
   const handleAction = async (id, action) => {
     try {
-      await api.patch(`/returns/${id}/${action}`);
-      message.success(action === "approve" ? "Đã duyệt trả hàng" : "Đã từ chối trả hàng");
+      if (action === "complete") {
+        await api.post(`/returns/${id}/complete`);
+      } else {
+        await api.patch(`/returns/${id}/${action}`);
+      }
+      message.success(
+        action === "approve" ? "Đã duyệt trả hàng" :
+        action === "reject" ? "Đã từ chối trả hàng" :
+        "Đã hoàn tất trả hàng"
+      );
       setSelected(null);
       loadReturns();
     } catch (err) {
@@ -81,6 +100,11 @@ export default function Returns() {
               <Space>
                 <Button type="primary" onClick={() => handleAction(selected.id, "approve")}>Duyệt</Button>
                 <Button danger onClick={() => handleAction(selected.id, "reject")}>Từ chối</Button>
+              </Space>
+            )}
+            {canApprove && selected.status === "APPROVED" && (
+              <Space>
+                <Button type="primary" onClick={() => handleAction(selected.id, "complete")}>Hoàn tất</Button>
               </Space>
             )}
           </Space>

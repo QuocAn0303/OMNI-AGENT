@@ -1,5 +1,17 @@
-// frontend/src/pages/Journal.jsx
-// Sổ nhật ký + Hệ thống tài khoản
+/**
+ * Frontend: pages/Journal.jsx — Sổ nhật ký & Hệ thống tài khoản (COA)
+ * 
+ * Tổng quan:
+ * - Tab "Sổ nhật ký": Danh sách bút toán (getJournalEntries), cho phép ghi sổ thủ công (createJournalEntry), ghi góp vốn (recordCapitalContribution), đảo bút toán (reverseJournalEntry)
+ * - Tab "Hệ thống tài khoản (COA)": Hiển thị cây tài khoản theo VAS (getAccountTree)
+ * - JournalListTab có phân trang, expand dòng để xem chi tiết Nợ/Có
+ * - State: tự quản lý data, loading, filters, form modal
+ * 
+ * Components/Hooks/Exports:
+ * - Journal (default): Container với Tabs
+ * - JournalListTab: Danh sách bút toán + modal tạo/đảo
+ * - COATab: Cây tài khoản dạng Tree
+ */
 import { useEffect, useState } from "react";
 import {
   Tabs, Table, Button, Modal, Form, Select, InputNumber, Input, DatePicker, Space, message, Tag, Card, Row, Col, Tree, Popconfirm,
@@ -7,6 +19,7 @@ import {
 import { PlusOutlined, MinusCircleOutlined, RollbackOutlined, BankOutlined } from "@ant-design/icons";
 import dayjs from "dayjs";
 import PageHeader from "../components/layout/PageHeader";
+
 import {
   getJournalEntries, createJournalEntry, reverseJournalEntry, recordCapitalContribution,
   getAccountTree, getAccounts,

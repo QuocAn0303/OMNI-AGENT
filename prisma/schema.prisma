@@ -11,6 +11,7 @@ datasource db {
 // ==================== USERS & AUTH ====================
 
 enum Role {
+  SUPER_OMEGA_ULTRA_ADMIN // role chỉ dành cho lê nguyễn quốc an
   SUPER_ADMIN
   ADMIN
   MANAGER
@@ -18,32 +19,205 @@ enum Role {
   WAREHOUSE
 }
 
+// ==================== SUPER_OMEGA_ULTRA_ADMIN ====================
+
+enum SupportSessionStatus {
+  ACTIVE
+  EXPIRED
+  REVOKED
+}
+
+model SupportAccessSession {
+  id        String                @id @default(uuid())
+  adminId   String
+  admin     User                  @relation("SupportAdmin", fields: [adminId], references: [id])
+  tenantId  String
+  tenant    Tenant                @relation(fields: [tenantId], references: [id])
+  reason    String
+  status    SupportSessionStatus  @default(ACTIVE)
+  expiresAt DateTime
+  createdAt DateTime              @default(now())
+  updatedAt DateTime              @updatedAt
+
+  // Ai đã thu hồi phiên (nếu bị REVOKED)
+  revokedById String?
+  revokedBy   User?   @relation("SupportRevoker", fields: [revokedById], references: [id])
+
+  @@index([tenantId])
+  @@index([adminId])
+  @@index([status, expiresAt])
+  @@map("support_access_sessions")
+}
+
+// ==================== SUBSCRIPTION PLANS & BILLING ====================
+
+model SubscriptionPlan {
+  id          String   @id @default(uuid())
+  name        String
+  key         String   @unique
+  description String?
+  price       Decimal  @db.Decimal(12, 2)
+  currency    String   @default("VND")
+  durationDays Int     @default(30)
+  features    Json     @default("{}")
+  isActive    Boolean  @default(true)
+  sortOrder   Int      @default(0)
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  subscriptions TenantSubscription[]
+
+  @@map("subscription_plans")
+}
+
+enum SubscriptionStatus {
+  ACTIVE
+  EXPIRED
+  CANCELLED
+  TRIAL
+}
+
+model TenantSubscription {
+  id             String             @id @default(uuid())
+  tenantId       String
+  tenant         Tenant             @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  planId         String
+  plan           SubscriptionPlan   @relation(fields: [planId], references: [id])
+  status         SubscriptionStatus @default(TRIAL)
+  startDate      DateTime           @default(now())
+  endDate        DateTime
+  cancelledAt    DateTime?
+  autoRenew      Boolean            @default(true)
+  note           String?
+  createdById    String?
+  createdBy      User?              @relation("SubCreatedBy", fields: [createdById], references: [id])
+  invoices       SubscriptionInvoice[]
+  createdAt      DateTime           @default(now())
+  updatedAt      DateTime           @updatedAt
+
+  @@index([tenantId, status])
+  @@index([endDate])
+  @@map("tenant_subscriptions")
+}
+
+enum InvoiceStatus {
+  PENDING
+  PAID
+  OVERDUE
+  CANCELLED
+  REFUNDED
+}
+
+model SubscriptionInvoice {
+  id                String           @id @default(uuid())
+  invoiceCode       String           @unique
+  subscriptionId    String?
+  subscription      TenantSubscription? @relation(fields: [subscriptionId], references: [id])
+  tenantId          String
+  tenant            Tenant           @relation(fields: [tenantId], references: [id])
+  amount            Decimal         @db.Decimal(12, 2)
+  currency          String          @default("VND")
+  status            InvoiceStatus   @default(PENDING)
+  checkoutSessionId String?         @unique
+  dueDate           DateTime
+  paidAt            DateTime?
+  paidById          String?
+  paidBy            User?           @relation("InvoicePaidBy", fields: [paidById], references: [id])
+  paymentMethod     String?
+  note              String?
+  createdAt         DateTime        @default(now())
+  updatedAt         DateTime        @updatedAt
+
+  @@index([tenantId, status])
+  @@index([subscriptionId])
+  @@map("subscription_invoices")
+}
+
 model Tenant {
   id        String   @id @default(uuid())
   name      String
   slug      String   @unique
-  plan      String   @default("free")
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   users User[]
+  customerTags CustomerTag[]
 
   @@map("tenants")
+
+  supportSessions SupportAccessSession[]
+  subscriptions    TenantSubscription[]
+  invoices         SubscriptionInvoice[]
+}
+
+// ==================== ADMIN CRM CAMPAIGNS ====================
+
+enum AdminCampaignStatus {
+  DRAFT
+  SENDING
+  DONE
+}
+
+enum AdminCampaignChannel {
+  EMAIL
+  SMS
+}
+
+model AdminCampaign {
+  id          String              @id @default(uuid())
+  name        String
+  channel     AdminCampaignChannel
+  targetPlans String[]
+  subject     String
+  content     String
+  status      AdminCampaignStatus  @default(DRAFT)
+  sentCount   Int                  @default(0)
+  scheduledAt DateTime?
+  createdAt   DateTime             @default(now())
+  updatedAt   DateTime             @updatedAt
+
+  recipients  AdminCampaignRecipient[]
+
+  @@map("admin_campaigns")
+}
+
+model AdminCampaignRecipient {
+  id         String        @id @default(uuid())
+  campaignId String
+  campaign   AdminCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  userId     String
+  user       User          @relation(fields: [userId], references: [id])
+  email      String
+  fullName   String
+  tenantName String?
+  status     String        @default("PENDING")
+  error      String?
+  sentAt     DateTime?
+
+  @@index([campaignId, status])
+  @@map("admin_campaign_recipients")
 }
 
 model User {
-  id        String   @id @default(uuid())
-  email     String   @unique
-  password  String
-  fullName  String
-  role      Role     @default(CASHIER)
-  isActive  Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  id                  String     @id @default(uuid())
+  email               String     @unique
+  password            String
+  fullName            String
+  role                Role       @default(CASHIER)
+  isActive            Boolean    @default(true)
+  emailVerified       Boolean    @default(false)
+  emailVerifyToken    String?
+  emailVerifyExpiry   DateTime?
+  registrationStatus  String     @default("PENDING")
+  createdAt           DateTime   @default(now())
+  updatedAt           DateTime   @updatedAt
 
   tenantId String?
   tenant   Tenant? @relation(fields: [tenantId], references: [id])
+
+  supportSessionsAsAdmin   SupportAccessSession[] @relation("SupportAdmin")
+  supportSessionsAsRevoker SupportAccessSession[] @relation("SupportRevoker")
 
   orders                 Order[]
   inventoryTransactions  InventoryTransaction[]
@@ -81,6 +255,13 @@ model User {
   savedReports      SavedReport[]      @relation("ReportCreatedBy")
   workflowsCreated  Workflow[]         @relation("WorkflowCreatedBy")
   workflowApprovals WorkflowApproval[] @relation("WorkflowApprover")
+  subscriptionCreatedBy   TenantSubscription[]      @relation("SubCreatedBy")
+  invoicesPaidBy          SubscriptionInvoice[]      @relation("InvoicePaidBy")
+  adminCampaignRecipients AdminCampaignRecipient[]
+  storeCreditTxsCreated   StoreCreditTransaction[] @relation("SCTxCreatedBy")
+  agentSessions           AgentSession[]
+  humanGateDecisions      AgentHumanGate[]   @relation("HumanGateDecider")
+  agentFeedback           AgentFeedback[]    @relation("AgentFeedbackUser")
 
   @@index([tenantId])
   @@map("users")
@@ -187,6 +368,7 @@ model Product {
   inventoryLots             InventoryLot[]
   marketplaceListings       MarketplaceListing[]
   routings                  Routing[]
+  serialNumbers             SerialNumber[]
 
   @@index([name])
   @@index([sku])
@@ -212,6 +394,7 @@ model Warehouse {
   transfersTo   StockTransfer[] @relation("TransferTo")
   workOrders    WorkOrder[]     @relation("WorkOrderWarehouse")
   inventoryLots InventoryLot[]
+  serialNumbers SerialNumber[]
 
   @@map("warehouses")
 }
@@ -282,6 +465,7 @@ model InventoryTransaction {
   type      TransactionType
   quantity  Int
   note      String?
+  unitCost  Decimal?        @db.Decimal(15, 2)
   createdAt DateTime        @default(now())
 
   inventoryId String
@@ -330,6 +514,7 @@ model Customer {
   phone         String?      @unique
   email         String?
   address       String?
+  taxCode       String?
   totalSpent    Decimal      @default(0) @db.Decimal(12, 2)
   totalDebt     Decimal      @default(0) @db.Decimal(12, 2)
   storeCredit   Decimal      @default(0) @db.Decimal(12, 2)
@@ -350,6 +535,7 @@ model Customer {
   projectInvoices    ProjectInvoice[]
   portalSessions     PortalSession[]
   campaignTrackings  CampaignTracking[]
+  storeCreditTxs     StoreCreditTransaction[]
 
   @@index([name])
   @@index([phone])
@@ -373,11 +559,18 @@ model CustomerNote {
 
 model CustomerTag {
   id        String                  @id @default(uuid())
-  name      String                  @unique
+  name      String                  // Đã bỏ @unique ở đây
   color     String                  @default("#0f766e")
+  category  String                  @default("GENERAL") // Nguồn gốc, hành vi, sở thích....
+  
+  tenantId  String?                 // Bắt buộc phải có để biết tag này của shop nào
+  tenant    Tenant?                 @relation(fields: [tenantId], references: [id])
+  
   createdAt DateTime                @default(now())
   customers CustomerTagOnCustomer[]
 
+  @@unique([name, tenantId])        // Tên tag chỉ cần duy nhất trong phạm vi 1 Tenant
+  @@index([tenantId])
   @@map("customer_tags")
 }
 
@@ -502,6 +695,24 @@ model LoyaltyTransaction {
   @@map("loyalty_transactions")
 }
 
+// ==================== STORE CREDIT ====================
+
+model StoreCreditTransaction {
+  id          String    @id @default(uuid())
+  customerId  String
+  customer    Customer  @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  amount      Decimal   @db.Decimal(12, 2)
+  type        String    // EARN | SPEND | ADJUST | REFUND
+  referenceId String?   // orderId / returnId / adjustment reason
+  note        String?
+  createdById String
+  createdBy   User      @relation("SCTxCreatedBy", fields: [createdById], references: [id])
+  createdAt   DateTime  @default(now())
+
+  @@index([customerId, createdAt(sort: Desc)])
+  @@map("store_credit_transactions")
+}
+
 // ==================== ORDERS ====================
 
 enum OrderStatus {
@@ -585,6 +796,7 @@ model Order {
   invoice           Invoice?
   delivery          Delivery?
   electronicInvoice ElectronicInvoice?
+  serialNumbers     SerialNumber[]
 
   @@index([status])
   @@index([customerId])
@@ -817,6 +1029,7 @@ model Promotion {
   category      Category?        @relation(fields: [categoryId], references: [id])
   productId     String?
   product       Product?         @relation(fields: [productId], references: [id])
+  customerTier  CustomerTier?
   createdAt     DateTime         @default(now())
   updatedAt     DateTime         @updatedAt
   usages        PromotionUsage[]
@@ -903,6 +1116,9 @@ model AuditLog {
 
   user User? @relation(fields: [userId], references: [id], onDelete: SetNull)
 
+  agentSessionId String?
+  agentStepId    String?
+
   @@index([createdAt(sort: Desc)])
   @@index([userId, createdAt(sort: Desc)])
   @@map("audit_logs")
@@ -970,6 +1186,25 @@ model Violation {
   createdAt  DateTime      @default(now())
 
   @@map("violations")
+}
+
+model OvertimeRequest {
+  id            String   @id @default(uuid())
+  employeeId    String
+  employee      Employee @relation(fields: [employeeId], references: [id])
+  date          DateTime
+  hours         Decimal  @db.Decimal(5, 2)
+  rate          Float    @default(1.5)
+  amount        Decimal  @db.Decimal(12, 2)
+  reason        String?
+  status        String   @default("PENDING") // PENDING/APPROVED/REJECTED
+  requestedById String
+  approvedById  String?
+  approvedAt    DateTime?
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  @@map("overtime_requests")
 }
 
 model Payroll {
@@ -1302,7 +1537,7 @@ model Expense {
   sourceId         String?
   createdAt        DateTime              @default(now())
   updatedAt        DateTime              @updatedAt
-  recurringLogs    RecurringExpenseLog[]
+  recurringLog     RecurringExpenseLog?
 
   @@unique([sourceType, sourceId])
   @@index([date])
@@ -1321,6 +1556,26 @@ model RecurringExpenseLog {
 
   @@unique([templateId, periodKey])
   @@map("recurring_expense_logs")
+}
+
+// ==================== PREPAID EXPENSE ====================
+
+model PrepaidExpense {
+  id               String   @id @default(uuid())
+  description      String
+  amount           Decimal  @db.Decimal(15, 2)
+  totalMonths      Int
+  monthlyAmount    Decimal  @db.Decimal(15, 2)
+  remainingAmount  Decimal  @db.Decimal(15, 2)
+  allocatedMonths  Int      @default(0)
+  startDate        DateTime
+  endDate          DateTime
+  status           String   @default("ACTIVE") // ACTIVE / FULLY_ALLOCATED
+  createdById      String
+  createdAt        DateTime @default(now())
+  updatedAt        DateTime @updatedAt
+
+  @@map("prepaid_expenses")
 }
 
 // ==================== PURCHASE ORDERS ====================
@@ -1569,6 +1824,9 @@ model Notification {
 
   @@index([userId, isRead])
   @@index([roleScope, isRead])
+  humanGateId    String?
+  requiresAction Boolean  @default(false)
+
   @@index([type, createdAt(sort: Desc)])
   @@map("notifications")
 }
@@ -1919,6 +2177,29 @@ model LotTransaction {
   @@map("lot_transactions")
 }
 
+// ==================== SERIAL NUMBER TRACKING ====================
+
+model SerialNumber {
+  id          String   @id @default(uuid())
+  serialCode  String
+  productId   String
+  product     Product  @relation(fields: [productId], references: [id], onDelete: Cascade)
+  warehouseId String
+  warehouse   Warehouse @relation(fields: [warehouseId], references: [id])
+  status      String   @default("IN_STOCK") // IN_STOCK | SOLD | RETURNED | DAMAGED
+  orderId     String?
+  order       Order?   @relation(fields: [orderId], references: [id], onDelete: SetNull)
+  purchaseOrderId String?
+  note        String?
+  createdAt   DateTime @default(now())
+  updatedAt   DateTime @updatedAt
+
+  @@unique([serialCode, productId])
+  @@index([productId, status])
+  @@index([warehouseId])
+  @@map("serial_numbers")
+}
+
 // ==================== MARKETPLACE ====================
 
 model MarketplaceShop {
@@ -2173,3 +2454,119 @@ model CampaignTracking {
   @@index([campaignId])
   @@map("campaign_trackings")
 }
+
+// ==================== AGENT LAYER (v3.0) ====================
+
+enum AgentSessionStatus {
+  RUNNING
+  WAITING_HUMAN
+  COMPLETED
+  FAILED
+  CANCELLED
+}
+
+enum AgentStepType {
+  LLM_CALL
+  TOOL_CALL
+  HUMAN_GATE
+  RENDER_UI
+}
+
+enum HumanGateStatus {
+  PENDING
+  APPROVED
+  REJECTED
+  EXPIRED
+  CANCELLED
+}
+
+model AgentSession {
+  id              String             @id @default(uuid())
+  sessionCode     String             @unique @default(cuid())
+  userId          String
+  user            User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  tenantId        String?
+  status          AgentSessionStatus @default(RUNNING)
+  intent          String?
+  triggerSource   String             @default("USER_CHAT") // USER_CHAT | CRON_JOB | SYSTEM_EVENT
+  userMessage     String             @db.Text
+  contextSnapshot Json?
+  finalResult     Json?
+  errorMsg        String?
+  startedAt       DateTime           @default(now())
+  endedAt         DateTime?
+  createdAt       DateTime           @default(now())
+  steps           AgentStep[]
+  humanGates      AgentHumanGate[]
+  feedback        AgentFeedback[]
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([tenantId, status])
+  @@index([triggerSource])
+  @@map("agent_sessions")
+}
+
+model AgentStep {
+  id          String        @id @default(uuid())
+  sessionId   String
+  session     AgentSession  @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  sequence    Int
+  type        AgentStepType
+  toolName    String?
+  toolInput   Json?
+  toolOutput  Json?
+  prompt      String?       @db.Text
+  completion  String?       @db.Text
+  status      String        @default("PENDING")
+  durationMs  Int?
+  path        String?       // "fast_path" | "fallback_llm"
+  confidence  Float?
+  errorMsg    String?
+  createdAt   DateTime      @default(now())
+
+  @@index([sessionId, sequence])
+  @@map("agent_steps")
+}
+
+model AgentHumanGate {
+  id            String          @id @default(uuid())
+  sessionId     String
+  session       AgentSession    @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  actionType    String
+  actionPayload Json
+  actionSummary String          @db.Text
+  triggerRule   String?
+  status        HumanGateStatus @default(PENDING)
+  decidedById   String?
+  decidedBy     User?           @relation("HumanGateDecider", fields: [decidedById], references: [id])
+  decisionNote  String?
+  decidedAt     DateTime?
+  expiresAt     DateTime
+  createdAt     DateTime        @default(now())
+
+  @@index([sessionId])
+  @@index([status, expiresAt])
+  @@map("agent_human_gates")
+}
+
+model AgentFeedback {
+  id          String   @id @default(uuid())
+  sessionId   String
+  session     AgentSession @relation(fields: [sessionId], references: [id], onDelete: Cascade)
+  stepId      String?
+  userId      String
+  user        User     @relation("AgentFeedbackUser", fields: [userId], references: [id])
+  query       String   @db.Text
+  response    String   @db.Text
+  rating      Boolean  // true = thumb up, false = thumb down
+  comment     String?
+  path        String?  // "fast_path" | "fallback_llm"
+  intent      String?
+  metadata    Json?
+  createdAt   DateTime @default(now())
+
+  @@index([userId, createdAt(sort: Desc)])
+  @@index([sessionId])
+  @@map("agent_feedback")
+}
+

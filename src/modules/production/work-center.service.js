@@ -1,3 +1,17 @@
+/**
+ * modules/production/work-center.service.js — Service quản lý Work Center
+ *
+ * Tổng quan:
+ * - Cung cấp logic CRUD cho WorkCenter (trung tâm làm việc)
+ * - Work center có mã, tên, mô tả, năng suất (capacity), tài khoản kế toán
+ * - Không thể xóa work center đang được dùng trong routing operation
+ *
+ * Hàm:
+ * - list(): Danh sách tất cả work centers kèm account, sắp xếp theo code
+ * - create({ code, name, description, capacity, accountId }): Tạo work center mới, bắt buộc code và name
+ * - update(id, data): Cập nhật work center, kiểm tra tồn tại trước
+ * - remove(id): Xóa work center, kiểm tra không có routing operation nào tham chiếu
+ */
 // src/modules/production/work-center.service.js
 const prisma = require("../../config/prisma");
 

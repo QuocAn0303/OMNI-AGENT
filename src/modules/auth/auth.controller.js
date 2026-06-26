@@ -1,4 +1,20 @@
-// src/modules/auth/auth.controller.js
+/**
+ * modules/auth/auth.controller.js — Request handler cho auth
+ * 
+ * Tổng quan:
+ * - Validate input bằng Zod schema → gọi service → trả response chuẩn
+ * - Mỗi hàm tương ứng 1 endpoint, đều có try/catch → next(err) cho error middleware
+ * 
+ * Hàm:
+ * - login(req, res, next): Xác thực đăng nhập, trả token + user
+ * - register(req, res, next): Đăng ký tenant + user mới, gửi email verify
+ * - verifyEmail(req, res, next): Xác minh email bằng token
+ * - getProfile(req, res, next): Lấy profile user hiện tại (req.user.id)
+ * - changePassword(req, res, next): Đổi mật khẩu (cần currentPassword + newPassword)
+ * - refresh(req, res, next): Làm mới access token
+ * - logout(req, res, next): Thu hồi refresh token (1 token hoặc all)
+ */
+
 const authService = require("./auth.service");
 const { success } = require("../../utils/response");
 const {
@@ -6,6 +22,8 @@ const {
   changePasswordSchema,
   refreshSchema,
   logoutSchema,
+  registerSchema,
+  verifyEmailSchema,
 } = require("./auth.validation");
 
 const login = async (req, res, next) => {
@@ -67,15 +85,22 @@ const logout = async (req, res, next) => {
 
 const register = async (req, res, next) => {
   try {
-    const { companyName, email, password, industry } = req.body
-    if (!companyName || !email || !password) {
-      return next({ status: 400, message: 'Thiếu thông tin bắt buộc' })
-    }
-    const result = await authService.register({ companyName, email, password, industry })
-    success(res, result, 'Đăng ký thành công')
+    const data = registerSchema.parse(req.body)
+    const result = await authService.register(data)
+    success(res, result, 'Vui lòng kiểm tra email để xác minh tài khoản')
   } catch (err) {
     next(err)
   }
 }
 
-module.exports = { login, register, getProfile, changePassword, refresh, logout };
+const verifyEmail = async (req, res, next) => {
+  try {
+    const { token } = verifyEmailSchema.parse(req.query)
+    const result = await authService.verifyEmail(token)
+    success(res, result, 'Xác minh email thành công')
+  } catch (err) {
+    next(err)
+  }
+}
+
+module.exports = { login, register, verifyEmail, getProfile, changePassword, refresh, logout };

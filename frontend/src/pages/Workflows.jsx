@@ -1,4 +1,17 @@
-// frontend/src/pages/Workflows.jsx
+/**
+ * Frontend: pages/Workflows.jsx — Workflow Engine (tự động hóa phê duyệt)
+ * 
+ * Tổng quan:
+ * - Danh sách workflow (getWorkflows), tạo mới (createWorkflow), bật/tắt (updateWorkflow)
+ * - Trigger: EXPENSE_ABOVE, PO_ABOVE, LEAVE_REQUEST, CUSTOM với ngưỡng kích hoạt
+ * - Mỗi workflow có các bước phê duyệt (steps), gán người duyệt
+ * - Expand row để xem chi tiết các bước
+ * - State: workflows/loading/trigger — form modal riêng
+ * - Bọc trong PlanGate
+ * 
+ * Components/Hooks/Exports:
+ * - Workflows (default): Page chính — table + expand + modal tạo workflow
+ */
 import { useState, useEffect } from "react";
 import {
   Table, Button, Space, Tag, Modal, Form, Input, Select, Switch,
@@ -6,6 +19,7 @@ import {
 } from "antd";
 import { PlusOutlined, ThunderboltOutlined } from "@ant-design/icons";
 import PageHeader from "../components/layout/PageHeader";
+import PlanGate from "../components/PlanGate";
 import { getWorkflows, createWorkflow, updateWorkflow } from "../api/workflow";
 
 const TRIGGER_LABELS = {
@@ -81,6 +95,7 @@ export default function Workflows() {
   ];
 
   return (
+    <PlanGate moduleKey="workflows" moduleName="Workflow / Phê duyệt">
     <div>
       <PageHeader title="Workflow Engine" subtitle="Tự động hóa quy trình phê duyệt và thông báo" />
 
@@ -133,5 +148,6 @@ export default function Workflows() {
         </Form>
       </Modal>
     </div>
+    </PlanGate>
   );
 }

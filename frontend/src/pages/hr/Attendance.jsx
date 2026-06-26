@@ -1,9 +1,24 @@
+/**
+ * Page: hr/Attendance — Chấm công nhân viên
+ *
+ * Tổng quan:
+ * - Hiển thị bảng chấm công với thông tin: ngày, nhân viên, giờ vào/ra, tổng giờ, trạng thái
+ * - Bộ lọc: khoảng thời gian (RangePicker), chọn nhân viên
+ * - Thống kê nhanh: tổng giờ làm, ngày có mặt, ngày vắng
+ * - Gọi API: GET /hr/attendance, GET /hr/employees
+ * - Trạng thái: Vắng, Đi muộn, Đúng giờ (kèm Tag màu)
+ * - Sử dụng EmptyState khi chưa có dữ liệu
+ *
+ * Exports:
+ * - Attendance: React functional component (default export)
+ */
 import { useEffect, useState, useMemo } from 'react';
 import { Table, DatePicker, Select, Button, message, Tag } from 'antd';
 import { CheckCircleOutlined, CloseCircleOutlined, ExportOutlined } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import axios from '../../api/axios';
 import EmptyState from '../../components/shared/EmptyState';
+
 
 const { RangePicker } = DatePicker;
 

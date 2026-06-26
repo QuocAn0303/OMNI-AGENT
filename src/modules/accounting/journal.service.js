@@ -1,5 +1,28 @@
-// src/modules/accounting/journal.service.js
-// Engine sổ nhật ký - đảm bảo mọi entry cân bằng (Σ Debit = Σ Credit)
+/**
+ * modules/accounting/journal.service.js — Engine sổ nhật ký kế toán (double-entry)
+ *
+ * Tổng quan:
+ * - Đảm bảo mọi bút toán cân bằng (Σ Debit = Σ Credit)
+ * - Tạo và post bút toán kép với idempotency qua (source, sourceId, operation)
+ * - Hỗ trợ đảo ngược bút toán (reversal) trong transaction
+ * - Tự động sinh mã bút toán JE-YYYYMMDD-XXXX với retry khi unique violation
+ * - Kiểm tra kỳ kế toán (fiscal period) trước khi post
+ * - Cung cấp truy vấn số dư tài khoản và danh sách bút toán
+ *
+ * Hàm:
+ * - generateEntryCode(tx): Sinh mã bút toán JE-YYYYMMDD-XXXX dựa trên số lượng trong ngày
+ * - isUniqueConstraintError(err): Kiểm tra lỗi unique constraint (P2002, 23505)
+ * - withCodeRetry(generator, fn, maxRetries): Retry fn với mã mới khi gặp unique violation
+ * - withUniqueRetry(operation, maxRetries): Retry operation khi gặp unique violation
+ * - resolveAccount(codeOrId, tx): Tra cứu tài khoản theo code hoặc UUID
+ * - findOpenPeriod(date, tx): Tìm kỳ kế toán OPEN tương ứng với ngày
+ * - postEntryOnce(input, tx): Tạo bút toán kép: validate lines, kiểm tra cân bằng, kiểm tra fiscal period, tạo entry + lines
+ * - postEntry(input, tx): Wrapper postEntryOnce với retry unique constraint
+ * - reverseEntry(entryId, userId, externalTx): Đảo ngược bút toán: swap Nợ/Có, SELECT FOR UPDATE + updateMany chống race
+ * - getAccountBalance(accountId, { startDate, endDate }): Tính tổng Nợ/Có và số dư theo normalBalance
+ * - listEntries({ page, limit, source, sourceId, accountId, from, to }): Liệt kê bút toán phân trang
+ * - getEntryById(id): Lấy chi tiết bút toán kèm lines, createdBy, reversedBy
+ */
 const prisma = require("../../config/prisma");
 
 const toNum = (v) => Number(v || 0);

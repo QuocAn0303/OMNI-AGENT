@@ -1,4 +1,17 @@
-// src/utils/crypto.js — AES-256-GCM helper for IntegrationConfig secrets.
+/**
+ * utils/crypto.js — Mã hóa AES-256-GCM cho IntegrationConfig secrets
+ * 
+ * Tổng quan:
+ * - Dùng để mã hóa/giải mã các API key, secret lưu trong DB (IntegrationConfig)
+ * - Key lấy từ ENCRYPTION_KEY (≥ 32 ký tự) → hash SHA256 → 32 bytes key
+ * - Fallback dev: derive key từ JWT_SECRET (không khuyến nghị cho production)
+ * - Output: base64(encrypted_data + auth_tag) + base64(iv)
+ * 
+ * Hàm:
+ * - encrypt(plain): Trả về { valueEnc, iv } — null nếu input rỗng
+ * - decrypt(valueEnc, iv): Giải mã, trả về plain text — null nếu lỗi
+ */
+
 const crypto = require("crypto");
 
 const ALGO = "aes-256-gcm";

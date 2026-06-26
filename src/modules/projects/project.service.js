@@ -1,4 +1,23 @@
-// src/modules/projects/project.service.js
+/**
+ * modules/projects/project.service.js — Service quản lý Dự án
+ *
+ * Tổng quan:
+ * - Cung cấp logic nghiệp vụ CRUD dự án, thống kê, báo cáo tài chính
+ * - State machine: DRAFT → ACTIVE → ON_HOLD → COMPLETED → ARCHIVED
+ * - Tích hợp auditService để ghi log
+ * - Hỗ trợ phân trang, tìm kiếm, lọc theo trạng thái
+ *
+ * Hàm:
+ * - generateCode(): Sinh mã dự án PRJ- + timestamp + random
+ * - list({ page, limit, status, search }): Liệt kê dự án phân trang, tìm theo name/code
+ * - overview(): Thống kê total, active, completed, overdue
+ * - getById(id): Chi tiết dự án kèm members
+ * - getStats(id): Thống kê tasks: total, done, inProgress, overdue, byPriority, progress%
+ * - getFinancial(id, { page, limit }): Budget vs Actual, paid/pending, variance, danh sách expenses
+ * - create(data, userId): Tạo dự án, thêm creator làm OWNER member
+ * - update(id, data, userId): Cập nhật, kiểm tra state machine khi đổi status
+ * - remove(id, userId): Xóa dự án (hard delete)
+ */
 const prisma = require("../../config/prisma");
 const auditService = require("../audit/audit.service");
 

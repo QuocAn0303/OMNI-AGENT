@@ -1,3 +1,17 @@
+/**
+ * Frontend: pages/projects/Projects.jsx — Danh sách dự án
+ *
+ * Tổng quan:
+ * - Bảng danh sách dự án với phân trang, tìm kiếm (debounce), lọc trạng thái
+ * - CRUD dự án qua modal; thống kê tổng quan (tổng, đang chạy, hoàn thành, quá hạn)
+ * - API: GET /projects (phân trang), GET /projects/overview, POST /projects, PATCH /projects/:id, DELETE /projects/:id
+ * - Điều hướng click hàng → /projects/:id
+ *
+ * Components/Hooks/Exports:
+ * - Projects: Component chính (xuất mặc định)
+ * - STATUS_OPTIONS: Danh sách trạng thái + nhãn
+ * - PlanGate: Kiểm tra quyền truy cập module
+ */
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -10,6 +24,7 @@ import {
 import dayjs from 'dayjs';
 import axios from '../../api/axios';
 import PageHeader from '../../components/layout/PageHeader';
+import PlanGate from '../../components/PlanGate';
 import StatCard from '../../components/shared/StatCard';
 import EmptyState from '../../components/shared/EmptyState';
 import StatusTag from '../../components/shared/StatusTag';
@@ -251,6 +266,7 @@ export default function Projects() {
   ];
 
   return (
+    <PlanGate moduleKey="projects" moduleName="Dự án">
     <>
       <PageHeader
         title="Dự án"
@@ -380,5 +396,6 @@ export default function Projects() {
         </Form>
       </Modal>
     </>
+    </PlanGate>
   );
 }

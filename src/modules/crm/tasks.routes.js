@@ -1,11 +1,35 @@
+/**
+ * modules/crm/tasks.routes.js — Định tuyến nhiệm vụ CSKH
+ * 
+ * Tổng quan:
+ * - REST endpoints cho CustomerTask (nhiệm vụ chăm sóc khách hàng).
+ * - Hỗ trợ phân quyền: CASHIER chỉ xem được task của mình; ADMIN/MANAGER tạo/sửa/xóa.
+ * - Endpoints riêng: my tasks, overdue count, assignable users.
+ * - Tích hợp Zod validation, authenticate + authorize + requireModule middleware.
+ * 
+ * Hàm:
+ * - GET /assignable-users: Danh sách user có thể giao việc (ADMIN, MANAGER, CASHIER).
+ * - GET /: Danh sách nhiệm vụ (tasksService.list); CASHIER tự động lọc assignedTo = mình.
+ * - GET /my: Nhiệm vụ của user hiện tại (tasksService.myTasks).
+ * - GET /my/overdue-count: Đếm nhiệm vụ quá hạn (tasksService.overdueCountForUser).
+ * - POST /: Tạo nhiệm vụ mới (tasksService.create) — ADMIN/MANAGER.
+ * - PATCH /:id: Cập nhật nhiệm vụ (tasksService.update) — ADMIN/MANAGER/CASHIER.
+ * - DELETE /:id: Xóa nhiệm vụ (tasksService.remove) — ADMIN/MANAGER.
+ */
 // src/modules/crm/tasks.routes.js
 const router = require("express").Router();
 const { z } = require("zod");
+const prisma = require("../../config/prisma");
 const tasksService = require("./tasks.service");
 const { authenticate, authorize } = require("../../middleware/auth.middleware");
+const { requireModule } = require("../../middleware/plan.middleware");
 const { paginated, created, success } = require("../../utils/response");
 
-router.use(authenticate, authorize("SUPER_ADMIN", "ADMIN", "MANAGER", "CASHIER"));
+router.use(
+  authenticate,
+  authorize("SUPER_ADMIN", "ADMIN", "MANAGER", "CASHIER"),
+  requireModule("crm"),
+);
 
 // CASHIER chỉ được phép xem; tạo/sửa/xóa dành cho SUPER_ADMIN/ADMIN/MANAGER
 const requireManager = authorize("SUPER_ADMIN", "ADMIN", "MANAGER");
@@ -62,7 +86,10 @@ router.get("/", async (req, res, next) => {
 // GET /api/crm/tasks/my?overdue=1
 router.get("/my", async (req, res, next) => {
   try {
-    const { tasks, pagination } = await tasksService.myTasks(req.user.id, req.query);
+    const { tasks, pagination } = await tasksService.myTasks(
+      req.user.id,
+      req.query,
+    );
     paginated(res, tasks, pagination);
   } catch (err) {
     next(err);
@@ -82,26 +109,42 @@ router.get("/my/overdue-count", async (req, res, next) => {
 router.post("/", requireManager, async (req, res, next) => {
   try {
     const data = createSchema.parse(req.body);
-    created(res, await tasksService.create(data, req.user.id), "Đã tạo nhiệm vụ");
+    created(
+      res,
+      await tasksService.create(data, req.user.id),
+      "Đã tạo nhiệm vụ",
+    );
   } catch (err) {
     next(err);
   }
 });
-
-// PATCH /api/crm/tasks/:id  (SUPER_ADMIN/ADMIN/MANAGER)
-router.patch("/:id", requireManager, async (req, res, next) => {
-  try {
-    const data = updateSchema.parse(req.body);
-    success(res, await tasksService.update(req.params.id, data, req.user.id), "Đã cập nhật");
-  } catch (err) {
-    next(err);
-  }
-});
+//sửa lại patch để phân thêm quyền cho cashier
+// PATCH /api/crm/tasks/:id  (SUPER_ADMIN/ADMIN/MANAGER/CASHIER)
+router.patch(
+  "/:id",
+  authorize("SUPER_ADMIN", "ADMIN", "MANAGER", "CASHIER"),
+  async (req, res, next) => {
+    try {
+      const data = updateSchema.parse(req.body);
+      success(
+        res,
+        await tasksService.update(req.params.id, data, req.user.id),
+        "Đã cập nhật",
+      );
+    } catch (err) {
+      next(err);
+    }
+  },
+);
 
 // DELETE /api/crm/tasks/:id  (ADMIN/MANAGER only)
 router.delete("/:id", requireManager, async (req, res, next) => {
   try {
-    success(res, await tasksService.remove(req.params.id, req.user.id), "Đã xóa nhiệm vụ");
+    success(
+      res,
+      await tasksService.remove(req.params.id, req.user.id),
+      "Đã xóa nhiệm vụ",
+    );
   } catch (err) {
     next(err);
   }

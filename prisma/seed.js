@@ -1,3 +1,22 @@
+/**
+ * prisma/seed.js — Seed dữ liệu chính cho hệ thống CANDORY SCENT
+ *
+ * Tổng quan:
+ * - File này tạo toàn bộ dữ liệu mẫu ban đầu cho hệ thống ERP
+ * - Chạy khi: npm run db:seed
+ * - Tạo dữ liệu: users (10 tài khoản với các role), subscription plans (4 gói),
+ *   tenant + subscription, employees, categories (3 danh mục), products (30-50 SP + tồn kho),
+ *   customers (50), orders (40-60 đơn hàng kèm giao dịch tồn kho)
+ * - Mật khẩu mặc định tất cả tài khoản: 123456
+ * - Có hàm ensureDeepDiveSchema() để tạo enum/table mở rộng (hiện đang comment)
+ *
+ * Hàm:
+ * - ensureDeepDiveSchema(): Tạo các enum mở rộng (ReturnStatus, RefundMethod, CycleCountStatus),
+ *   bảng payments, order_returns, cycle_counts và các cột mở rộng
+ * - main(): Hàm chính — xoá dữ liệu cũ (TRUNCATE CASCADE), tạo toàn bộ dữ liệu mẫu
+ * - rndInt(min, max): Random số nguyên trong khoảng [min, max]
+ * - pick(arr): Random lấy 1 phần tử từ mảng
+ */
 // prisma/seed.js
 require("dotenv").config();
 const { PrismaClient, Prisma } = require("@prisma/client");
@@ -7,7 +26,12 @@ const bcrypt = require("bcrypt");
 const { faker } = require("@faker-js/faker");
 
 // Use PrismaPg adapter so PrismaClient uses the Postgres adapter engine
-const pool = new Pool({ connectionString: process.env.DATABASE_URL, max: 2, idleTimeoutMillis: 30000, connectionTimeoutMillis: 10000 });
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  max: 2,
+  idleTimeoutMillis: 30000,
+  connectionTimeoutMillis: 10000,
+});
 const adapter = new PrismaPg(pool);
 const prisma = new PrismaClient({ adapter });
 
@@ -18,6 +42,8 @@ async function ensureDeepDiveSchema() {
   const statements = [
     `ALTER TYPE "TransactionType" ADD VALUE IF NOT EXISTS 'RESERVATION'`,
     `ALTER TYPE "TransactionType" ADD VALUE IF NOT EXISTS 'RESERVATION_RELEASE'`,
+    `ALTER TYPE "Role" ADD VALUE IF NOT EXISTS 'SUPER_ADMIN'`,
+    `ALTER TYPE "Role" ADD VALUE IF NOT EXISTS 'SUPER_OMEGA_ULTRA_ADMIN'`,
     `DO $$ BEGIN CREATE TYPE "ReturnStatus" AS ENUM ('PENDING', 'APPROVED', 'REJECTED', 'COMPLETED'); EXCEPTION WHEN duplicate_object THEN null; END $$`,
     `DO $$ BEGIN CREATE TYPE "RefundMethod" AS ENUM ('CASH', 'BANK_TRANSFER', 'STORE_CREDIT'); EXCEPTION WHEN duplicate_object THEN null; END $$`,
     `DO $$ BEGIN CREATE TYPE "CycleCountStatus" AS ENUM ('DRAFT', 'IN_PROGRESS', 'COMPLETED', 'CANCELLED'); EXCEPTION WHEN duplicate_object THEN null; END $$`,
@@ -84,6 +110,7 @@ async function ensureDeepDiveSchema() {
     )`,
     `CREATE UNIQUE INDEX IF NOT EXISTS "order_returns_returnCode_key" ON "order_returns"("returnCode")`,
     `CREATE UNIQUE INDEX IF NOT EXISTS "cycle_counts_code_key" ON "cycle_counts"("code")`,
+    `ALTER TABLE "users" ADD COLUMN IF NOT EXISTS "tenantId" TEXT`,
   ];
 
   for (const statement of statements) {
@@ -92,7 +119,7 @@ async function ensureDeepDiveSchema() {
 }
 
 async function main() {
-  await ensureDeepDiveSchema();
+  // await ensureDeepDiveSchema();
   console.log("🌱 Seeding database for CANDORY SCENT...");
 
   // ---- CLEANUP (order matters to avoid FK constraint errors) ----
@@ -132,58 +159,92 @@ async function main() {
 
   const seedUsers = [
     {
+      email: "super_omega_ultra_admin@gmail.com",
+      fullName: "Siêu siêu siêu cấp admin",
+      role: "SUPER_OMEGA_ULTRA_ADMIN",
+      isActive: true,
+      emailVerified: true,
+      registrationStatus: "ACTIVE",
+    },
+    {
       email: "superadmin@candory.com",
       fullName: "Super Admin CANDORY",
       role: "SUPER_ADMIN",
       isActive: true,
+      emailVerified: true,
+      registrationStatus: "ACTIVE",
     },
     {
       email: "admin@candory.com",
       fullName: "Admin CANDORY",
       role: "ADMIN",
       isActive: true,
+      emailVerified: true,
+      registrationStatus: "ACTIVE",
     },
     {
       email: "manager@candory.com",
       fullName: "Quản lý CANDORY",
       role: "MANAGER",
       isActive: true,
+      emailVerified: true,
+      registrationStatus: "ACTIVE",
     },
     {
       email: "cashier@candory.com",
       fullName: "Thu ngân CANDORY",
       role: "CASHIER",
       isActive: true,
+      emailVerified: true,
+      registrationStatus: "ACTIVE",
     },
     {
       email: "quocan@gmail.com",
       fullName: "Quốc An",
       role: "MANAGER",
       isActive: true,
+      emailVerified: true,
+      registrationStatus: "ACTIVE",
     },
     {
       email: "phatlun@gmail.com",
       fullName: "Phát lùn",
       role: "CASHIER",
       isActive: true,
+      emailVerified: true,
+      registrationStatus: "ACTIVE",
     },
     {
       email: "tanphat@gmail.com",
       fullName: "Tấn Phát",
       role: "WAREHOUSE",
       isActive: true,
+      emailVerified: true,
+      registrationStatus: "ACTIVE",
     },
     {
       email: "minhtri@gmail.com",
       fullName: "Minh Trí",
       role: "WAREHOUSE",
       isActive: true,
+      emailVerified: true,
+      registrationStatus: "ACTIVE",
     },
     {
       email: "hieunhan@gmail.com",
       fullName: "Hiếu Nhân",
       role: "WAREHOUSE",
       isActive: true,
+      emailVerified: true,
+      registrationStatus: "ACTIVE",
+    },
+    {
+      email: "warehouse@candory.com",
+      fullName: "Thủ kho CANDORY",
+      role: "WAREHOUSE",
+      isActive: true,
+      emailVerified: true,
+      registrationStatus: "ACTIVE",
     },
   ];
 
@@ -195,6 +256,113 @@ async function main() {
     users.push(created);
   }
   console.log(`✅ Created ${users.length} users`);
+
+  // ---- SUBSCRIPTION PLANS (4 gói) ----
+  const defaultPlans = [
+    {
+      name: "Miễn phí", key: "free", price: 0, durationDays: 99999, sortOrder: 0,
+      description: "Dùng thử miễn phí các tính năng cơ bản — 5 users, 2 kho, 200 sản phẩm",
+      features: {
+        maxUsers: 5, maxWarehouses: 2, maxProducts: 200,
+        allowedModules: [
+          "dashboard", "products", "orders", "customers",
+          "pos", "returns", "inventory", "crm",
+          "loyalty", "promotions", "delivery",
+          "hr", "accounting", "debts", "vendors", "purchase-orders",
+          "reports", "import", "audit",
+        ],
+        hrPit: false, hrBhxh: false, hrViolations: false, hrPayrollLock: false,
+        accountingBalanceSheet: false, accountingCashFlow: false, accountingAutopost: false,
+      },
+    },
+    {
+      name: "Chuyên nghiệp", key: "pro", price: 499000, currency: "VND", durationDays: 30, sortOrder: 1,
+      description: "Quản lý chuyên sâu cho doanh nghiệp đang phát triển — 15 users, 5 kho, 500 sản phẩm",
+      features: {
+        maxUsers: 15, maxWarehouses: 5, maxProducts: 500,
+        allowedModules: [
+          "dashboard", "products", "orders", "customers",
+          "pos", "returns", "inventory", "cycle-count", "stock-transfer",
+          "crm", "segments", "loyalty", "promotions", "delivery",
+          "hr", "accounting", "debts", "vendors", "purchase-orders",
+          "reports", "import", "audit", "analytics", "lot-tracking",
+          "marketing", "currency",
+        ],
+        hrPit: true, hrBhxh: true, hrViolations: true, hrPayrollLock: true,
+        accountingBalanceSheet: true, accountingCashFlow: true, accountingAutopost: true,
+      },
+    },
+    {
+      name: "Doanh nghiệp", key: "business", price: 1499000, currency: "VND", durationDays: 30, sortOrder: 2,
+      description: "Toàn diện cho doanh nghiệp quy mô lớn — 50 users, 20 kho, 5000 sản phẩm",
+      features: {
+        maxUsers: 50, maxWarehouses: 20, maxProducts: 5000,
+        allowedModules: [
+          "dashboard", "products", "orders", "customers",
+          "pos", "returns", "inventory", "cycle-count", "stock-transfer",
+          "crm", "segments", "loyalty", "promotions", "delivery",
+          "hr", "accounting", "debts", "vendors", "purchase-orders",
+          "reports", "import", "audit", "analytics", "lot-tracking",
+          "marketing",
+          "production", "projects",
+          "einvoice", "tax", "bank-reco", "fixed-assets", "currency",
+          "marketplace", "report-builder", "workflows",
+          "integrations", "portal", "ai",
+        ],
+        hrPit: true, hrBhxh: true, hrViolations: true, hrPayrollLock: true,
+        accountingBalanceSheet: true, accountingCashFlow: true, accountingAutopost: true,
+      },
+    },
+    {
+      name: "Enterprise", key: "enterprise", price: 0, durationDays: 99999, sortOrder: 3,
+      description: "Liên hệ để có giải pháp tùy chỉnh — không giới hạn",
+      features: {
+        maxUsers: "unlimited", maxWarehouses: "unlimited", maxProducts: "unlimited",
+        allowedModules: ["*"],
+      },
+    },
+  ];
+
+  const plans = [];
+  for (const p of defaultPlans) {
+    const plan = await prisma.subscriptionPlan.upsert({
+      where: { key: p.key },
+      update: p,
+      create: p,
+    });
+    plans.push(plan);
+  }
+  console.log(`✅ Created ${plans.length} subscription plans`);
+
+  // ---- TENANT for CANDORY SCENT ----
+  const tenant = await prisma.tenant.upsert({
+    where: { slug: "candory-scent" },
+    update: {},
+    create: { name: "CANDORY SCENT", slug: "candory-scent" },
+  });
+
+  // Assign tenantId to CANDORY users (exclude SUPER_OMEGA_ULTRA_ADMIN)
+  const candoryUsers = users.filter((u) => u.role !== "SUPER_OMEGA_ULTRA_ADMIN");
+  for (const u of candoryUsers) {
+    await prisma.user.update({ where: { id: u.id }, data: { tenantId: tenant.id } });
+  }
+
+  // Create active subscription for CANDORY tenant
+  const proPlan = plans.find((p) => p.key === "pro");
+  if (proPlan) {
+    const endDate = new Date();
+    endDate.setDate(endDate.getDate() + 30);
+    await prisma.tenantSubscription.create({
+      data: {
+        tenantId: tenant.id,
+        planId: proPlan.id,
+        status: "ACTIVE",
+        startDate: new Date(),
+        endDate,
+      },
+    });
+  }
+  console.log("✅ Created tenant + subscription for CANDORY SCENT");
 
   // ---- EMPLOYEES (linked to seeded users) ----
   const employees = [];
@@ -277,7 +445,7 @@ async function main() {
     "Bộ phụ kiện đốt nến",
   ];
 
-  const numProducts = rndInt(30, 50);
+  const numProducts = rndInt(15, 20);
   const products = [];
 
   for (let i = 0; i < numProducts; i++) {
@@ -323,6 +491,43 @@ async function main() {
     });
   }
   console.log(`✅ Created ${products.length} products (+inventory)`);
+
+  // ---- CURRENCIES + EXCHANGE RATES ----
+  const currencies = [
+    { code: "VND", name: "Việt Nam Đồng", symbol: "₫", isBase: true },
+    { code: "USD", name: "US Dollar", symbol: "$" },
+    { code: "EUR", name: "Euro", symbol: "€" },
+    { code: "JPY", name: "Japanese Yen", symbol: "¥" },
+    { code: "CNY", name: "Chinese Yuan", symbol: "¥" },
+    { code: "KRW", name: "South Korean Won", symbol: "₩" },
+  ];
+  for (const cur of currencies) {
+    const created = await prisma.currency.upsert({
+      where: { code: cur.code },
+      update: {},
+      create: cur,
+    });
+    if (!cur.isBase) {
+      const rates = {
+        USD: 25400, EUR: 27500, JPY: 162, CNY: 3500, KRW: 18.5,
+      };
+      const existing = await prisma.exchangeRate.findFirst({
+        where: { currencyId: created.id },
+      });
+      if (!existing) {
+        const today = new Date(); today.setHours(0, 0, 0, 0);
+        await prisma.exchangeRate.create({
+          data: {
+            currencyId: created.id,
+            date: today,
+            rate: rates[cur.code],
+            source: "SEED",
+          },
+        });
+      }
+    }
+  }
+  console.log(`✅ Created ${currencies.length} currencies with rates`);
 
   // ---- CUSTOMERS (50) ----
   const customers = [];
@@ -385,99 +590,102 @@ async function main() {
     const productIds = Array.from(chosen);
 
     // run a transaction for the whole order
-    await prisma.$transaction(async (tx) => {
-      const orderCode = `ORD-${Date.now().toString().slice(-6)}-${oi}`;
+    await prisma.$transaction(
+      async (tx) => {
+        const orderCode = `ORD-${Date.now().toString().slice(-6)}-${oi}`;
 
-      // create empty order first (we'll patch totals after items)
-      const order = await tx.order.create({
-        data: {
-          orderCode,
-          subtotal: "0",
-          discount: "0",
-          total: "0",
-          customerId: customer.id,
-          createdById: createdBy.id,
-        },
-      });
-
-      let orderSum = 0;
-
-      for (const pid of productIds) {
-        // read inventory inside transaction to avoid race
-        const inv = await tx.inventory.findFirst({
-          where: { productId: pid },
-        });
-        if (!inv || inv.quantity <= 0) continue; // out of stock
-
-        const qty = Math.min(rndInt(1, 5), inv.quantity);
-
-        // get product price
-        const prod = products.find((p) => p.id === pid);
-        const price = prod ? prod.price : 0;
-        const subtotal = parseFloat((price * qty).toFixed(2));
-
-        // create order item
-        await tx.orderItem.create({
+        // create empty order first (we'll patch totals after items)
+        const order = await tx.order.create({
           data: {
-            orderId: order.id,
-            productId: pid,
-            quantity: qty,
-            price: price.toFixed(2),
-            subtotal: subtotal.toFixed(2),
-          },
-        });
-
-        // decrement inventory
-        await tx.inventory.update({
-          where: { id: inv.id },
-          data: { quantity: { decrement: qty } },
-        });
-
-        // create inventory transaction
-        await tx.inventoryTransaction.create({
-          data: {
-            type: "EXPORT",
-            quantity: qty,
-            inventoryId: inv.id,
+            orderCode,
+            subtotal: "0",
+            discount: "0",
+            total: "0",
+            customerId: customer.id,
             createdById: createdBy.id,
-            note: `Order ${order.orderCode}`,
           },
         });
 
-        orderSum += subtotal;
-      }
+        let orderSum = 0;
 
-      if (orderSum > 0) {
-        // update order totals
-        await tx.order.update({
-          where: { id: order.id },
-          data: { subtotal: orderSum.toFixed(2), total: orderSum.toFixed(2) },
-        });
+        for (const pid of productIds) {
+          // read inventory inside transaction to avoid race
+          const inv = await tx.inventory.findFirst({
+            where: { productId: pid },
+          });
+          if (!inv || inv.quantity <= 0) continue; // out of stock
 
-        // increment customer totalSpent
-        try {
-          await tx.customer.update({
-            where: { id: customer.id },
-            data: { totalSpent: { increment: orderSum } },
+          const qty = Math.min(rndInt(1, 5), inv.quantity);
+
+          // get product price
+          const prod = products.find((p) => p.id === pid);
+          const price = prod ? prod.price : 0;
+          const subtotal = parseFloat((price * qty).toFixed(2));
+
+          // create order item
+          await tx.orderItem.create({
+            data: {
+              orderId: order.id,
+              productId: pid,
+              quantity: qty,
+              price: price.toFixed(2),
+              subtotal: subtotal.toFixed(2),
+            },
           });
-        } catch (e) {
-          // fallback: read current and set
-          const cur = await tx.customer.findUnique({
-            where: { id: customer.id },
+
+          // decrement inventory
+          await tx.inventory.update({
+            where: { id: inv.id },
+            data: { quantity: { decrement: qty } },
           });
-          const newTotal = (parseFloat(cur.totalSpent || 0) + orderSum).toFixed(
-            2,
-          );
-          await tx.customer.update({
-            where: { id: customer.id },
-            data: { totalSpent: newTotal },
+
+          // create inventory transaction
+          await tx.inventoryTransaction.create({
+            data: {
+              type: "EXPORT",
+              quantity: qty,
+              inventoryId: inv.id,
+              createdById: createdBy.id,
+              note: `Order ${order.orderCode}`,
+            },
           });
+
+          orderSum += subtotal;
         }
-      } else {
-        // no items could be created (all OOS) → remove the empty order
-        await tx.order.delete({ where: { id: order.id } });
-      }
-    }, { timeout: 60000 });
+
+        if (orderSum > 0) {
+          // update order totals
+          await tx.order.update({
+            where: { id: order.id },
+            data: { subtotal: orderSum.toFixed(2), total: orderSum.toFixed(2) },
+          });
+
+          // increment customer totalSpent
+          try {
+            await tx.customer.update({
+              where: { id: customer.id },
+              data: { totalSpent: { increment: orderSum } },
+            });
+          } catch (e) {
+            // fallback: read current and set
+            const cur = await tx.customer.findUnique({
+              where: { id: customer.id },
+            });
+            const newTotal = (
+              parseFloat(cur.totalSpent || 0) + orderSum
+            ).toFixed(2);
+            await tx.customer.update({
+              where: { id: customer.id },
+              data: { totalSpent: newTotal },
+            });
+          }
+        } else {
+          // no items could be created (all OOS) → remove the empty order
+          await tx.order.delete({ where: { id: order.id } });
+        }
+      },
+      { timeout: 60000 },
+    );
 
     if ((oi + 1) % 25 === 0) console.log(`  → ${oi + 1} orders processed`);
   }
@@ -489,6 +697,8 @@ async function main() {
   console.log("  - manager@candory.com     [MANAGER]");
   console.log("  - cashier@candory.com     [CASHIER]");
   console.log("  - tanphat@gmail.com       [WAREHOUSE]");
+  console.log("  - minhtri@gmail.com       [WAREHOUSE]");
+  console.log("  - warehouse@candory.com   [WAREHOUSE]");
 }
 
 main()

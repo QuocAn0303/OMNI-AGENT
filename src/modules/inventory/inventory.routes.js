@@ -1,11 +1,31 @@
+/**
+ * modules/inventory/inventory.routes.js — Routes quản lý tồn kho
+ * 
+ * Tổng quan:
+ * - Các endpoint nhập/xuất/kiểm kho, cảnh báo, lịch sử giao dịch
+ * - Yêu cầu authenticate + module inventory, mount cycle-count routes
+ * 
+ * Endpoints:
+ * - GET /: Danh sách tồn kho theo warehouse
+ * - POST /import: Nhập kho (ADMIN, MANAGER, WAREHOUSE)
+ * - POST /export: Xuất kho (ADMIN, MANAGER, WAREHOUSE)
+ * - POST /adjust: Kiểm kho/điều chỉnh (ADMIN, WAREHOUSE)
+ * - GET /low-stock: Hàng sắp hết (ADMIN, WAREHOUSE, MANAGER)
+ * - GET /alerts: Cảnh báo tồn kho critical/warning (ADMIN, MANAGER, WAREHOUSE)
+ * - GET /transactions: Lịch sử giao dịch (ADMIN, WAREHOUSE)
+ * 
+ * Validation:
+ * - importSchema, exportSchema, adjustSchema với Zod
+ */
 const router = require("express").Router();
 const inventoryService = require("./inventory.service");
 const cycleCountRoutes = require("./cyclecount.routes");
 const { authenticate, authorize } = require("../../middleware/auth.middleware");
+const { requireModule } = require("../../middleware/plan.middleware");
 const { success } = require("../../utils/response");
 const { z } = require("zod");
 
-router.use(authenticate);
+router.use(authenticate, requireModule("inventory"));
 router.use("/cycle-counts", cycleCountRoutes);
 
 router.get("/", authorize("ADMIN", "MANAGER", "WAREHOUSE"), async (req, res, next) => {
@@ -23,8 +43,12 @@ const importSchema = z.object({
     .number()
     .int()
     .positive({ message: "Số lượng nhập phải lớn hơn 0" }),
+  unitCost: z.number().min(0).optional(),
   note: z.string().optional(),
   warehouseId: z.string().uuid().optional(),
+  lotCode: z.string().optional(),
+  expDate: z.string().optional(),
+  mfgDate: z.string().optional(),
 });
 
 const exportSchema = z.object({

@@ -1,3 +1,17 @@
+/**
+ * Frontend: pages/production/Production.jsx — Quản lý sản xuất
+ *
+ * Tổng quan:
+ * - Hai tab chính: Định mức nguyên liệu (BOM) và Lệnh sản xuất (Work Order)
+ * - CRUD BOM với danh sách nguyên liệu động (Form.List), kích hoạt/vô hiệu hóa/xóa
+ * - Tạo Work Order từ BOM đang ACTIVE, chọn kho và số lượng
+ * - Click WO → /production/work-orders/:id
+ * - API: GET /production/overview, /production/boms, /production/work-orders, POST/PATCH/DELETE tương ứng
+ *
+ * Components/Hooks/Exports:
+ * - Production: Component chính (xuất mặc định)
+ * - BOM_STATUS, WO_STATUS + meta helpers
+ */
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
@@ -12,6 +26,7 @@ import {
 import dayjs from 'dayjs';
 import axios from '../../api/axios';
 import PageHeader from '../../components/layout/PageHeader';
+import PlanGate from '../../components/PlanGate';
 import StatCard from '../../components/shared/StatCard';
 import EmptyState from '../../components/shared/EmptyState';
 import StatusTag from '../../components/shared/StatusTag';
@@ -75,6 +90,13 @@ export default function Production() {
   const [savingWo, setSavingWo] = useState(false);
   const [activeBoms, setActiveBoms] = useState([]);
 
+  // ===== Quality Check state =====
+  const [qcList, setQcList] = useState([]);
+  const [qcLoading, setQcLoading] = useState(false);
+  const [qcModalOpen, setQcModalOpen] = useState(false);
+  const [qcForm] = Form.useForm();
+  const [savingQc, setSavingQc] = useState(false);
+
   // ===== Loaders =====
   const loadStats = async () => {
     try {
@@ -135,6 +157,15 @@ export default function Production() {
     }
   };
 
+  const loadQcList = async () => {
+    setQcLoading(true);
+    try {
+      const res = await axios.get('/production/quality', { params: { limit: 200 } });
+      setQcList(res.data?.data?.checks || []);
+    } catch { /* ignore */ }
+    finally { setQcLoading(false); }
+  };
+
   const loadActiveBoms = async () => {
     try {
       const res = await axios.get('/production/boms', { params: { status: 'ACTIVE', limit: 200 } });
@@ -150,11 +181,35 @@ export default function Production() {
     loadWarehouses();
   }, []);
 
+  const handleCreateQc = async () => {
+    try {
+      const values = await qcForm.validateFields();
+      setSavingQc(true);
+      const payload = {
+        items: (values.items || []).map((it) => ({
+          name: it.name,
+          result: it.result || null,
+          notes: it.notes || null,
+        })),
+        notes: values.notes || null,
+      };
+      await axios.post(`/production/quality/${values.workOrderId}`, payload);
+      message.success('Đã tạo phiếu kiểm tra');
+      setQcModalOpen(false);
+      qcForm.resetFields();
+      await loadQcList();
+    } catch (err) {
+      if (err?.errorFields) return;
+      message.error(err?.response?.data?.message || 'Tạo thất bại');
+    } finally { setSavingQc(false); }
+  };
+
   useEffect(() => { loadBoms(); }, [bomPage, debouncedBomSearch, bomStatusFilter]);
   useEffect(() => { setBomPage(1); }, [debouncedBomSearch, bomStatusFilter]);
 
   useEffect(() => { loadWorkOrders(); }, [woPage, debouncedWoSearch, woStatusFilter]);
   useEffect(() => { setWoPage(1); }, [debouncedWoSearch, woStatusFilter]);
+  useEffect(() => { if (activeTab === 'quality') loadQcList(); }, [activeTab]);
 
   // ===== BOM actions =====
   const openBomModal = async (bom = null) => {
@@ -420,6 +475,7 @@ export default function Production() {
   ];
 
   return (
+    <PlanGate moduleKey="production" moduleName="Quản lý sản xuất">
     <>
       <PageHeader
         title="Quản lý sản xuất"
@@ -497,6 +553,75 @@ export default function Production() {
                         />
                       ),
                     }}
+                  />
+                </div>
+              </>
+            ),
+          },
+          {
+            key: 'quality',
+            label: `Kiểm tra chất lượng`,
+            children: (
+              <>
+                <div className="filters-bar">
+                  <span style={{ color: 'var(--text-muted)', fontSize: 13 }}>
+                    Danh sách phiếu kiểm tra chất lượng theo lệnh sản xuất
+                  </span>
+                  {canEdit && (
+                    <Button type="primary" icon={<PlusOutlined />} onClick={async () => { qcForm.resetFields(); qcForm.setFieldsValue({ items: [{ name: '', result: '', notes: '' }] }); setQcModalOpen(true); const r = await axios.get('/production/work-orders', { params: { limit: 200 } }).catch(() => null); if (r) setWorkOrders(r.data?.data || []); }} style={{ marginLeft: 'auto' }}>
+                      Tạo phiếu kiểm tra
+                    </Button>
+                  )}
+                </div>
+                <div className="table-card">
+                  <Table
+                    columns={[
+                      {
+                        title: 'Mã WO', dataIndex: ['workOrder', 'code'], width: 160,
+                        render: (code) => <span style={{ fontFamily: 'var(--font-mono)', fontSize: 12 }}>{code}</span>,
+                      },
+                      {
+                        title: 'Sản phẩm', dataIndex: ['workOrder', 'product', 'name'],
+                        render: (name, row) => (
+                          <div>
+                            <div style={{ fontWeight: 500 }}>{name}</div>
+                            <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>{row.workOrder?.product?.sku}</div>
+                          </div>
+                        ),
+                      },
+                      {
+                        title: 'Trạng thái QC', dataIndex: 'status', width: 150,
+                        render: (s) => {
+                          const m = { PASSED: ['success', 'Đạt'], FAILED: ['error', 'Không đạt'], PARTIAL: ['warning', 'Một phần'], PENDING: ['default', 'Chờ KQ'] };
+                          const [color, label] = m[s] || ['default', s];
+                          return <Tag color={color}>{label}</Tag>;
+                        },
+                      },
+                      {
+                        title: 'Người kiểm', dataIndex: ['checkedBy', 'fullName'], width: 150,
+                        render: (v) => v || '—',
+                      },
+                      {
+                        title: 'Hạng mục', dataIndex: ['items', 'length'], width: 100, align: 'right',
+                      },
+                      {
+                        title: 'Ngày tạo', dataIndex: 'createdAt', width: 160,
+                        render: (d) => d ? dayjs(d).format('DD/MM/YYYY HH:mm') : '—',
+                      },
+                      {
+                        title: '', width: 100,
+                        render: (_, row) => (
+                          <Button size="small" onClick={() => navigate(`/production/work-orders/${row.workOrder?.id}`)}>
+                            Xem WO
+                          </Button>
+                        ),
+                      },
+                    ]}
+                    dataSource={qcList}
+                    rowKey="id"
+                    loading={qcLoading}
+                    pagination={{ pageSize: 20 }}
+                    locale={{ emptyText: <EmptyState title="Chưa có phiếu kiểm tra" /> }}
                   />
                 </div>
               </>
@@ -722,6 +847,68 @@ export default function Production() {
           </Form.Item>
         </Form>
       </Modal>
+
+      {/* QC Creation Modal */}
+      <Modal
+        title="Tạo phiếu kiểm tra chất lượng"
+        open={qcModalOpen}
+        onCancel={() => setQcModalOpen(false)}
+        onOk={handleCreateQc}
+        okText="Tạo"
+        cancelText="Hủy"
+        confirmLoading={savingQc}
+        width={600}
+      >
+        <Form form={qcForm} layout="vertical" style={{ marginTop: 16 }}>
+          <Form.Item name="workOrderId" label="Lệnh sản xuất" rules={[{ required: true, message: 'Chọn WO' }]}>
+            <Select
+              showSearch
+              optionFilterProp="label"
+              placeholder="Chọn lệnh sản xuất"
+              options={workOrders
+                .filter((wo) => ['IN_PROGRESS', 'COMPLETED'].includes(wo.status))
+                .map((wo) => ({
+                  value: wo.id,
+                  label: `${wo.code} - ${wo.product?.name}`,
+                }))}
+            />
+          </Form.Item>
+          <Form.List name="items" initialValue={[{ name: '', result: '', notes: '' }]}>
+            {(fields, { add, remove }) => (
+              <>
+                {fields.map((f) => (
+                  <Space key={f.key} style={{ width: '100%', marginBottom: 8 }} align="start">
+                    <Form.Item name={[f.name, 'name']} rules={[{ required: true, message: 'Nhập tên' }]} noStyle>
+                      <Input placeholder="Tên hạng mục" style={{ width: 200 }} />
+                    </Form.Item>
+                    <Form.Item name={[f.name, 'result']} noStyle>
+                      <Select placeholder="KQ dự kiến" allowClear style={{ width: 140 }}
+                        options={[
+                          { value: 'PASS', label: 'Đạt' },
+                          { value: 'FAIL', label: 'Không đạt' },
+                        ]}
+                      />
+                    </Form.Item>
+                    <Form.Item name={[f.name, 'notes']} noStyle>
+                      <Input placeholder="Ghi chú" style={{ width: 140 }} />
+                    </Form.Item>
+                    {fields.length > 1 && (
+                      <Button danger size="small" onClick={() => remove(f.name)}>Xóa</Button>
+                    )}
+                  </Space>
+                ))}
+                <Button type="dashed" icon={<ExperimentOutlined />} onClick={() => add({ name: '', result: '', notes: '' })} block>
+                  Thêm hạng mục
+                </Button>
+              </>
+            )}
+          </Form.List>
+          <Form.Item name="notes" label="Ghi chú chung" style={{ marginTop: 12 }}>
+            <Input.TextArea rows={2} />
+          </Form.Item>
+        </Form>
+      </Modal>
     </>
+    </PlanGate>
   );
 }

@@ -1,3 +1,15 @@
+/**
+ * Frontend: pages/onboarding/StaffStep.jsx — Bước 4: Nhân viên
+ *
+ * Tổng quan:
+ * - Thêm nhân viên nhanh (họ tên, email, vai trò), mật khẩu mặc định "123456"
+ * - Hiển thị danh sách nhân viên đã tạo
+ * - API: POST /users
+ * - State: created, adding, form
+ *
+ * Components/Hooks/Exports:
+ * - StaffStep: Component chính (xuất mặc định)
+ */
 import { useState } from 'react';
 import { Form, Input, Select, Button, List, Typography, Space, Tag, message } from 'antd';
 import { UserAddOutlined, CheckCircleOutlined } from '@ant-design/icons';

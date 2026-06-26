@@ -1,3 +1,17 @@
+/**
+ * Page: Customers — Quản lý danh sách khách hàng
+ *
+ * Tổng quan:
+ * - Hiển thị danh sách khách hàng dạng table với avatar, thông tin liên hệ, tags
+ * - Gọi API: GET/POST/PUT/DELETE /customers
+ * - Chức năng: thêm, sửa, xóa khách hàng qua Modal form
+ * - Bộ lọc: tìm kiếm theo tên, SĐT, email (debounce 300ms)
+ * - Click vào hàng để xem chi tiết khách hàng
+ * - Sử dụng EmptyState khi chưa có khách hàng
+ *
+ * Exports:
+ * - Customers: React functional component (default export)
+ */
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import useDebounce from '../hooks/useDebounce';

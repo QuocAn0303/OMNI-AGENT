@@ -1,8 +1,24 @@
+/**
+ * modules/workflow/workflow.service.js — Quản lý luồng phê duyệt tự động
+ * 
+ * Tổng quan:
+ - Hỗ trợ tạo luồng phê duyệt (workflow) với trigger và steps
+ - Tự động kick hoạt workflow khi sự kiện xảy ra (EXPENSE_ABOVE, PO_ABOVE, LEAVE_REQUEST, CUSTOM)
+ * 
+ * Hàm:
+ * - listWorkflows(): Lấy tất cả workflow đang active kèm steps
+ * - createWorkflow(userId, {name, trigger, config, steps}): Tạo workflow mới với các steps
+ * - updateWorkflow(id, data): Cập nhật workflow
+ * - trigger(triggerType, {entityType, entityId, data}): Kích hoạt workflow theo trigger, tạo run + approval tasks
+ * - evaluateCondition(workflow, data): Kiểm tra điều kiện threshold trước khi chạy
+ * - getRun(id): Lấy thông tin run + approvals
+ * - decide(approvalId, userId, {status, comment}): Phê duyệt/từ chối approval, tự động cập nhật run status
+ */
 // src/modules/workflow/workflow.service.js
 const prisma = require("../../config/prisma");
 const notifService = require("../notifications/notification.service");
 
-const TRIGGERS = ["EXPENSE_ABOVE", "PO_ABOVE", "LEAVE_REQUEST", "CUSTOM"];
+const TRIGGERS = ["EXPENSE_ABOVE", "PO_ABOVE", "LEAVE_REQUEST", "CUSTOM", "PAYMENT_APPROVAL", "DISCOUNT_APPROVAL", "RETURN_APPROVAL", "CONTRACT_APPROVAL", "ADVANCE_APPROVAL"];
 
 const listWorkflows = () =>
   prisma.workflow.findMany({
@@ -56,13 +72,25 @@ const trigger = async (triggerType, { entityType, entityId, data = {} }) => {
           data: { runId: run.id, stepId: step.id, approverId: step.config.approverId },
         });
         // Notify approver
-        await notifService.createNotification({
+        const notifTypeMap = {
+          EXPENSE_ABOVE: "EXPENSE_PENDING_APPROVAL",
+          PO_ABOVE: "PO_PENDING_APPROVAL",
+          LEAVE_REQUEST: "LEAVE_REQUEST",
+          PAYMENT_APPROVAL: "PAYMENT_APPROVAL",
+          DISCOUNT_APPROVAL: "DISCOUNT_APPROVAL",
+          RETURN_APPROVAL: "RETURN_APPROVAL",
+          CONTRACT_APPROVAL: "CONTRACT_APPROVAL",
+          ADVANCE_APPROVAL: "ADVANCE_APPROVAL",
+          CUSTOM: "SYSTEM",
+        };
+        await notifService.createOne({
           userId: step.config.approverId,
-          type: "WORKFLOW_APPROVAL",
+          type: notifTypeMap[triggerType] || "PO_PENDING_APPROVAL",
+          severity: "WARNING",
           title: `Cần duyệt: ${wf.name}`,
           message: `${entityType} #${entityId} cần được phê duyệt`,
-          entityType,
-          entityId,
+          link: "/workflows",
+          meta: { workflowId: wf.id, runId: run.id, triggerType, entityType, entityId },
         }).catch(() => {});
       }
     }
@@ -79,7 +107,22 @@ const evaluateCondition = (workflow, data) => {
   if (workflow.trigger === "PO_ABOVE") {
     return Number(data.totalAmount || 0) > Number(cfg.threshold || 0);
   }
-  return true; // CUSTOM / LEAVE_REQUEST — always trigger
+  if (workflow.trigger === "PAYMENT_APPROVAL") {
+    return Number(data.amount || 0) > Number(cfg.threshold || 0);
+  }
+  if (workflow.trigger === "DISCOUNT_APPROVAL") {
+    return Number(data.discountAmount || data.discountPercent || 0) > Number(cfg.threshold || 0);
+  }
+  if (workflow.trigger === "RETURN_APPROVAL") {
+    return Number(data.refundAmount || 0) > Number(cfg.threshold || 0);
+  }
+  if (workflow.trigger === "CONTRACT_APPROVAL") {
+    return Number(data.value || 0) > Number(cfg.threshold || 0);
+  }
+  if (workflow.trigger === "ADVANCE_APPROVAL") {
+    return Number(data.amount || 0) > Number(cfg.threshold || 0);
+  }
+  return true; // LEAVE_REQUEST / CUSTOM — always trigger
 };
 
 const getRun = (id) =>
@@ -90,6 +133,29 @@ const getRun = (id) =>
       approvals: { include: { step: true, approver: { select: { fullName: true } } } },
     },
   });
+
+const getPendingApprovals = (userId) =>
+  prisma.workflowApproval.findMany({
+    where: { approverId: userId, status: "PENDING" },
+    include: {
+      run: { include: { workflow: { select: { name: true, trigger: true } } } },
+      step: { select: { sequence: true, type: true } },
+    },
+    orderBy: { createdAt: "desc" },
+  });
+
+const listRuns = ({ page = 1, limit = 20 }) => {
+  const skip = (page - 1) * limit;
+  return prisma.workflowRun.findMany({
+    include: {
+      workflow: { select: { name: true, trigger: true } },
+      approvals: { include: { approver: { select: { fullName: true } } } },
+    },
+    orderBy: { startedAt: "desc" },
+    skip,
+    take: limit,
+  });
+};
 
 const decide = async (approvalId, userId, { status, comment }) => {
   if (!["APPROVED", "REJECTED"].includes(status)) throw { status: 400, message: "status phải APPROVED hoặc REJECTED" };
@@ -116,8 +182,38 @@ const decide = async (approvalId, userId, { status, comment }) => {
       where: { id: run.id },
       data: { status: anyRejected ? "REJECTED" : "APPROVED", endedAt: new Date() },
     });
+
+    // Auto-approve underlying entity when all approvals pass
+    if (!anyRejected) {
+      try {
+        const wf = await prisma.workflow.findUnique({ where: { id: run.workflowId } });
+        if (wf?.trigger === "EXPENSE_ABOVE") {
+          const expenseSvc = require("../accounting/expense.service");
+          await expenseSvc.approve(run.entityId, userId, { role: "ADMIN" });
+        } else if (wf?.trigger === "PO_ABOVE") {
+          const purchaseSvc = require("../accounting/purchase.service");
+          await purchaseSvc.approve(run.entityId, "ADMIN", userId);
+        } else if (wf?.trigger === "LEAVE_REQUEST") {
+          const leaveSvc = require("../hr/leave.service");
+          await leaveSvc.approveLeave(run.id, userId);
+        } else if (wf?.trigger === "RETURN_APPROVAL") {
+          const returnSvc = require("../returns/return.service");
+          await returnSvc.approve(run.entityId, userId, "ADMIN");
+        } else if (wf?.trigger === "DISCOUNT_APPROVAL") {
+          console.log(`[workflow] Discount ${run.entityId} approved`);
+        } else if (wf?.trigger === "CONTRACT_APPROVAL") {
+          console.log(`[workflow] Contract ${run.entityId} approved`);
+        } else if (wf?.trigger === "ADVANCE_APPROVAL") {
+          console.log(`[workflow] Advance ${run.entityId} approved`);
+        } else if (wf?.trigger === "PAYMENT_APPROVAL") {
+          console.log(`[workflow] Payment ${run.entityId} approved`);
+        }
+      } catch (e) {
+        console.error(`[workflow] auto-approve entity ${run.entityId} failed:`, e.message);
+      }
+    }
   }
   return approval;
 };
 
-module.exports = { listWorkflows, createWorkflow, updateWorkflow, trigger, getRun, decide };
+module.exports = { listWorkflows, createWorkflow, updateWorkflow, trigger, evaluateCondition, getRun, decide, getPendingApprovals, listRuns };

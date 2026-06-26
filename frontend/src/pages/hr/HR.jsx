@@ -1,9 +1,22 @@
+/**
+ * Page: hr/HR — Quản lý nhân sự (main entry)
+ *
+ * Tổng quan:
+ * - Component điều hướng chính cho module Nhân sự
+ * - 3 tabs: Nhân viên (EmployeeList), Chấm công (Attendance), Bảng lương (Payroll)
+ * - Mỗi tab là một component riêng biệt trong cùng thư mục
+ * - Sử dụng PageHeader và Ant Design Tabs
+ *
+ * Exports:
+ * - HR: React functional component (default export)
+ */
 import { useState } from 'react';
 import { Tabs } from 'antd';
 import PageHeader from '../../components/layout/PageHeader';
 import EmployeeList from './EmployeeList';
 import Attendance from './Attendance';
 import Payroll from './Payroll';
+
 
 /**
  * HR — Quản lý nhân sự (main entry)

@@ -1,3 +1,26 @@
+/**
+ * modules/accounting/purchase.service.js — Service quản lý đơn nhập hàng (Purchase Order)
+ * 
+ * Tổng quan:
+ * - Xử lý toàn bộ logic nghiệp vụ cho Purchase Order: tạo, gửi duyệt, phê duyệt,
+ *   nhập kho, thanh toán, hủy.
+ * - Hỗ trợ luồng: DRAFT → PENDING → APPROVED → RECEIVED → PAID (hoặc CANCELLED).
+ * - Tích hợp: tự động sinh mã PO, tính thuế, cập nhật tồn kho theo weighted average cost,
+ *   tạo công nợ tự động qua debtService, auto-post bút toán kế toán.
+ * 
+ * Hàm:
+ * - generateCode(tx): Sinh mã PO dạng PO-YYYYMMDD-XXXX.
+ * - computeItem(item, taxMap): Tính subtotal + taxAmount cho từng dòng hàng.
+ * - list(query): Danh sách PO có phân trang, lọc.
+ * - getById(id): Chi tiết PO kèm vendor, items, product.
+ * - create(data, userId): Tạo PO trong transaction; support withCodeRetry.
+ * - submit(id, userId): Gửi duyệt, chuyển DRAFT → PENDING.
+ * - approve(id, approverRole, userId): Phê duyệt; kiểm tra hạn mức 50tr, chuyển PENDING → APPROVED.
+ * - receive(id, userId): Nhập kho: update tồn kho (FIFO/weighted average cost), tạo inventoryTransaction,
+ *   tạo công nợ vendor qua debtService, auto-post bút toán nhập kho.
+ * - pay(id, {amount, method}, userId): Thanh toán PO: cập nhật paidAmount, ghi công nợ, auto-post payment entry.
+ * - cancel(id, userId): Hủy PO (chỉ DRAFT/PENDING/APPROVED mới hủy được).
+ */
 // src/modules/accounting/purchase.service.js
 const prisma = require("../../config/prisma");
 const { getDefaultWarehouseId, findInventory } = require("../../utils/warehouse.helper");
@@ -167,6 +190,18 @@ const submit = async (id, userId) => {
     await notif.notifyPoSubmitted(updated);
   } catch (_) {}
 
+  // Trigger workflow engine for PO_ABOVE workflows
+  try {
+    const workflowService = require("../workflow/workflow.service");
+    await workflowService.trigger("PO_ABOVE", {
+      entityType: "PurchaseOrder",
+      entityId: id,
+      data: { totalAmount: toNum(updated.total), poCode: updated.poCode, vendorId: updated.vendorId },
+    });
+  } catch (e) {
+    console.error("[PO] workflow trigger error:", e.message);
+  }
+
   return updated;
 };
 
@@ -258,9 +293,32 @@ const receive = async (id, userId) => {
             type: "IMPORT",
             quantity: addQty,
             note: `Nhập kho - PO ${po.poCode}`,
+            unitCost: Math.round(unitCost * 100) / 100,
             createdById: userId,
           },
         });
+
+        const poLotCode = `${po.poCode}-${item.product.sku || item.productId.slice(0, 8)}`;
+        const existingLot = await tx.inventoryLot.findFirst({
+          where: { lotCode: poLotCode, productId: item.productId, warehouseId: whId },
+        });
+        if (existingLot) {
+          await tx.inventoryLot.update({
+            where: { id: existingLot.id },
+            data: { quantity: { increment: addQty } },
+          });
+        } else {
+          await tx.inventoryLot.create({
+            data: {
+              lotCode: poLotCode,
+              productId: item.productId,
+              warehouseId: whId,
+              quantity: addQty,
+              originalQty: addQty,
+              poId: po.id,
+            },
+          });
+        }
       }
 
       const fresh = await tx.purchaseOrder.findUnique({

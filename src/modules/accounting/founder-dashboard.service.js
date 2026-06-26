@@ -1,3 +1,21 @@
+/**
+ * modules/accounting/founder-dashboard.service.js — Dashboard tài chính founder
+ * 
+ * Tổng quan:
+ * - Cung cấp cái nhìn tổng quan tài chính cho nhà sáng lập / quản lý cấp cao.
+ * - Tổng hợp từ nhiều nguồn: số dư tiền, P&L, burn rate, công nợ, cảnh báo.
+ * - Tính toán các chỉ số quan trọng: runway (số tháng sống sót), tăng trưởng doanh thu, top chi phí.
+ * 
+ * Hàm:
+ * - overview(): Trả về object tổng quan gồm:
+ *   + cash: Số dư tiền mặt theo từng tài khoản (111, 112...).
+ *   + runway: Số tháng còn lại (cash / net burn rate trung bình 3 tháng).
+ *   + thisMonth: P&L tháng hiện tại (revenue, cogs, grossProfit, expenses, operatingProfit, grossMargin).
+ *   + growth: Tăng trưởng doanh thu và lợi nhuận so với tháng trước (%).
+ *   + receivables/payables: Công nợ phải thu (131) / phải trả (331) và quá hạn.
+ *   + topExpenses: Top 5 chi phí theo tài khoản trong tháng.
+ *   + alerts: Mảng cảnh báo (critical/warning/info) về tiền mặt, runway, lỗ, chi phí tăng, công nợ quá hạn.
+ */
 // src/modules/accounting/founder-dashboard.service.js
 // Dashboard tài chính cho founder: cash, runway, P&L tóm tắt, cảnh báo.
 const prisma = require("../../config/prisma");

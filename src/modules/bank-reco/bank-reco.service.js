@@ -1,3 +1,22 @@
+/**
+ * modules/bank-reco/bank-reco.service.js — Đối soát ngân hàng
+ * 
+ * Tổng quan:
+ * - Import sao kê ngân hàng từ file XLSX (VCB, TCB, BIDV, MB)
+ * - Auto-match dòng sao kê với journal entries dựa trên amount, date ±3, fuzzy description
+ * - Manual match/unmatch
+ * - Tạo bút toán điều chỉnh phí ngân hàng
+ * 
+ * Hàm:
+ * - levenshtein(a, b): Tính khoảng cách Levenshtein cho fuzzy match
+ * - importStatement(bankAccountId, buffer, fileName, bank): Import file sao kê, parse theo bank, lưu DB
+ * - autoMatch(statementId): Tự động so khớp từng dòng sao kê với journal entries
+ * - manualMatch(lineId, entryId): Ghép thủ công một dòng sao kê với journal entry
+ * - unmatch(lineId): Huỷ ghép một dòng
+ * - createAdjustmentEntry({lineId, bankAccountId, description, amount, userId}): Tạo bút toán điều chỉnh phí NH
+ * - listStatements({bankAccountId, page, limit}): Danh sách sao kê, phân trang
+ * - getStatementLines(statementId, {page, limit, isMatched}): Lấy dòng sao kê, phân trang, lọc theo trạng thái
+ */
 // src/modules/bank-reco/bank-reco.service.js
 // Đối soát ngân hàng: import sao kê → auto-match → điều chỉnh.
 const prisma = require("../../config/prisma");
@@ -228,9 +247,37 @@ const getStatementLines = async (statementId, { page = 1, limit = 50, isMatched 
   return { lines, pagination: { page: Number(page), limit: Number(limit), total, totalPages: Math.ceil(total / Number(limit)) } };
 };
 
+const autoMatchAll = async () => {
+  const statements = await prisma.bankStatement.findMany({
+    where: { status: "IMPORTED" },
+    orderBy: { importedAt: "desc" },
+    take: 5,
+  });
+
+  let totalMatched = 0;
+  let totalUnmatched = 0;
+
+  for (const stmt of statements) {
+    try {
+      const result = await autoMatch(stmt.id);
+      totalMatched += result.matched;
+      totalUnmatched += result.unmatched;
+    } catch (e) {
+      console.error(`[bank-reco] autoMatch failed for statement ${stmt.id}:`, e.message);
+    }
+  }
+
+  if (totalMatched > 0 || totalUnmatched > 0) {
+    console.log(`[bank-reco] autoMatchAll: ${totalMatched} matched, ${totalUnmatched} unmatched across ${statements.length} statements`);
+  }
+
+  return { statements: statements.length, matched: totalMatched, unmatched: totalUnmatched };
+};
+
 module.exports = {
   importStatement,
   autoMatch,
+  autoMatchAll,
   manualMatch,
   unmatch,
   createAdjustmentEntry,

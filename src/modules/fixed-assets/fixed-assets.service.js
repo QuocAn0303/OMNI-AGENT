@@ -1,7 +1,28 @@
+/**
+ * modules/fixed-assets/fixed-assets.service.js — Quản lý tài sản cố định & khấu hao
+ * 
+ * Tổng quan:
+ * - CRUD tài sản cố định (TSCĐ) + nhóm tài sản
+ * - Tự động sinh lịch khấu hao theo phương pháp đường thẳng
+ * - Chạy khấu hao tháng (cron), tự động post bút toán
+ * - Thanh lý tài sản, tính lãi/lỗ thanh lý
+ * 
+ * Hàm:
+ * - generateAssetCode(): Sinh mã TSCĐ tự động (TSCD-00001)
+ * - createAsset(data, userId): Tạo tài sản mới + sinh lịch khấu hao + ghi audit
+ * - generateSchedule(asset, category): Sinh lịch khấu hao theo tháng, period cuối hấp thụ rounding
+ * - runMonthlyDepreciation(year, month, userId): Chạy khấu hao tháng, post bút toán, cập nhật accumulated
+ * - disposeAsset(assetId, {disposalDate, proceedsAmount, reason}, userId): Thanh lý, tạo bút toán, ghi audit
+ * - listAssets({status, categoryId, page, limit}): Danh sách TSCĐ phân trang
+ * - getAsset(id): Chi tiết TSCĐ kèm lịch khấu hao
+ * - listCategories(): Danh sách nhóm tài sản
+ * - createCategory(data): Tạo nhóm tài sản mới
+ */
 // src/modules/fixed-assets/fixed-assets.service.js
 // Quản lý tài sản cố định + tự động khấu hao tháng.
 const prisma = require("../../config/prisma");
 const journalService = require("../accounting/journal.service");
+const autopostService = require("../accounting/autopost.service");
 const postingErrorService = require("../accounting/posting-error.service");
 const auditService = require("../audit/audit.service");
 
@@ -51,6 +72,13 @@ const createAsset = async (data, userId = null) => {
   await generateSchedule(asset, category);
 
   await auditService.log({ userId, action: "FIXED_ASSET_CREATED", entity: "FixedAsset", entityId: asset.id });
+
+  // Tự động hạch toán mua TSCĐ (DR 211, CR 331)
+  postingErrorService.tryPostOrQueue(
+    () => autopostService.postAssetAcquisition({ asset, userId }),
+    { source: "INVENTORY", sourceId: asset.id, payload: { operation: "ASSET_ACQUIRED" } },
+  );
+
   return prisma.fixedAsset.findUnique({ where: { id: asset.id }, include: { category: true, depreciationSchedules: { take: 12 } } });
 };
 

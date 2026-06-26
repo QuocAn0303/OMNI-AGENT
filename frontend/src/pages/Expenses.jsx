@@ -1,5 +1,16 @@
-// frontend/src/pages/Expenses.jsx
-// Quản lý chi phí - List + tạo nhanh + duyệt + thanh toán
+/**
+ * Frontend: pages/Expenses.jsx — Quản lý chi phí
+ * 
+ * Tổng quan:
+ * - Danh sách chi phí (getExpenses) với phân trang, lọc theo trạng thái
+ * - Tạo chi phí mới qua modal (createExpense), có thể gắn NCC, category, dự án, VAT
+ * - Duyệt (approveExpense), thanh toán (payExpense), từ chối (rejectExpense)
+ * - Load danh sách expense categories, vendors, tax rates, projects khi mount
+ * - State: data/loading/filters tự quản lý, form dùng Ant Design Form
+ * 
+ * Components/Hooks/Exports:
+ * - Expenses (default): Page chính — table + summary stats + modal tạo
+ */
 import { useEffect, useState } from "react";
 import {
   Table, Button, Modal, Form, Input, Select, InputNumber, DatePicker,
@@ -8,6 +19,7 @@ import {
 import { PlusOutlined, CheckOutlined, DollarOutlined, CloseOutlined } from "@ant-design/icons";
 import dayjs from "dayjs";
 import PageHeader from "../components/layout/PageHeader";
+
 import axios from "../api/axios";
 import {
   getExpenses, createExpense, approveExpense, payExpense, rejectExpense,

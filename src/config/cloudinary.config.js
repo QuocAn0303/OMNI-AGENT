@@ -1,6 +1,18 @@
-// src/config/cloudinary.config.js
-// Đọc cấu hình Cloudinary từ IntegrationConfig (DB) → fallback .env.
-// Trả về middleware multer; nếu chưa cấu hình thì dùng disk storage tạm để upload không vỡ.
+/**
+ * config/cloudinary.config.js — Upload ảnh lên Cloudinary qua Multer
+ * 
+ * Tổng quan:
+ * - Lazy-init: đọc cấu hình Cloudinary từ IntegrationConfig (DB) → fallback .env
+ * - Nếu chưa cấu hình → dùng memory storage tạm (upload vào RAM, không lưu vĩnh viễn)
+ * - Nếu đã cấu hình → dùng CloudinaryStorage (folder "IS207_Products")
+ * - Cache middleware: chỉ tạo lại khi config thay đổi
+ * 
+ * Hàm:
+ * - uploadCloud.single(field): Middleware upload 1 file
+ * - uploadCloud.array(field, max): Middleware upload nhiều file
+ * - testConnection(): Ping Cloudinary API để kiểm tra kết nối
+ */
+
 const multer = require("multer");
 const cloudinary = require("cloudinary").v2;
 const { CloudinaryStorage } = require("multer-storage-cloudinary");

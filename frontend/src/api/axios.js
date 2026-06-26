@@ -1,3 +1,16 @@
+/**
+ * Frontend: src/api/axios.js — Axios instance + JWT interceptors
+ *
+ * Tổng quan:
+ - Tạo axios instance với baseURL tự động (DEV → /api proxy, PROD → env hoặc localhost:4000)
+ * - Request interceptor: tự động gắn Bearer token từ localStorage
+ * - Response interceptor: tự động refresh token khi gặp 401, queue các request đang chờ
+ * - Gửi lỗi 500+ lên Sentry để tracking
+ * - Nếu refresh thất bại → xoá token + redirect /login
+ *
+ * Exports:
+ * - axiosInstance (default): Axios instance đã cấu hình
+ */
 import axios from "axios";
 import * as Sentry from "@sentry/react";
 // Dev: luôn gọi `/api` cùng origin với Vite rồi proxy sang backend (xem vite.config.js).

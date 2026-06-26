@@ -1,3 +1,31 @@
+/**
+ * modules/accounting/autopost.service.js — Tự động tạo bút toán kế toán
+ * 
+ * Tổng quan:
+ - Cung cấp các hàm build dữ liệu bút toán (journal entry input) và post bút toán
+   cho các nghiệp vụ kinh tế phát sinh: bán hàng, thu tiền, trả hàng, chi phí,
+   nhập kho, thanh toán PO, lương, góp vốn, sản xuất, công nợ.
+ * - Mỗi nghiệp vụ có 2 hàm: build*Entry (tạo payload) và post* (gọi journalService.postEntry).
+ * - Dùng trong các service khác để đảm bảo bút toán luôn được ghi khi nghiệp vụ xảy ra.
+ * 
+ * Hàm:
+ * - buildOrderCompletedEntry({order, items, paidAmount, payments, userId}): Tạo bút toán ghi nhận doanh thu, giá vốn, phải thu.
+ * - buildPaymentEntry({payment, order, userId}): Tạo bút toán thu tiền khách hàng.
+ * - buildOrderReturnEntry({orderReturn, order, items, userId}): Tạo bút toán hoàn tiền trả hàng.
+ * - buildExpenseEntry({expense, category, vendor, userId}): Tạo bút toán chi phí (nợ chi phí, có tiền/phải trả).
+ * - buildExpensePaymentEntry({expense, vendor, userId}): Tạo bút toán thanh toán chi phí đã accrued.
+ * - buildPurchaseReceivedEntry({purchaseOrder, vendor, userId}): Tạo bút toán nhập kho (nợ hàng hóa, có phải trả NCC).
+ * - buildPurchasePaymentEntry({purchaseOrder, vendor, amount, method, userId, paymentId}): Tạo bút toán thanh toán PO.
+ * - buildPayrollAccrualEntry({payroll, employee, userId}): Tạo bút toán lương (nợ chi phí, có phải trả).
+ * - buildCapitalContributionEntry({amount, method, description, userId, contributionId}): Tạo bút toán góp vốn.
+ * - buildDebtPaymentEntry({debt, payment, userId}): Tạo bút toán thu/chi công nợ.
+ * - buildWorkOrderCompletedEntry({workOrder, items, userId}): Tạo bút toán hoàn thành sản xuất (155 → 156).
+ * - postOrderCompleted, postPayment, postOrderReturn, postExpense, postExpensePayment,
+ *   postPurchaseReceived, postPurchasePayment, postPayrollAccrual, postCapitalContribution,
+ *   postDebtPayment, postWorkOrderCompleted: Wrapper gọi journalService.postEntry với payload tương ứng.
+ * - cashAccountByMethod(method): Trả mã tài khoản tiền tương ứng (111: CASH, 112: BANK_TRANSFER/CARD).
+ * - paymentLinesForOrder({order, paidAmount, payments}): Tạo dòng thu tiền cho đơn hàng, hỗ trợ partial payments.
+ */
 const journalService = require("./journal.service");
 
 const toNum = (v) => Number(v || 0);
@@ -50,6 +78,7 @@ const paymentLinesForOrder = ({ order, paidAmount = 0, payments = [] }) => {
 
 const buildOrderCompletedEntry = ({ order, items, paidAmount = 0, payments = [], userId }) => {
   const total = toNum(order.total);
+  const subtotal = toNum(order.subtotal);
   if (total <= 0) return null;
 
   let totalCost = 0;
@@ -70,12 +99,17 @@ const buildOrderCompletedEntry = ({ order, items, paidAmount = 0, payments = [],
     });
   }
 
-  lines.push({ accountCode: "511", credit: total, description: `Doanh thu don ${order.orderCode}` });
+  // Doanh thu ghi nhận theo subtotal (trước giảm giá)
+  lines.push({ accountCode: "511", credit: subtotal, description: `Doanh thu don ${order.orderCode}` });
 
-  if (totalCost > 0) {
-    lines.push({ accountCode: "632", debit: totalCost, description: `Gia von don ${order.orderCode}` });
-    lines.push({ accountCode: "156", credit: totalCost, description: `Xuat kho don ${order.orderCode}` });
+  // Giảm trừ doanh thu (chiết khấu đơn hàng, khuyến mãi, loyalty)
+  const totalDiscount = toNum(order.discount) + toNum(order.promotionDiscount) + toNum(order.loyaltyDiscount);
+  if (totalDiscount > 0) {
+    lines.push({ accountCode: "521", debit: totalDiscount, description: `Chiet khau/KM don ${order.orderCode}` });
   }
+
+  lines.push({ accountCode: "632", debit: totalCost, description: `Gia von don ${order.orderCode}` });
+  lines.push({ accountCode: "156", credit: totalCost, description: `Xuat kho don ${order.orderCode}` });
 
   return {
     date: new Date(),
@@ -348,13 +382,11 @@ const postDebtPayment = (input, tx) => postBuiltEntry(buildDebtPaymentEntry(inpu
 /**
  * Bút toán khi Lệnh sản xuất (Work Order) hoàn thành
  *
- * Luồng nghiệp vụ:
- *   - Xuất nguyên liệu từ kho (156) -> đưa vào sản xuất (154 WIP)
- *   - Hoàn thành -> chuyển 154 WIP -> thành phẩm (155)
- *
- * Để gọn (1 bút toán thay vì 2), ghi nhận trực tiếp:
- *   DR 155 (Thành phẩm)        = totalCost
- *   CR 156 (Hàng hóa tồn kho)   = totalCost  [phần nguyên liệu]
+ * Luồng nghiệp vụ đúng:
+ *   - DR 154 (WIP)     = totalCost   — tập hợp chi phí SX dở dang
+ *   - CR 156 (Hàng hóa) = totalCost  — xuất nguyên liệu
+ *   - DR 155 (TP)      = totalCost   — nhập kho thành phẩm
+ *   - CR 154 (WIP)     = totalCost   — kết chuyển WIP
  *
  * totalCost = SUM(component.costPrice × requiredQty)
  *
@@ -369,19 +401,28 @@ const buildWorkOrderCompletedEntry = ({ workOrder, items, userId }) => {
     description: `Hoàn thành sản xuất WO ${workOrder.code} - ${workOrder.product?.name || ""}`,
     source: "INVENTORY",
     sourceId: workOrder.id,
-    // WO completed dùng operation riêng để không clash với INVENTORY khác
     operation: "WORK_ORDER",
     userId,
     lines: [
+      {
+        accountCode: "154",
+        debit: totalCost,
+        description: `Tập hợp CPSX - WO ${workOrder.code}`,
+      },
+      {
+        accountCode: "156",
+        credit: totalCost,
+        description: `Xuất nguyên liệu cho SX - WO ${workOrder.code}`,
+      },
       {
         accountCode: "155",
         debit: totalCost,
         description: `Nhập kho thành phẩm - WO ${workOrder.code} (SL: ${workOrder.quantity})`,
       },
       {
-        accountCode: "156",
+        accountCode: "154",
         credit: totalCost,
-        description: `Xuất nguyên liệu cho sản xuất - WO ${workOrder.code}`,
+        description: `KC CPSX - WO ${workOrder.code}`,
       },
     ],
   };
@@ -392,14 +433,71 @@ const buildCapitalContributionEntry = ({ amount, method = "CASH", description = 
   return {
     description,
     source: "MANUAL",
-    // Capital contribution có thể có sourceId từ contribution table nếu có
-    // hoặc fall back to date để mỗi lần là entry mới
     sourceId: contributionId || null,
     operation: "PRIMARY",
     userId,
     lines: [
       { accountCode: cashAccountByMethod(method), debit: amount, description },
       { accountCode: "411", credit: amount, description: "Tang von chu" },
+    ],
+  };
+};
+
+/**
+ * Bút toán điều chỉnh tồn kho (Inventory ADJUSTMENT)
+ *
+ * Khi diff > 0 (thiếu): DR 632 (giá vốn), CR 156 (hàng hóa)
+ * Khi diff < 0 (thừa):  DR 156 (hàng hóa), CR 711 (thu nhập khác)
+ * (diff = actualQuantity - systemQuantity)
+ *
+ * Note: diff là chênh lệch dương = tồn thực tế > tồn sổ sách => thừa kho
+ *       diff âm = tồn thực tế < tồn sổ sách => thiếu kho
+ */
+const buildInventoryAdjustmentEntry = ({ diff, product, userId }) => {
+  const absDiff = Math.abs(diff);
+  if (absDiff <= 0) return null;
+  const productName = product?.name || "SP";
+
+  const lines = [];
+  if (diff > 0) {
+    // Thừa kho: nhập thêm hàng, ghi nhận thu nhập khác
+    lines.push({ accountCode: "156", debit: absDiff, description: `Điều chỉnh tăng kho - ${productName}` });
+    lines.push({ accountCode: "711", credit: absDiff, description: `Thừa kho - ${productName}` });
+  } else {
+    // Thiếu kho: xuất bớt hàng, ghi nhận giá vốn
+    lines.push({ accountCode: "632", debit: absDiff, description: `Thiếu kho - ${productName}` });
+    lines.push({ accountCode: "156", credit: absDiff, description: `Điều chỉnh giảm kho - ${productName}` });
+  }
+
+  return {
+    date: new Date(),
+    description: `Điều chỉnh tồn kho - ${productName} (${diff > 0 ? "+" : ""}${diff})`,
+    source: "INVENTORY",
+    sourceId: null,
+    operation: `ADJUSTMENT:${Date.now()}`,
+    userId,
+    lines,
+  };
+};
+
+/**
+ * Bút toán mua tài sản cố định
+ * DR 211 (Nguyên giá TSCĐ), CR 111/112/331
+ */
+const buildAssetAcquisitionEntry = ({ asset, userId }) => {
+  const cost = toNum(asset.cost);
+  if (cost <= 0) return null;
+
+  return {
+    date: new Date(asset.purchaseDate),
+    description: `Mua TSCĐ: ${asset.name} - ${asset.code}`,
+    source: "INVENTORY",
+    sourceId: asset.id,
+    operation: `ACQUISITION:${asset.code}`,
+    userId,
+    lines: [
+      { accountCode: "211", debit: cost, description: `Nguyên giá TSCĐ - ${asset.name}` },
+      { accountCode: "331", credit: cost, description: `Phải trả người bán - ${asset.name}` },
     ],
   };
 };
@@ -414,6 +512,8 @@ const postPurchasePayment = (input, tx) => postBuiltEntry(buildPurchasePaymentEn
 const postPayrollAccrual = (input, tx) => postBuiltEntry(buildPayrollAccrualEntry(input), tx);
 const postCapitalContribution = (input, tx) => postBuiltEntry(buildCapitalContributionEntry(input), tx);
 const postWorkOrderCompleted = (input, tx) => postBuiltEntry(buildWorkOrderCompletedEntry(input), tx);
+const postInventoryAdjustment = (input, tx) => postBuiltEntry(buildInventoryAdjustmentEntry(input), tx);
+const postAssetAcquisition = (input, tx) => postBuiltEntry(buildAssetAcquisitionEntry(input), tx);
 
 module.exports = {
   buildOrderCompletedEntry,
@@ -438,4 +538,8 @@ module.exports = {
   postCapitalContribution,
   postDebtPayment,
   postWorkOrderCompleted,
+  buildInventoryAdjustmentEntry,
+  postInventoryAdjustment,
+  buildAssetAcquisitionEntry,
+  postAssetAcquisition,
 };

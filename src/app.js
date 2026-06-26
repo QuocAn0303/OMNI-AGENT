@@ -1,4 +1,23 @@
-// src/app.js
+/**
+ * app.js — Entry point chính của Backend ERP
+ * 
+ * Tổng quan:
+ * - Khởi tạo Express app với đầy đủ middleware: compression, helmet, cors, morgan, xss-clean, hpp, rate-limit
+ * - Mount tất cả routes từ 40+ module nghiệp vụ dưới /api/*
+ * - Khởi động HTTP server + Socket.IO (real-time) + cron jobs + CDC (Change Data Capture cho AI agent)
+ * - Tự động thử port nếu bị chiếm (EADDRINUSE) → tăng dần, tối đa 10 lần thử
+ * - Ghi VITE_API_URL vào frontend/.env để đồng bộ port giữa backend và frontend dev
+ * - Sentry error tracking (nếu có SENTRY_DSN)
+ * 
+ * Luồng khởi động:
+ *   1. Load .env → init Sentry
+ *   2. Tạo Express app → gắn middleware toàn cục
+ *   3. Mount tất cả routes
+ *   4. 404 handler → error handler (cuối cùng)
+ *   5. startServer(): tạo HTTP server → init Socket.IO → start cron/CDC → lắng nghe port
+ *   6. Nếu EADDRINUSE → thử port tiếp theo
+ */
+
 require("dotenv").config();
 
 const Sentry = require("@sentry/node");
@@ -39,12 +58,18 @@ const auditRoutes = require("./modules/audit/audit.routes");
 const hrRoutes = require("./modules/hr/hr.routes");
 const analyticsRoutes = require("./modules/analytics/analytics.routes");
 const aiRoutes = require("./modules/ai/ai.routes");
+const posRoutes = require("./modules/pos/pos.routes");
+const agentRoutes = require("./modules/ai/agent.routes");
+const llmProxyRoutes = require("./modules/ai/agent.llm");
+const dbAgentRoutes = require("./modules/ai/db-agent.routes");
 const accountingRoutes = require("./modules/accounting/accounting.routes");
 const debtRoutes = require("./modules/debt/debt.routes");
 const notificationRoutes = require("./modules/notifications/notification.routes");
 const purchaseOrderAliasRoutes = require("./modules/accounting/purchase-order.routes");
 const promotionRoutes = require("./modules/promotions/promotion.routes");
 const invoiceRoutes = require("./modules/orders/invoice.routes");
+const storeCreditRoutes = require("./modules/customers/store-credit.routes");
+const serialNumberRoutes = require("./modules/inventory/serial-number.routes");
 const loyaltyRoutes = require("./modules/loyalty/loyalty.routes");
 const deliveryRoutes = require("./modules/delivery/delivery.routes");
 const warehouseRoutes = require("./modules/warehouses/warehouse.routes");
@@ -52,12 +77,14 @@ const stockTransferRoutes = require("./modules/warehouses/stock-transfer.routes"
 const importRoutes = require("./modules/import/import.routes");
 const settingsRoutes = require("./modules/settings/settings.routes");
 const adminRoutes = require("./modules/admin/admin.routes");
+const subscriptionRoutes = require("./modules/subscriptions/subscription.routes");
 const crmRoutes = require("./modules/crm");
 const projectRoutes = require("./modules/projects");
 const productionRoutes = require("./modules/production");
 const einvoiceRoutes = require("./modules/einvoice/einvoice.routes");
 const taxReportRoutes = require("./modules/tax-report/tax-report.routes");
 const bankRecoRoutes = require("./modules/bank-reco/bank-reco.routes");
+const vietqrRoutes = require("./modules/vietqr/vietqr.routes");
 const fixedAssetsRoutes = require("./modules/fixed-assets/fixed-assets.routes");
 const currencyRoutes = require("./modules/currency/currency.routes");
 const marketplaceRoutes = require("./modules/marketplace/marketplace.routes");
@@ -69,6 +96,7 @@ const deliveryService = require("./modules/delivery/delivery.service");
 const http = require("http");
 const { initSocket } = require("./realtime/socket");
 const { startCrons } = require("./jobs/cron");
+const { startCDC } = require("./jobs/agent.cdc");
 
 const app = express();
 const corsOrigin =
@@ -111,6 +139,14 @@ app.use(
   "/api/webhooks/delivery",
   express.raw({ type: "application/json" }),
 );
+app.use(
+  "/api/subscriptions/webhook",
+  express.raw({ type: "application/json" }),
+);
+app.use(
+  "/api/vietqr/webhook/payos",
+  express.raw({ type: "application/json" }),
+);
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
@@ -144,7 +180,7 @@ app.use('/api', apiLimiter)
 app.use('/api/auth/login', loginLimiter)
 
 app.get("/", (req, res) => {
-  res.json({ message: "Aduu API đang chạy", version: "1.0.0" });
+  res.json({ message: "Aduu - Hệ thống hoạch định nguồn lực doanh nghiệp", version: "2.0.0" });
 });
 
 // Health check endpoint
@@ -229,12 +265,18 @@ const aiLimiter = rateLimit({
 app.use("/api/ai/chat", aiLimiter);
 app.use("/api/ai/sync", aiLimiter);
 app.use("/api/ai", aiRoutes);
+app.use("/api/pos", posRoutes);
+app.use("/api/agent", agentRoutes);
+app.use("/api/llm", llmProxyRoutes);
+app.use("/api/db-agent", dbAgentRoutes);
 app.use("/api/accounting", accountingRoutes);
 app.use("/api/debts", debtRoutes);
 app.use("/api/notifications", notificationRoutes);
 app.use("/api/purchase-orders", purchaseOrderAliasRoutes);
 app.use("/api/promotions", promotionRoutes);
 app.use("/api/invoices", invoiceRoutes);
+app.use("/api/store-credits", storeCreditRoutes);
+app.use("/api/serial-numbers", serialNumberRoutes);
 app.use("/api/loyalty", loyaltyRoutes);
 app.use("/api/deliveries", deliveryRoutes);
 app.use("/api/warehouses", warehouseRoutes);
@@ -242,12 +284,14 @@ app.use("/api/stock-transfers", stockTransferRoutes);
 app.use("/api/import", importRoutes);
 app.use("/api/settings", settingsRoutes);
 app.use("/api/admin", adminRoutes);
+app.use("/api/subscriptions", subscriptionRoutes);
 app.use("/api/crm", crmRoutes);
 app.use("/api/projects", projectRoutes);
 app.use("/api/production", productionRoutes);
 app.use("/api/einvoice", einvoiceRoutes);
 app.use("/api/tax-reports", taxReportRoutes);
 app.use("/api/bank-reco", bankRecoRoutes);
+app.use("/api/vietqr", vietqrRoutes);
 app.use("/api/fixed-assets", fixedAssetsRoutes);
 app.use("/api/currencies", currencyRoutes);
 app.use("/api/marketplace", marketplaceRoutes);
@@ -313,10 +357,16 @@ const startServer = async (port, retries = 10) => {
   const instance = process.env.NODE_APP_INSTANCE;
   const shouldRunCrons = instance === undefined || instance === "0";
 
+  app.locals.port = p;
+
   const server = httpServer.listen(p, () => {
-    if (shouldRunCrons) startCrons();
-    else console.log(`[cron] skipped on worker instance ${instance}`);
-    console.log(`\n ERP Server đang chạy tại: http://localhost:${p}`);
+    if (shouldRunCrons) {
+      startCrons();
+      startCDC().catch(e => console.error('[app] Failed to start CDC:', e.message));
+    } else {
+      console.log(`[cron] skipped on worker instance ${instance}`);
+    }
+    console.log(`\n Aduu ERP Server đang chạy tại: http://localhost:${p}`);
     console.log(` Environment: ${process.env.NODE_ENV || "development"}`);
     console.log("\n API Endpoints:");
     console.log(`  POST   /api/auth/login`);

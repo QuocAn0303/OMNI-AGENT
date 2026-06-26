@@ -1,12 +1,23 @@
+/**
+ * config/swagger.js — Cấu hình Swagger/OpenAPI cho API docs
+ * 
+ * Tổng quan:
+ * - Dùng swagger-jsdoc để đọc JSDoc comments từ các file routes
+ * - Định nghĩa OpenAPI 3.0.0 spec: title, version, servers, security scheme (bearer JWT)
+ * - Định nghĩa sẵn 2 schema mẫu: Product, InventoryAction
+ * - Chỉ mount ở dev (NODE_ENV !== "production") — xem app.js
+ * - Quét tất cả file *.routes.js trong src/modules/ để lấy comment
+ */
+
 const swaggerJSDoc = require("swagger-jsdoc");
 
 const options = {
   definition: {
     openapi: "3.0.0",
     info: {
-      title: "ERP Bán Lẻ API",
-      version: "1.0.0",
-      description: "API documentation cho đồ án Quản lý ERP Bán Lẻ",
+      title: "Aduu ERP — Hệ thống hoạch định nguồn lực doanh nghiệp v.2.0",
+      version: "2.0.0",
+      description: "API documentation cho Aduu ERP",
     },
     servers: [
       {

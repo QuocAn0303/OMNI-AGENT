@@ -1,4 +1,18 @@
-import { useEffect, useState } from 'react';
+/**
+ * Frontend: pages/Campaigns.jsx — Chiến dịch CSKH (Marketing)
+ * 
+ * Tổng quan:
+ * - Danh sách chiến dịch (GET /crm/campaigns) với các thao tác: xem, gửi ngay, xóa
+ * - Tạo chiến dịch qua modal 3 bước (Steps): chọn segment/kênh → nội dung (template với biến {{name}}, {{tier}}, ...) → lịch gửi
+ * - Hỗ trợ gửi ngay (send-now) hoặc hẹn giờ
+ * - Kênh: EMAIL (SMTP) hoặc Zalo OA
+ * - State: list/loading/segments — form wizard dùng state object + step index
+ * - Bọc trong PlanGate
+ * 
+ * Components/Hooks/Exports:
+ * - Campaigns (default): Page chính — table + modal tạo chiến dịch (multi-step)
+ */
+import { useState, useEffect } from 'react';
 import { useNavigate } from 'react-router-dom';
 import {
   Table, Button, Tag, Modal, Form, Input, Select, DatePicker, Steps,
@@ -12,6 +26,7 @@ import dayjs from 'dayjs';
 import axios from '../api/axios';
 import PageHeader from '../components/layout/PageHeader';
 import EmptyState from '../components/shared/EmptyState';
+import PlanGate from '../components/PlanGate';
 
 const STATUS_META = {
   DRAFT: { label: 'Nháp', color: 'default' },
@@ -224,6 +239,7 @@ export default function Campaigns() {
   ];
 
   return (
+    <PlanGate moduleKey="marketing" moduleName="Chiến dịch Marketing">
     <>
       <PageHeader
         title="Chiến dịch CSKH"
@@ -375,5 +391,6 @@ export default function Campaigns() {
         )}
       </Modal>
     </>
+    </PlanGate>
   );
 }

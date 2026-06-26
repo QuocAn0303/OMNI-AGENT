@@ -1,4 +1,17 @@
-// frontend/src/pages/Currency.jsx
+/**
+ * Frontend: pages/Currency.jsx — Quản lý tỷ giá (đa tiền tệ)
+ * 
+ * Tổng quan:
+ * - Danh sách các loại tiền tệ (getCurrencies), hiển thị tỷ giá so với VNĐ
+ * - Cập nhật tỷ giá thủ công (setExchangeRate) với ngày áp dụng
+ * - Xem lịch sử tỷ giá (getRateHistory) trong modal
+ * - Hiển thị KPI: USD/VNĐ, EUR/VNĐ, số loại tiền tệ
+ * - State: currencies/loading — các modal state riêng
+ * - Bọc trong PlanGate
+ * 
+ * Components/Hooks/Exports:
+ * - Currency (default): Page chính — stats + table + modal cập nhật/lịch sử
+ */
 import { useState, useEffect } from "react";
 import {
   Table, Button, Space, Tag, Modal, Form, Input, InputNumber,
@@ -7,6 +20,7 @@ import {
 import { EditOutlined, HistoryOutlined, PlusOutlined } from "@ant-design/icons";
 import dayjs from "dayjs";
 import PageHeader from "../components/layout/PageHeader";
+import PlanGate from "../components/PlanGate";
 import { getCurrencies, getRateHistory, setExchangeRate } from "../api/currency";
 
 const fmtRate = (v) => v != null ? Number(v).toLocaleString("vi-VN") : "—";
@@ -113,6 +127,7 @@ export default function Currency() {
   const eur = currencies.find((c) => c.code === "EUR");
 
   return (
+    <PlanGate moduleKey="currency" moduleName="Đa tiền tệ">
     <div>
       <PageHeader title="Quản lý tỷ giá" subtitle="Tỷ giá ngoại tệ so với VNĐ" />
 
@@ -171,5 +186,6 @@ export default function Currency() {
         />
       </Modal>
     </div>
+    </PlanGate>
   );
 }

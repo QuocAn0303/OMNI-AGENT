@@ -1,3 +1,15 @@
+/**
+ * modules/notifications/notification.routes.js — Routes cho thông báo
+ * 
+ * Tổng quan:
+ * - REST API cho notification module, tự động xác thực
+ * 
+ * Routes:
+ * - GET /: Danh sách thông báo của user (phân trang, lọc unreadOnly)
+ * - GET /unread-count: Đếm thông báo chưa đọc
+ * - PATCH /read-all: Đánh dấu tất cả đã đọc
+ * - PATCH /:id/read: Đánh dấu một thông báo đã đọc
+ */
 // src/modules/notifications/notification.routes.js
 const router = require("express").Router();
 const { authenticate } = require("../../middleware/auth.middleware");

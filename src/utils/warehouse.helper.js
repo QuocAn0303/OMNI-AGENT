@@ -1,3 +1,19 @@
+/**
+ * utils/warehouse.helper.js — Helper xử lý kho hàng mặc định & inventory
+ * 
+ * Tổng quan:
+ * - Quản lý kho mặc định (có cache in-memory) để các module khác không cần truyền warehouseId
+ * - Hỗ trợ resolveWarehouseId: nếu không có warehouseId → dùng kho mặc định
+ * - Hỗ trợ transaction-aware: nhận tx (Prisma transaction client) để dùng trong $transaction
+ * 
+ * Hàm:
+ * - getDefaultWarehouseId(tx): Lấy ID kho mặc định (env > cache > DB query)
+ * - resolveWarehouseId(warehouseId, tx): Nếu null → trả về kho mặc định
+ * - findInventory(tx, productId, warehouseId): Tìm inventory theo product + warehouse
+ * - attachDefaultInventory(product, inventory): Gắn inventory vào product object
+ * - clearWarehouseCache(): Reset cache (dùng sau khi đổi cấu hình kho)
+ */
+
 const prisma = require("../config/prisma");
 
 let cachedDefaultWarehouseId = null;

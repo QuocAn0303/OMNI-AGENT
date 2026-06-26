@@ -1,3 +1,31 @@
+/**
+ * modules/promotions/promotion.service.js — Service quản lý khuyến mãi (Promotion)
+ *
+ * Tổng quan:
+ * - Quản lý vòng đời khuyến mãi: tạo, cập nhật, kích hoạt, tạm dừng, xoá, hết hạn
+ * - Hỗ trợ 2 loại phạm vi: AUTO (tự động áp) và VOUCHER_CODE (mã giảm giá)
+ * - Hỗ trợ nhiều loại khuyến mãi: PERCENTAGE, FIXED_AMOUNT, BUY_X_GET_Y, CATEGORY_DISCOUNT, PRODUCT_DISCOUNT, FREE_SHIPPING
+ * - Tích hợp engine tính toán giảm giá, kiểm tra hạn mức sử dụng, per-user limit
+ * - Cung cấp báo cáo hiệu quả khuyến mãi
+ *
+ * Hàm:
+ * - loadProducts(items): Load danh sách sản phẩm từ danh sách items (kèm category)
+ * - checkPerUserLimit(promotionId, customerId, perUserLimit): Kiểm tra số lượt đã dùng của 1 khách hàng cho promotion
+ * - incrementUsageAtomic(tx, promotionId): Tăng usageCount atomically, throw 409 nếu hết lượt
+ * - create(data): Tạo khuyến mãi mới, tự động uppercase code
+ * - list({ page, limit, status, type, activeNow }): Danh sách khuyến mãi phân trang, lọc, hỗ trợ activeNow
+ * - getById(id): Chi tiết khuyến mãi kèm thống kê usageCount, totalDiscount, orderCount
+ * - update(id, data): Cập nhật khuyến mãi, không cho đổi code nếu đã có lượt dùng
+ * - setStatus(id, status): Cập nhật trạng thái (ACTIVE/PAUSED/DRAFT/EXPIRED)
+ * - remove(id): Xoá vĩnh viễn khuyến mãi nếu chưa có lượt dùng
+ * - previewAuto({ items, customerId }): Xem trước các khuyến mãi tự động áp dụng cho giỏ hàng
+ * - validateVoucher({ code, items, customerId }): Kiểm tra mã voucher hợp lệ, hạn, số lượt, điều kiện đơn hàng
+ * - recordUsagesInTx(tx, { orderId, customerId, applied, voucher }): Ghi nhận lượt sử dụng promotion trong transaction
+ * - rollbackOrderPromotions(tx, orderId): Rollback lượt sử dụng promotion khi huỷ đơn
+ * - resolveForOrder({ items, customerId, voucherCode }): Giải quyết toàn bộ khuyến mãi cho đơn hàng (auto + voucher), trả về tổng giảm
+ * - expirePromotions(): Cron job đánh dấu hết hạn các promotion quá endDate
+ * - reportEffectiveness({ from, to }): Báo cáo hiệu quả khuyến mãi theo thời gian, nhóm theo promotion, sắp xếp theo tổng giảm giá
+ */
 const prisma = require("../../config/prisma");
 const auditService = require("../audit/audit.service");
 const engine = require("./promotion.engine");

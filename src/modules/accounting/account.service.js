@@ -1,4 +1,18 @@
-// src/modules/accounting/account.service.js
+/**
+ * modules/accounting/account.service.js — Service quản lý Hệ thống tài khoản kế toán
+ *
+ * Tổng quan:
+ * - Cung cấp các thao tác CRUD cho danh mục tài khoản kế toán (Account)
+ * - Hỗ trợ xem dạng cây (tree) phân cấp cha-con
+ * - Lọc danh sách theo type, search (code, name, nameVi)
+ * - Lấy số dư tài khoản thông qua journalService
+ *
+ * Hàm:
+ * - list({ type, search }): Liệt kê tài khoản active, hỗ trợ lọc type và tìm kiếm code/name/nameVi
+ * - tree(): Trả về cây tài khoản phân cấp dựa trên parentId
+ * - getById(id): Lấy chi tiết tài khoản kèm parent và children
+ * - getBalance(id, opts): Proxy sang journalService.getAccountBalance để lấy số dư
+ */
 const prisma = require("../../config/prisma");
 const journalService = require("./journal.service");
 

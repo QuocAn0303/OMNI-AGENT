@@ -1,3 +1,15 @@
+/**
+ * Frontend: src/api/timesheet.js — API module Timesheet (Dự án)
+ *
+ * Tổng quan:
+ * - Quản lý chấm công theo dự án: CRUD time entries
+ * - Quản lý hoá đơn dự án: lấy, tạo, cập nhật invoice
+ * - Tất cả endpoint đều thuộc /projects/:projectId/*
+ *
+ * Exports:
+ * - getTimeEntries, createTimeEntry, updateTimeEntry, deleteTimeEntry
+ * - getProjectInvoices, generateProjectInvoice, updateProjectInvoice
+ */
 // frontend/src/api/timesheet.js
 import axios from "./axios";
 const unwrap = (res) => res.data?.data ?? res.data;

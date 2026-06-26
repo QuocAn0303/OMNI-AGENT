@@ -1,3 +1,16 @@
+/**
+ * modules/products/product.service.test.js — Unit test cho Product Service
+ * 
+ * Tổng quan:
+ * - Mock Prisma để test các hàm CRUD của product service.
+ * - Kiểm tra pagination, tạo sản phẩm kèm inventory, getById, soft delete.
+ * 
+ * Test suites:
+ * - getAll: Trả về danh sách + pagination hợp lệ; skip tính đúng khi page > 1
+ * - create: Tạo sản phẩm và khởi tạo inventory với quantity = 0
+ * - getById: Trả về sản phẩm theo id kèm inventory; ném 404 khi không tìm thấy
+ * - remove: Soft delete (set isActive = false)
+ */
 const productService = require('./product.service');
 const prisma = require('../../config/prisma');
 

@@ -1,3 +1,16 @@
+/**
+ * utils/vietnameseMoneyWords.js — Chuyển số tiền thành chữ tiếng Việt
+ * 
+ * Tổng quan:
+ * - Dùng cho hóa đơn, phiếu thu/chi: "Một trăm hai mươi ba nghìn bốn trăm năm mươi sáu đồng"
+ * - Hỗ trợ đến hàng tỷ
+ * - Xử lý đặc biệt: "mốt" (1 ở hàng đơn vị sau mươi), "lăm" (5), "lẻ" (0 ở hàng chục)
+ * 
+ * Hàm:
+ * - readTriple(n): Đọc số có 3 chữ số (0-999)
+ * - numberToVietnameseWords(amount): Chuyển số tiền thành chữ, thêm "đồng" ở cuối
+ */
+
 const UNITS = ["", "một", "hai", "ba", "bốn", "năm", "sáu", "bảy", "tám", "chín"];
 const TEENS = [
   "mười",

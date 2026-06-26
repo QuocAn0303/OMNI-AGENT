@@ -1,3 +1,14 @@
+/**
+ * Frontend: pages/Debts.jsx — Công nợ tổng quan
+ * 
+ * Tổng quan:
+ * - Hiển thị danh sách công nợ (phải thu / phải trả) với summary stats (receivableOpenTotal, payableOpenTotal, overdue)
+ * - Gọi getDebts (phân trang) và getDebtsSummary song song khi mount
+ * - State: data/loading/summary/filters — tự quản lý
+ * 
+ * Components/Hooks/Exports:
+ * - Debts (default): Page chính — Statistic cards + Table công nợ
+ */
 import { useEffect, useState, useCallback } from "react";
 import { Table, Tag, Card, Statistic, Row, Col, message } from "antd";
 import PageHeader from "../components/layout/PageHeader";

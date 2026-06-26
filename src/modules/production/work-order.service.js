@@ -1,3 +1,26 @@
+/**
+ * modules/production/work-order.service.js — Service quản lý Work Order (lệnh sản xuất)
+ *
+ * Tổng quan:
+ * - Cung cấp logic nghiệp vụ cho lệnh sản xuất từ tạo đến hoàn thành
+ * - State machine: DRAFT → IN_PROGRESS → COMPLETED / CANCELLED (terminal)
+ * - Tạo WO từ BOM đang ACTIVE, tự sinh mã WO-{timestamp}{random}
+ * - Start: kiểm tra tồn kho đủ, costPrice > 0 cho tất cả nguyên liệu
+ * - Complete: atomic transaction — trừ nguyên liệu, cộng thành phẩm, tính costPrice bình quân, ghi bút toán kế toán
+ * - Tích hợp auditService, autopostService, postingErrorService
+ *
+ * Hàm:
+ * - generateCode(): Sinh mã WO dạng WO- + 8 số timestamp + 3 số random
+ * - overview(): Thống kê tổng WO, đang chạy, hoàn thành trong tháng, BOM active
+ * - list({ page, limit, status, productId, search }): Danh sách WO phân trang, lọc
+ * - getById(id): Chi tiết WO kèm items, availableQty từ kho, lineCost
+ * - create(data, userId): Tạo WO từ BOM active, kiểm tra kho, tạo items với requiredQty = BOM qty × WO quantity
+ * - update(id, data, userId): Cập nhật WO (DRAFT), tính lại requiredQty nếu quantity thay đổi
+ * - start(id, userId): Bắt đầu — kiểm tra tồn kho và costPrice, chuyển IN_PROGRESS
+ * - complete(id, userId): Hoàn thành — atomic transaction trừ nguyên liệu/ghi InventoryTransaction, cộng thành phẩm, tính costPrice bình quân, gọi autopostService ghi bút toán
+ * - cancel(id, userId): Hủy WO, chuyển CANCELLED
+ * - remove(id, userId): Xóa WO ở DRAFT
+ */
 // src/modules/production/work-order.service.js
 const prisma = require("../../config/prisma");
 const auditService = require("../audit/audit.service");

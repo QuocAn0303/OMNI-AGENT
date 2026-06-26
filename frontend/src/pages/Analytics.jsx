@@ -1,4 +1,18 @@
-import { useEffect, useState } from 'react';
+/**
+ * Frontend: pages/Analytics.jsx — Phân tích kinh doanh (Analytics)
+ * 
+ * Tổng quan:
+ * - Dashboard phân tích: doanh thu, đơn hàng, AOV, khách mới theo khoảng thời gian
+ * - Biểu đồ: xu hướng doanh thu (AreaChart), top 10 sản phẩm (BarChart), top khách hàng (danh sách)
+ * - Gọi GET /analytics với params from/to/groupBy (day/week/month)
+ * - Dùng Recharts (ResponsiveContainer, AreaChart, BarChart) và StatCard component
+ * - State: dateRange/groupBy/loading/data — tự quản lý
+ * - Bọc trong PlanGate
+ * 
+ * Components/Hooks/Exports:
+ * - Analytics (default): Page chính — filter bar + KPI stats + biểu đồ
+ */
+import { useState, useEffect } from 'react';
 import { DatePicker, Select, Spin, message } from 'antd';
 import {
   ResponsiveContainer,
@@ -12,6 +26,7 @@ import PageHeader from '../components/layout/PageHeader';
 import StatCard from '../components/shared/StatCard';
 import MoneyDisplay from '../components/shared/MoneyDisplay';
 import EmptyState from '../components/shared/EmptyState';
+import PlanGate from '../components/PlanGate';
 import {
   DollarCircleOutlined, ShoppingCartOutlined,
   ArrowUpOutlined, RiseOutlined,
@@ -56,6 +71,7 @@ export default function Analytics() {
   }, [dateRange, groupBy]);
 
   return (
+    <PlanGate moduleKey="analytics" moduleName="Phân tích kinh doanh">
     <>
       <PageHeader
         title="Analytics"
@@ -291,5 +307,6 @@ export default function Analytics() {
         </div>
       </div>
     </>
+    </PlanGate>
   );
 }

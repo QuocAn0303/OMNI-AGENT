@@ -1,3 +1,18 @@
+/**
+ * modules/orders/order.service.js — Service quản lý đơn hàng
+ * 
+ * Tổng quan:
+ * - Xử lý toàn bộ logic nghiệp vụ đơn hàng: tạo đơn, cập nhật trạng thái, tính giảm giá, kiểm tra tồn kho, thanh toán, loyalty, promotions, e-invoice, auto-posting bút toán kế toán
+ * - Sử dụng Prisma transaction để đảm bảo toàn vẹn dữ liệu
+ * 
+ * Hàm:
+ * - generateOrderCode(): Sinh mã đơn tự động ORD-YYYYMMDD-XXXX, tăng dần trong ngày
+ * - calculateDiscount(base, type, value): Tính tiền giảm giá theo PERCENT hoặc FIXED, không vượt quá base
+ * - getAll({page, limit, status, customerId}): Lấy danh sách đơn hàng phân trang, lọc theo trạng thái và khách hàng
+ * - getById(id): Lấy chi tiết đơn hàng kèm customer, payments, returns, items, createdBy
+ * - create(orderData, userId): Tạo đơn hàng — kiểm tra customer, kiểm tra tồn kho từng sản phẩm, tính subtotal/discount/promotion/loyalty, xử lý thanh toán, tạo items+payments trong transaction, nếu COMPLETED thì xuất kho ngay (còn không thì reserved), ghi audit log, auto-issue e-invoice + auto-post bút toán
+ * - updateStatus(id, status, userId): Cập nhật trạng thái đơn — kiểm tra validTransitions, nếu CANCELLED thì rollback kho (reservation hoặc nhập lại tùy trạng thái cũ), nếu SHIPPING→COMPLETED thì xuất kho + tính loyalty + tạo debt receivable, auto-issue e-invoice + auto-post/reverse bút toán
+ */
 const prisma = require("../../config/prisma");
 const auditService = require("../audit/audit.service");
 const paymentService = require("../payments/payment.service");
@@ -44,12 +59,22 @@ const getAll = async ({
   page = 1,
   limit = 20,
   status = "",
+  paymentStatus = "",
   customerId = "",
+  fromDate = "",
+  toDate = "",
 }) => {
   const skip = (Number(page) - 1) * Number(limit);
   const where = {
     ...(status && { status }),
+    ...(paymentStatus && { paymentStatus }),
     ...(customerId && { customerId }),
+    ...(fromDate || toDate ? {
+      createdAt: {
+        ...(fromDate && { gte: new Date(fromDate) }),
+        ...(toDate && { lte: new Date(toDate) }),
+      },
+    } : {}),
   };
 
   const [orders, total] = await Promise.all([
@@ -117,8 +142,9 @@ const create = async (orderData, userId) => {
     loyaltyPointsUsed = 0,
   } = orderData;
 
+  let customer = null;
   if (customerId) {
-    const customer = await prisma.customer.findUnique({
+    customer = await prisma.customer.findUnique({
       where: { id: customerId },
     });
     if (!customer || !customer.isActive) {
@@ -131,9 +157,8 @@ const create = async (orderData, userId) => {
 
   const whId = await resolveWarehouseId(warehouseId);
   let customerTier = "BRONZE";
-  if (customerId) {
-    const c = await prisma.customer.findUnique({ where: { id: customerId } });
-    customerTier = c?.tier || "BRONZE";
+  if (customer) {
+    customerTier = customer.tier || "BRONZE";
   }
 
   const productIds = items.map((i) => i.productId);
@@ -339,6 +364,12 @@ const create = async (orderData, userId) => {
     }
 
     if (promoResolved.applied.length || promoResolved.voucher) {
+      for (const p of promoResolved.applied) {
+        const promo = await tx.promotion.findUnique({ where: { id: p.id }, select: { usageLimit: true, _count: { select: { usages: true } } } });
+        if (promo.usageLimit && promo._count.usages >= promo.usageLimit) {
+          throw { status: 400, message: `Khuyến mãi "${p.name}" đã hết lượt sử dụng` };
+        }
+      }
       await promotionService.recordUsagesInTx(tx, {
         orderId: newOrder.id,
         customerId,
@@ -349,6 +380,33 @@ const create = async (orderData, userId) => {
 
     if (status === "COMPLETED" && ["UNPAID", "PARTIAL"].includes(finalPaymentStatus)) {
       await debtService.createReceivableForOrderInTx(tx, { order: newOrder, userId });
+    }
+
+    if (status === "COMPLETED") {
+      for (const item of items) {
+        const prod = products.find((p) => p.id === item.productId);
+        if (prod?.trackBySerial) {
+          const serialIds = item.serials || [];
+          if (serialIds.length) {
+            await tx.serialNumber.updateMany({
+              where: { id: { in: serialIds }, status: "IN_STOCK" },
+              data: { status: "SOLD", orderId: newOrder.id },
+            });
+          } else {
+            const available = await tx.serialNumber.findMany({
+              where: { productId: item.productId, warehouseId: whId, status: "IN_STOCK" },
+              take: item.quantity,
+              select: { id: true },
+            });
+            if (available.length) {
+              await tx.serialNumber.updateMany({
+                where: { id: { in: available.map((s) => s.id) } },
+                data: { status: "SOLD", orderId: newOrder.id },
+              });
+            }
+          }
+        }
+      }
     }
 
     return newOrder;
@@ -404,10 +462,12 @@ const create = async (orderData, userId) => {
     })
     .catch((err) => console.error("Failed to write audit log for order:", err));
 
-  // Auto-issue e-invoice khi tạo đơn trực tiếp COMPLETED (POS)
+  // Auto-issue e-invoice + invoice PDF khi tạo đơn trực tiếp COMPLETED (POS)
   if (status === "COMPLETED") {
     const einvoiceService = require("../einvoice/einvoice.service");
     einvoiceService.autoIssueForOrder(order.id, userId).catch(() => {});
+    const invoiceService = require("./invoice.service");
+    invoiceService.generateInvoice(order.id, {}, userId).catch(() => {});
   }
 
   return order;
@@ -423,8 +483,8 @@ const validTransitions = {
   CANCELLED: [],
 };
 
-const updateStatus = async (id, status, userId = null) => {
-  const order = await prisma.order.findUnique({
+const updateStatusInTx = async (tx, id, status, userId = null) => {
+  const order = await tx.order.findUnique({
     where: { id },
     include: {
       items: { include: { product: { include: { inventories: true } } } },
@@ -635,13 +695,25 @@ const updateStatus = async (id, status, userId = null) => {
     })
     .catch(() => {});
 
-  // Auto-issue e-invoice khi SHIPPING → COMPLETED
+  // Auto-issue e-invoice + invoice PDF + auto-reorder khi SHIPPING → COMPLETED
   if (order.status === "SHIPPING" && status === "COMPLETED") {
     const einvoiceService = require("../einvoice/einvoice.service");
     einvoiceService.autoIssueForOrder(id, userId).catch(() => {});
+    const invoiceService = require("./invoice.service");
+    invoiceService.generateInvoice(id, {}, userId).catch(() => {});
+
+    // Auto-reorder: kiem tra ton kho thap sau khi xuat hang
+    const automation = require("../automation/automation.service");
+    automation.onOrderCompleted(updated, userId);
   }
 
   return updated;
 };
 
-module.exports = { getAll, getById, create, updateStatus };
+const updateStatus = async (id, status, userId = null) => {
+  return prisma.$transaction(async (tx) => {
+    return updateStatusInTx(tx, id, status, userId);
+  });
+};
+
+module.exports = { getAll, getById, create, updateStatus, updateStatusInTx };

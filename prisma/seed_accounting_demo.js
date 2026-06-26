@@ -1,3 +1,33 @@
+/**
+ * prisma/seed_accounting_demo.js — Seed dữ liệu kế toán demo chi tiết
+ *
+ * Tổng quan:
+ - Tạo dữ liệu kế toán demo đầy đủ: kỳ kế toán (fiscal periods), nhà cung cấp (vendors),
+ *   vốn góp ban đầu (500M VND), chi phí mẫu 60 ngày, đơn mua hàng (PO), thanh toán đơn hàng
+ *   + bút toán (journal entries), bảng lương + hạch toán, thanh toán công nợ, thông báo kế toán
+ * - Chạy SAU: seed.js → seed_accounting.js → spread_orders.js
+ * - Tự động gọi autopost service để tạo journal entries cho mỗi giao dịch
+ * - Sử dụng Prisma transaction cho các thao tác phức tạp (tạo PO, công nợ)
+ *
+ * Hàm:
+ * - ensureDefaultWarehouse(): Lấy hoặc tạo warehouse mặc định nếu chưa có
+ * - seedFiscalPeriods(): Tạo 12 kỳ kế toán năm hiện tại + 3 tháng cuối năm trước (OPEN)
+ * - seedVendors(): Upsert 6 nhà cung cấp mẫu (nguyên liệu, sáp nến, bao bì, vận chuyển...)
+ * - seedCapital(admin, autopost): Ghi nhận vốn góp 500M VND + cập nhật tài khoản ngân hàng
+ * - seedExpenses(admin, vendors, autopost): Tạo chi phí mẫu hàng tháng + ngẫu nhiên trong 60 ngày,
+ *   tự động post journal nếu đã thanh toán. Có kiểm tra và bỏ qua nếu đã tồn tại
+ * - receivePoItems(po, items, warehouse, admin): Nhập kho các item từ PO, tạo inventory transaction
+ * - seedPurchaseOrders(admin, vendors, autopost, warehouse): Tạo 8 PO mẫu với các trạng thái
+ *   thanh toán khác nhau (đã trả, trả 1 phần, chưa trả), tự động post journal + công nợ
+ * - seedOrderPaymentsAndJournals(admin, autopost): Tạo thanh toán cho đơn hàng COMPLETED chưa có
+ *   journal, post journal doanh thu, tạo công nợ phải thu nếu chưa thanh toán đủ
+ * - seedPayrollJournals(admin, autopost): Tính lương 3 tháng gần nhất cho employees,
+ *   tạo payroll + journal entries qua autopost
+ * - seedDebtPayments(admin, autopost): Tạo 3 phiếu thanh toán công nợ mẫu (trả 1 phần),
+ *   cập nhật số dư customer/vendor + post journal
+ * - seedAccountingNotifications(admin): Tạo thông báo kế toán (chi phí chờ duyệt, công nợ, đóng sổ)
+ * - main(): Hàm chính — kiểm tra preconditions, chạy tuần tự các seed functions, in summary
+ */
 // prisma/seed_accounting_demo.js
 // Seed demo kế toán: vendors, chi phí, PO, bút toán, công nợ, lương, kỳ kế toán.
 // Chạy SAU: seed.js → seed_accounting.js → spread_orders.js

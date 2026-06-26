@@ -1,3 +1,16 @@
+/**
+ * Page: ProductEdit — Form thêm/sửa sản phẩm
+ *
+ * Tổng quan:
+ * - Dùng cho cả tạo mới (/products/create) và chỉnh sửa (/products/:id/edit)
+ * - Form gồm: thông tin cơ bản (tên, SKU, danh mục, mô tả), giá & tồn kho, upload ảnh
+ * - Khi edit: load dữ liệu sản phẩm hiện tại, cho phép nhập thêm số lượng
+ * - Gọi API: GET /categories, GET /products/:id, POST/PUT /products
+ * - Sử dụng PageHeader, Ant Design Form, Card, Upload, Spin
+ *
+ * Exports:
+ * - ProductEdit: React functional component (default export)
+ */
 import { useEffect, useState } from 'react';
 import { Form, Input, InputNumber, Select, Button, Upload, message, Card, Spin } from 'antd';
 import { SaveOutlined, ArrowLeftOutlined, UploadOutlined } from '@ant-design/icons';

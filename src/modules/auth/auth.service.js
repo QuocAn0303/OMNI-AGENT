@@ -1,9 +1,32 @@
-// src/modules/auth/auth.service.js
+/**
+ * modules/auth/auth.service.js — Business logic xác thực người dùng
+ * 
+ * Tổng quan:
+ * - Quản lý vòng đời JWT access token + refresh token
+ * - Refresh token lưu trong DB (bảng RefreshToken), có rotate (cũ revoked, mới tạo)
+ * - Password luôn hash bằng bcrypt (salt rounds = 10), không bao giờ lưu plain text
+ * - Audit log cho mọi sự kiện: LOGIN, CHANGE_PASSWORD, REGISTER, VERIFY_EMAIL
+ * - Hỗ trợ đăng ký tenant mới: tạo tenant + user ADMIN + companySettings + gói FREE trial
+ * 
+ * Hàm:
+ * - login({ email, password }): Xác thực → tạo JWT + refresh token → trả { token, refreshToken, user }
+ * - getProfile(userId): Lấy thông tin user (không password)
+ * - changePassword(userId, { currentPassword, newPassword }): Xác thực mật khẩu cũ → hash mới → update
+ * - createAccessToken(user): Tạo JWT từ user object (dùng nội bộ)
+ * - refreshAccessToken(providedToken): Kiểm tra refresh token → rotate → trả cặp mới
+ * - revokeRefreshToken({ token, userId, revokeAll }): Thu hồi 1 hoặc tất cả refresh token
+ * - register({ companyName, email, password, industry, fullName }): Tạo tenant + user + companySettings + subscription trial free
+ * - verifyEmail(token): Xác minh email từ link
+ * - generateEmailVerifyToken(): Sinh token ngẫu nhiên 32 bytes hex
+ * - buildVerifyLink(token): Tạo URL xác minh
+ */
+
 const bcrypt = require("bcrypt");
 const jwt = require("jsonwebtoken");
 const crypto = require("crypto");
 const prisma = require("../../config/prisma");
 const auditService = require("../audit/audit.service");
+const { sendEmail } = require("../../utils/email");
 
 // Ghi chú: Phần refresh token + logout
 // - Refresh token được lưu vào bảng `RefreshToken` (Prisma schema)
@@ -31,6 +54,11 @@ const login = async ({ email, password }) => {
   // 3. Tài khoản bị vô hiệu hóa (isActive = false)
   if (!user.isActive) {
     throw { status: 403, message: "Tài khoản đã bị vô hiệu hóa" };
+  }
+
+  // 4. Check email verified (only for non-super users)
+  if (!user.emailVerified && user.emailVerifyToken && user.role !== 'SUPER_OMEGA_ULTRA_ADMIN') {
+    throw { status: 403, message: 'Vui lòng xác minh email trước khi đăng nhập' };
   }
 
   if (!user) {
@@ -225,7 +253,16 @@ const revokeRefreshToken = async ({ token, userId, revokeAll = false }) => {
   throw { status: 400, message: "Yêu cầu token hoặc userId để revoke" };
 };
 
-const register = async ({ companyName, email, password, industry }) => {
+const generateEmailVerifyToken = () => {
+  return crypto.randomBytes(32).toString('hex')
+}
+
+const buildVerifyLink = (token) => {
+  const baseUrl = process.env.CLIENT_URL || 'http://localhost:5173'
+  return `${baseUrl}/verify-email?token=${token}`
+}
+
+const register = async ({ companyName, email, password, industry, fullName }) => {
   const existing = await prisma.user.findUnique({ where: { email } })
   if (existing) throw { status: 400, message: 'Email đã được sử dụng' }
 
@@ -239,19 +276,25 @@ const register = async ({ companyName, email, password, industry }) => {
   if (existingSlug) throw { status: 400, message: 'Tên công ty đã tồn tại' }
 
   const hashedPassword = await bcrypt.hash(password, Number(process.env.BCRYPT_ROUNDS) || 10)
+  const verifyToken = generateEmailVerifyToken()
+  const verifyExpiry = new Date(Date.now() + 24 * 60 * 60 * 1000) // 24h
 
   const result = await prisma.$transaction(async (tx) => {
     const tenant = await tx.tenant.create({
-      data: { name: companyName, slug, plan: 'free' },
+      data: { name: companyName, slug },
     })
 
     const user = await tx.user.create({
       data: {
         email,
         password: hashedPassword,
-        fullName: companyName,
+        fullName: fullName || companyName,
         role: 'ADMIN',
         tenantId: tenant.id,
+        emailVerified: false,
+        emailVerifyToken: verifyToken,
+        emailVerifyExpiry: verifyExpiry,
+        registrationStatus: 'PENDING',
       },
     })
 
@@ -259,26 +302,118 @@ const register = async ({ companyName, email, password, industry }) => {
       data: { name: companyName, industry },
     })
 
+    const freePlan = await tx.subscriptionPlan.findUnique({ where: { key: 'free' } })
+    if (freePlan) {
+      const endDate = new Date()
+      endDate.setDate(endDate.getDate() + freePlan.durationDays)
+      await tx.tenantSubscription.create({
+        data: {
+          tenantId: tenant.id,
+          planId: freePlan.id,
+          status: 'TRIAL',
+          startDate: new Date(),
+          endDate,
+        },
+      })
+    }
+
     return { tenant, user }
   })
 
-  const token = createAccessToken(result.user)
-  const { password: _p, ...userWithoutPassword } = result.user
+  const verifyLink = buildVerifyLink(verifyToken)
+
+  const recipientName = fullName || companyName;
+  const html = `<!DOCTYPE html>
+<html>
+<head><meta charset="utf-8"></head>
+<body style="margin:0;padding:0;background:#f4f4f4;font-family:Arial,sans-serif">
+  <table width="100%" cellpadding="0" cellspacing="0"><tr><td align="center" style="padding:40px 16px">
+    <table width="480" cellpadding="0" cellspacing="0" style="background:#fff;border-radius:12px;overflow:hidden">
+      <tr><td style="background:#0d9488;padding:32px;text-align:center;color:#fff;font-size:20px;font-weight:700">
+        Xác minh tài khoản Aduu ERP
+      </td></tr>
+      <tr><td style="padding:32px">
+        <p style="font-size:15px;color:#1e293b">Xin chào <strong>${recipientName}</strong>,</p>
+        <p style="font-size:14px;color:#475569;line-height:1.6">
+          Cảm ơn bạn đã đăng ký tài khoản Aduu ERP. Vui lòng nhấn nút bên dưới để xác minh địa chỉ email và kích hoạt tài khoản của bạn.
+        </p>
+        <div style="text-align:center;margin:28px 0">
+          <a href="${verifyLink}" style="display:inline-block;background:#0d9488;color:#fff;padding:12px 32px;border-radius:8px;text-decoration:none;font-weight:600;font-size:15px">
+            Xác minh tài khoản
+          </a>
+        </div>
+        <p style="font-size:13px;color:#64748b">
+          Hoặc copy đường dẫn này vào trình duyệt:<br>
+          <span style="color:#0d9488;word-break:break-all">${verifyLink}</span>
+        </p>
+        <p style="font-size:13px;color:#64748b;margin-top:24px">
+          Liên kết có hiệu lực trong 24 giờ. Nếu bạn không yêu cầu đăng ký, vui lòng bỏ qua email này.
+        </p>
+      </td></tr>
+      <tr><td style="background:#f8fafc;padding:16px 32px;text-align:center;font-size:12px;color:#94a3b8">
+        Aduu ERP &copy; ${new Date().getFullYear()} — v.2.0
+      </td></tr>
+    </table>
+  </td></tr></table>
+</body>
+</html>`;
+
+  const emailResult = await sendEmail({
+    to: email,
+    subject: `Xác minh tài khoản Aduu ERP — ${recipientName}`,
+    html,
+  });
+
+  if (emailResult.mock) {
+    console.log(`[DEV] SMTP chưa cấu hình, verify link cho ${email}: ${verifyLink}`);
+  }
 
   auditService.log({
     userId: result.user.id,
     action: 'REGISTER',
     entity: 'Tenant',
     entityId: result.tenant.id,
-    after: { companyName, email, plan: 'free' },
+    after: { companyName, email, plan: 'free', emailVerified: false },
   })
 
-  return { token, user: userWithoutPassword, tenant: result.tenant }
+  return { message: 'Vui lòng kiểm tra email để xác minh tài khoản' }
+}
+
+const verifyEmail = async (token) => {
+  const user = await prisma.user.findFirst({
+    where: { emailVerifyToken: token, emailVerified: false },
+  })
+
+  if (!user) throw { status: 400, message: 'Token xác minh không hợp lệ hoặc đã hết hạn' }
+  if (user.emailVerifyExpiry && new Date(user.emailVerifyExpiry) < new Date()) {
+    throw { status: 400, message: 'Token xác minh đã hết hạn' }
+  }
+
+  await prisma.user.update({
+    where: { id: user.id },
+    data: {
+      emailVerified: true,
+      emailVerifyToken: null,
+      emailVerifyExpiry: null,
+      registrationStatus: 'ACTIVE',
+    },
+  })
+
+  auditService.log({
+    userId: user.id,
+    action: 'VERIFY_EMAIL',
+    entity: 'User',
+    entityId: user.id,
+    after: { email: user.email, emailVerified: true },
+  })
+
+  return { message: 'Email đã được xác minh thành công' }
 }
 
 module.exports = {
   login,
   register,
+  verifyEmail,
   getProfile,
   changePassword,
   refreshAccessToken,

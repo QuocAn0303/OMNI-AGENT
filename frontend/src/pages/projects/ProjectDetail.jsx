@@ -1,3 +1,17 @@
+/**
+ * Frontend: pages/projects/ProjectDetail.jsx — Chi tiết dự án
+ *
+ * Tổng quan:
+ * - Hiển thị chi tiết dự án với 4 tab: Tổng quan, Công việc, Tài chính, Thành viên
+ * - CRUD công việc (task) với lọc trạng thái/ưu tiên, quick-update trạng thái
+ * - Quản lý thành viên dự án (thêm/xoá/đổi vai trò)
+ * - Tab Tài chính: ngân sách vs thực chi, cảnh báo vượt ngân sách, danh sách chi phí
+ * - API: GET /projects/:id, GET /projects/:id/stats, GET /projects/:id/tasks, POST/PATCH/DELETE tasks, members
+ *
+ * Components/Hooks/Exports:
+ * - ProjectDetail: Component chính (xuất mặc định)
+ * - PROJECT_STATUS, TASK_STATUS, TASK_PRIORITY, MEMBER_ROLES: Enum constants
+ */
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
@@ -11,6 +25,7 @@ import {
 import dayjs from 'dayjs';
 import axios from '../../api/axios';
 import PageHeader from '../../components/layout/PageHeader';
+import PlanGate from '../../components/PlanGate';
 import StatusTag from '../../components/shared/StatusTag';
 import MoneyDisplay from '../../components/shared/MoneyDisplay';
 import EmptyState from '../../components/shared/EmptyState';
@@ -761,6 +776,7 @@ export default function ProjectDetail() {
   };
 
   return (
+    <PlanGate moduleKey="projects" moduleName="Chi tiết dự án">
     <>
       <PageHeader
         title={project.name}
@@ -933,5 +949,6 @@ export default function ProjectDetail() {
         </Form>
       </Modal>
     </>
+    </PlanGate>
   );
 }

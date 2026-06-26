@@ -1,3 +1,19 @@
+/**
+ * modules/accounting/fiscal-period.service.js — Quản lý kỳ kế toán
+ * 
+ * Tổng quan:
+ * - Quản lý vòng đời kỳ kế toán (tháng): OPEN → CLOSED → LOCKED.
+ * - Đảm bảo tính toàn vẹn báo cáo: chỉ ADMIN được phép mở lại kỳ đã đóng,
+ *   khóa vĩnh viễn không thể mở lại.
+ * - Ghi audit log cho mọi thao tác.
+ * 
+ * Hàm:
+ * - list(): Danh sách tất cả kỳ kế toán, sắp xếp mới nhất trước.
+ * - ensurePeriod(year, month): Tự động tạo kỳ nếu chưa tồn tại — dùng khi cần tham chiếu.
+ * - close({year, month}, userId): Đóng kỳ (CLOSED). Chỉ kỳ OPEN mới được đóng.
+ * - reopen({year, month}, userId, userRole): Mở lại kỳ đã đóng. Yêu cầu ADMIN/SUPER_ADMIN.
+ * - lock({year, month}, userId, userRole): Khóa vĩnh viễn kỳ. Chỉ ADMIN/SUPER_ADMIN.
+ */
 // src/modules/accounting/fiscal-period.service.js
 const prisma = require("../../config/prisma");
 const auditService = require("../audit/audit.service");

@@ -1,3 +1,14 @@
+/**
+ * modules/warehouses/warehouse.service.js — Service quản lý kho hàng
+ * 
+ * Tổng quan:
+ * - CRUD kho hàng, quản lý kho mặc định, clear cache khi thay đổi
+ * 
+ * Hàm:
+ * - list(): Lấy danh sách kho đang hoạt động, ưu tiên kho mặc định lên đầu
+ * - create(data, userId): Tạo kho mới, nếu isDefault thì reset các kho khác, ghi audit log
+ * - update(id, data, userId): Cập nhật kho, nếu isDefault thì reset các kho khác, clear cache, ghi audit log
+ */
 const prisma = require("../../config/prisma");
 const auditService = require("../audit/audit.service");
 const { clearWarehouseCache } = require("../../utils/warehouse.helper");

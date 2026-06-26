@@ -1,3 +1,24 @@
+/**
+ * modules/crm/campaigns.service.js — Service chiến dịch marketing
+ * 
+ * Tổng quan:
+ * - Quản lý chiến dịch gửi tin marketing đến khách hàng (EMAIL, ZALO).
+ * - Hỗ trợ luồng: DRAFT → SCHEDULED → SENDING → SENT (hoặc FAILED).
+ * - Tích hợp segment để chọn đối tượng nhận, template rendering, gửi batch.
+ * - Có cron job để xử lý campaign đã lên lịch.
+ * 
+ * Hàm:
+ * - list(filters, user): Danh sách campaign; SUPER_OMEGA_ULTRA_ADMIN thấy adminCampaign.
+ * - getById(id, user): Chi tiết campaign theo role.
+ * - listRecipients(campaignId, {page, limit, status}): Danh sách người nhận có phân trang.
+ * - create(data, userId): Tạo campaign mới (DRAFT hoặc SCHEDULED nếu có scheduledAt).
+ * - update(id, data, userId): Cập nhật campaign; không cho sửa khi đang SENDING hoặc SENT.
+ * - remove(id, userId): Xóa campaign; không xóa được khi đang SENDING.
+ * - executeCampaign(campaignId): Lõi thực thi gửi: đánh dấu SENDING, lấy danh sách KH từ segment,
+ *   tạo recipient rows, gửi theo batch (50 part/s, 1s delay), cập nhật trạng thái.
+ * - sendNow(id, userId): Gửi campaign ngay lập tức (wrapper executeCampaign + audit).
+ * - cronProcessScheduled(): Cron quét campaign SCHEDULED đến hạn, gọi executeCampaign.
+ */
 // src/modules/crm/campaigns.service.js
 const prisma = require("../../config/prisma");
 const auditService = require("../audit/audit.service");
@@ -28,9 +49,34 @@ const CAMPAIGN_SELECT = {
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
-const list = async ({ status } = {}) => {
+const list = async (filters = {}, user) => {
+  if (user?.role === "SUPER_OMEGA_ULTRA_ADMIN") {
+    const where = {};
+    if (filters.status) where.status = filters.status;
+    return prisma.adminCampaign.findMany({
+      where,
+      select: {
+        id: true,
+        name: true,
+        channel: true,
+        targetPlans: true,
+        subject: true,
+        content: true,
+        status: true,
+        sentCount: true,
+        scheduledAt: true,
+        createdAt: true,
+        updatedAt: true,
+        _count: { select: { recipients: true } },
+      },
+      orderBy: { createdAt: "desc" },
+      take: 200,
+    });
+  }
+
   const where = {};
-  if (status) where.status = status;
+  if (filters.status) where.status = filters.status;
+  if (user?.tenantId) where.createdBy = { tenantId: user.tenantId };
   return prisma.customerCampaign.findMany({
     where,
     select: CAMPAIGN_SELECT,
@@ -39,7 +85,33 @@ const list = async ({ status } = {}) => {
   });
 };
 
-const getById = async (id) => {
+const getById = async (id, user) => {
+  if (user?.role === "SUPER_OMEGA_ULTRA_ADMIN") {
+    const c = await prisma.adminCampaign.findUnique({
+      where: { id },
+      select: {
+        id: true,
+        name: true,
+        channel: true,
+        targetPlans: true,
+        subject: true,
+        content: true,
+        status: true,
+        sentCount: true,
+        scheduledAt: true,
+        createdAt: true,
+        updatedAt: true,
+        recipients: { orderBy: { createdAt: "desc" }, take: 50 },
+      },
+    });
+    if (!c) {
+      const err = new Error("Chiến dịch không tồn tại");
+      err.status = 404;
+      throw err;
+    }
+    return c;
+  }
+
   const c = await prisma.customerCampaign.findUnique({
     where: { id },
     select: CAMPAIGN_SELECT,

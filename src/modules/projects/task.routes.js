@@ -1,12 +1,29 @@
+/**
+ * modules/projects/task.routes.js — Định tuyến quản lý công việc dự án
+ *
+ * Tổng quan:
+ * - REST endpoints cho CRUD công việc trong dự án
+ * - Yêu cầu authenticate + requireModule("projects") + requireProjectMember
+ * - Validate body bằng Zod schemas (createSchema, updateSchema)
+ * - Hỗ trợ status: TODO / IN_PROGRESS / REVIEW / DONE / CANCELLED
+ * - Hỗ trợ priority: LOW / MEDIUM / HIGH / URGENT
+ *
+ * Hàm:
+ * - GET / → service.list: Danh sách công việc phân trang, lọc theo status/priority/assigneeId
+ * - POST / → service.create: Tạo công việc mới, tự gửi notification cho assignee
+ * - PATCH /:taskId → service.update: Cập nhật công việc, gửi notification nếu đổi assignee
+ * - DELETE /:taskId → service.remove: Xóa công việc
+ */
 // src/modules/projects/task.routes.js
 const router = require("express").Router({ mergeParams: true });
 const { z } = require("zod");
 const service = require("./task.service");
 const { authenticate } = require("../../middleware/auth.middleware");
+const { requireModule } = require("../../middleware/plan.middleware");
 const { requireProjectMember } = require("./project-access.middleware");
 const { paginated, created, success } = require("../../utils/response");
 
-router.use(authenticate);
+router.use(authenticate, requireModule("projects"));
 // Mọi route đều yêu cầu là thành viên của project trong URL.
 // (ADMIN/SUPER_ADMIN sẽ tự bypass theo logic của middleware)
 router.use(requireProjectMember());

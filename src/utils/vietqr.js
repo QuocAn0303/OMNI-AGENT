@@ -1,7 +1,22 @@
-// src/utils/vietqr.js
-// Tạo VietQR string theo chuẩn NAPAS/EMVCo.
-// Spec: https://vietqr.io/portal-service/download
-// QR string = EMVCo format với merchant account info chuẩn VN
+/**
+ * utils/vietqr.js — Sinh mã VietQR theo chuẩn NAPAS/EMVCo
+ * 
+ * Tổng quan:
+ * - Tạo QR string cho chuyển khoản ngân hàng (VietQR) theo chuẩn EMVCo
+ * - Tính CRC16-CCITT checksum để đảm bảo QR hợp lệ
+ * - Hỗ trợ tạo QR PNG base64 qua thư viện qrcode (nếu có)
+ * - Có sẵn bank BINs cho các ngân hàng phổ biến (VCB, TCB, MB, BIDV, ...)
+ * 
+ * Hàm:
+ * - crc16(str): Tính CRC16-CCITT cho EMVCo QR string
+ * - tlv(id, value): Tạo EMVCo TLV: ID + length(2) + value
+ * - buildVietQRString({ bankBin, accountNumber, amount, description, accountName }): Sinh QR string
+ *     - pointOfInit: "11" (static) nếu không có amount, "12" (dynamic) nếu có
+ * - generateVietQRBase64(params): Tạo QR PNG base64 (cần qrcode package)
+ * - BANK_BINS: Object tra cứu BIN ngân hàng
+ */
+
+const crypto = require("crypto");
 
 /**
  * Tính CRC16-CCITT cho EMVCo QR string.

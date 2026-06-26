@@ -666,3 +666,16 @@
   }
 }
 .status-tag--primary { background: var(--primary-light); color: var(--primary-active); }
+
+/* Super Admin Page shared */
+.super-admin-page {
+  max-width: 1200px;
+  margin: 0 auto;
+}
+
+.super-admin-page .page-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 24px;
+}

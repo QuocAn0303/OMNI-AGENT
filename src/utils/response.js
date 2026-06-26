@@ -1,4 +1,17 @@
-// src/utils/response.js
+/**
+ * utils/response.js — Helper trả response JSON chuẩn hóa
+ * 
+ * Tổng quan:
+ * - Format chuẩn: { success: true/false, message, data, pagination? }
+ * - Dùng trong controller: sendSuccess(res, data), sendPaginated(res, data, pagination)
+ * - Đảm bảo mọi API đều trả về cấu trúc nhất quán
+ * 
+ * Hàm:
+ * - success(res, data, message, statusCode): 200 OK mặc định
+ * - created(res, data, message): 201 Created
+ * - error(res, message, statusCode): Lỗi với status tùy chỉnh (ít dùng, ưu tiên next(err))
+ * - paginated(res, data, pagination): 200 + { success, data, pagination: { page, limit, total, totalPages } }
+ */
 
 const success = (res, data = null, message = 'Thành công', statusCode = 200) => {
   return res.status(statusCode).json({ success: true, message, data });

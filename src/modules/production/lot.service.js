@@ -1,3 +1,20 @@
+/**
+ * modules/production/lot.service.js — Service quản lý Lô hàng, tracking hạn dùng & FEFO
+ *
+ * Tổng quan:
+ * - Quản lý lô hàng (InventoryLot), giao dịch lô (LotTransaction)
+ * - Hỗ trợ FEFO (First Expiry First Out) để chọn lô khi xuất kho
+ * - Theo dõi hạn sử dụng, cảnh báo lô sắp hết hạn
+ * - Cho phép nhập lô mới (upsert), tiêu thụ lô
+ *
+ * Hàm:
+ * - listLots({ productId, warehouseId, expiringSoonDays, hasStock }): Danh sách lô, lọc theo sản phẩm/kho/sắp hết hạn
+ * - getLot(id): Chi tiết lô kèm product, warehouse, 50 giao dịch gần nhất
+ * - receiveLot({ lotCode, productId, warehouseId, quantity, mfgDate, expDate, poId }): Nhập lô — upsert, tạo LotTransaction IN
+ * - consumeLot(lotId, quantity, { orderId, workOrderId }): Tiêu thụ lô — decrement, tạo LotTransaction OUT
+ * - selectFefo(productId, warehouseId, needed): Chọn lô theo FEFO để đáp ứng số lượng cần, throw nếu thiếu
+ * - getExpiringLots(days): Lấy danh sách lô sắp hết hạn trong N ngày để gửi cảnh báo
+ */
 // src/modules/production/lot.service.js — Lot/Serial/Expiry tracking
 const prisma = require("../../config/prisma");
 

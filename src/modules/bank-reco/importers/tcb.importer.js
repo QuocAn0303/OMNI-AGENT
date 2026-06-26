@@ -1,3 +1,14 @@
+/**
+ * modules/bank-reco/importers/tcb.importer.js — Import sao kê Techcombank (CSV)
+ * 
+ * Tổng quan:
+ * - Parse file CSV sao kê từ Techcombank. Format: Ngày GD, Số tham chiếu, Nội dung, Phát sinh Nợ, Phát sinh Có, Số dư
+ * - Chuyển đổi ngày (DD/MM/YYYY hoặc DD-MM-YYYY), parse số tiền, bỏ qua dòng header.
+ * 
+ * Hàm:
+ * - parseTCB(rows): Nhận mảng rows (array hoặc object), parse từng dòng → { txDate, description, debit, credit, balance, reference }; bỏ qua dòng debit=0 && credit=0
+ * - parseAmt(v): Parse số tiền: loại bỏ dấu phẩy, dấu chấm, khoảng trắng, ký tự không phải số
+ */
 // Techcombank CSV importer
 // Format: Ngày GD,Số tham chiếu,Nội dung,Phát sinh Nợ,Phát sinh Có,Số dư
 

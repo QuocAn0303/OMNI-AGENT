@@ -1,12 +1,31 @@
-// src/modules/projects/project.routes.js
+/**
+ * modules/projects/project.routes.js — Định tuyến module Dự án
+ *
+ * Tổng quan:
+ * - Định nghĩa endpoint REST cho quản lý dự án
+ * - Yêu cầu authenticate + requireModule("projects")
+ * - requireProjectMember kiểm soát truy cập theo member
+ * - Validate body bằng Zod schemas (createSchema, updateSchema)
+ *
+ * Hàm:
+ * - GET /overview → service.overview: Stats dashboard
+ * - GET / → service.list: Danh sách phân trang
+ * - GET /:id → service.getById (requireProjectMember)
+ * - GET /:id/stats → service.getStats (requireProjectMember)
+ * - GET /:id/financial → service.getFinancial (requireProjectMember)
+ * - POST / → service.create (ADMIN, MANAGER). Validate createSchema
+ * - PATCH /:id → service.update (OWNER). Validate updateSchema
+ * - DELETE /:id → service.remove (ADMIN)
+ */
 const router = require("express").Router();
 const { z } = require("zod");
 const service = require("./project.service");
 const { authenticate, authorize } = require("../../middleware/auth.middleware");
+const { requireModule } = require("../../middleware/plan.middleware");
 const { requireProjectMember } = require("./project-access.middleware");
 const { paginated, created, success } = require("../../utils/response");
 
-router.use(authenticate);
+router.use(authenticate, requireModule("projects"));
 
 const STATUS = ["DRAFT", "ACTIVE", "ON_HOLD", "COMPLETED", "ARCHIVED"];
 

@@ -1,3 +1,15 @@
+/**
+ * Frontend: pages/onboarding/PaymentStep.jsx — Bước 5: Phương thức thanh toán
+ *
+ * Tổng quan:
+ * - Chọn phương thức thanh toán (cash, transfer, QR, card) — UI local state
+ * - Nếu chọn chuyển khoản: nhập thông tin ngân hàng
+ * - KHÔNG gọi API (lưu sau qua Onboarding wizard)
+ * - State: selected (mảng), bankInfo
+ *
+ * Components/Hooks/Exports:
+ * - PaymentStep: Component chính (xuất mặc định)
+ */
 import { useState } from 'react';
 import { Typography, Space, Input, Form, Card, Row, Col } from 'antd';
 import { BankOutlined, WalletOutlined, QrcodeOutlined, CreditCardOutlined } from '@ant-design/icons';

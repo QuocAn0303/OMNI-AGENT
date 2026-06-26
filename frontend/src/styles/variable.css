@@ -1,17 +1,17 @@
 /* ============================================================
-   Aduu Design Tokens — Odoo-inspired Purple Palette
+   Aduu ERP v.2.0 Design Tokens — Tea Green / Teal Palette
    ============================================================ */
 
 :root {
   /* === BRAND === */
-  --primary: #714B67;              /* Odoo purple — brand chính */
-  --primary-hover: #5d3d56;        /* Đậm hơn cho hover */
-  --primary-active: #4a3144;       /* Đậm hơn nữa cho active */
-  --primary-light: rgba(113, 75, 103, 0.08);
-  --primary-lighter: rgba(113, 75, 103, 0.04);
+  --primary: #0d9488;              /* Teal 600 — brand chính (xanh trà) */
+  --primary-hover: #0f766e;        /* Teal 700 — hover */
+  --primary-active: #115e59;       /* Teal 800 — active */
+  --primary-light: rgba(13, 148, 136, 0.08);
+  --primary-lighter: rgba(13, 148, 136, 0.04);
 
-  --accent: #9C5D89;               /* Purple sáng hơn — highlight, chart */
-  --accent-soft: #f3e8f0;          /* Purple rất nhạt — badge bg */
+  --accent: #14b8a6;               /* Teal 500 — highlight, chart */
+  --accent-soft: #ccfbf1;          /* Teal 100 — badge bg */
 
   /* === SURFACES === */
   --bg-primary: #f8fafc;           /* Slate 50 — nền app */
@@ -19,7 +19,7 @@
   --bg-tertiary: #f1f5f9;          /* Slate 100 — hover row, input bg */
   --bg-sidebar: #0f172a;           /* Slate 900 — sidebar */
   --bg-sidebar-hover: #1e293b;     /* Slate 800 — menu hover */
-  --bg-sidebar-active: #714B67;    /* Odoo purple — menu item active */
+  --bg-sidebar-active: #0d9488;    /* Teal 600 — menu item active */
 
   /* === TEXT === */
   --text-primary: #0f172a;         /* Slate 900 — heading */
@@ -57,7 +57,7 @@
   --shadow-md: 0 4px 12px rgba(15, 23, 42, 0.08), 0 2px 4px rgba(15, 23, 42, 0.04);
   --shadow-lg: 0 12px 28px rgba(15, 23, 42, 0.10), 0 4px 8px rgba(15, 23, 42, 0.04);
   --shadow-xl: 0 24px 48px rgba(15, 23, 42, 0.14);
-  --shadow-focus: 0 0 0 3px rgba(113, 75, 103, 0.15);
+  --shadow-focus: 0 0 0 3px rgba(13, 148, 136, 0.15);
 
   /* === TYPOGRAPHY === */
   --font-sans: 'Geist', 'Inter', system-ui, -apple-system, 'Segoe UI', sans-serif;
@@ -124,8 +124,8 @@
 
 /* Chart palette — dùng trong Recharts */
 :root {
-  --chart-1: #714B67;  /* Odoo purple — primary series */
-  --chart-2: #9C5D89;  /* Purple sáng */
+  --chart-1: #0d9488;  /* Teal 600 — primary series */
+  --chart-2: #14b8a6;  /* Teal 500 — sáng hơn */
   --chart-3: #d97706;  /* Amber 600 */
   --chart-4: #0891b2;  /* Cyan 600 */
   --chart-5: #db2777;  /* Pink 600 */

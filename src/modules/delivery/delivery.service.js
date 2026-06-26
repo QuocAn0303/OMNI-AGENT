@@ -1,3 +1,20 @@
+/**
+ * modules/delivery/delivery.service.js — Service quản lý Giao hàng
+ *
+ * Tổng quan:
+ * - Cung cấp logic nghiệp vụ cho module giao hàng: tạo, cập nhật, theo dõi vận đơn
+ * - Hỗ trợ webhook từ các đơn vị vận chuyển (GHTK, GHN, VNPOST...)
+ * - Tích hợp auditService để ghi log thao tác
+ * - Khi trạng thái DELIVERED, tự động cập nhật đơn hàng sang COMPLETED
+ *
+ * Hàm:
+ * - createForOrder(orderId, data, userId): Tạo thông tin giao hàng cho đơn hàng, kiểm tra delivery chưa tồn tại, tạo kèm sự kiện PENDING
+ * - updateDelivery(id, data, userId): Cập nhật thông tin giao hàng. Nếu chuyển DELIVERED → cập nhật order status
+ * - addEvent(deliveryId, data, userId): Thêm sự kiện cho vận đơn, cập nhật trạng thái delivery. Nếu DELIVERED → cập nhật order
+ * - getTrack(id): Lấy thông tin theo dõi vận đơn kèm danh sách sự kiện và thông tin đơn hàng
+ * - verifyGhtkSignature(rawBody, signature): Xác thực chữ ký HMAC-SHA256 webhook từ GHTK
+ * - handleWebhook(provider, payload, signature, rawBody): Xử lý webhook từ ĐVVC: verify chữ ký, map status, tránh duplicate event
+ */
 const crypto = require("crypto");
 const prisma = require("../../config/prisma");
 const auditService = require("../audit/audit.service");
@@ -101,15 +118,16 @@ const addEvent = async (deliveryId, data, userId) => {
         ...(data.status === "PICKED_UP" ? { pickedUpAt: ev.occurredAt } : {}),
       },
     });
+
+    if (data.status === "DELIVERED") {
+      const order = await tx.order.findUnique({ where: { id: delivery.orderId }, select: { status: true } });
+      if (order?.status === "SHIPPING") {
+        await orderService.updateStatus(delivery.orderId, "COMPLETED", userId);
+      }
+    }
+
     return ev;
   });
-
-  if (data.status === "DELIVERED") {
-    const order = await prisma.order.findUnique({ where: { id: delivery.orderId } });
-    if (order?.status === "SHIPPING") {
-      await orderService.updateStatus(delivery.orderId, "COMPLETED", userId);
-    }
-  }
 
   return prisma.delivery.findUnique({
     where: { id: deliveryId },

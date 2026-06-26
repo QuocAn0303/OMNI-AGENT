@@ -1,3 +1,22 @@
+/**
+ * modules/orders/invoice.service.js — Service quản lý hóa đơn
+ * 
+ * Tổng quan:
+ * - Tạo hóa đơn PDF, upload lên Cloudinary, gửi email
+ * - Sử dụng PDFKit để render hóa đơn A4
+ * 
+ * Hàm:
+ * - _ensureCloudinary(): Kiểm tra và cấu hình Cloudinary từ integration config
+ * - formatMoney(value): Định dạng số tiền theo locale vi-VN
+ * - generateInvoiceCode(): Sinh mã hóa đơn tự động HD-YYYY-XXXX
+ * - registerFonts(doc): Đăng ký font Roboto cho PDF, fallback Helvetica
+ * - buildPdfBuffer(order, balance, invoiceCode): Render hóa đơn ra PDF buffer — thông tin cửa hàng, khách hàng, chi tiết sản phẩm, tạm tính, giảm giá, VAT, tổng cộng, số tiền bằng chữ
+ * - uploadPdf(buffer, invoiceCode): Upload PDF lên Cloudinary, trả về URL
+ * - generateInvoice(orderId, opts, userId): Tạo hóa đơn — kiểm tra tồn tại, build PDF, upload Cloudinary, upsert DB, ghi audit log
+ * - generateInvoicePDF(orderId): Lấy/generate hóa đơn PDF, trả về buffer hoặc redirectUrl
+ * - getById(id): Lấy thông tin hóa đơn theo id
+ * - sendEmail(invoiceId, userId): Gửi email hóa đơn cho khách hàng qua SMTP, cập nhật emailSentAt, ghi audit log
+ */
 const fs = require("fs");
 const path = require("path");
 const PDFDocument = require("pdfkit");

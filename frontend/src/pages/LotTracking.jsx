@@ -1,3 +1,15 @@
+/**
+ * Frontend: pages/LotTracking.jsx — Theo dõi lô / hạn dùng
+ * 
+ * Tổng quan:
+ * - Trang quản lý lô hàng với cảnh báo hạn sử dụng, FEFO, truy xuất nguồn gốc
+ * - API: getLots, getExpiringLots, getLot, receiveLot
+ * - State: lots, expiring (sắp hết hạn 30 ngày), detail modal, receive modal
+ * - Logic: 2 tabs (tất cả lô / sắp hết hạn), nhập lô mới, xem lịch sử giao dịch theo lô
+ * 
+ * Components/Hooks/Exports:
+ * - LotTracking (default export): Bảng lô + alert cảnh báo + modal nhập/xem chi tiết
+ */
 // frontend/src/pages/LotTracking.jsx
 import { useState, useEffect } from "react";
 import {
@@ -7,6 +19,7 @@ import {
 import { PlusOutlined, WarningOutlined, EyeOutlined } from "@ant-design/icons";
 import dayjs from "dayjs";
 import PageHeader from "../components/layout/PageHeader";
+import PlanGate from "../components/PlanGate";
 import { getLots, getExpiringLots, getLot, receiveLot } from "../api/lots";
 
 const fmtDate = (v) => v ? dayjs(v).format("DD/MM/YYYY") : "—";
@@ -99,6 +112,7 @@ export default function LotTracking() {
   ];
 
   return (
+    <PlanGate moduleKey="production" moduleName="Lô / Hạn dùng">
     <div>
       <PageHeader title="Theo dõi Lô / Hạn dùng" subtitle="FEFO · Truy xuất nguồn gốc lô hàng" />
 
@@ -184,5 +198,6 @@ export default function LotTracking() {
         </Form>
       </Modal>
     </div>
+    </PlanGate>
   );
 }

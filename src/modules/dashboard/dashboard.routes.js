@@ -1,3 +1,14 @@
+/**
+ * modules/dashboard/dashboard.routes.js — Routes cho dashboard
+ * 
+ * Tổng quan:
+ * - REST API cho dashboard module, tự động xác thực mọi route
+ * - Cung cấp dữ liệu tổng quan và biểu đồ doanh thu
+ * 
+ * Routes:
+ * - GET /overview: Thống kê tổng quan (tổng sản phẩm, KH, đơn hôm nay, doanh thu tháng, tồn thấp, top sản phẩm)
+ * - GET /revenue: Doanh thu 7 ngày gần nhất, trả về daily array + summary
+ */
 // src/modules/dashboard/dashboard.routes.js
 const router = require("express").Router();
 const prisma = require("../../config/prisma");

@@ -1,3 +1,24 @@
+/**
+ * modules/accounting/posting-error.service.js — Outbox lỗi bút toán (Posting Error)
+ * 
+ * Tổng quan:
+ - Ghi nhận lỗi khi auto-post bút toán không thành công (Outbox pattern).
+ * - Cho phép admin retry hoặc đánh dấu bỏ qua (dismiss).
+ * - Retry strategy: REBUILD dữ liệu thực từ DB dựa trên source + sourceId và operation,
+ *   không lưu sẵn lines/description vì dữ liệu có thể đã thay đổi.
+ * - REBUILDERS registry map operation → function rebuild + post.
+ * 
+ * Hàm:
+ * - recordError({source, sourceId, payload, error}, client): Persist lỗi posting vào DB.
+ * - tryPostOrQueue(postFn, meta): Wrapper thử post; nếu fail thì ghi outbox (không re-throw).
+ * - list({page, limit, resolved}): Danh sách lỗi có phân trang, lọc theo trạng thái resolved.
+ * - retry(errorId, userId): Retry posting error bằng cách REBUILD dữ liệu từ DB và gọi lại
+ *   đúng autopost function dựa trên operation trong payload.
+ * - dismiss(errorId): Đánh dấu bỏ qua, không retry nữa.
+ * - REBUILDERS: Object map các operation (ORDER_COMPLETED, PAYMENT_RECEIVED, RETURN_APPROVED,
+ *   EXPENSE_POSTED, EXPENSE_PAYMENT, PURCHASE_RECEIVED, PURCHASE_PAYMENT, WORK_ORDER_COMPLETED)
+ *   đến function rebuild + post tương ứng.
+ */
 // src/modules/accounting/posting-error.service.js
 // Outbox: ghi nhận failure khi auto-post bút toán không thành công.
 // Cho phép admin retry hoặc đánh dấu bỏ qua.
@@ -112,6 +133,31 @@ const REBUILDERS = {
       items: wo.items,
       userId,
     });
+  },
+  PAYROLL_ACCRUAL: async (payload, userId) => {
+    const payroll = await prisma.payroll.findUnique({
+      where: { id: payload.sourceId },
+      include: { employee: { include: { user: true } } },
+    });
+    if (!payroll) throw { status: 404, message: "Payroll không còn tồn tại" };
+    return getAutopostService().postPayrollAccrual({ payroll, employee: payroll.employee, userId });
+  },
+  INVENTORY_ADJUSTMENT: async (payload, userId) => {
+    const inv = await prisma.inventoryTransaction.findUnique({
+      where: { id: payload.sourceId },
+      include: { inventory: { include: { product: true } } },
+    });
+    if (!inv) throw { status: 404, message: "Inventory transaction không còn tồn tại" };
+    const { diff, product, productId, inventoryId } = payload;
+    return getAutopostService().postInventoryAdjustment({ diff, inventoryId, productId, product, transaction: inv, userId });
+  },
+  ASSET_ACQUIRED: async (payload, userId) => {
+    const asset = await prisma.fixedAsset.findUnique({
+      where: { id: payload.sourceId },
+      include: { category: true },
+    });
+    if (!asset) throw { status: 404, message: "Tài sản không còn tồn tại" };
+    return getAutopostService().postAssetAcquisition({ asset, userId });
   },
 };
 

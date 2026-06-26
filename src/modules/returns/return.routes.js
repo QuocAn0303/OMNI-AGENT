@@ -1,8 +1,29 @@
-const router = require("express").Router();
+/**
+ * modules/returns/return.routes.js — Routes quản lý trả hàng
+ *
+ * Tổng quan:
+ * - Định nghĩa các endpoint cho quy trình trả hàng (tạo, duyệt, hoàn tất, từ chối)
+ * - Yêu cầu authenticate + requireModule("returns") cho tất cả routes
+ * - Phân quyền chi tiết theo role cho từng action
+ * - Validation đầu vào bằng Zod schema (createReturnSchema)
+ *
+ * Hàm:
+ * - POST /: Tạo phiếu trả hàng — validate createReturnSchema, gọi returnService.create() (ADMIN, MANAGER, CASHIER)
+ * - GET /: Danh sách phiếu trả phân trang — gọi returnService.getAll() (ADMIN, MANAGER)
+ * - GET /order/:orderId: Lấy phiếu trả theo đơn hàng — gọi returnService.getByOrderId() (ADMIN, MANAGER, CASHIER)
+ * - GET /:id: Chi tiết phiếu trả — gọi returnService.getById() (ADMIN, MANAGER, CASHIER)
+ * - PATCH /:id/approve: Duyệt phiếu trả — gọi returnService.approve() (ADMIN, MANAGER)
+ * - POST /:id/complete: Hoàn tất phiếu trả — gọi returnService.complete() (ADMIN, MANAGER)
+ * - PATCH /:id/reject: Từ chối phiếu trả — gọi returnService.reject() (ADMIN, MANAGER)
+ */
+const express = require("express");
 const { z } = require("zod");
 const returnService = require("./return.service");
 const { authenticate, authorize } = require("../../middleware/auth.middleware");
+const { requireModule } = require("../../middleware/plan.middleware");
 const { success, created, paginated } = require("../../utils/response");
+
+const router = express.Router();
 
 const createReturnSchema = z.object({
   orderId: z.string().uuid(),
@@ -22,7 +43,7 @@ const createReturnSchema = z.object({
   overridePolicy: z.boolean().optional(),
 });
 
-router.use(authenticate);
+router.use(authenticate, requireModule("returns"));
 
 router.post("/", authorize("ADMIN", "MANAGER", "CASHIER"), async (req, res, next) => {
   try {

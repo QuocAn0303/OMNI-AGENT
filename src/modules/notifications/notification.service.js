@@ -1,3 +1,34 @@
+/**
+ * modules/notifications/notification.service.js — Hệ thống thông báo
+ * 
+ * Tổng quan:
+ * - Tạo thông báo cho user cụ thể hoặc theo role
+ * - Gửi thông báo realtime qua WebSocket
+ * - Các thông báo tự động: PO chờ duyệt, tồn kho thấp, hết hàng, đơn pending lâu, công nợ quá hạn, nhắc lương, đóng kỳ
+ * - Debounce để tránh trùng lặp thông báo
+ * - CRUD thông báo cho user: danh sách, đếm chưa đọc, đánh dấu đã đọc
+ * 
+ * Hàm:
+ * - getSocket(): Lấy WebSocket instance
+ * - emitPayload(notification): Gửi thông báo realtime đến user/role
+ * - createOne({type, severity, title, message, link, meta, userId, roleScope}): Tạo thông báo + emit
+ * - notifyRoles(roles, params): Tạo thông báo cho nhiều role
+ * - notifyPoSubmitted(po): Thông báo PO chờ duyệt đến MANAGER/ADMIN
+ * - shouldDebounceLowStock(productId): Kiểm tra debounce tồn thấp (60 phút)
+ * - notifyLowStock({productId, productName, qty, minStock}): Thông báo tồn kho thấp
+ * - shouldDebounceOutOfStock(productId): Kiểm tra debounce hết hàng
+ * - notifyOutOfStock({productId, productName}): Thông báo hết hàng
+ * - checkAfterExport(productId): Kiểm tra tồn sau xuất, gọi notifyLowStock/OutOfStock nếu cần
+ * - cronPendingOrders(): Kiểm tra đơn pending > 24h, thông báo MANAGER
+ * - cronDebtOverdue(debtService): Đánh dấu công nợ quá hạn + thông báo
+ * - cronPayrollDue(): Nhắc lương ngày 25
+ * - cronPeriodClosing(): Nhắc đóng kỳ kế toán
+ * - notifyExpensePending(expense): Thông báo chi phí chờ duyệt
+ * - listForUser(user, {unreadOnly, page, limit}): Danh sách thông báo của user, phân trang
+ * - unreadCount(user): Đếm thông báo chưa đọc
+ * - markRead(id, user): Đánh dấu đã đọc một thông báo
+ * - markAllRead(user): Đánh dấu tất cả đã đọc
+ */
 // src/modules/notifications/notification.service.js
 const prisma = require("../../config/prisma");
 const { randomUUID } = require("crypto");

@@ -1,4 +1,25 @@
-// src/realtime/socket.js
+/**
+ * realtime/socket.js — WebSocket real-time với Socket.IO
+ * 
+ * Tổng quan:
+ * - Khởi tạo Socket.IO server gắn với HTTP server
+ * - Dùng Redis adapter để scale ngang (fallback in-memory nếu không có Redis)
+ * - Xác thực qua JWT trong handshake.auth.token hoặc query.token
+ * - Mỗi user tự động join room user:{userId} và role:{role}
+ * - emitToUser / emitToRole gửi thông báo theo kênh
+ * 
+ * Hàm:
+ * - waitForRedisReady(client): Đợi Redis client ready (timeout 3s)
+ * - initSocket(httpServer): Khởi tạo Socket.IO server
+ *     - Gắn CORS, chọn transport (websocket > polling)
+ *     - Gắn Redis adapter nếu có
+ *     - Xác thực JWT → gán socket.userId + socket.role
+ *     - Mỗi connection: join room user:{id} + role:{role}
+ * - getIo(): Trả về Socket.IO server instance
+ * - emitToUser(userId, event, payload): Gửi event đến 1 user
+ * - emitToRole(role, event, payload): Gửi event đến tất cả user có role
+ */
+
 const { Server } = require("socket.io");
 const { createAdapter } = require("@socket.io/redis-adapter");
 const jwt = require("jsonwebtoken");

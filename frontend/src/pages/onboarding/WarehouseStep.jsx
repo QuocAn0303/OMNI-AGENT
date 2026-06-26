@@ -1,3 +1,15 @@
+/**
+ * Frontend: pages/onboarding/WarehouseStep.jsx — Bước 2: Kho hàng
+ *
+ * Tổng quan:
+ * - Thêm kho hàng (tên, mã, địa chỉ)
+ * - Hiển thị danh sách kho đã tạo
+ * - API: GET /warehouses, POST /warehouses
+ * - State: warehouses, adding, form
+ *
+ * Components/Hooks/Exports:
+ * - WarehouseStep: Component chính (xuất mặc định)
+ */
 import { useEffect, useState } from 'react';
 import { Form, Input, Button, List, Typography, Space, message } from 'antd';
 import { PlusOutlined, CheckCircleOutlined } from '@ant-design/icons';

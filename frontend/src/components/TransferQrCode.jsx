@@ -1,3 +1,20 @@
+/**
+ * Frontend: src/components/TransferQrCode.jsx — TransferQrCode
+ * 
+ * Tổng quan:
+ - Tạo mã QR chuyển khoản VietQR dựa trên biến môi trường VITE_BANK_ID, VITE_BANK_ACCOUNT, VITE_BANK_ACCOUNT_NAME.
+ * - Hỗ trợ tuỳ chọn số tiền và nội dung chuyển khoản (sanitize bỏ dấu, ký tự đặc biệt).
+ * - Xuất hàm buildVietQrImageUrl() và isTransferQrConfigured() để dùng ở nơi khác.
+ * 
+ * Props:
+ * - amount: number — số tiền (nếu <= 0 thì không hiển thị)
+ * - addInfo: string (default: "Thanh toan POS") — nội dung chuyển khoản
+ * 
+ * Hàm/Exports:
+ * - TransferQrCode: Component hiển thị mã QR chuyển khoản
+ * - buildVietQrImageUrl: Hàm xây dựng URL ảnh VietQR
+ * - isTransferQrConfigured: Hàm kiểm tra đã cấu hình ngân hàng chưa
+ */
 import { useEffect, useMemo, useState } from "react";
 import { Alert } from "antd";
 import MoneyDisplay from "./shared/MoneyDisplay";

@@ -1,3 +1,14 @@
+/**
+ * modules/orders/invoice.routes.js — Routes quản lý hóa đơn
+ * 
+ * Tổng quan:
+ * - Download hóa đơn PDF và gửi email
+ * - Yêu cầu authenticate
+ * 
+ * Endpoints:
+ * - GET /:id/download: Tải xuống hóa đơn PDF (ADMIN, MANAGER, CASHIER)
+ * - POST /:id/send-email: Gửi email hóa đơn cho khách (ADMIN, MANAGER)
+ */
 const router = require("express").Router();
 const { z } = require("zod");
 const invoiceService = require("./invoice.service");

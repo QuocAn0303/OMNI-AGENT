@@ -1,7 +1,21 @@
+/**
+ * modules/delivery/delivery.routes.js — Định tuyến module Giao hàng
+ *
+ * Tổng quan:
+ * - Định nghĩa các endpoint REST cho giao hàng: theo dõi, cập nhật, thêm sự kiện
+ * - Route GET /:id/track public (chỉ requireModule), các route còn lại yêu cầu authenticate + authorize
+ * - Sử dụng Zod để validate request body với providerEnum và statusEnum
+ *
+ * Hàm:
+ * - GET /:id/track → deliveryService.getTrack (public, chỉ requireModule delivery)
+ * - PATCH /:id → deliveryService.updateDelivery (ADMIN, MANAGER). Validate body Zod
+ * - POST /:id/events → deliveryService.addEvent (ADMIN, MANAGER). Validate body Zod
+ */
 const router = require("express").Router();
 const { z } = require("zod");
 const deliveryService = require("./delivery.service");
 const { authenticate, authorize } = require("../../middleware/auth.middleware");
+const { requireModule } = require("../../middleware/plan.middleware");
 const { success } = require("../../utils/response");
 
 const providerEnum = z.enum([
@@ -22,7 +36,7 @@ const statusEnum = z.enum([
   "RETURNED",
 ]);
 
-router.get("/:id/track", async (req, res, next) => {
+router.get("/:id/track", requireModule("delivery"), async (req, res, next) => {
   try {
     success(res, await deliveryService.getTrack(req.params.id));
   } catch (err) {
@@ -30,7 +44,7 @@ router.get("/:id/track", async (req, res, next) => {
   }
 });
 
-router.use(authenticate);
+router.use(authenticate, requireModule("delivery"));
 
 router.patch(
   "/:id",

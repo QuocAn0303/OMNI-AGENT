@@ -1,3 +1,26 @@
+/**
+ * modules/hr/hr.controller.js — Controller quản lý HR (nhân sự)
+ * 
+ * Tổng quan:
+ * - Xử lý các request HTTP liên quan đến nhân viên, ca làm việc, vi phạm, chấm công và bảng lương.
+ * - Gọi hrService để thao tác DB và dùng response helper để trả JSON.
+ * 
+ * Hàm:
+ * - createEmployee(req, res, next): Parse body bằng createEmployeeSchema → gọi hrService.createEmployee → trả về 201
+ * - setEmployeeCounts(req, res, next): Set số ca làm & vi phạm cho 1 employee trong tháng; dùng transaction tạo/xoá shifts & violations
+ * - setBulkCounts(req, res, next): Tương tự setEmployeeCounts nhưng cho nhiều employee cùng lúc
+ * - createShift(req, res, next): Tạo ca làm việc mới
+ * - createViolation(req, res, next): Tạo vi phạm, tự động set penalty 500k nếu PACKING_ERROR/DAMAGED_GOODS
+ * - updateViolation(req, res, next): Cập nhật type/note/penalty của vi phạm theo id
+ * - generatePayroll(req, res, next): Gọi hrService.generatePayrollForMonth theo body {month, year}
+ * - calculatePayroll(req, res, next): Parse month từ query và generate payroll
+ * - listPayroll(req, res, next): Lấy danh sách bảng lương theo monthKey
+ * - lockPayroll(req, res, next): Khoá bảng lương (chống chỉnh sửa)
+ * - listAttendance(req, res, next): Danh sách chấm công; nếu không phải ADMIN/MANAGER thì chỉ trả ca của bản thân
+ * - listEmployees(req, res, next): Danh sách nhân viên; lọc theo role tương tự listAttendance
+ * - updateEmployee(req, res, next): Cập nhật employee (employeeCode, phone, salary...) + user (fullName, email) trong transaction
+ * - deleteEmployee(req, res, next): Soft delete (set isActive = false)
+ */
 const {
   createEmployeeSchema,
   createShiftSchema,

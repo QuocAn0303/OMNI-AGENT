@@ -1,6 +1,21 @@
+/**
+ * modules/integrations/integration.routes.js — Routes cho cấu hình tích hợp
+ * 
+ * Tổng quan:
+ * - REST API cho integration module, yêu cầu module "integrations"
+ * - Quản lý cấu hình các dịch vụ: VNPT (hoá đơn), Cloudinary, SMS, SMTP
+ * - Test kết nối từng dịch vụ
+ * 
+ * Routes:
+ * - GET /: Toàn bộ cấu hình (secrets bị che) (SUPER_ADMIN/ADMIN)
+ * - GET /:category: Cấu hình theo nhóm (SUPER_ADMIN/ADMIN)
+ * - PUT /:category: Cập nhật nhiều key trong một nhóm (SUPER_ADMIN/ADMIN)
+ * - POST /:category/test: Thử kết nối dịch vụ (SUPER_ADMIN/ADMIN)
+ */
 // src/modules/integrations/integration.routes.js
 const router = require("express").Router();
 const { authenticate, authorize } = require("../../middleware/auth.middleware");
+const { requireModule } = require("../../middleware/plan.middleware");
 const config = require("./integration-config.service");
 const vnpt = require("../einvoice/provider/vnpt.adapter");
 const cloudinary = require("../../config/cloudinary.config");
@@ -8,6 +23,8 @@ const { sendSms } = require("../../utils/sms");
 const { sendEmail, verifyEmail, resetTransporter } = require("../../utils/email");
 
 const adminOnly = authorize("SUPER_ADMIN", "ADMIN");
+
+router.use(requireModule("integrations"));
 
 // GET /api/integrations — toàn bộ cấu hình (secrets bị che)
 router.get("/", authenticate, adminOnly, async (req, res, next) => {
@@ -61,12 +78,12 @@ router.post("/:category/test", authenticate, adminOnly, async (req, res, next) =
       case "SMS": {
         const phone = req.body?.testPhone;
         if (!phone) throw { status: 400, message: "Cần testPhone trong body" };
-        result = await sendSms(phone, "Aduu: SMS test connection OK.");
+        result = await sendSms(phone, "Aduu ERP: SMS test connection OK.");
         break;
       }
       case "EMAIL": {
         const to = req.body?.testEmail;
-        if (to) result = await sendEmail({ to, subject: "Aduu — Test SMTP", text: "Test gửi mail từ Aduu ERP." });
+        if (to) result = await sendEmail({ to, subject: "Aduu ERP — Test SMTP", text: "Test gửi mail từ Aduu ERP." });
         else result = await verifyEmail();
         break;
       }

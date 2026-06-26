@@ -1,4 +1,17 @@
-import { useEffect, useMemo, useState } from "react";
+/**
+ * Frontend: pages/Orders.jsx — Quản lý đơn hàng
+ * 
+ * Tổng quan:
+ * - Trang danh sách đơn hàng với bộ lọc (trạng thái, thanh toán, ngày) và tìm kiếm
+ * - API: GET /orders, GET /orders/:id, GET /orders/:id/invoice, POST /orders/:id/payments, POST /returns
+ * - State: data, filtered list, detail drawer, payment modal, return modal
+ * - Logic: Lọc client-side theo search, payment, date range. Drawer xem chi tiết + ghi nhận thanh toán + trả hàng
+ * 
+ * Components/Hooks/Exports:
+ * - Orders (default export): Bảng đơn hàng + chi tiết drawer + modal thanh toán/trả hàng
+ * - SectionTitle, StackList, SummaryRow: Components nội bộ hỗ trợ hiển thị
+ */
+import { useEffect, useMemo, useRef, useState } from "react";
 import useDebounce from '../hooks/useDebounce';
 import {
   Button,
@@ -6,6 +19,7 @@ import {
   Descriptions,
   Divider,
   Drawer,
+  Dropdown,
   Form,
   Input,
   InputNumber,
@@ -19,6 +33,7 @@ import {
 import {
   DollarOutlined,
   DownloadOutlined,
+  DownOutlined,
   EyeOutlined,
   FilterOutlined,
   PrinterOutlined,
@@ -27,12 +42,13 @@ import {
 } from "@ant-design/icons";
 import { Joyride } from 'react-joyride';
 import { useTranslation } from 'react-i18next';
-import dayjs from "dayjs";
 import axios from "../api/axios";
+import { dayjs, formatDate, formatTime, formatDateTime } from "../utils/date";
 import PageHeader from "../components/layout/PageHeader";
 import StatusTag, { STATUS_DICT } from "../components/shared/StatusTag";
 import MoneyDisplay from "../components/shared/MoneyDisplay";
 import EmptyState from "../components/shared/EmptyState";
+import useAuthStore from "../stores/authStore";
 import useTour from "../hooks/useTour";
 import { getOrdersTour } from "../config/tourSteps";
 
@@ -47,6 +63,8 @@ const paymentOptions = [
 export default function Orders() {
   const { t } = useTranslation();
   const tour = useTour('orders');
+  const { user } = useAuthStore();
+  const canManage = ["ADMIN", "MANAGER"].includes(user?.role);
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState([]);
   const [search, setSearch] = useState("");
@@ -59,6 +77,7 @@ export default function Orders() {
   const [detailData, setDetailData] = useState(null);
   const [paymentOpen, setPaymentOpen] = useState(false);
   const [returnOpen, setReturnOpen] = useState(false);
+  const [detailReturnable, setDetailReturnable] = useState([]);
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
   const [paymentForm] = Form.useForm();
@@ -76,7 +95,14 @@ export default function Orders() {
   const loadOrders = async () => {
     setLoading(true);
     try {
-      const res = await axios.get("/orders", { params: { page, limit: 20, ...(statusFilter && { status: statusFilter }) } });
+      const params = { page, limit: 20 };
+      if (statusFilter) params.status = statusFilter;
+      if (paymentFilter) params.paymentStatus = paymentFilter;
+      if (dateRange) {
+        params.fromDate = dateRange[0].toISOString();
+        params.toDate = dateRange[1].toISOString();
+      }
+      const res = await axios.get("/orders", { params });
       const raw = res.data?.data || [];
       setData(raw.map(normalizeOrder));
       setTotal(res.data?.pagination?.total || 0);
@@ -87,33 +113,44 @@ export default function Orders() {
     }
   };
 
+  const loadOrdersRef = useRef(loadOrders);
+  loadOrdersRef.current = loadOrders;
+
   useEffect(() => {
     loadOrders();
-  }, [page, statusFilter]);
+  }, [page, statusFilter, paymentFilter, dateRange]);
 
   useEffect(() => {
     setPage(1);
-  }, [statusFilter]);
+  }, [statusFilter, paymentFilter, dateRange]);
 
-  const filtered = useMemo(() => data.filter((order) => {
-    if (debouncedSearch) {
-      const term = debouncedSearch.toLowerCase();
-      if (!`${order.orderNumber} ${order.customerName}`.toLowerCase().includes(term)) return false;
-    }
-    if (paymentFilter && order.paymentStatus !== paymentFilter) return false;
-    if (dateRange) {
-      const createdAt = dayjs(order.createdAt);
-      if (createdAt.isBefore(dateRange[0], "day") || createdAt.isAfter(dateRange[1], "day")) return false;
-    }
-    return true;
-  }), [data, debouncedSearch, paymentFilter, dateRange]);
+  useEffect(() => {
+    const refresh = () => { loadOrdersRef.current(); };
+    window.addEventListener('focus', refresh);
+    window.addEventListener('order-created', refresh);
+    return () => {
+      window.removeEventListener('focus', refresh);
+      window.removeEventListener('order-created', refresh);
+    };
+  }, []);
+
+  const filtered = useMemo(() => debouncedSearch
+    ? data.filter((order) => {
+        const term = debouncedSearch.toLowerCase();
+        return `${order.orderNumber} ${order.customerName}`.toLowerCase().includes(term);
+      })
+    : data, [data, debouncedSearch]);
 
   const openDetail = async (orderId) => {
     setDetailOpen(true);
     setDetailLoading(true);
     try {
-      const res = await axios.get(`/orders/${orderId}`);
-      setDetailData(normalizeOrder(res.data?.data || res.data));
+      const [orderRes, retRes] = await Promise.all([
+        axios.get(`/orders/${orderId}`),
+        axios.get(`/orders/${orderId}/returnable-items`).catch(() => ({ data: { data: [] } })),
+      ]);
+      setDetailData(normalizeOrder(orderRes.data?.data || orderRes.data));
+      setDetailReturnable(retRes.data?.data?.items || []);
     } catch {
       message.error("Không tải được chi tiết đơn");
     } finally {
@@ -163,9 +200,34 @@ export default function Orders() {
     }
   };
 
+  const STATUS_TRANSITIONS = {
+    PENDING: ["CONFIRMED", "CANCELLED"],
+    CONFIRMED: ["SHIPPING", "CANCELLED"],
+    SHIPPING: ["COMPLETED", "CANCELLED"],
+    COMPLETED: ["CANCELLED"],
+    CANCELLED: [],
+  };
+
+  const handleStatusUpdate = async (newStatus) => {
+    try {
+      await axios.patch(`/orders/${detailData.id}/status`, { status: newStatus });
+      message.success("Cập nhật trạng thái thành công");
+      setDetailOpen(false);
+      loadOrders();
+    } catch (err) {
+      message.error(err?.response?.data?.message || "Không cập nhật được trạng thái");
+    }
+  };
+
   const handleCreateReturn = async () => {
     try {
       const values = await returnForm.validateFields();
+      const selected = detailReturnable.find((i) => i.orderItemId === values.orderItemId);
+      const maxQty = selected?.returnable || values.quantity;
+      if (values.quantity > maxQty) {
+        message.error(`Số lượng trả không được vượt quá ${maxQty}`);
+        return;
+      }
       await axios.post("/returns", {
         orderId: detailData.id,
         reason: values.reason,
@@ -211,8 +273,8 @@ export default function Orders() {
       defaultSortOrder: "descend",
       render: (value) => (
         <div>
-          <div style={{ fontSize: 13 }}>{dayjs(value).format("DD/MM/YYYY")}</div>
-          <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{dayjs(value).format("HH:mm")}</div>
+          <div style={{ fontSize: 13 }}>{formatDate(value)}</div>
+          <div style={{ fontSize: 11, color: "var(--text-muted)" }}>{formatTime(value)}</div>
         </div>
       ),
     },
@@ -221,20 +283,9 @@ export default function Orders() {
 
   return (
     <>
-      <Joyride
-        steps={getOrdersTour(t)}
-        run={tour.run}
-        continuous
-        showSkipButton
-        showProgress
-        callback={({ status }) => {
-          if (status === 'finished' || status === 'skipped') tour.markDone();
-        }}
-        styles={{ options: { primaryColor: '#0f766e', zIndex: 2000 } }}
-      />
       <PageHeader
         title="Đơn hàng"
-        subtitle={<span>{filtered.length} đơn · <span style={{ color: "var(--primary)", fontWeight: 500 }}><MoneyDisplay value={totalRevenue} short /></span></span>}
+        subtitle={<span>{total} đơn · <span style={{ color: "var(--primary)", fontWeight: 500 }}><MoneyDisplay value={totalRevenue} short /></span></span>}
       />
 
       <div className="filters-bar">
@@ -270,9 +321,29 @@ export default function Orders() {
             <Descriptions column={1} size="small" labelStyle={{ color: "var(--text-muted)", width: 120 }}>
               <Descriptions.Item label="Khách hàng">{detailData.customer?.name || "Khách lẻ"}</Descriptions.Item>
               {detailData.customer?.phone && <Descriptions.Item label="SĐT">{detailData.customer.phone}</Descriptions.Item>}
-              <Descriptions.Item label="Trạng thái"><StatusTag status={detailData.status} /></Descriptions.Item>
+              <Descriptions.Item label="Trạng thái">
+                <Space>
+                  <StatusTag status={detailData.status} />
+                  {canManage && (STATUS_TRANSITIONS[detailData.status]?.length > 0) && (
+                    <Dropdown
+                      menu={{
+                        items: STATUS_TRANSITIONS[detailData.status].map((s) => ({
+                          key: s,
+                          label: STATUS_DICT[s]?.label || s,
+                          onClick: () => handleStatusUpdate(s),
+                        })),
+                      }}
+                      trigger={["click"]}
+                    >
+                      <Button size="small" icon={<DownOutlined />}>
+                        Cập nhật
+                      </Button>
+                    </Dropdown>
+                  )}
+                </Space>
+              </Descriptions.Item>
               <Descriptions.Item label="Thanh toán"><StatusTag status={detailData.paymentStatus} /></Descriptions.Item>
-              <Descriptions.Item label="Ngày tạo">{dayjs(detailData.createdAt).format("DD/MM/YYYY HH:mm")}</Descriptions.Item>
+              <Descriptions.Item label="Ngày tạo">{formatDateTime(detailData.createdAt)}</Descriptions.Item>
             </Descriptions>
 
             <Divider />
@@ -301,7 +372,7 @@ export default function Orders() {
               rows={(detailData.payments || []).map((payment) => ({
                 id: payment.id,
                 title: payment.method,
-                meta: dayjs(payment.createdAt).format("DD/MM/YYYY HH:mm"),
+                meta: formatDateTime(payment.createdAt),
                 amount: payment.amount,
               }))}
             />
@@ -351,13 +422,29 @@ export default function Orders() {
       <Modal title="Tạo yêu cầu trả hàng" open={returnOpen} onCancel={() => setReturnOpen(false)} onOk={handleCreateReturn} okText="Tạo" cancelText="Hủy">
         <Form form={returnForm} layout="vertical" initialValues={{ refundMethod: "CASH" }}>
           <Form.Item name="orderItemId" label="Sản phẩm" rules={[{ required: true }]}>
-            <Select options={(detailData?.items || []).map((item) => ({ value: item.id, label: `${item.product?.name || item.productName} (${item.quantity})` }))} />
+            <Select
+              options={(detailReturnable || []).map((item) => ({
+                value: item.orderItemId,
+                label: `${item.product?.name} (có thể trả ${item.returnable})`,
+                disabled: item.returnable <= 0,
+              }))}
+            />
           </Form.Item>
           <Form.Item name="quantity" label="Số lượng trả" rules={[{ required: true }]}><InputNumber min={1} style={{ width: "100%" }} /></Form.Item>
           <Form.Item name="refundMethod" label="Phương thức hoàn" rules={[{ required: true }]}>
             <Select options={[{ value: "CASH", label: "Tiền mặt" }, { value: "BANK_TRANSFER", label: "Chuyển khoản" }, { value: "STORE_CREDIT", label: "Store credit" }]} />
           </Form.Item>
-          <Form.Item name="reason" label="Lý do" rules={[{ required: true }]}><Input /></Form.Item>
+          <Form.Item name="reason" label="Lý do" rules={[{ required: true }]}>
+            <Select
+              options={[
+                { value: "DEFECTIVE", label: "Lỗi sản phẩm" },
+                { value: "WRONG_ITEM", label: "Sai hàng" },
+                { value: "CUSTOMER_CHANGE", label: "Khách đổi ý" },
+                { value: "EXPIRED", label: "Hết hạn" },
+                { value: "OTHER", label: "Khác" },
+              ]}
+            />
+          </Form.Item>
           <Form.Item name="note" label="Ghi chú"><Input.TextArea rows={2} /></Form.Item>
         </Form>
       </Modal>

@@ -1,4 +1,18 @@
-import { useEffect, useState } from "react";
+/**
+ * Frontend: pages/Integrations.jsx — Trung tâm tích hợp & API keys
+ * 
+ * Tổng quan:
+ * - Quản lý credentials cho các dịch vụ ngoài: VNPT (HĐĐT), Cloudinary, SMS Gateway, SMTP Email
+ * - Mỗi danh mục (CategoryPanel) tải cấu hình từ GET /integrations/{key}, lưu qua PUT, test kết nối qua POST /{key}/test
+ * - Secrets được mã hóa AES-256-GCM trong DB, hiển thị masked
+ * - Nếu bỏ trống field = giữ nguyên giá trị cũ (chỉ cập nhật field có giá trị)
+ * - State: mỗi CategoryPanel tự quản lý data/loading/saving/testing
+ * 
+ * Components/Hooks/Exports:
+ * - Integrations (default): Page chính — Tabs cho từng danh mục
+ * - CategoryPanel: Component con — form cấu hình + test connection
+ */
+import { useState, useEffect } from 'react';
 import {
   Card, Tabs, Form, Input, Button, Space, Tag, Alert, message, Typography, Divider, Tooltip,
 } from "antd";
@@ -6,6 +20,7 @@ import {
   ApiOutlined, CloudUploadOutlined, MessageOutlined, MailOutlined,
   CheckCircleOutlined, EyeInvisibleOutlined, ThunderboltOutlined, SaveOutlined,
 } from "@ant-design/icons";
+import PlanGate from '../components/PlanGate';
 import axios from "../api/axios";
 
 const { Title, Text, Paragraph } = Typography;
@@ -224,6 +239,7 @@ function CategoryPanel({ category }) {
 
 export default function Integrations() {
   return (
+    <PlanGate moduleKey="integrations" moduleName="Trung tâm Tích hợp">
     <Card
       title={<Space><ApiOutlined /><span>Tích hợp & API keys</span></Space>}
       bordered={false}
@@ -240,5 +256,6 @@ export default function Integrations() {
         }))}
       />
     </Card>
+    </PlanGate>
   );
 }

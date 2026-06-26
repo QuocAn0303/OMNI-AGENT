@@ -1,3 +1,29 @@
+/**
+ * modules/reports/report.service.js — Service cho báo cáo & xuất Excel
+ * 
+ * Tổng quan:
+ * - Truy vấn DB để lấy dữ liệu báo cáo doanh thu, sản phẩm bán chạy, tồn kho.
+ * - Xuất Excel với ExcelJS: doanh thu, đơn hàng, lợi nhuận, khách hàng, tồn kho, nhân sự.
+ * - Các hàm export trả về { buffer, contentType } để controller stream về client.
+ * 
+ * Hàm:
+ * - getRevenue(from, to): Lấy doanh thu theo ngày từ orders COMPLETED trong khoảng thời gian
+ * - getRevenueMonthly(): Lấy doanh thu 12 tháng gần nhất, gộp theo tháng
+ * - getTopProducts(limit): Top sản phẩm bán chạy nhất dựa trên tổng số lượng bán
+ * - getInventoryReport(): Báo cáo tồn kho: danh sách sản phẩm + tổng giá trị tồn
+ * - exportRevenueExcel(from, to): Tạo Excel file doanh thu (sheet: ngày + tổng)
+ * - exportInventoryExcel(): Tạo Excel file tồn kho (2 sheet: tổng quan + chi tiết)
+ * - exportReport(type, from, to, format): Dispatch xuất Excel theo type: sales, orders, profit, customers, inventory, hr
+ * 
+ * Helper:
+ * - toLocalDateString(date): Chuyển date → string "YYYY-MM-DD" theo múi giờ HCM
+ * - toLocalMonthString(date): Chuyển date → "YYYY-MM"
+ * - dateRangeWhere(from, to): Tạo object { gte, lte } cho Prisma where clause
+ * - addMeta(ws, title, dateFrom, dateTo, colSpan): Thêm tiêu đề + khoảng thời gian vào worksheet
+ * - styleHeaderRow(ws, rowNum, colCount): Style header row (fill xanh, chữ trắng)
+ * - styleDataRows(ws, startRow, endRow, colCount): Style xen kẽ màu cho dòng dữ liệu
+ * - addTotalRow(ws, label, values, colCount): Thêm dòng tổng với style đậm
+ */
 // src/modules/reports/report.service.js
 const prisma = require("../../config/prisma");
 
@@ -152,7 +178,7 @@ const exportRevenueExcel = async (from, to) => {
   const rows = await getRevenue(from, to); // [{date,revenue}, ...]
   const ExcelJS = require("exceljs");
   const wb = new ExcelJS.Workbook();
-  wb.creator = "Aduu";
+  wb.creator = "Aduu ERP v.2.0";
   const ws = wb.addWorksheet("Doanh thu");
 
   // Header (tiếng Việt để người đọc dễ hiểu)
@@ -178,7 +204,7 @@ const exportInventoryExcel = async () => {
   const data = await getInventoryReport();
   const ExcelJS = require("exceljs");
   const wb = new ExcelJS.Workbook();
-  wb.creator = "Aduu";
+  wb.creator = "Aduu ERP v.2.0";
 
   // Summary sheet
   const s1 = wb.addWorksheet("Tổng quan tồn kho");
@@ -296,7 +322,7 @@ const exportSalesExcel = async (from, to) => {
   });
 
   const wb = new ExcelJS.Workbook();
-  wb.creator = "Aduu";
+  wb.creator = "Aduu ERP v.2.0";
 
   // \u2500\u2500 Sheet 1: T\u1ed5ng quan \u2500\u2500
   const ws1 = wb.addWorksheet("T\u1ed5ng quan");
@@ -391,7 +417,7 @@ const exportOrdersExcel = async (from, to) => {
   });
 
   const wb = new ExcelJS.Workbook();
-  wb.creator = "Aduu";
+  wb.creator = "Aduu ERP v.2.0";
 
   // Sheet 1: Danh s\u00e1ch \u0111\u01a1n
   const ws1 = wb.addWorksheet("Danh s\u00e1ch \u0111\u01a1n h\u00e0ng");
@@ -444,7 +470,7 @@ const exportProfitExcel = async (from, to) => {
   });
 
   const wb = new ExcelJS.Workbook();
-  wb.creator = "Aduu";
+  wb.creator = "Aduu ERP v.2.0";
 
   // T\u1ed5ng h\u1ee3p theo s\u1ea3n ph\u1ea9m
   const byProduct = {};
@@ -513,7 +539,7 @@ const exportCustomersExcel = async (from, to) => {
   });
 
   const wb = new ExcelJS.Workbook();
-  wb.creator = "Aduu";
+  wb.creator = "Aduu ERP v.2.0";
 
   const ws = wb.addWorksheet("Kh\u00e1ch h\u00e0ng");
   const cols = ["#", "T\u00ean kh\u00e1ch h\u00e0ng", "\u0110i\u1ec7n tho\u1ea1i", "Email", "\u0110\u1ecba ch\u1ec9", "\u0110\u01a1n trong k\u1ef3", "Doanh thu trong k\u1ef3 (VND)", "T\u1ed5ng chi ti\u00eau (VND)"];
@@ -548,7 +574,7 @@ const exportInventoryExcelFull = async (from, to) => {
   const today = new Date().toISOString().slice(0, 10);
 
   const wb = new ExcelJS.Workbook();
-  wb.creator = "Aduu";
+  wb.creator = "Aduu ERP v.2.0";
 
   // Sheet 1: T\u1ed3n kho \u0111\u1ea7y \u0111\u1ee7
   const ws1 = wb.addWorksheet("T\u1ed3n kho");
@@ -634,7 +660,7 @@ const exportHRExcel = async (from, to) => {
   });
 
   const wb = new ExcelJS.Workbook();
-  wb.creator = "Aduu";
+  wb.creator = "Aduu ERP v.2.0";
 
   // Sheet 1: T\u1ed5ng h\u1ee3p
   const ws1 = wb.addWorksheet("T\u1ed5ng h\u1ee3p nh\u00e2n s\u1ef1");

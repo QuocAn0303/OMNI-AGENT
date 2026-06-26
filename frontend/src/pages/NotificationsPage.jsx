@@ -1,3 +1,15 @@
+/**
+ * Frontend: pages/NotificationsPage.jsx — Thông báo
+ * 
+ * Tổng quan:
+ * - Trang danh sách thông báo với bộ lọc "chỉ chưa đọc", đánh dấu đã đọc
+ * - API: getNotifications, markNotificationRead, markAllNotificationsRead
+ * - State: data, filters (page, unreadOnly)
+ * - Logic: List thông báo với tag "Mới", action đánh dấu đã đọc từng cái hoặc tất cả
+ * 
+ * Components/Hooks/Exports:
+ * - NotificationsPage (default export): Danh sách thông báo + button đọc tất cả
+ */
 import { useEffect, useState, useCallback } from "react";
 import { List, Button, Tag, message, Card } from "antd";
 import PageHeader from "../components/layout/PageHeader";

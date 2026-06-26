@@ -1,3 +1,16 @@
+/**
+ * Component: shared/StatCard — Thẻ hiển thị chỉ số KPI trên Dashboard
+ *
+ * Tổng quan:
+ * - Props: title (string), value (string|number), icon (ReactNode),
+ *          variant ('primary'|'success'|'warning'|'danger'|'info'),
+ *          trend ('up'|'down'|'flat'), trendValue (string), loading (bool)
+ * - Hỗ trợ trạng thái loading với skeleton placeholder
+ * - Hiển thị xu hướng tăng/giảm kèm icon mũi tên
+ *
+ * Exports:
+ * - StatCard: React functional component (default export)
+ */
 import { ArrowUpOutlined, ArrowDownOutlined } from '@ant-design/icons';
 
 /**

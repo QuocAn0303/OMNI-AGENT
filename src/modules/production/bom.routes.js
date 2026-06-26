@@ -1,11 +1,31 @@
+/**
+ * modules/production/bom.routes.js — Định tuyến module BOM (Bill of Materials)
+ *
+ * Tổng quan:
+ * - Định nghĩa REST endpoints cho quản lý BOM
+ * - Yêu cầu authenticate + requireModule("production")
+ * - Validate body bằng Zod schemas (createSchema, updateSchema)
+ * - Hỗ trợ kích hoạt/vô hiệu hóa BOM
+ * - Chỉ ADMIN/MANAGER/WAREHOUSE mới được tạo/sửa/xóa
+ *
+ * Hàm:
+ * - GET / → service.list: Danh sách BOM phân trang, lọc theo productId, status, search
+ * - GET /:id → service.getById: Chi tiết BOM kèm danh sách nguyên liệu
+ * - POST / → service.create (ADMIN/MANAGER/WAREHOUSE): Tạo BOM với items, validate createSchema
+ * - PATCH /:id → service.update (ADMIN/MANAGER/WAREHOUSE): Cập nhật BOM, chỉ sửa được DRAFT
+ * - POST /:id/activate → service.changeStatus("ACTIVE"): Kích hoạt BOM
+ * - POST /:id/deactivate → service.changeStatus("INACTIVE"): Vô hiệu hóa BOM
+ * - DELETE /:id → service.remove (ADMIN/MANAGER): Xóa BOM nếu chưa có lệnh sản xuất
+ */
 // src/modules/production/bom.routes.js
 const router = require("express").Router();
 const { z } = require("zod");
 const service = require("./bom.service");
 const { authenticate, authorize } = require("../../middleware/auth.middleware");
+const { requireModule } = require("../../middleware/plan.middleware");
 const { paginated, created, success } = require("../../utils/response");
 
-router.use(authenticate);
+router.use(authenticate, requireModule("production"));
 
 const STATUS = ["DRAFT", "ACTIVE", "INACTIVE"];
 

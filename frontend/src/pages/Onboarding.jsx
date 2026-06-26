@@ -1,3 +1,16 @@
+/**
+ * Frontend: pages/Onboarding.jsx — Onboarding wizard (5 bước)
+ *
+ * Tổng quan:
+ * - Wizard 5 bước: CompanyInfo → Warehouse → Category → Staff → Payment
+ * - Lưu tiến độ onboarding qua API PUT /settings/onboarding sau mỗi bước
+ * - Khi kết thúc (finish): đánh dấu done = true, chuyển đến /dashboard
+ * - State: current (step index), saving; navigate khi finish/skip
+ *
+ * Components/Hooks/Exports:
+ * - Onboarding: Component chính (xuất mặc định)
+ * - STEP_KEYS: Mảng cấu hình các bước (title, desc, component)
+ */
 import { useState } from 'react';
 import { Steps, Button, Typography, Space, Card, message } from 'antd';
 import { useNavigate } from 'react-router-dom';

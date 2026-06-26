@@ -1,3 +1,19 @@
+/**
+ * Frontend: src/components/CameraScanner.jsx — CameraScanner
+ * 
+ * Tổng quan:
+ * - Modal quét mã QR/barcode bằng camera thiết bị thông qua thư viện html5-qrcode.
+ * - Tự động thử camera sau trước → bất kỳ → camera trước.
+ * - Xử lý lỗi quyền camera, không tìm thấy camera.
+ * 
+ * Props:
+ * - open: boolean — mở/đóng modal
+ * - onClose: function — callback đóng modal
+ * - onDetect: function(text) — callback khi phát hiện mã
+ * 
+ * Hàm/Exports:
+ * - CameraScanner: Component quét mã QR/barcode bằng camera
+ */
 import { useEffect, useRef, useState } from "react";
 import { Modal, Alert, Spin, Button } from "antd";
 import { Html5Qrcode } from "html5-qrcode";

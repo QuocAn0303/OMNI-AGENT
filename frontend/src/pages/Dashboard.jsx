@@ -1,3 +1,18 @@
+/**
+ * Page: Dashboard — Trang tổng quan ERP
+ *
+ * Tổng quan:
+ * - Hiển thị KPI cards: doanh thu tháng, đơn hàng, khách hàng, sản phẩm sắp hết
+ * - Biểu đồ doanh thu 7 ngày dạng AreaChart (Recharts)
+ * - Biểu đồ tròn phân bổ trạng thái đơn hàng (PieChart)
+ * - Bảng sản phẩm tồn kho thấp kèm cảnh báo
+ * - Gọi API: GET /dashboard/overview, GET /dashboard/revenue
+ * - Tích hợp Joyride tour hướng dẫn và i18n
+ * - Sử dụng StatCard, StatusTag, MoneyDisplay, EmptyState
+ *
+ * Exports:
+ * - Dashboard: React functional component (default export)
+ */
 import { useEffect, useState } from 'react';
 import { Joyride } from 'react-joyride';
 import { useTranslation } from 'react-i18next';
@@ -22,7 +37,6 @@ import StatCard from '../components/shared/StatCard';
 import StatusTag from '../components/shared/StatusTag';
 import MoneyDisplay from '../components/shared/MoneyDisplay';
 import EmptyState from '../components/shared/EmptyState';
-
 /**
  * Dashboard — Tổng quan ERP
  * Giữ nguyên endpoint cũ: /dashboard/overview, /dashboard/revenue
@@ -80,17 +94,6 @@ export default function Dashboard() {
 
   return (
     <>
-      <Joyride
-        steps={getDashboardTour(t)}
-        run={tour.run}
-        continuous
-        showSkipButton
-        showProgress
-        callback={({ status }) => {
-          if (status === 'finished' || status === 'skipped') tour.markDone();
-        }}
-        styles={{ options: { primaryColor: '#0f766e', zIndex: 2000 } }}
-      />
       <PageHeader
         title="Tổng quan"
         subtitle="Tình hình kinh doanh hôm nay và 7 ngày gần nhất"

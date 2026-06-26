@@ -1,3 +1,20 @@
+/**
+ * modules/accounting/expense-auto.service.js — Tự động tạo chi phí từ các nghiệp vụ khác
+ * 
+ * Tổng quan:
+ * - Tự động sinh bản ghi expense (chi phí) từ các sự kiện nghiệp vụ khác như:
+ *   trả hàng hoàn tiền, thanh toán công nợ phải trả, chốt lương.
+ * - Tránh trùng lặp bằng cách kiểm tra sourceType + sourceId trước khi tạo.
+ * - Hỗ trợ tạo chi phí định kỳ (recurring) từ template.
+ * 
+ * Hàm:
+ * - createIfNotExists({sourceType, sourceId, categoryCode, amount, description, paymentMethod, userId, status}, tx):
+ *   Tạo expense nếu chưa tồn tại theo sourceType + sourceId. Dùng transaction Prisma.
+ * - fromReturnRefund({orderReturn, userId}, tx): Tạo expense cho hoàn tiền trả hàng (categoryCode: REFUND).
+ * - fromDebtPayment({debtPayment, debt, userId}): Tạo expense cho thanh toán công nợ phải trả (categoryCode: INVENTORY_COST).
+ * - fromPayrollLock({payroll, userId}): Tạo expense cho lương (categoryCode: SALARY).
+ * - generateRecurring(): Quét các expense có isRecurring, tạo bản ghi mới cho kỳ hiện tại nếu chưa có.
+ */
 const prisma = require("../../config/prisma");
 const expenseService = require("./expense.service");
 

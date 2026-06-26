@@ -1,3 +1,19 @@
+/**
+ * modules/inventory/cyclecount.service.js — Service kiểm kê định kỳ
+ * 
+ * Tổng quan:
+ * - Quản lý vòng đời phiếu kiểm kê: tạo → nhập số liệu → hoàn thành/hủy
+ * - Khi hoàn thành, tự động điều chỉnh tồn kho theo chênh lệch
+ * 
+ * Hàm:
+ * - generateCode(): Sinh mã phiếu kiểm kê tự động CC-YYYYMMDD-XXXX
+ * - create({productIds, note}, userId): Tạo phiếu kiểm kê mới, ghi nhận systemQuantity từ tồn hiện tại
+ * - recordCount(id, items): Ghi nhận số lượng thực tế cho từng item, tính variance, chuyển trạng thái IN_PROGRESS
+ * - complete(id, userId): Hoàn thành kiểm kê — điều chỉnh tồn kho theo variance, ghi InventoryTransaction, chuyển COMPLETED
+ * - cancel(id): Hủy phiếu kiểm kê, chuyển CANCELLED
+ * - getAll({page, limit, status}): Danh sách phiếu kiểm kê phân trang, lọc theo trạng thái
+ * - getById(id): Chi tiết phiếu kiểm kê kèm items và thông tin sản phẩm
+ */
 const prisma = require("../../config/prisma");
 
 const generateCode = async () => {

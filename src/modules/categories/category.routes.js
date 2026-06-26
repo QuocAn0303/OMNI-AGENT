@@ -1,3 +1,18 @@
+/**
+ * modules/categories/category.routes.js — Routes quản lý danh mục sản phẩm
+ * 
+ * Tổng quan:
+ * - CRUD danh mục với Zod validation, yêu cầu authenticate toàn bộ
+ * 
+ * Endpoints:
+ * - GET /: Danh sách danh mục (tất cả role)
+ * - POST /: Tạo danh mục mới (ADMIN, MANAGER)
+ * - PUT /:id: Cập nhật danh mục (ADMIN, MANAGER)
+ * - DELETE /:id: Xóa mềm danh mục (ADMIN)
+ * 
+ * Validation:
+ * - categorySchema: name bắt buộc, description optional
+ */
 const express = require("express");
 const router = express.Router();
 const categoryService = require("./category.service");
@@ -14,8 +29,8 @@ const categorySchema = z.object({
 // Chặn xác thực người dùng cho toàn bộ router
 router.use(authenticate);
 
-// GET: Lấy danh sách danh mục (Tất cả nhân viên đều xem được)
-router.get("/", async (req, res, next) => {
+// GET: Lấy danh sách danh mục (ADMIN, MANAGER)
+router.get("/", authorize("ADMIN", "MANAGER"), async (req, res, next) => {
   try {
     const categories = await categoryService.getAll();
     success(res, categories, "Lấy danh sách danh mục thành công");

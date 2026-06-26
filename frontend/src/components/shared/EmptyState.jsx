@@ -1,3 +1,15 @@
+/**
+ * Component: shared/EmptyState — Placeholder hiển thị khi không có dữ liệu
+ *
+ * Tổng quan:
+ * - Component dùng chung cho toàn bộ trang, hiển thị trạng thái rỗng
+ * - Props: icon (ReactNode, mặc định InboxOutlined), title (string),
+ *          description (string), action (ReactNode)
+ * - Khi danh sách/table không có bản ghi, EmptyState được dùng làm fallback UI
+ *
+ * Exports:
+ * - EmptyState: React functional component (default export)
+ */
 import { InboxOutlined } from '@ant-design/icons';
 
 /**

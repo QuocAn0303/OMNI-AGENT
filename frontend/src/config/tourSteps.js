@@ -1,3 +1,15 @@
+/**
+ * Frontend: src/config/tourSteps.js — Định nghĩa các bước hướng dẫn (Tour) cho từng trang
+ *
+ * Tổng quan:
+ * - Mỗi function nhận tham số t (hàm dịch i18n) và trả về mảng các step
+ * - Mỗi step gồm target (CSS selector), content (nội dung i18n), placement, disableBeacon
+ * - Hỗ trợ: Dashboard, POS, Products, Orders, Inventory
+ * - Dùng kết hợp với hook useTour để hiển thị joyride tour
+ *
+ * Exports:
+ * - getDashboardTour, getPosTour, getProductsTour, getOrdersTour, getInventoryTour
+ */
 export const getDashboardTour = (t) => [
   {
     target: '.stat-grid',

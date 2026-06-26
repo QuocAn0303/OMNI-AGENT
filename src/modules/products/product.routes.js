@@ -1,4 +1,26 @@
-// src/modules/products/product.routes.js
+/**
+ * modules/products/product.routes.js — Routes quản lý sản phẩm
+ * 
+ * Tổng quan:
+ * - CRUD sản phẩm + upload ảnh Cloudinary + xuất Excel
+ * - Tất cả routes yêu cầu authenticate
+ * - Image upload qua Cloudinary (cấu hình lazy)
+ * - Xuất Excel dùng ExcelJS
+ * 
+ * Endpoints:
+ * - GET /: Danh sách sản phẩm (search, filter category, phân trang)
+ * - GET /export-excel: Xuất danh sách sản phẩm ra file Excel
+ * - GET /by-sku/:sku: Tìm sản phẩm theo SKU (POS quét barcode)
+ * - GET /:id: Chi tiết sản phẩm
+ * - POST /: Tạo sản phẩm mới (kèm initialStock → tạo Inventory)
+ * - PUT /:id: Cập nhật sản phẩm
+ * - DELETE /:id: Soft delete sản phẩm
+ * - POST /:id/image: Upload ảnh sản phẩm lên Cloudinary
+ * 
+ * Validation:
+ * - productSchema: sku, name, price, costPrice, unit, categoryId, initialStock
+ */
+
 const router = require("express").Router();
 const { z } = require("zod");
 const productService = require("./product.service");
@@ -19,8 +41,8 @@ const productSchema = z.object({
 
 router.use(authenticate);
 
-// Xuất Excel
-router.get("/export-excel", async (req, res, next) => {
+// Xuất Excel — chỉ ADMIN, MANAGER
+router.get("/export-excel", authorize("ADMIN", "MANAGER"), async (req, res, next) => {
   try {
     const { products } = await productService.getAll({ page: 1, limit: 100000 });
     const ExcelJS = require("exceljs");
@@ -60,8 +82,8 @@ router.get("/export-excel", async (req, res, next) => {
   }
 });
 
-// Xem danh sách - tất cả role
-router.get("/", async (req, res, next) => {
+// Xem danh sách - chỉ ADMIN, MANAGER
+router.get("/", authorize("ADMIN", "MANAGER"), async (req, res, next) => {
   try {
     const { products, pagination } = await productService.getAll(req.query);
     paginated(res, products, pagination);
@@ -70,7 +92,7 @@ router.get("/", async (req, res, next) => {
   }
 });
 
-router.get("/sku/:sku", async (req, res, next) => {
+router.get("/sku/:sku", authorize("ADMIN", "MANAGER"), async (req, res, next) => {
   try {
     const product = await productService.findBySku(req.params.sku);
     success(res, product);
@@ -79,7 +101,7 @@ router.get("/sku/:sku", async (req, res, next) => {
   }
 });
 
-router.get("/:id", async (req, res, next) => {
+router.get("/:id", authorize("ADMIN", "MANAGER"), async (req, res, next) => {
   try {
     const product = await productService.getById(req.params.id);
     success(res, product);

@@ -1,3 +1,18 @@
+/**
+ * modules/warehouses/warehouse.routes.js — Routes quản lý kho hàng
+ * 
+ * Tổng quan:
+ * - CRUD kho hàng với Zod validation, yêu cầu authenticate
+ * 
+ * Endpoints:
+ * - GET /: Danh sách kho (tất cả role)
+ * - POST /: Tạo kho mới (ADMIN)
+ * - PATCH /:id: Cập nhật kho (ADMIN)
+ * 
+ * Validation:
+ * - POST: code, name bắt buộc; address, isDefault optional
+ * - PATCH: name, address, isActive, isDefault optional
+ */
 const router = require("express").Router();
 const { z } = require("zod");
 const warehouseService = require("./warehouse.service");
@@ -6,7 +21,7 @@ const { success, created } = require("../../utils/response");
 
 router.use(authenticate);
 
-router.get("/", async (req, res, next) => {
+router.get("/", authorize("ADMIN", "MANAGER", "WAREHOUSE"), async (req, res, next) => {
   try {
     success(res, await warehouseService.list());
   } catch (err) {

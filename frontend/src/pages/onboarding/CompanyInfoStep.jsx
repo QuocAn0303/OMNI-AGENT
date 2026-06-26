@@ -1,3 +1,15 @@
+/**
+ * Frontend: pages/onboarding/CompanyInfoStep.jsx — Bước 1: Thông tin công ty
+ *
+ * Tổng quan:
+ * - Form nhập thông tin doanh nghiệp (tên, địa chỉ, SĐT, email, mã số thuế, ngành)
+ * - Tự động lưu khi blur (onBlurSave)
+ * - API: GET /settings (load), PUT /settings (save)
+ * - State: form, saving
+ *
+ * Components/Hooks/Exports:
+ * - CompanyInfoStep: Component chính (xuất mặc định)
+ */
 import { useEffect, useState } from 'react';
 import { Form, Input, Select, Space, Typography } from 'antd';
 import { useTranslation } from 'react-i18next';

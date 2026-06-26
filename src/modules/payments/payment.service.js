@@ -1,3 +1,19 @@
+/**
+ * modules/payments/payment.service.js — Service xử lý thanh toán đơn hàng
+ *
+ * Tổng quan:
+ * - Quản lý ghi nhận thanh toán cho đơn hàng (order)
+ * - Tự động xác định trạng thái thanh toán (UNPAID / PARTIAL / PAID)
+ * - Tích hợp công nợ (debt) khi ghi nhận thanh toán
+ * - Auto-post bút toán kế toán cho đơn đã hoàn thành
+ *
+ * Hàm:
+ * - getPaidAmount(orderId, tx): Tính tổng số tiền đã thanh toán của 1 đơn hàng
+ * - getPaymentStatus(total, paid): Xác định trạng thái thanh toán dựa trên tổng tiền và số đã trả (UNPAID/PAID/PARTIAL)
+ * - recordPayment(data, userId): Ghi nhận thanh toán trong transaction — kiểm tra đơn tồn tại, không CANCELLED, không vượt tổng tiền; tạo payment, cập nhật order paymentStatus/paymentMethod; gọi debtService.applyOrderPaymentToDebtInTx; auto-post accounting nếu đơn COMPLETED
+ * - getByOrderId(orderId): Lấy danh sách thanh toán của 1 đơn hàng kèm người tạo
+ * - getOrderBalance(orderId): Trả về tổng tiền, đã thanh toán, còn lại của 1 đơn hàng
+ */
 const prisma = require("../../config/prisma");
 const autopostService = require("../accounting/autopost.service");
 const postingErrorService = require("../accounting/posting-error.service");

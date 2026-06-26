@@ -1,3 +1,16 @@
+/**
+ * modules/hr/payroll.calc.js — Công cụ tính lương thuần (pure functions, không truy cập DB)
+ * 
+ * Tổng quan:
+ - Cung cấp các hàm tính lương gross → net bao gồm BHXH (10.5%), thuế TNCN luỹ tiến, phạt vi phạm, hệ số chuyên cần.
+ * - Áp dụng mức đóng BHXH 2024 (trần 46.8M) và biểu thuế TNCN 7 bậc.
+ * 
+ * Hàm:
+ * - calcPIT(grossMonthly, dependents): Tính thuế TNCN luỹ tiến theo thu nhập chịu thuế/tháng; trả về { taxableIncome, pitAmount }
+ * - calcBHXH(grossSalary): Tính BHXH nhân viên đóng (10.5%) với mức trần 46.800.000 VND/tháng
+ * - grossToNet(grossSalary, dependents): Tính lương net = Gross - BHXH - PIT; trả về { grossSalary, bhxhEmployee, pitAmount, netSalary }
+ * - calculatePayroll({baseSalary, shiftCount, shiftMoney, violations, dependents}): Tính lương chính: hệ số chuyên cần, phạt, gross, BHXH, PIT, netSalary; suspended=true nếu vắng > 2 lần
+ */
 // Pure payroll calculation utility (no DB access)
 
 // ======== BHXH 2024 ========

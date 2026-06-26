@@ -1,3 +1,23 @@
+/**
+ * prisma/seed_comprehensive.js — Seed dữ liệu toàn diện cho hệ thống ERP
+ *
+ * Tổng quan:
+ * - Tạo dữ liệu mẫu đầy đủ cho mọi module: users (7 tài khoản), categories (7),
+ *   products (28 SP), warehouses (3 kho), inventory, customers (20), employees,
+ *   shifts, vendors (4), tax rates (4), chart of accounts (16), expense categories (5),
+ *   bank accounts (2), fiscal periods (12), expenses (6), purchase orders (10),
+ *   orders (20), promotions (4), notifications
+ * - Dùng upsert để có thể chạy lại an toàn (idempotent)
+ * - Mật khẩu mặc định: Admin@123
+ *
+ * Hàm:
+ * - rndInt(min, max): Random số nguyên trong khoảng [min, max]
+ * - pick(arr): Random lấy 1 phần tử từ mảng
+ * - main(): Hàm chính — tạo tuần tự tất cả dữ liệu theo các nhóm (users → categories →
+ *   products → warehouses → inventory → customers → employees → shifts → vendors →
+ *   tax rates → accounts → expense categories → bank accounts → fiscal periods →
+ *   expenses → purchase orders → orders → promotions → notifications)
+ */
 // prisma/seed_comprehensive.js
 // Comprehensive seed data for ERP system
 require("dotenv").config();

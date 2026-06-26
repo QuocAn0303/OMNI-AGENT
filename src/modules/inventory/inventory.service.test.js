@@ -1,3 +1,16 @@
+/**
+ * modules/inventory/inventory.service.test.js — Unit test cho Inventory Service
+ * 
+ * Tổng quan:
+ * - Mock Prisma ($transaction, inventory, inventoryTransaction) để test các hàm inventory.
+ * - Kiểm tra getLowStock, importStock, exportStock, getTransactions.
+ * 
+ * Test suites:
+ * - getLowStock: Trả về sản phẩm có tồn khả dụng < threshold; dùng threshold mặc định 10
+ * - importStock: Gọi $transaction, cập nhật quantity + tạo giao dịch IMPORT; ném 404 nếu không tìm thấy inventory
+ * - exportStock: Giảm tồn + tạo giao dịch EXPORT; ném 400 nếu tồn không đủ
+ * - getTransactions: Trả về danh sách transactions với pagination
+ */
 const inventoryService = require('./inventory.service');
 const prisma = require('../../config/prisma');
 

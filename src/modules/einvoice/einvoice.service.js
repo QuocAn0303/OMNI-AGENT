@@ -1,4 +1,21 @@
-// src/modules/einvoice/einvoice.service.js
+/**
+ * modules/einvoice/einvoice.service.js — Service quản lý Hóa đơn điện tử (HĐĐT)
+ *
+ * Tổng quan:
+ * - Cung cấp logic phát hành, hủy, đồng bộ trạng thái HĐĐT tích hợp VNPT
+ * - Tự động phát hành khi order COMPLETED (autoIssueForOrder, non-blocking)
+ * - Dùng upsert để tránh trùng lặp theo orderId
+ * - Tích hợp auditService để ghi log
+ *
+ * Hàm:
+ * - generateInvoiceNo(tx): Sinh số HĐĐT nội bộ HDD-YYYYMMDD-XXXX
+ * - issueForOrder(orderId, userId): Phát hành HĐĐT cho đơn COMPLETED, gọi VNPT adapter, upsert
+ * - autoIssueForOrder(orderId, userId): Auto-issue non-blocking, trả về existing nếu có
+ * - cancelInvoice(einvoiceId, userId): Hủy HĐĐT qua VNPT, set CANCELLED
+ * - syncStatus(einvoiceId): Đồng bộ trạng thái từ VNPT
+ * - list({ page, limit, cqtStatus, from, to }): Danh sách HĐĐT phân trang, lọc
+ * - getById(id): Chi tiết HĐĐT kèm order + items
+ */
 const prisma = require("../../config/prisma");
 const vnpt = require("./provider/vnpt.adapter");
 const config = require("../integrations/integration-config.service");

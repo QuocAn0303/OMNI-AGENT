@@ -1,8 +1,31 @@
-const router = require("express").Router();
+/**
+ * modules/promotions/promotion.routes.js — Routes quản lý khuyến mãi
+ *
+ * Tổng quan:
+ * - Định nghĩa các endpoint CRUD + actions cho khuyến mãi
+ * - Yêu cầu authenticate + requireModule("promotions") cho tất cả routes
+ * - Phân quyền ADMIN/MANAGER cho hầu hết actions, ADMIN cho xoá
+ * - Validation đầu vào bằng Zod schema (promotionSchema, cartItemsSchema)
+ *
+ * Hàm:
+ * - POST /: Tạo khuyến mãi mới — validate promotionSchema, gọi promotionService.create() (ADMIN, MANAGER)
+ * - GET /: Danh sách khuyến mãi phân trang — gọi promotionService.list() (ADMIN, MANAGER)
+ * - GET /report: Báo cáo hiệu quả khuyến mãi — gọi promotionService.reportEffectiveness() (ADMIN, MANAGER)
+ * - GET /:id: Chi tiết khuyến mãi — gọi promotionService.getById() (ADMIN, MANAGER)
+ * - PATCH /:id: Cập nhật khuyến mãi — gọi promotionService.update() (ADMIN, MANAGER)
+ * - POST /:id/activate: Kích hoạt khuyến mãi — gọi promotionService.setStatus(id, "ACTIVE") (ADMIN, MANAGER)
+ * - POST /:id/pause: Tạm dừng khuyến mãi — gọi promotionService.setStatus(id, "PAUSED") (ADMIN, MANAGER)
+ * - DELETE /:id: Xoá khuyến mãi — gọi promotionService.remove() (ADMIN)
+ * - router.cartItemsSchema: Export schema để các module khác sử dụng
+ */
+const express = require("express");
 const { z } = require("zod");
 const promotionService = require("./promotion.service");
 const { authenticate, authorize } = require("../../middleware/auth.middleware");
+const { requireModule } = require("../../middleware/plan.middleware");
 const { success, created, paginated } = require("../../utils/response");
+
+const router = express.Router();
 
 const promotionSchema = z.object({
   code: z.string().optional(),
@@ -42,7 +65,7 @@ const cartItemsSchema = z.object({
   customerId: z.string().uuid().optional().nullable(),
 });
 
-router.use(authenticate);
+router.use(authenticate, requireModule("promotions"));
 
 router.post("/", authorize("ADMIN", "MANAGER"), async (req, res, next) => {
   try {

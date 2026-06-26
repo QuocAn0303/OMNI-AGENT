@@ -1,3 +1,14 @@
+/**
+ * Frontend: src/api/taxReport.js — API module Báo cáo thuế
+ *
+ * Tổng quan:
+ * - Lấy báo cáo VAT (thuế GTGT) và PIT (thuế TNCN)
+ * - downloadVATExcel / downloadVATXML: xuất báo cáo VAT dạng Excel hoặc XML
+ * - downloadBHXHExcel: xuất báo cáo Bảo hiểm xã hội dạng Excel
+ *
+ * Exports:
+ * - getVATReport, getPITReport, downloadVATExcel, downloadVATXML, downloadBHXHExcel
+ */
 // frontend/src/api/taxReport.js
 import axios from "./axios";
 

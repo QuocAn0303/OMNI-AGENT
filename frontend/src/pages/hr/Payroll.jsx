@@ -1,3 +1,17 @@
+/**
+ * Page: hr/Payroll — Bảng lương nhân viên theo tháng
+ *
+ * Tổng quan:
+ * - Hiển thị bảng lương với các cột: giờ làm, lương cơ bản, thưởng, khấu trừ, thực lãnh
+ * - Bộ lọc: chọn tháng (DatePicker picker="month")
+ * - Chức năng: tính lại lương (POST /hr/payroll/calculate), điều chỉnh thưởng/khấu trừ (Modal)
+ * - Thống kê nhanh: tổng nhân viên, tổng giờ, tổng quỹ lương
+ * - Gọi API: GET/POST /hr/payroll, PUT /hr/payroll/:id
+ * - Sử dụng EmptyState khi chưa có bảng lương
+ *
+ * Exports:
+ * - Payroll: React functional component (default export)
+ */
 import { useEffect, useState, useMemo } from 'react';
 import { Table, DatePicker, Button, message, Modal, InputNumber, Form } from 'antd';
 import { ExportOutlined, CalculatorOutlined, EditOutlined } from '@ant-design/icons';
@@ -5,6 +19,7 @@ import dayjs from 'dayjs';
 import axios from '../../api/axios';
 import MoneyDisplay from '../../components/shared/MoneyDisplay';
 import EmptyState from '../../components/shared/EmptyState';
+
 
 /**
  * Payroll — Bảng lương theo tháng

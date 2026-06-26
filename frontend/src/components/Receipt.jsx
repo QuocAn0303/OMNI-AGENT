@@ -1,3 +1,17 @@
+/**
+ * Frontend: src/components/Receipt.jsx — Receipt
+ * 
+ * Tổng quan:
+ * - Render hoá đơn in nhiệt (thermal receipt) với CSS @media print.
+ * - Hiển thị thông tin cửa hàng, mã đơn, ngày, nhân viên, khách hàng, danh sách sản phẩm, tổng tiền.
+ * - Hỗ trợ nhiều phương thức thanh toán (CASH, CARD, BANK_TRANSFER).
+ * 
+ * Props:
+ * - order: object — thông tin đơn hàng (items, payments, total, discount, ...)
+ * 
+ * Hàm/Exports:
+ * - Receipt: Component hoá đơn in nhiệt
+ */
 const paymentLabels = {
   CASH: "Tiền mặt",
   CARD: "Thẻ",

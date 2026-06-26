@@ -1,3 +1,18 @@
+/**
+ * modules/crm/notes.service.js — Service ghi chú khách hàng
+ * 
+ * Tổng quan:
+ * - CRUD ghi chú (CustomerNote) cho từng khách hàng.
+ * - Hỗ trợ nhiều loại ghi chú: NOTE, CALL, EMAIL, MEETING, ZALO.
+ * - Ghi audit log cho mọi thao tác.
+ * 
+ * Hàm:
+ * - ensureCustomer(customerId): Kiểm tra khách hàng tồn tại và đang active.
+ * - listByCustomer(customerId, {page, limit}): Danh sách ghi chú của khách hàng (phân trang).
+ * - create(customerId, data, userId): Tạo ghi chú mới.
+ * - update(noteId, data, userId): Cập nhật nội dung/loại ghi chú.
+ * - remove(noteId, userId): Xóa ghi chú.
+ */
 // src/modules/crm/notes.service.js
 const prisma = require("../../config/prisma");
 const auditService = require("../audit/audit.service");

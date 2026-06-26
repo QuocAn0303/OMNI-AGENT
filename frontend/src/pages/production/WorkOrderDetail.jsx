@@ -1,15 +1,31 @@
+/**
+ * Frontend: pages/production/WorkOrderDetail.jsx — Chi tiết lệnh sản xuất
+ *
+ * Tổng quan:
+ * - Xem thông tin chi tiết Work Order, danh sách nguyên liệu + tồn kho
+ * - Quy trình trạng thái: DRAFT → IN_PROGRESS → COMPLETED (hoặc CANCELLED)
+ * - Khi hoàn thành: tự động trừ/tồn nguyên liệu, cộng thành phẩm, tạo giao dịch tồn kho
+ * - API: GET /production/work-orders/:id, POST .../start, .../complete, .../cancel, DELETE
+ * - Hiển thị giá vốn dự kiến/thực tế, tổng quan nguyên liệu
+ *
+ * Components/Hooks/Exports:
+ * - WorkOrderDetail: Component chính (xuất mặc định)
+ * - WO_STATUS + statusMeta helper
+ */
 import { useEffect, useState } from 'react';
 import { useNavigate, useParams } from 'react-router-dom';
 import {
   Card, Descriptions, Table, Button, Modal, Spin, message, Row, Col, Tag, Space,
+  Input, Form, Select, Divider,
 } from 'antd';
 import {
   ArrowLeftOutlined, PlayCircleOutlined, CheckCircleOutlined, StopOutlined,
-  DeleteOutlined, WarningOutlined,
+  DeleteOutlined, WarningOutlined, ExperimentOutlined,
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import axios from '../../api/axios';
 import PageHeader from '../../components/layout/PageHeader';
+import PlanGate from '../../components/PlanGate';
 import StatusTag from '../../components/shared/StatusTag';
 import EmptyState from '../../components/shared/EmptyState';
 import MoneyDisplay from '../../components/shared/MoneyDisplay';
@@ -34,6 +50,16 @@ export default function WorkOrderDetail() {
   const [loading, setLoading] = useState(true);
   const [acting, setActing] = useState(false);
 
+  // Quality Check
+  const [qcList, setQcList] = useState([]);
+  const [qcLoading, setQcLoading] = useState(false);
+  const [qcModalOpen, setQcModalOpen] = useState(false);
+  const [qcSubmitOpen, setQcSubmitOpen] = useState(false);
+  const [qcForm] = Form.useForm();
+  const [qcSubmitForm] = Form.useForm();
+  const [savingQc, setSavingQc] = useState(false);
+  const [selectedQc, setSelectedQc] = useState(null);
+
   const load = async () => {
     try {
       const res = await axios.get(`/production/work-orders/${id}`);
@@ -50,9 +76,22 @@ export default function WorkOrderDetail() {
     }
   };
 
+  const loadQc = async () => {
+    try {
+      setQcLoading(true);
+      const res = await axios.get(`/production/quality/${id}`);
+      setQcList(res.data?.data || []);
+    } catch { setQcList([]); }
+    finally { setQcLoading(false); }
+  };
+
   useEffect(() => {
     setLoading(true);
     load();
+  }, [id]);
+
+  useEffect(() => {
+    if (id) loadQc();
   }, [id]);
 
   const doAction = async (path, successMsg) => {
@@ -119,6 +158,45 @@ export default function WorkOrderDetail() {
         }
       },
     });
+  };
+
+  // ===== Quality Check handlers =====
+  const handleCreateQc = async () => {
+    try {
+      const values = await qcForm.validateFields();
+      setSavingQc(true);
+      const payload = {
+        items: (values.items || []).map((it) => ({
+          name: it.name,
+          result: it.result || null,
+          notes: it.notes || null,
+        })),
+        notes: values.notes || null,
+      };
+      await axios.post(`/production/quality/${id}`, payload);
+      message.success('Đã tạo phiếu kiểm tra');
+      setQcModalOpen(false);
+      qcForm.resetFields();
+      await loadQc();
+    } catch (err) {
+      if (err?.errorFields) return;
+      message.error(err?.response?.data?.message || 'Tạo thất bại');
+    } finally { setSavingQc(false); }
+  };
+
+  const handleSubmitQc = async () => {
+    try {
+      const values = await qcSubmitForm.validateFields();
+      setSavingQc(true);
+      await axios.patch(`/production/quality/${selectedQc.id}/submit`, values);
+      message.success('Đã cập nhật kết quả kiểm tra');
+      setQcSubmitOpen(false);
+      setSelectedQc(null);
+      await loadQc();
+    } catch (err) {
+      if (err?.errorFields) return;
+      message.error(err?.response?.data?.message || 'Cập nhật thất bại');
+    } finally { setSavingQc(false); }
   };
 
   if (loading || !wo) {
@@ -234,6 +312,7 @@ export default function WorkOrderDetail() {
   };
 
   return (
+    <PlanGate moduleKey="production" moduleName="Chi tiết lệnh sản xuất">
     <>
       <PageHeader
         title={`Lệnh sản xuất ${wo.code}`}
@@ -361,6 +440,165 @@ export default function WorkOrderDetail() {
           locale={{ emptyText: <EmptyState title="Không có nguyên liệu" /> }}
         />
       </Card>
+
+      {/* Quality Check */}
+      <Card
+        title={<Space><ExperimentOutlined /> Kiểm tra chất lượng</Space>}
+        style={{ marginTop: 16 }}
+        extra={canEdit && ['IN_PROGRESS', 'COMPLETED'].includes(wo.status) && (
+          <Button type="primary" size="small" onClick={() => { qcForm.resetFields(); qcForm.setFieldsValue({ items: [{ name: '', result: '', notes: '' }] }); setQcModalOpen(true); }}>
+            Tạo phiếu kiểm tra
+          </Button>
+        )}
+      >
+        {qcLoading ? <Spin /> : qcList.length === 0 ? (
+          <EmptyState title="Chưa kiểm tra chất lượng" />
+        ) : (
+          qcList.map((qc) => (
+            <div key={qc.id} style={{ marginBottom: 24, padding: 16, border: '1px solid var(--border)', borderRadius: 8 }}>
+              <Descriptions column={2} size="small">
+                <Descriptions.Item label="Trạng thái">
+                  <Tag color={qc.status === 'PASSED' ? 'green' : qc.status === 'FAILED' ? 'red' : qc.status === 'PARTIAL' ? 'orange' : 'default'}>
+                    {qc.status === 'PASSED' ? 'Đạt' : qc.status === 'FAILED' ? 'Không đạt' : qc.status === 'PARTIAL' ? 'Một phần' : 'Chờ kiểm tra'}
+                  </Tag>
+                </Descriptions.Item>
+                <Descriptions.Item label="Người kiểm">
+                  {qc.checkedBy?.fullName || '—'}
+                </Descriptions.Item>
+                <Descriptions.Item label="Thời điểm">{qc.checkedAt ? dayjs(qc.checkedAt).format('DD/MM/YYYY HH:mm') : '—'}</Descriptions.Item>
+                <Descriptions.Item label="Ghi chú">{qc.notes || '—'}</Descriptions.Item>
+              </Descriptions>
+              {qc.items?.length > 0 && (
+                <Table
+                  columns={[
+                    { title: 'Hạng mục', dataIndex: 'name' },
+                    {
+                      title: 'Kết quả', dataIndex: 'result',
+                      render: (r) => {
+                        if (!r) return <Tag>Chưa kiểm tra</Tag>;
+                        return <Tag color={r === 'PASS' ? 'green' : 'red'}>{r === 'PASS' ? 'Đạt' : 'Không đạt'}</Tag>;
+                      },
+                    },
+                    { title: 'Ghi chú', dataIndex: 'notes' },
+                  ]}
+                  dataSource={qc.items || []}
+                  rowKey="id"
+                  pagination={false}
+                  size="small"
+                />
+              )}
+              {canEdit && qc.status === 'PENDING' && (
+                <Button type="primary" style={{ marginTop: 12 }} onClick={() => {
+                  setSelectedQc(qc);
+                  qcSubmitForm.resetFields();
+                  qcSubmitForm.setFieldsValue({
+                    status: 'PASSED',
+                    items: (qc.items || []).map((it) => ({ id: it.id, result: it.result || 'PASS', notes: it.notes })),
+                  });
+                  setQcSubmitOpen(true);
+                }}>
+                  Cập nhật kết quả
+                </Button>
+              )}
+            </div>
+          ))
+        )}
+      </Card>
+
+      {/* QC Create Modal */}
+      <Modal
+        title="Tạo phiếu kiểm tra chất lượng"
+        open={qcModalOpen}
+        onCancel={() => setQcModalOpen(false)}
+        onOk={handleCreateQc}
+        okText="Tạo"
+        cancelText="Hủy"
+        confirmLoading={savingQc}
+        width={600}
+      >
+        <Form form={qcForm} layout="vertical" style={{ marginTop: 16 }}>
+          <Form.List name="items" initialValue={[{ name: '', result: '', notes: '' }]}>
+            {(fields, { add, remove }) => (
+              <>
+                {fields.map((f) => (
+                  <Space key={f.key} style={{ width: '100%', marginBottom: 8 }} align="start">
+                    <Form.Item name={[f.name, 'name']} rules={[{ required: true, message: 'Nhập tên' }]} noStyle>
+                      <Input placeholder="Tên hạng mục" style={{ width: 200 }} />
+                    </Form.Item>
+                    <Form.Item name={[f.name, 'result']} noStyle>
+                      <Select placeholder="KQ dự kiến" allowClear style={{ width: 140 }}
+                        options={[
+                          { value: 'PASS', label: 'Đạt' },
+                          { value: 'FAIL', label: 'Không đạt' },
+                        ]}
+                      />
+                    </Form.Item>
+                    <Form.Item name={[f.name, 'notes']} noStyle>
+                      <Input placeholder="Ghi chú" style={{ width: 140 }} />
+                    </Form.Item>
+                    {fields.length > 1 && (
+                      <Button danger size="small" onClick={() => remove(f.name)}>Xóa</Button>
+                    )}
+                  </Space>
+                ))}
+                <Button type="dashed" icon={<ExperimentOutlined />} onClick={() => add({ name: '', result: '', notes: '' })} block>
+                  Thêm hạng mục
+                </Button>
+              </>
+            )}
+          </Form.List>
+          <Form.Item name="notes" label="Ghi chú chung" style={{ marginTop: 12 }}>
+            <Input.TextArea rows={2} />
+          </Form.Item>
+        </Form>
+      </Modal>
+
+      {/* QC Submit Modal */}
+      <Modal
+        title="Cập nhật kết quả kiểm tra"
+        open={qcSubmitOpen}
+        onCancel={() => setQcSubmitOpen(false)}
+        onOk={handleSubmitQc}
+        okText="Lưu kết quả"
+        cancelText="Hủy"
+        confirmLoading={savingQc}
+        width={600}
+      >
+        <Form form={qcSubmitForm} layout="vertical" style={{ marginTop: 16 }}>
+          <Form.Item name="status" label="Kết quả tổng thể" rules={[{ required: true }]}>
+            <Select options={[
+              { value: 'PASSED', label: 'Đạt' },
+              { value: 'FAILED', label: 'Không đạt' },
+              { value: 'PARTIAL', label: 'Một phần' },
+            ]} />
+          </Form.Item>
+          <Form.Item name="notes" label="Ghi chú">
+            <Input.TextArea rows={2} />
+          </Form.Item>
+          <Divider>Kết quả từng hạng mục</Divider>
+          <Form.List name="items">
+            {(fields) => fields.map((f) => (
+              <Space key={f.key} style={{ width: '100%', marginBottom: 8 }} align="start">
+                <Form.Item name={[f.name, 'id']} noStyle>
+                  <Input disabled style={{ width: 0, padding: 0, border: 'none' }} />
+                </Form.Item>
+                <Form.Item name={[f.name, 'result']} rules={[{ required: true }]} noStyle>
+                  <Select style={{ width: 200 }}
+                    options={[
+                      { value: 'PASS', label: 'Đạt' },
+                      { value: 'FAIL', label: 'Không đạt' },
+                    ]}
+                  />
+                </Form.Item>
+                <Form.Item name={[f.name, 'notes']} noStyle>
+                  <Input placeholder="Ghi chú" style={{ width: 300 }} />
+                </Form.Item>
+              </Space>
+            ))}
+          </Form.List>
+        </Form>
+      </Modal>
     </>
+    </PlanGate>
   );
 }

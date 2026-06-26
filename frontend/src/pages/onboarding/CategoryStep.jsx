@@ -1,3 +1,15 @@
+/**
+ * Frontend: pages/onboarding/CategoryStep.jsx — Bước 3: Danh mục sản phẩm
+ *
+ * Tổng quan:
+ - Thêm danh mục sản phẩm nhanh (click tag mẫu) hoặc nhập tay
+ - Hiển thị danh sách danh mục đã tạo
+ * - API: GET /categories, POST /categories
+ * - State: categories, adding, form
+ *
+ * Components/Hooks/Exports:
+ * - CategoryStep: Component chính (xuất mặc định)
+ */
 import { useEffect, useState } from 'react';
 import { Form, Input, Button, List, Typography, Space, Tag, message } from 'antd';
 import { PlusOutlined, CheckCircleOutlined } from '@ant-design/icons';

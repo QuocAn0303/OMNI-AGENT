@@ -13,8 +13,8 @@ describe("loyalty.service", () => {
     expect(pointsFromAmount(1_000_000)).toBe(1000);
   });
 
-  test("totalSpent 5tr → SILVER", () => {
-    expect(computeTier(5_000_000)).toBe("SILVER");
+  test("totalSpent 5tr → GOLD", () => {
+    expect(computeTier(5_000_000)).toBe("GOLD");
   });
 
   test("100 điểm → giảm 10k", () => {

@@ -1,6 +1,26 @@
+/**
+ * modules/hr/hr.service.js — Service quản lý Nhân sự / HR
+ *
+ * Tổng quan:
+ * - Cung cấp logic nghiệp vụ cho module HR: quản lý nhân viên, chấm công, bảng lương, vi phạm
+ * - Sử dụng Prisma ORM để thao tác với DB, tích hợp payroll.calc để tính lương
+ * - Gọi expenseAuto để tự động ghi nhận chi phí khi khóa lương
+ *
+ * Hàm:
+ * - createEmployee(payload): Tạo nhân viên mới kèm User account trong transaction. Tự sinh email nếu không có, hash password mặc định, map position → role
+ * - flattenEmployee(emp): Chuyển đổi employee object có user lồng ghép thành flat object, che email @erp.local
+ * - generatePayrollForMonth(month, year): Sinh bảng lương cho tất cả nhân viên đang active trong tháng. Tính shiftCount, violations, gọi calculatePayroll, upsert Payroll record
+ * - parseMonthKey(monthKey): Parse chuỗi "YYYY-MM" thành { month, year }, mặc định tháng hiện tại nếu không truyền
+ * - listAttendance({ from, to, employeeId }): Liệt kê chấm công (shifts) trong khoảng thời gian, trả về flat object mỗi shift
+ * - listPayroll(monthKey): Liệt kê bảng lương của tháng, trả về flat object kèm tính netSalary
+ * - listEmployeesWithPreview(): Lấy danh sách nhân viên kèm preview lương tháng hiện tại
+ * - lockPayroll(payrollId, userId): Khóa bảng lương, tự động ghi nhận chi phí qua expenseAuto
+ */
 const prisma = require("../../config/prisma");
 const { calculatePayroll } = require("./payroll.calc");
 const expenseAuto = require("../accounting/expense-auto.service");
+const autopostService = require("../accounting/autopost.service");
+const postingErrorService = require("../accounting/posting-error.service");
 const bcrypt = require("bcrypt");
 
 const POSITION_TO_ROLE = {
@@ -75,83 +95,83 @@ const generatePayrollForMonth = async (month, year) => {
     include: { user: true, shifts: true, violations: true },
   });
 
-  const createdPayrolls = [];
+  const createdPayrolls = await prisma.$transaction(async (tx) => {
+    const results = [];
 
-  for (const emp of employees) {
-    // compute shift count for the month
-    const shiftCount = await prisma.shift.count({
-      where: {
-        employeeId: emp.id,
-        date: {
-          gte: new Date(year, month - 1, 1),
-          lt: new Date(year, month, 1),
+    for (const emp of employees) {
+      const shiftCount = await tx.shift.count({
+        where: {
+          employeeId: emp.id,
+          date: {
+            gte: new Date(year, month - 1, 1),
+            lt: new Date(year, month, 1),
+          },
         },
-      },
-    });
-
-    // compute violations in that month
-    const violations = await prisma.violation.findMany({
-      where: {
-        employeeId: emp.id,
-        date: {
-          gte: new Date(year, month - 1, 1),
-          lt: new Date(year, month, 1),
-        },
-      },
-    });
-
-    // determine per-shift pay (prefer configured value)
-    const shiftMoneyValue = emp.shiftMoney
-      ? Number(emp.shiftMoney)
-      : Number(emp.baseSalary) * 0.05;
-
-    // use shared pure calculation helper
-    const calc = calculatePayroll({
-      baseSalary: emp.baseSalary,
-      shiftCount,
-      shiftMoney: shiftMoneyValue,
-      violations,
-      dependents: emp.dependents || 0,
-    });
-
-    let finalSalary = 0;
-    if (calc.suspended) {
-      finalSalary = 0;
-      await prisma.employee.update({
-        where: { id: emp.id },
-        data: { isActive: false },
       });
-    } else {
-      finalSalary = calc.finalSalary;
-    }
 
-    const payrollData = {
-      baseSalary: emp.baseSalary,
-      shiftMoney: shiftMoneyValue,
-      shiftCount,
-      attendanceCoefficient: calc.attendanceCoefficient,
-      penalties: calc.penalties,
-      finalSalary,
-      bhxhEmployee: calc.bhxhEmployee || 0,
-      pitAmount: calc.pitAmount || 0,
-    };
+      const violations = await tx.violation.findMany({
+        where: {
+          employeeId: emp.id,
+          date: {
+            gte: new Date(year, month - 1, 1),
+            lt: new Date(year, month, 1),
+          },
+        },
+      });
 
-    const existing = await prisma.payroll.findFirst({
-      where: { employeeId: emp.id, month, year },
-    });
-    let rec;
-    if (existing) {
-      if (existing.isLocked) {
-        createdPayrolls.push(existing);
-        continue;
+      const shiftMoneyValue = emp.shiftMoney
+        ? Number(emp.shiftMoney)
+        : Number(emp.baseSalary) * 0.05;
+
+      const calc = calculatePayroll({
+        baseSalary: emp.baseSalary,
+        shiftCount,
+        shiftMoney: shiftMoneyValue,
+        violations,
+        dependents: emp.dependents || 0,
+      });
+
+      let finalSalary = 0;
+      if (calc.suspended) {
+        finalSalary = 0;
+        await tx.employee.update({
+          where: { id: emp.id },
+          data: { isActive: false },
+        });
+      } else {
+        finalSalary = calc.finalSalary;
       }
-      rec = await prisma.payroll.update({ where: { id: existing.id }, data: payrollData });
-    } else {
-      rec = await prisma.payroll.create({ data: { employeeId: emp.id, month, year, ...payrollData } });
+
+      const payrollData = {
+        baseSalary: emp.baseSalary,
+        shiftMoney: shiftMoneyValue,
+        shiftCount,
+        attendanceCoefficient: calc.attendanceCoefficient,
+        penalties: calc.penalties,
+        finalSalary,
+        bhxhEmployee: calc.bhxhEmployee || 0,
+        pitAmount: calc.pitAmount || 0,
+      };
+
+      const existing = await tx.payroll.findFirst({
+        where: { employeeId: emp.id, month, year },
+      });
+      let rec;
+      if (existing) {
+        if (existing.isLocked) {
+          results.push(existing);
+          continue;
+        }
+        rec = await tx.payroll.update({ where: { id: existing.id }, data: payrollData });
+      } else {
+        rec = await tx.payroll.create({ data: { employeeId: emp.id, month, year, ...payrollData } });
+      }
+
+      results.push(rec);
     }
 
-    createdPayrolls.push(rec);
-  }
+    return results;
+  });
 
   return createdPayrolls;
 };
@@ -288,7 +308,10 @@ const listEmployeesWithPreview = async () => {
 };
 
 const lockPayroll = async (payrollId, userId) => {
-  const payroll = await prisma.payroll.findUnique({ where: { id: payrollId } });
+  const payroll = await prisma.payroll.findUnique({
+    where: { id: payrollId },
+    include: { employee: { include: { user: true } } },
+  });
   if (!payroll) throw { status: 404, message: "Không tìm thấy bảng lương" };
   if (payroll.isLocked) throw { status: 400, message: "Bảng lương đã khóa" };
 
@@ -298,6 +321,12 @@ const lockPayroll = async (payrollId, userId) => {
   });
 
   await expenseAuto.fromPayrollLock({ payroll: updated, userId }).catch(() => {});
+
+  await postingErrorService.tryPostOrQueue(
+    () => autopostService.postPayrollAccrual({ payroll: updated, employee: payroll.employee, userId }),
+    { source: "PAYROLL", sourceId: payrollId, payload: { operation: "PAYROLL_ACCRUAL" } },
+  );
+
   return updated;
 };
 

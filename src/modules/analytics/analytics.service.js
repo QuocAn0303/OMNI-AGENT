@@ -1,3 +1,18 @@
+/**
+ * modules/analytics/analytics.service.js — Phân tích dữ liệu bán hàng
+ * 
+ * Tổng quan:
+ * - Thống kê doanh thu, đơn hàng, AOV, khách hàng mới theo khoảng thời gian
+ * - So sánh với kỳ trước (trend)
+ * - Time series theo ngày/tuần/tháng
+ * - Top sản phẩm và top khách hàng
+ * 
+ * Hàm:
+ * - buildPeriods(from, to, groupBy): Xây dựng mảng period keys (day/week/month) giữa from..to
+ * - dateToPeriod(date, groupBy): Map một ngày vào period key tương ứng
+ * - getAnalytics(from, to, groupBy): Tổng hợp analytics: summary KPIs, time series, topProducts, topCustomers
+ * - salesInsights(): Legacy — gọi getAnalytics với 30 ngày gần nhất
+ */
 const prisma = require("../../config/prisma");
 
 // ── helpers ──────────────────────────────────────────────────────────────────

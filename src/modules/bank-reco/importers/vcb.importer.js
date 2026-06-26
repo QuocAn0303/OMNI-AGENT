@@ -1,3 +1,14 @@
+/**
+ * modules/bank-reco/importers/vcb.importer.js — Import sao kê Vietcombank (XLSX)
+ * 
+ * Tổng quan:
+ * - Parse file XLSX sao kê từ Vietcombank. Format: STT | Ngày GD | Mã GD | Nội dung | Phát sinh Nợ | Phát sinh Có | Số dư
+ * - Tự động dò tìm cột ngày hợp lệ, bỏ qua dòng không có ngày.
+ * 
+ * Hàm:
+ * - parseVCB(rows): Nhận mảng rows, tự động dò cột ngày (cột 1 hoặc 2), parse → { txDate, description, debit, credit, balance, reference }; bỏ qua dòng debit=0 && credit=0
+ * - parseVNDAmount(v): Parse số tiền VND: loại bỏ dấu phẩy, dấu chấm, khoảng trắng
+ */
 // Vietcombank XLSX importer
 // Format: STT | Ngày GD | Mã GD | Nội dung | Phát sinh Nợ | Phát sinh Có | Số dư
 

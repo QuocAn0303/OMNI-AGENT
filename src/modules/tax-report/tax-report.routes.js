@@ -1,12 +1,31 @@
+/**
+ * modules/tax-report/tax-report.routes.js — Routes cho báo cáo thuế
+ * 
+ * Tổng quan:
+ * - REST API cho tax-report module
+ * - Yêu cầu module "tax" trong plan
+ * 
+ * Routes:
+ * - GET /vat: Dữ liệu thuế GTGT + bảng kê bán ra + mua vào (ADMIN/MANAGER)
+ * - GET /pit: Dữ liệu thuế TNCN (ADMIN/MANAGER)
+ * - GET /vat/excel: Xuất Excel multi-sheet (ADMIN/MANAGER)
+ * - GET /vat/xml: Xuất XML 01/GTGT HTKK (ADMIN/MANAGER)
+ * - GET /bhxh/excel: Xuất Excel BHXH D02-LT (ADMIN/MANAGER)
+ * 
+ * Helper:
+ * - parsePeriod(req): Parse year/month từ query, mặc định tháng hiện tại
+ */
 // src/modules/tax-report/tax-report.routes.js
 const express = require("express");
 const router = express.Router();
 const { authenticate, authorize } = require("../../middleware/auth.middleware");
+const { requireModule } = require("../../middleware/plan.middleware");
 const svc = require("./tax-report.service");
 const prisma = require("../../config/prisma");
 
 const ok = (res, data) => res.json({ success: true, data });
-const fail = (res, err) => res.status(err.status || 500).json({ success: false, message: err.message || "Lỗi server" });
+
+router.use(requireModule("tax"));
 
 const parsePeriod = (req) => {
   const year  = parseInt(req.query.year  || new Date().getFullYear(), 10);
@@ -16,7 +35,7 @@ const parsePeriod = (req) => {
 };
 
 // GET /api/tax-reports/vat?year=2024&month=11
-router.get("/vat", authenticate, authorize("ADMIN", "MANAGER"), async (req, res) => {
+router.get("/vat", authenticate, authorize("ADMIN", "MANAGER"), async (req, res, next) => {
   try {
     const { year, month } = parsePeriod(req);
     const [vat, sales, purchases] = await Promise.all([
@@ -25,19 +44,19 @@ router.get("/vat", authenticate, authorize("ADMIN", "MANAGER"), async (req, res)
       svc.generatePurchaseList(year, month),
     ]);
     ok(res, { vat, sales, purchases });
-  } catch (e) { fail(res, e); }
+  } catch (e) { next(e); }
 });
 
 // GET /api/tax-reports/pit?year=2024&month=11
-router.get("/pit", authenticate, authorize("ADMIN", "MANAGER"), async (req, res) => {
+router.get("/pit", authenticate, authorize("ADMIN", "MANAGER"), async (req, res, next) => {
   try {
     const { year, month } = parsePeriod(req);
     ok(res, await svc.generatePIT(year, month));
-  } catch (e) { fail(res, e); }
+  } catch (e) { next(e); }
 });
 
 // GET /api/tax-reports/vat/excel?year=2024&month=11
-router.get("/vat/excel", authenticate, authorize("ADMIN", "MANAGER"), async (req, res) => {
+router.get("/vat/excel", authenticate, authorize("ADMIN", "MANAGER"), async (req, res, next) => {
   try {
     const { year, month } = parsePeriod(req);
     const wb = await svc.exportExcel(year, month);
@@ -45,11 +64,11 @@ router.get("/vat/excel", authenticate, authorize("ADMIN", "MANAGER"), async (req
     res.setHeader("Content-Disposition", `attachment; filename="bao-cao-thue-${year}-${String(month).padStart(2,"0")}.xlsx"`);
     await wb.xlsx.write(res);
     res.end();
-  } catch (e) { fail(res, e); }
+  } catch (e) { next(e); }
 });
 
 // GET /api/tax-reports/vat/xml?year=2024&month=11
-router.get("/vat/xml", authenticate, authorize("ADMIN", "MANAGER"), async (req, res) => {
+router.get("/vat/xml", authenticate, authorize("ADMIN", "MANAGER"), async (req, res, next) => {
   try {
     const { year, month } = parsePeriod(req);
     const company = await prisma.companySettings.findFirst();
@@ -63,11 +82,11 @@ router.get("/vat/xml", authenticate, authorize("ADMIN", "MANAGER"), async (req, 
     res.setHeader("Content-Type", "application/xml; charset=UTF-8");
     res.setHeader("Content-Disposition", `attachment; filename="01-GTGT-${year}-${String(month).padStart(2,"0")}.xml"`);
     res.send(xml);
-  } catch (e) { fail(res, e); }
+  } catch (e) { next(e); }
 });
 
 // GET /api/tax-reports/bhxh/excel?year=2024&month=11
-router.get("/bhxh/excel", authenticate, authorize("ADMIN", "MANAGER"), async (req, res) => {
+router.get("/bhxh/excel", authenticate, authorize("ADMIN", "MANAGER"), async (req, res, next) => {
   try {
     const { year, month } = parsePeriod(req);
     const wb = await svc.exportBHXH(year, month);
@@ -75,7 +94,7 @@ router.get("/bhxh/excel", authenticate, authorize("ADMIN", "MANAGER"), async (re
     res.setHeader("Content-Disposition", `attachment; filename="D02-LT-${year}-${String(month).padStart(2,"0")}.xlsx"`);
     await wb.xlsx.write(res);
     res.end();
-  } catch (e) { fail(res, e); }
+  } catch (e) { next(e); }
 });
 
 module.exports = router;

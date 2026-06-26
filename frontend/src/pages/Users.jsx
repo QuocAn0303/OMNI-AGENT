@@ -1,28 +1,41 @@
+/**
+ * Frontend: pages/Users.jsx — Quản lý tài khoản người dùng
+ * 
+ * Tổng quan:
+ * - Trang quản lý user với phân quyền, khóa/mở khóa tài khoản
+ * - API: GET/POST/PUT /users
+ * - State: data, search/role filter, modal editing
+ * - Logic: Phân quyền SUPER_ADMIN/ADMIN có thể thấy tenant. Toggle isActive để khóa/mở
+ * 
+ * Components/Hooks/Exports:
+ * - Users (default export): Bảng user + modal thêm/sửa + toggle trạng thái
+ */
 import { useEffect, useState } from 'react';
 import useDebounce from '../hooks/useDebounce';
-import { Table, Input, Select, Button, Avatar, message, Modal, Form, Switch } from 'antd';
+import { Table, Input, Select, Button, Avatar, message, Modal, Form, Switch, Tag } from 'antd';
 import {
   SearchOutlined, PlusOutlined, EditOutlined, LockOutlined,
-  UserOutlined, MailOutlined,
+  UserOutlined, MailOutlined, CrownOutlined,
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import axios from '../api/axios';
+import { useAuthStore } from '../stores/authStore';
 import PageHeader from '../components/layout/PageHeader';
 import StatusTag from '../components/shared/StatusTag';
 import EmptyState from '../components/shared/EmptyState';
 
 const ROLE_LABELS = {
-  ADMIN:     { label: 'Admin',     color: '#7c3aed' },
-  MANAGER:   { label: 'Manager',   color: '#0284c7' },
-  CASHIER:   { label: 'Thu ngân',  color: '#0f766e' },
-  WAREHOUSE: { label: 'Kho',       color: '#ca8a04' },
+  SUPER_OMEGA_ULTRA_ADMIN: { label: 'Siêu Cấp Admin', color: '#dc2626' },
+  SUPER_ADMIN:             { label: 'Super Admin',     color: '#7c3aed' },
+  ADMIN:                   { label: 'Admin',           color: '#7c3aed' },
+  MANAGER:                 { label: 'Manager',         color: '#0284c7' },
+  CASHIER:                 { label: 'Thu ngân',        color: '#0f766e' },
+  WAREHOUSE:               { label: 'Kho',             color: '#ca8a04' },
 };
 
-/**
- * Users — Quản lý tài khoản (chỉ Admin)
- * Endpoints: GET/POST/PUT /users, PUT /users/:id/status
- */
 export default function Users() {
+  const user = useAuthStore((s) => s.user);
+  const isSuper = user?.role === 'SUPER_OMEGA_ULTRA_ADMIN' || user?.role === 'SUPER_ADMIN';
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -37,7 +50,10 @@ export default function Users() {
   const load = async () => {
     setLoading(true);
     try {
-      const res = await axios.get('/users', { params: { page, limit: 20, ...(debouncedSearch && { search: debouncedSearch }) } });
+      const params = { page, limit: 20 };
+      if (debouncedSearch) params.search = debouncedSearch;
+      if (roleFilter) params.role = roleFilter;
+      const res = await axios.get('/users', { params });
       setData(res.data?.data || []);
       setTotal(res.data?.pagination?.total || 0);
     } catch {
@@ -47,18 +63,17 @@ export default function Users() {
     }
   };
 
-  useEffect(() => { load(); }, [page, debouncedSearch]);
-  useEffect(() => { setPage(1); }, [debouncedSearch]);
+  useEffect(() => { load(); }, [page, debouncedSearch, roleFilter]);
+  useEffect(() => { setPage(1); }, [debouncedSearch, roleFilter]);
 
-  const displayData = roleFilter ? data.filter(u => u.role === roleFilter) : data;
-
-  const openModal = (user = null) => {
-    setEditing(user);
+  const openModal = (userData = null) => {
+    setEditing(userData);
     form.resetFields();
-    form.setFieldsValue(user
-      ? { ...user, password: undefined }
-      : { role: 'CASHIER', isActive: true }
-    );
+    if (userData) {
+      form.setFieldsValue({ ...userData, password: undefined });
+    } else {
+      form.setFieldsValue({ role: isSuper ? 'SUPER_ADMIN' : 'CASHIER', isActive: true });
+    }
     setModalOpen(true);
   };
 
@@ -66,7 +81,6 @@ export default function Users() {
     try {
       const values = await form.validateFields();
       if (editing) {
-        // Không gửi password nếu để trống
         if (!values.password) delete values.password;
         await axios.put(`/users/${editing.id}`, values);
         message.success('Đã cập nhật');
@@ -82,10 +96,10 @@ export default function Users() {
     }
   };
 
-  const handleToggleStatus = async (user) => {
+  const handleToggleStatus = async (u) => {
     try {
-      await axios.put(`/users/${user.id}`, { isActive: !user.isActive });
-      message.success(user.isActive ? 'Đã khóa tài khoản' : 'Đã mở khóa');
+      await axios.put(`/users/${u.id}`, { isActive: !u.isActive });
+      message.success(u.isActive ? 'Đã khóa tài khoản' : 'Đã mở khóa');
       load();
     } catch {
       message.error('Thao tác thất bại');
@@ -94,98 +108,56 @@ export default function Users() {
 
   const columns = [
     {
-      title: 'Người dùng',
-      dataIndex: 'fullName',
+      title: 'Người dùng', dataIndex: 'fullName',
       render: (name, row) => (
         <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
-          <Avatar
-            size={36}
-            style={{
-              background: ROLE_LABELS[row.role]?.color || 'var(--text-muted)',
-              fontWeight: 600,
-              fontSize: 13,
-            }}
-          >
+          <Avatar size={36} style={{ background: ROLE_LABELS[row.role]?.color || '#94a3b8', fontWeight: 600, fontSize: 13 }}>
             {(name || 'U').slice(0, 2).toUpperCase()}
           </Avatar>
           <div>
-            <div style={{ fontWeight: 500, color: 'var(--text-primary)' }}>
-              {name}
-            </div>
-            <div style={{ fontSize: 12, color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
-              {row.email}
-            </div>
+            <div style={{ fontWeight: 500, color: 'var(--text-primary)' }}>{name}</div>
+            <div style={{ fontSize: 12, color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>{row.email}</div>
           </div>
         </div>
       ),
     },
     {
-      title: 'Email',
-      dataIndex: 'email',
-      width: 220,
-      render: (v) => v || <span style={{ color: 'var(--text-muted)' }}>—</span>,
-    },
-    {
-      title: 'Vai trò',
-      dataIndex: 'role',
-      width: 110,
+      title: 'Vai trò', dataIndex: 'role', width: 150,
       filters: Object.entries(ROLE_LABELS).map(([k, v]) => ({ text: v.label, value: k })),
       onFilter: (val, row) => row.role === val,
       render: (role) => {
         const cfg = ROLE_LABELS[role] || { label: role, color: '#94a3b8' };
         return (
           <span style={{
-            display: 'inline-flex',
-            alignItems: 'center',
-            gap: 6,
-            padding: '2px 10px',
-            borderRadius: 'var(--radius-full)',
-            background: cfg.color + '15',
-            color: cfg.color,
-            fontSize: 12,
-            fontWeight: 500,
+            display: 'inline-flex', alignItems: 'center', gap: 6,
+            padding: '2px 10px', borderRadius: 'var(--radius-full)',
+            background: cfg.color + '15', color: cfg.color, fontSize: 12, fontWeight: 500,
           }}>
-            <span style={{
-              width: 6, height: 6,
-              borderRadius: '50%',
-              background: cfg.color,
-            }} />
+            <span style={{ width: 6, height: 6, borderRadius: '50%', background: cfg.color }} />
             {cfg.label}
           </span>
         );
       },
     },
+    ...(isSuper ? [{
+      title: 'Tenant', dataIndex: ['tenant', 'name'], key: 'tenant', width: 160,
+      render: (v, row) => v || (row.tenantId ? <Tag>{row.tenantId?.slice(0, 8)}</Tag> : <Tag color="blue">Hệ thống</Tag>),
+    }] : []),
     {
-      title: 'Trạng thái',
-      dataIndex: 'isActive',
-      width: 130,
+      title: 'Trạng thái', dataIndex: 'isActive', width: 110,
       render: (active) => <StatusTag status={active ? 'ACTIVE' : 'LOCKED'} />,
     },
     {
-      title: 'Đăng nhập cuối',
-      dataIndex: 'lastLoginAt',
-      width: 140,
-      render: (d) => d ? dayjs(d).format('DD/MM/YYYY HH:mm') : <span style={{ color: 'var(--text-muted)' }}>Chưa từng</span>,
+      title: 'Ngày tạo', dataIndex: 'createdAt', width: 140,
+      render: (d) => d ? dayjs(d).format('DD/MM/YYYY') : '-',
     },
     {
-      title: '',
-      width: 100,
-      align: 'right',
-      fixed: 'right',
+      title: '', width: 100, align: 'right', fixed: 'right',
       render: (_, row) => (
         <>
-          <Button
-            type="text" size="small"
-            icon={<EditOutlined />}
-            onClick={() => openModal(row)}
-          />
-          <Button
-            type="text" size="small"
-            danger={row.isActive}
-            icon={<LockOutlined />}
-            onClick={() => handleToggleStatus(row)}
-            title={row.isActive ? 'Khóa' : 'Mở khóa'}
-          />
+          <Button type="text" size="small" icon={<EditOutlined />} onClick={() => openModal(row)} />
+          <Button type="text" size="small" danger={row.isActive} icon={<LockOutlined />}
+            onClick={() => handleToggleStatus(row)} title={row.isActive ? 'Khóa' : 'Mở khóa'} />
         </>
       ),
     },
@@ -204,30 +176,19 @@ export default function Users() {
       />
 
       <div className="filters-bar">
-        <Input
-          className="filters-bar__search"
+        <Input className="filters-bar__search"
           placeholder="Tìm theo tên, email..."
           prefix={<SearchOutlined style={{ color: 'var(--text-muted)' }} />}
-          value={search}
-          onChange={(e) => setSearch(e.target.value)}
-          allowClear
+          value={search} onChange={(e) => setSearch(e.target.value)} allowClear
         />
-        <Select
-          placeholder="Vai trò"
-          style={{ width: 160 }}
-          value={roleFilter}
-          onChange={setRoleFilter}
-          allowClear
+        <Select placeholder="Vai trò" style={{ width: 180 }} value={roleFilter}
+          onChange={setRoleFilter} allowClear
           options={Object.entries(ROLE_LABELS).map(([k, v]) => ({ value: k, label: v.label }))}
         />
       </div>
 
       <div className="table-card">
-        <Table
-          columns={columns}
-          dataSource={displayData}
-          rowKey="id"
-          loading={loading}
+        <Table columns={columns} dataSource={data} rowKey="id" loading={loading}
           scroll={{ x: 900 }}
           pagination={{ current: page, pageSize: 20, total, showSizeChanger: false, onChange: (p) => setPage(p) }}
           locale={{ emptyText: <EmptyState title="Chưa có tài khoản" /> }}
@@ -239,33 +200,21 @@ export default function Users() {
         open={modalOpen}
         onCancel={() => setModalOpen(false)}
         onOk={handleSave}
-        okText="Lưu"
-        cancelText="Hủy"
+        okText="Lưu" cancelText="Hủy"
         width={480}
       >
         <Form form={form} layout="vertical" size="large" style={{ marginTop: 16 }}>
-          <Form.Item
-            label="Họ và tên"
-            name="fullName"
-            rules={[{ required: true, message: 'Vui lòng nhập họ tên' }]}
-          >
+          <Form.Item label="Họ và tên" name="fullName" rules={[{ required: true, message: 'Vui lòng nhập họ tên' }]}>
             <Input prefix={<UserOutlined style={{ color: 'var(--text-muted)' }} />} placeholder="Nguyễn Văn A" />
           </Form.Item>
 
-          <Form.Item
-            label="Email"
-            name="email"
-            rules={[
-              { required: !editing, message: 'Vui lòng nhập email' },
-              { type: 'email', message: 'Email không hợp lệ' },
-            ]}
+          <Form.Item label="Email" name="email"
+            rules={[{ required: !editing, message: 'Vui lòng nhập email' }, { type: 'email', message: 'Email không hợp lệ' }]}
           >
             <Input prefix={<MailOutlined style={{ color: 'var(--text-muted)' }} />} placeholder="email@..." />
           </Form.Item>
 
-          <Form.Item
-            label={editing ? 'Mật khẩu mới (để trống nếu không đổi)' : 'Mật khẩu'}
-            name="password"
+          <Form.Item label={editing ? 'Mật khẩu mới (để trống nếu không đổi)' : 'Mật khẩu'} name="password"
             rules={editing ? [] : [{ required: true, min: 6, message: 'Mật khẩu tối thiểu 6 ký tự' }]}
           >
             <Input.Password placeholder="••••••••" />

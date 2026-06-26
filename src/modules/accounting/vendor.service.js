@@ -1,3 +1,19 @@
+/**
+ * modules/accounting/vendor.service.js — Service quản lý nhà cung cấp
+ * 
+ * Tổng quan:
+ * - CRUD nhà cung cấp (Vendor) với soft delete (isActive).
+ * - Tự động sinh mã NCC nếu không được cung cấp.
+ * - Hỗ trợ tìm kiếm theo tên, mã, số điện thoại, mã số thuế.
+ * 
+ * Hàm:
+ * - generateCode(): Sinh mã vendor dạng NCC-XXXX.
+ * - list({page, limit, search}): Danh sách vendor có phân trang và tìm kiếm (isActive=true).
+ * - getById(id): Chi tiết vendor kèm 10 expense và 10 purchase order gần nhất.
+ * - create(data): Tạo vendor; dùng withCodeRetry nếu không có code.
+ * - update(id, data): Cập nhật thông tin vendor.
+ * - remove(id): Vô hiệu hóa vendor (soft delete).
+ */
 // src/modules/accounting/vendor.service.js
 const prisma = require("../../config/prisma");
 const { withCodeRetry } = require("./journal.service");

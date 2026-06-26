@@ -1,3 +1,16 @@
+/**
+ * Page: Audit — Lịch sử thao tác hệ thống (Admin only)
+ *
+ * Tổng quan:
+ * - Hiển thị audit log với bảng danh sách các hành động CREATE/UPDATE/DELETE/LOGIN/LOGOUT/EXPORT
+ * - Gọi API: GET /audit với phân trang
+ * - Bộ lọc: tìm kiếm theo user/entity/mô tả, lọc theo hành động, khoảng thời gian
+ * - Drawer chi tiết hiển thị đầy đủ thông tin: thời gian, người dùng, IP, changes JSON
+ * - Sử dụng EmptyState khi chưa có bản ghi
+ *
+ * Exports:
+ * - Audit: React functional component (default export)
+ */
 import { useEffect, useState, useMemo } from 'react';
 import useDebounce from '../hooks/useDebounce';
 import { Table, Input, Select, DatePicker, Drawer, message } from 'antd';

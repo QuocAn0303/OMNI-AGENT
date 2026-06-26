@@ -1,5 +1,15 @@
-// frontend/src/pages/Finance.jsx
-// Sức khỏe tài chính - Dashboard cho founder
+/**
+ * Frontend: pages/Finance.jsx — Sức khỏe tài chính (Founder Dashboard)
+ * 
+ * Tổng quan:
+ * - Dashboard tổng quan tài chính dành cho founder: tiền mặt, runway, doanh thu, lãi/lỗ
+ * - Gọi API getFounderDashboard() khi mount, hiển thị KPIs, cảnh báo, P&L, top chi phí, công nợ
+ * - State: loading/error/data — tự quản lý bằng useState, không dùng store
+ * 
+ * Components/Hooks/Exports:
+ * - Finance (default): Page chính, render các Statistic, Card, Alert
+ * - PnLRow: Component con hiển thị một dòng trong báo cáo lãi/lỗ
+ */
 import { useEffect, useState } from "react";
 import { Card, Col, Row, Spin, Alert, Tag, Statistic, Table, Empty } from "antd";
 import {
@@ -13,6 +23,7 @@ import {
   ClockCircleOutlined,
 } from "@ant-design/icons";
 import PageHeader from "../components/layout/PageHeader";
+
 import { getFounderDashboard } from "../api/accounting";
 
 const fmtVND = (v) => Number(v || 0).toLocaleString("vi-VN") + "đ";
