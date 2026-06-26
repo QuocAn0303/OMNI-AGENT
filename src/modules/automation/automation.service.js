@@ -217,6 +217,19 @@ const debtAutoCollection = async () => {
         meta: { debtId: debt.id, level: "upcoming", daysLeft },
       });
 
+      // Send Zalo reminder to customer
+      if (debt.customer?.phone) {
+        try {
+          const zalo = require("../../utils/zalo");
+          zalo.sendDebtReminder({
+            name: debt.customer.name,
+            phone: debt.customer.phone,
+            debtAmount: remaining,
+            dueDate: debt.dueDate,
+          }).catch(() => {});
+        } catch (_) {}
+      }
+
       if (debt.customer?.id) {
         await prisma.customerNote.create({
           data: {
@@ -326,6 +339,17 @@ const onOrderCompleted = async (order, userId) => {
           console.error(`${LOG} onOrderCompleted auto-reorder error:`, e.message)
         );
       }, 1000);
+    }
+
+    // Send Zalo notification to customer
+    if (order.customer?.phone) {
+      try {
+        const zalo = require("../../utils/zalo");
+        zalo.sendOrderStatusUpdate(
+          order.customer.name, order.customer.phone,
+          order.orderCode, "COMPLETED"
+        ).catch(() => {});
+      } catch (_) {}
     }
   } catch (err) {
     console.error(`${LOG} onOrderCompleted error:`, err.message);

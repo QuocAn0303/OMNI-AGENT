@@ -466,6 +466,25 @@ router.post("/fiscal-periods/lock", authorize("ADMIN"), async (req, res, next) =
 
 const periodCloseService = require("./period-close.service");
 
+/**
+ * @swagger
+ * /api/accounting/fiscal-periods/period-close:
+ *   post:
+ *     tags: [Accounting]
+ *     summary: Kết chuyển cuối kỳ — close revenue, expenses, profit/loss
+ *     security: [{bearerAuth: []}]
+ *     requestBody:
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               year: { type: number }
+ *               month: { type: number }
+ *     responses:
+ *       200:
+ *         description: Success
+ */
 router.post("/fiscal-periods/period-close", authorize("ADMIN"), async (req, res, next) => {
   try {
     const { year, month } = req.body;

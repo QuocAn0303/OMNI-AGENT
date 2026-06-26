@@ -268,6 +268,7 @@ const MENU_GROUPS = [
     roles: ["ADMIN", "MANAGER"],
     items: [
       { key: "/finance", icon: <FundOutlined />, label: "Sức khỏe TC" },
+      { key: "/accounting-reports", icon: <FileTextOutlined />, label: "Sổ sách kế toán" },
       {
         key: "/debts",
         icon: <SwapOutlined />,

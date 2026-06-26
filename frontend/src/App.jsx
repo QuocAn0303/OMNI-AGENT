@@ -47,6 +47,7 @@ const Analytics = lazy(() => import("./pages/Analytics"));
 const HR = lazy(() => import("./pages/hr/HR"));
 const Users = lazy(() => import("./pages/Users"));
 const Finance = lazy(() => import("./pages/Finance"));
+const AccountingReports = lazy(() => import("./pages/AccountingReports"));
 const Expenses = lazy(() => import("./pages/Expenses"));
 const Vendors = lazy(() => import("./pages/Vendors"));
 const PurchaseOrders = lazy(() => import("./pages/PurchaseOrders"));
@@ -248,6 +249,7 @@ function App() {
                 <Route path="/debts" element={<Debts />} />
                 <Route path="/reports" element={<Reports />} />
                 <Route path="/finance" element={<Finance />} />
+                <Route path="/accounting-reports" element={<AccountingReports />} />
                 <Route path="/einvoice" element={<EInvoice />} />
                 <Route path="/tax-reports" element={<TaxReports />} />
                 <Route path="/bank-reco" element={<BankReco />} />
