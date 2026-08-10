@@ -8,5 +8,6 @@ export default defineConfig({
   earlyAccess: true,
   datasource: {
     url: process.env.DATABASE_URL,
+    shadowDatabaseUrl: process.env.SHADOW_DATABASE_URL || `${process.env.DATABASE_URL?.replace('erp_db', 'erp_shadow')}`,
   },
 });

@@ -1,56 +1,65 @@
 # Aduu ERP
 
-Tổng quan: **Aduu ERP** là hệ thống hoạch định nguồn lực doanh nghiệp (ERP) cho doanh nghiệp bán lẻ + dịch vụ + sản xuất nhỏ và vừa. Backend Node.js + Express + Prisma + PostgreSQL, frontend React + Vite + Ant Design. Mục tiêu: quản lý sản phẩm, kho, đơn hàng, khách hàng, kế toán, nhân sự, marketing/CRM, dự án, sản xuất và báo cáo trong cùng 1 hệ thống.
+**Aduu ERP** — Hệ thống hoạch định nguồn lực doanh nghiệp **SaaS multi-tenant** cho doanh nghiệp bán lẻ + F&B + dịch vụ + sản xuất nhỏ và vừa, **tối ưu cho thị trường Việt Nam**. Backend Node.js + Express + Prisma 7 (133 models, 59 enums) + PostgreSQL, frontend React 19 + Vite + Ant Design 6. Mục tiêu: giúp chủ shop mới mở quản lý sản phẩm, kho, đơn hàng, khách hàng, kế toán, nhân sự một cách đơn giản — **không cần biết kế toán**.
 
 **Kiến trúc & Stack**
 
-- Backend: Node.js, Express, Prisma 7 (PostgreSQL), Zod, bcrypt, JWT, Socket.IO, node-cron, Winston, Sentry
-- Frontend: React 19, Vite, Ant Design 6, Zustand, Axios, React Router 7
+- Backend: Node.js, Express, Prisma 7 (PostgreSQL, 133 models, 59 enums), Zod, JWT, Socket.IO + Redis, node-cron, Winston
+- Frontend: React 19, Vite, Ant Design 6, Zustand, Axios, Recharts, React Router 7
 - Storage: Cloudinary (ảnh sản phẩm)
-- Docs: Swagger (mở tại `/api-docs`)
-- Test: Jest
-- Deploy: Dockerfile (Railway auto deploy + migrate)
+- Auth: JWT access token + refresh token, role-based (7 roles), hỗ trợ impersonate session
+- Docs: Swagger UI tại `/api-docs` (dev only)
+- Test: Jest + setup mock Prisma
+- Deploy: Docker multi-stage (Railway auto deploy + migrate), Docker Compose (PostgreSQL + Redis)
 
 **Tính năng chính**
 
-- Xác thực: JWT + refresh token, role-based (SUPER_OMEGA_ULTRA_ADMIN / SUPER_ADMIN / ADMIN / MANAGER / CASHIER / WAREHOUSE)
+- **54 modules backend** — phủ toàn bộ nghiệp vụ doanh nghiệp VN
+- Xác thực: JWT + refresh token, role-based (7 roles: SUPER_OMEGA_ULTRA_ADMIN / SUPER_ADMIN / ADMIN / MANAGER / **ACCOUNTANT** / CASHIER / WAREHOUSE)
+- **Landing page công khai** tại `/`: hero, feature cards, steps, pricing preview
+- **Onboarding Wizard thông minh**: 6 bước — chọn ngành (13 templates: quần áo, tạp hóa, cafe, điện thoại...), nhập thông tin shop, tạo kho, thêm danh mục, thêm nhân viên, chọn thanh toán. Tự động seed dữ liệu mẫu theo ngành
+- **Chế độ Đơn giản (Beginner Mode)**: mặc định bật cho shop mới, chỉ hiện Trang chủ, Bán hàng, Đơn hàng, Sản phẩm, Tồn kho, Khách hàng. Có nút bật/tắt trong Sidebar
 - Quản lý sản phẩm & danh mục, upload ảnh Cloudinary
 - Quản lý đa kho, tồn kho, giao dịch kho, chuyển kho, kiểm kê
-- Quản lý đơn hàng + hóa đơn PDF, POS quét barcode
-- Trả hàng + hoàn tiền, thanh toán (cash/card/transfer/momo)
-- Khách hàng 360°, phân khúc (rule-based), notes, nhiệm vụ CSKH
-- Quản lý Tag Khách hàng: Từ điển Thẻ phân loại (Category), mã màu Hex chuẩn CRM
+- Quản lý đơn hàng + hóa đơn PDF, **POS quét barcode + camera**, giao diện tối ưu mobile
+- **In bill nhiệt Bluetooth**: ESC/POS qua Web Bluetooth API (K80/Xprinter/Epson)
+- **Offline Mode (POS ngoại tuyến)**: IndexedDB queue, auto-sync khi online
+- Trả hàng + hoàn tiền, thanh toán (cash/card/transfer/momo/QR)
+- Khách hàng 360°, phân khúc (rule-based), notes, nhiệm vụ CSKH, tags màu sắc
 - Marketing: chiến dịch Email + Zalo OA, tracking delivery
-- Loyalty: tích điểm, hạng thành viên (BRONZE/SILVER/GOLD/PLATINUM)
-- Khuyến mãi: engine tính giảm giá (%, fixed, buy X get Y)
+- Loyalty: tích điểm, hạng thành viên (BRONZE/SILVER/GOLD/PLATINUM), stamp card F&B
+- Khuyến mãi: engine giảm giá (%, fixed, buy X get Y, category, product, free ship)
 - Giao hàng: tích hợp GHTK / GHN / VNPOST / Viettel / J&T
-- Nhân sự: nhân viên, chấm công 3 ca, payroll, vi phạm, khóa kỳ lương
-- Kế toán đầy đủ: double-entry, Chart of Accounts (~33 TK), autopost 12 sự kiện, sổ nhật ký chung, sổ cái (có TK đối ứng), sổ chi tiết theo đối tượng, bảng CĐSPS 6 cột, B01-DN (Bảng CĐKT chuẩn TT200), B02-DN (KQKD 16 dòng), B03-DN (LCTT), kết chuyển cuối kỳ tự động (doanh thu → chi phí → lãi/lỗ), phân bổ chi phí trả trước (TK 242), khấu hao TSCĐ hàng tháng, thuế TNDN tạm tính quý, định giá hàng tồn kho, kỳ kế toán (mở/đóng/khóa), outbox retry lỗi bút toán
+- Nhân sự: nhân viên, chấm công 3 ca, payroll (+ PIT/BHXH), vi phạm, khóa kỳ lương, nghỉ phép + workflow
+- Kế toán đầy đủ: double-entry, Chart of Accounts (~33 TK), autopost 12 sự kiện, sổ nhật ký chung, sổ cái (có TK đối ứng), sổ chi tiết theo đối tượng, bảng CĐSPS 6 cột, B01-DN, B02-DN, B03-DN, kết chuyển cuối kỳ, phân bổ 242, khấu hao TSCĐ, CIT tạm tính quý, định giá hàng tồn kho, kỳ kế toán, outbox retry. **Giao diện tiếng Việt đầy đủ**
 - Công nợ phải thu/phải trả, chi phí (+ định kỳ), thuế, nhà cung cấp, đơn mua hàng
-- Quản lý dự án: dự án, công việc, thành viên, tiến độ, **timesheet (chấm công theo task)**
-- Quản lý sản xuất: BOM (đa cấp + resolver), lệnh sản xuất, tự cập nhật kho khi hoàn thành, **Lot/Serial/Expiry tracking, Work Center, Routing (định tuyến công đoạn), Quality Check (QC pass/fail)**
-- **Hóa đơn điện tử (E-Invoice)**: tích hợp VNPT adapter — phát hành, hủy, tra cứu mã CQT
-- **Báo cáo thuế HTKK**: tờ khai GTGT (01/GTGT), TNCN (05/KK-TNCN), BHXH (D02-LT) — xuất XML đúng schema HTKK + Excel
-- **PIT / BHXH**: tính thuế thu nhập cá nhân + bảo hiểm xã hội cho payroll
-- **Đối soát ngân hàng (Bank Reconciliation)**: import sao kê VCB / TCB, auto-match với JournalEntry, điều chỉnh chênh lệch
-- **Tài sản cố định (Fixed Assets)**: quản lý TSCĐ + cron tự động khấu hao tháng (straight-line) + autopost bút toán
-- **Đa tiền tệ (Multi-currency)**: Currency master, tỷ giá theo ngày, quy đổi VND ↔ USD/EUR/...
-- **Marketplace integration**: adapter Shopee / Lazada / TikTok (stub sẵn cho API key thật)
-- **Report Builder**: query builder an toàn (whitelist bảng + cột, parameterized) cho người dùng tự dựng báo cáo
-- **Workflow / Approval**: 9 triggers (EXPENSE_ABOVE, PO_ABOVE, LEAVE_REQUEST, CUSTOM, PAYMENT_APPROVAL, DISCOUNT_APPROVAL, RETURN_APPROVAL, CONTRACT_APPROVAL, ADVANCE_APPROVAL) + nhiều bước duyệt + auto-approve entity khi hoàn tất
-- **Customer Self-service Portal**: KH đăng nhập OTP, xem đơn hàng / công nợ / hóa đơn / điểm loyalty, tự đặt hàng B2B, thanh toán VietQR
+- Quản lý dự án: dự án, công việc, thành viên, timesheet, hóa đơn dự án
+- Quản lý sản xuất: BOM đa cấp + resolver, lệnh sản xuất, Lot/Serial/Expiry, Work Center, Routing, Quality Check
+- Hóa đơn điện tử (E-Invoice): VNPT adapter — phát hành, hủy, tra cứu mã CQT
+- Báo cáo thuế HTKK: 01/GTGT, 05/KK-TNCN, D02-LT (BHXH) — xuất XML + Excel
+- **Đối soát ngân hàng**: import sao kê VCB/TCB/MB/BIDV, auto-match + thủ công, tạo bút toán điều chỉnh
+- Tài sản cố định: quản lý TSCĐ + cron khấu hao tháng (straight-line) + autopost
+- Đa tiền tệ: Currency master, tỷ giá theo ngày, quy đổi
+- **Marketplace**: adapter Shopee/TikTok, pull orders → tự động tạo đơn ERP, push inventory
+- Report Builder: query builder an toàn, whitelist bảng + cột
+- Workflow / Approval: 9 triggers + nhiều bước duyệt + auto-approve
+- Customer Portal: KH đăng nhập OTP, xem đơn/công nợ/hóa đơn/loyalty, đặt hàng B2B, VietQR
 - Báo cáo & Dashboard, Analytics (xu hướng, RFM khách hàng)
-- Audit log: ghi lịch sử thao tác đầy đủ (ai, làm gì, lúc nào, before/after) — tenant-scoped: ADMIN/SUPER_ADMIN chỉ thấy log trong tenant của mình, SUPER_OMEGA_ULTRA_ADMIN thấy toàn bộ
+- Audit log: tenant-scoped, ghi lịch sử thao tác đầy đủ
+- **Trợ lý Kinh doanh (Smart Guide)**: gợi ý giá bán, nhập hàng, điểm sức khỏe DN 0-100
+- AI Agent: chat NL → 20+ tool DB; human-gate; proactive briefing; anomaly detection
+- Automation Flows: auto-reorder, auto-payroll, debt-collection, auto-invoice, bank-reco auto-match
+- **Chatbot AI**: tích hợp Qwen 2.5 (1.5B + LoRA) / OpenAI, RAG, 17 tools
+- **F&B Module**: sơ đồ bàn, KDS, QR ordering, đơn đa kênh (GrabFood/ShopeeFood/BeFood), AI dự báo
+- Subscription / Billing: gói dịch vụ, thuê bao tenant, hóa đơn định kỳ, PayOS, plan enforcement
+- Support Access Session: SUPER_OMEGA_ULTRA_ADMIN impersonate tenant
+- **Help/FAQ**: 18 câu hỏi, 6 danh mục, search + collapse
+- **PWA**: Service Worker, cài đặt như app, offline mode, manifest tiếng Việt
 - Thông báo real-time (Socket.IO + Redis adapter)
-- **AI Agent** (nhân viên ảo): chat NL → tạo đơn hàng, tạo PO, nhắc nợ, tra cứu 17 tool DB; human-gate phê duyệt; proactive briefing sáng + anomaly detection
-- **Automation Flows**: auto-reorder (tồn thấp → PO), auto-payroll (25 hàng tháng), auto-debt-collection (3 cấp nhắc nợ), auto-invoice PDF, bank-reco auto-match định kỳ
-- Email xác minh khi đăng ký: gửi link kích hoạt qua SMTP (Gmail App Password), fallback console.log nếu chưa cấu hình
-- Bulk import dữ liệu, onboarding wizard
-- Cron jobs: hủy đơn quá hạn, nhắc công nợ, nhắc lương, nhắc đóng kỳ
-- **Subscription / Billing**: quản lý gói dịch vụ (SubscriptionPlan), gán/thuê bao cho tenant (TenantSubscription), tạo hóa đơn định kỳ (SubscriptionInvoice), theo dõi thanh toán — SUPER_OMEGA_ULTRA_ADMIN bán gói cho các tenant
-- **Support Access Session**: SUPER_OMEGA_ULTRA_ADMIN tạo phiên hỗ trợ để impersonate ADMIN của tenant, có audit trail đầy đủ
-- **Plan Enforcement Middleware**: kiểm tra giới hạn gói (maxUsers, maxWarehouses, maxProducts) khi tạo mới — chặn nếu vượt quota
-- API docs (Swagger)
+- 14 cron jobs: Morning Briefing, anomaly detection, debt auto-collection, payroll, depreciation...
+- Trung tâm Tích hợp: UI cấu hình VNPT/Cloudinary/SMS/SMTP, mã hóa AES-256-GCM
+- Email xác minh khi đăng ký, bulk import Excel/CSV
+- Multi-tenant isolation: Prisma $extends + AsyncLocalStorage (115 models auto-scope)
 
 **Mô hình dữ liệu (tóm tắt)**
 
@@ -154,7 +163,7 @@ erp-system/
 │   └── agent-handlers.test.js         # Test AI agent tools + intent resolution
 │
 ├── prisma/                      # Prisma ORM — schema, migration, seeder
-│   ├── schema.prisma            # Định nghĩa toàn bộ mô hình dữ liệu (~50 models)
+│       ├── schema.prisma            # Định nghĩa toàn bộ mô hình dữ liệu (133 models, 59 enums)
 │   ├── seed.js                  # Seeder chính — tạo admin (admin@erp.com / admin123)
 │   ├── seed_accounting.js       # Seeder hệ thống tài khoản kế toán (Chart of Accounts)
 │   ├── seed_accounting_demo.js  # Seeder dữ liệu demo bút toán, giao dịch kế toán
@@ -485,6 +494,7 @@ erp-system/
         │
         ├── api/                         # Gọi API backend
         │   ├── axios.js                 #   Axios instance: base URL, interceptor JWT auto-refresh
+        │   ├── qrAxios.js               #   Axios public cho QR ordering PWA (không interceptor JWT)
         │   ├── accounting.js            #   API kế toán: sổ cái, bút toán, báo cáo tài chính
         │   ├── debts.js                 #   API công nợ: danh sách, thanh toán, nhắc nợ
         │   ├── notifications.js         #   API thông báo: đọc, đếm chưa đọc
@@ -603,6 +613,18 @@ erp-system/
             ├── Approvals.jsx            #   🆕 Duyệt workflow — pending approvals + lịch sử runs
             ├── LotTracking.jsx          #   Tracking lot/serial/hạn dùng cho sản phẩm
             ├── Integrations.jsx         #   Trung tâm tích hợp — UI cấu hình VNPT / Cloudinary / SMS / SMTP + Test connection
+            ├── Invoices.jsx             #   Hóa đơn bán hàng — danh sách + PDF + gửi mail
+            ├── DeliveryManagement.jsx   #   Vận chuyển — theo dõi đơn GHTK/GHN/VNPOST/Viettel/J&T
+            ├── Promotions.jsx           #   Khuyến mãi — PERCENTAGE/FIXED/BUY_X_GET_Y theo lịch
+            ├── ModifierGroups.jsx       #   Nhóm tùy chọn món (thêm topping, size) + option
+            ├── Combos.jsx               #   Combo — gộp sản phẩm thành 1 combo
+            ├── Recipes.jsx              #   Công thức món — nguyên liệu + định mức (COGS)
+            ├── LoyaltyRules.jsx         #   Quy tắc tích điểm khách hàng thân thiết
+            ├── StampCards.jsx           #   Thẻ tích điểm F&B — template earn/redeem
+            ├── Printers.jsx             #   Cấu hình máy in bill ESC/POS
+            ├── QrOrderingSetup.jsx      #   Cấu hình QR đặt món — tạo QR bàn + xem trước menu
+            ├── QrOrderingPage.jsx       #   PWA khách hàng /q/:qrToken — menu, modifier, đặt món, tracking, VietQR (không cần đăng nhập)
+            ├── PortalSettings.jsx       #   Cấu hình Customer Portal (tên, logo, màu sắc)
             │
             ├── HR.jsx                   #   Module Nhân sự — tabs: danh sách NV, chấm công, lương
             ├── AgentAnalytics.jsx       #   AI Agent analytics dashboard
@@ -611,6 +633,12 @@ erp-system/
             │   ├── EmployeeList.jsx     #     Danh sách nhân viên — thêm, sửa, nghỉ việc
             │   ├── Attendance.jsx       #     Chấm công — check-in/out, thống kê
             │   └── Payroll.jsx          #     Bảng lương — tính lương, phụ cấp, khấu trừ
+            │
+            ├── fnb/                     #   Module F&B
+            │   ├── Floor.jsx            #     Sơ đồ bàn — CRUD Area + DinerTable, mở/chuyển/tách/gộp bàn
+            │   ├── Kds.jsx              #     Kitchen Display — station CRUD, ticket bump/recall/void
+            │   ├── OrderInbox.jsx       #     Đơn kênh bên thứ 3 — GrabFood/ShopeeFood/GoFood/BeFood + webhook URL
+            │   └── AiForecast.jsx       #     AI dự báo nhu cầu + menu engineering
             │
             ├── projects/                #   Module Quản lý dự án
             │   ├── Projects.jsx         #     Danh sách dự án + 4 stat cards (Tổng/Đang chạy/Hoàn thành/Quá hạn)
@@ -703,8 +731,11 @@ Mở `.env` và **điền tối thiểu các biến sau** (những biến còn l
 PORT=4000
 NODE_ENV=development
 DATABASE_URL="postgresql://postgres:uit@localhost:5432/erp_db?schema=public"
+# Production: thêm ?sslmode=require vào DATABASE_URL để mã hóa kết nối DB
 JWT_SECRET=hay_doi_thanh_chuoi_ngau_nhien_dai_32_ky_tu_tro_len
-JWT_EXPIRES_IN=7d
+JWT_EXPIRES_IN=1h
+REFRESH_TOKEN_EXPIRES_DAYS=7
+BCRYPT_ROUNDS=10
 
 # --- CORS / Frontend ---
 CORS_ORIGIN=http://localhost:5173
@@ -714,11 +745,8 @@ CLIENT_URL=http://localhost:5173
 # Nếu không có Redis, code sẽ fallback sang in-memory nhưng log sẽ spam ECONNREFUSED.
 REDIS_URL=redis://127.0.0.1:6379
 
-# --- Bcrypt ---
-BCRYPT_ROUNDS=10
-
 # --- Encryption key cho Integration Center (≥ 32 ký tự ngẫu nhiên) ---
-# Nếu để trống sẽ derive từ JWT_SECRET — KHÔNG khuyến nghị cho production.
+# BẮT BUỘC ở production. Sinh key: node -e "console.log(require('crypto').randomBytes(32).toString('hex'))"
 ENCRYPTION_KEY=hay_doi_thanh_chuoi_ngau_nhien_dai_32_ky_tu_tro_len
 
 # --- Tuỳ chọn: Cloudinary (chỉ cần khi upload ảnh sản phẩm) ---
@@ -980,6 +1008,18 @@ docker start erp-redis      # khởi động lại Redis
 /api/llm                          # LLM proxy (Qwen 2.5 OpenAI-compatible)
 /api/vietqr                       # VietQR payment webhook (Casso/SePay/PayOS)
 /api/hr/leave                     # Nghỉ phép — tạo yêu cầu + workflow duyệt
+# F&B (chỉ hiện khi businessTemplate là F&B)
+/api/menu                         # modifier groups, variants, combos, happy-hour
+/api/tables                       # areas, tables, sessions, merge/split/transfer
+/api/kds                          # KDS stations + tickets (bump/recall/void)
+/api/printers                     # ESC/POS printer config
+/api/qr-ordering                  # public QR ordering (không auth, Zod validated)
+/api/payment-gateway              # Momo/VNPay/ZaloPay create + webhooks
+/api/food-delivery                # GrabFood/ShopeeFood/BeFood inbox
+/api/recipes                      # recipe + COGS + auto-deduct
+/api/stamp-cards                  # loyalty stamp card
+/api/ai-forecast                  # dự báo nhu cầu + menu engineering
+/api/petty-cash                   # quỹ tiền mặt (chế độ HKD)
 ```
 
 Chi tiết tham số từng endpoint: xem Swagger tại `/api-docs`.
@@ -1027,13 +1067,60 @@ Dockerfile có sẵn — chỉ cần push lên GitHub, Railway tự build & depl
 
 ---
 
-## 📝 Chú ý bảo mật & gợi ý
+## 🔐 Bảo mật & Bảo vệ dữ liệu doanh nghiệp
 
-- **Không commit `.env`** — chỉ commit `.env.example`
-- **`JWT_SECRET` ≥ 32 ký tự ngẫu nhiên**, không tái sử dụng giữa các môi trường
-- Kiểm tra và bảo mật các khóa Cloudinary / OpenAI / Sentry trước khi deploy
-- Khi đổi `schema.prisma`: chạy `npx prisma migrate dev --name <ten-mo-ta>` để tạo migration mới
-- Cổng mặc định server là `4000` (tự tăng nếu bị chiếm) — đồng bộ với `CORS_ORIGIN`, `VITE_API_URL` nếu thay đổi
+Hệ thống đã được hardening đầy đủ cho production với dữ liệu doanh nghiệp:
+
+### Multi-tenant Isolation (CRITICAL)
+- **Prisma `$extends` + AsyncLocalStorage**: tự động inject `tenantId` vào mọi query (findMany, create, update, delete) — 115 business models được auto-scope
+- Tenant A **không thể** xem/sửa dữ liệu Tenant B qua API
+- `SUPER_OMEGA_ULTRA_ADMIN` bypass scoping (xem tất cả tenant)
+- Public routes (QR ordering) set tenant context thủ công từ resource's tenantId
+- File: `config/prisma.js`, `config/tenantContext.js`, `middleware/auth.middleware.js`
+
+### Auth & Session
+- **JWT access token**: 1h (HS256, algorithm restrict — không bypass "none")
+- **Refresh token**: 7 ngày, **hash SHA256** trước khi lưu DB (không plaintext)
+- **Refresh token rotation**: mỗi lần refresh → revoke token cũ + tạo mới
+- **Password policy**: tối thiểu 8 ký tự, bắt buộc 1 chữ hoa + 1 chữ số (register + changePassword)
+- **Bcrypt** hash password (10 rounds)
+- **DB check trong authenticate**: reject 503 nếu DB fail (không allow-through)
+- **Login generic error**: "Email hoặc mật khẩu không đúng" (không user enumeration)
+- File: `auth.service.js`, `auth.validation.js`, `auth.middleware.js`
+
+### Webhook Security
+- **Raw body verification**: `express.raw` cho payment-gateway webhooks (Momo/VNPay/ZaloPay)
+- **HMAC signature verify**: đúng thuật toán từng provider (Momo SHA256, VNPay SHA512, ZaloPay SHA256)
+- **Reject khi chưa cấu hình**: production `return false` (không `return true` như cũ)
+- File: `payment-gateway.routes.js`, `payments/providers/*.adapter.js`
+
+### PII Protection
+- **PII masking**: CASHIER/WAREHOUSE thấy `09***5678`, `n***@email.com` cho phone/email/taxCode
+- ADMIN/MANAGER/ACCOUNTANT xem full (cần cho kế toán, CRM)
+- File: `utils/piiMask.js`, `customer.routes.js`
+
+### Infrastructure
+- **ENCRYPTION_KEY**: AES-256-GCM cho IntegrationConfig secrets — crash nếu thiếu ở production
+- **helmet**: security headers (X-Content-Type-Options, X-Frame-Options, etc.)
+- **hpp**: HTTP Parameter Pollution protection
+- **Rate limiting**: global 100 req/min, login 5/min, AI 10/min
+- **Body limit**: 100kb
+- **File upload**: multer fileFilter — chỉ ảnh (JPEG/PNG/WebP/SVG) hoặc Excel/CSV
+- **CORS**: single-origin + credentials
+- **No raw SQL injection**: 0 `$queryRawUnsafe` với user input (chỉ static "SELECT 1")
+- **xss-clean removed**: deprecated, dựa vào Zod validation + helmet
+
+### Audit Trail
+- **AuditLog** cho: LOGIN, CHANGE_PASSWORD, REGISTER, CREATE/UPDATE/DELETE Order/Product/Customer/Vendor
+- Tenant-scoped: user chỉ xem audit log của tenant mình
+- File: `audit/audit.service.js`
+
+### Lưu ý production
+- **Không commit `.env`** — đã gitignored, kiểm tra `git log --all -- .env`
+- **DB SSL**: thêm `?sslmode=require` vào DATABASE_URL
+- **Rotate secrets**: `ENCRYPTION_KEY`, `JWT_SECRET` định kỳ
+- **Backup DB**: setup `pg_dump` cron hoặc managed backup
+- **HTTPS**: đảm bảo reverse proxy (nginx) terminate TLS
 
 ---
 
@@ -1506,6 +1593,167 @@ ENCRYPTION_KEY=chuoi_ngau_nhien_dai_>=_32_ky_tu
 
 ---
 
+### 🍜 15. F&B — Chế độ nhà hàng / Cafe / Fast-food / Bar
+
+**Mục đích**: chuyển ERP từ chế độ bán lẻ thuần (retail) sang F&B với sơ đồ bàn, order tại bàn, KDS, QR ordering, thanh toán đa kênh.
+
+#### Chọn loại hình kinh doanh (Business Vertical)
+
+Hệ thống hỗ trợ **13 loại hình** — 4 loại F&B và 9 loại retail. Khi chọn F&B, sidebar tự động hiện thêm menu F&B (Sơ đồ bàn, KDS, Đơn đa kênh, AI Dự báo). Retail thì ẩn các menu này.
+
+| Key | Label | Loại | Menu F&B? |
+|---|---|---|---|
+| `cafe` | Quán Cafe / Đồ uống | F&B | ✅ |
+| `nha_hang` | Quán ăn / Nhà hàng | F&B | ✅ |
+| `do_an_nhanh` | Đồ ăn nhanh / Fast-food | F&B | ✅ |
+| `bar_pub` | Bar / Pub / Quán nước | F&B | ✅ |
+| `quan_ao` | Quần áo / Thời trang | Retail | ❌ |
+| `tap_hoa` | Tạp hóa / Siêu thị mini | Retail | ❌ |
+| `dien_thoai` | Điện thoại / Điện tử | Retail | ❌ |
+| `my_pham` | Mỹ phẩm / Spa | Retail | ❌ |
+| `noi_that` | Nội thất / Đồ gia dụng | Retail | ❌ |
+| `van_phong_pham` | Văn phòng phẩm / Sách | Retail | ❌ |
+| `thuc_pham` | Thực phẩm sạch | Retail | ❌ |
+| `qua_tang` | Quà tặng / Lưu niệm | Retail | ❌ |
+| `dich_vu` | Dịch vụ / Khác | Retail | ❌ |
+
+#### Cách chuyển loại hình
+
+**Cách 1 — qua Onboarding Wizard** (cho tenant mới):
+1. Đăng nhập → vào `/onboarding`
+2. Bước 1: chọn card loại hình (vd: "Quán Cafe / Đồ uống")
+3. Hệ thống tự seed danh mục + sản phẩm mẫu theo loại hình
+4. Sidebar re-render ngay → hiện menu F&B
+
+**Cách 2 — qua API** (đổi loại hình sau khi đã setup):
+```http
+PUT /api/settings/business-template
+Authorization: Bearer <token>
+Content-Type: application/json
+
+{ "template": "cafe" }
+```
+
+**Cách 3 — qua UI Settings** (nếu có trang settings):
+Vào `/settings` → chọn business template → save.
+
+> Sau khi đổi, reload trang để Sidebar fetch lại `businessTemplate` từ `/api/settings`.
+
+#### Tính năng F&B (chỉ hiện khi chọn vertical F&B)
+
+| Tính năng | Route | Mô tả |
+|---|---|---|
+| **Sơ đồ bàn (Floor)** | `/floor` | Quản lý khu vực (Area) + bàn (DinerTable) — mở/đóng/ghép/tách bàn, chuyển bàn |
+| **Màn hình bếp (KDS)** | `/kds` | Full-screen dark mode — bump/recall/void món, highlight stale ticket (>15ph) |
+| **Đơn đa kênh** | `/order-inbox` | Inbox đơn từ GrabFood/ShopeeFood/BeFood — accept/reject |
+| **AI Dự báo** | `/ai-forecast` | Dự báo nhu cầu theo giờ, menu engineering (stars/dogs), dynamic pricing |
+
+#### API F&B
+
+```http
+# Menu (modifier/variant/combo/happy-hour)
+GET    /api/menu/modifier-groups
+POST   /api/menu/modifier-groups
+GET    /api/menu/combos
+POST   /api/menu/combos
+
+# Tables
+GET    /api/tables/areas
+POST   /api/tables/areas
+GET    /api/tables
+POST   /api/tables
+POST   /api/tables/:id/open          # mở bàn (tạo TableSession)
+POST   /api/tables/:id/transfer      # chuyển bàn
+POST   /api/tables/split             # tách bàn
+POST   /api/tables/merge             # gộp bàn
+
+# KDS
+GET    /api/kds/stations
+POST   /api/kds/stations
+POST   /api/kds/tickets/:id/bump     # hoàn thành món
+POST   /api/kds/tickets/:id/recall   # gọi lại
+POST   /api/kds/tickets/:id/void     # hủy món
+
+# QR Ordering (public, không auth)
+GET    /api/qr-ordering/menu/:qrToken      # khách quét QR → xem menu
+POST   /api/qr-ordering/order/:qrToken     # khách đặt món
+GET    /api/qr-ordering/order/:publicToken # theo dõi trạng thái
+POST   /api/qr-ordering/order/:publicToken/call-waiter
+POST   /api/qr-ordering/feedback/:publicToken
+
+# Payment Gateway
+POST   /api/payment-gateway/create          # tạo QR/link (Momo/VNPay/ZaloPay)
+POST   /api/payment-gateway/webhooks/momo   # webhook (verify HMAC)
+POST   /api/payment-gateway/webhooks/vnpay
+POST   /api/payment-gateway/webhooks/zalopay
+
+# Recipe / COGS
+GET    /api/recipes
+POST   /api/recipes                        # định nghĩa nguyên liệu + định mức
+
+# Stamp Card (loyalty F&B)
+GET    /api/stamp-cards/templates
+POST   /api/stamp-cards/templates
+POST   /api/stamp-cards/earn               # tích stamp
+POST   /api/stamp-cards/redeem             # đổi stamp
+
+# AI Forecast
+GET    /api/ai-forecast/demand             # dự báo theo giờ
+GET    /api/ai-forecast/menu-engineering   # stars/dogs
+GET    /api/ai-forecast/recommendations    # đề xuất (human-gate)
+POST   /api/ai-forecast/recommendations/:id/approve
+
+# Petty Cash (chế độ HKD)
+GET    /api/petty-cash
+POST   /api/petty-cash
+```
+
+#### Order F&B fields
+
+Khi tạo Order F&B, thêm các field:
+
+```json
+{
+  "orderType": "DINE_IN",        // DINE_IN | TAKEAWAY | DELIVERY | QR_SELF
+  "tableId": "uuid",
+  "tableSessionId": "uuid",
+  "seatNumber": 4,
+  "serviceChargePercent": 5,
+  "tipAmount": 20000,
+  "splitMode": "ITEM",           // ITEM | EVEN | CUSTOM
+  "channel": "POS",              // POS | QR | GRABFOOD | SHAPEFOOD | BEFOOD
+  "items": [
+    {
+      "productId": "uuid",
+      "quantity": 2,
+      "courseId": 1,             // lượt món (1 = món 1, 2 = món 2)
+      "modifiers": [
+        { "groupId": "uuid", "optionIds": ["uuid"] }
+      ]
+    }
+  ]
+}
+```
+
+#### Luồng F&B tiêu biểu
+
+**Dine-in tại bàn:**
+1. Mở bàn: `/api/tables/:id/open` → tạo TableSession
+2. Order: `POST /api/orders` với `orderType: DINE_IN`, `tableId`, `tableSessionId`
+3. Order CONFIRMED → tự động tạo KDS ticket cho từng station
+4. Bếp bump: `POST /api/kds/tickets/:id/bump`
+5. Thanh toán: `POST /api/payment-gateway/create` (QR Momo/VNPay) hoặc cash
+6. Split bill: `POST /api/orders/:id/bill-split` (ITEM/EVEN/CUSTOM)
+7. Đóng bàn: `/api/tables/:id/clear`
+
+**QR self-ordering:**
+1. Khách quét QR tại bàn → `GET /api/qr-ordering/menu/:qrToken`
+2. Khách đặt món → `POST /api/qr-ordering/order/:qrToken` (Zod validated)
+3. Theo dõi → `GET /api/qr-ordering/order/:publicToken`
+4. Gọi nhân viên → `POST /api/qr-ordering/order/:publicToken/call-waiter`
+
+---
+
 ## 🧪 Quy trình test nhanh các tính năng mới
 
 ```bash
@@ -1531,11 +1779,198 @@ npm run dev
 #    - /workflows → tạo rule EXPENSE_ABOVE 1tr → tạo expense 2tr → check tab Cần duyệt
 #    - /production → BOM đa cấp → tạo WO → start → complete (kèm QC)
 #    - /integrations → tab SMTP → điền Gmail App Password → Test → kiểm tra inbox
+# 4. Test F&B (chuyển sang vertical F&B):
+#    - PUT /api/settings/business-template { "template": "cafe" }  (hoặc qua /onboarding)
+#    - Reload trang → sidebar hiện thêm group "F&B"
+#    - /floor → tạo area + bàn → mở bàn → order DINE_IN
+#    - /kds → xem ticket tự tạo → bump món
+#    - /qr-ordering → quét QR bàn → đặt món (public, không cần login)
+#    - /order-inbox → test nhận đơn GrabFood mock
+#    - /ai-forecast → xem dự báo + menu engineering
 ```
 
 ---
 
-_Tài liệu cập nhật: 2026-06-25 — hệ thống đã hoàn thiện 7 module nền tảng (Bán hàng, Kho, Tài chính, HR, CRM/Marketing, Dự án, Sản xuất) + 6 giai đoạn mở rộng + Subscription & Billing + Plan Enforcement (module + feature-level gating):_
+_Tài liệu cập nhật: 2026-08-01_
+
+## Changelog
+
+### Multi-tenant Scope & Migration Chain (2026-08-10)
+- **Migration `20260805160000_add_tenant_scope_and_new_models`**: thêm cột `tenantId` vào 82+ bảng business (Prisma auto-scope `TENANT_SCOPED_MODELS`), DropEnum/AddEnum (Role thêm `ACCOUNTANT`, PaymentMethod thêm MOMO/VNPAY/ZALOPAY/PAYOS/VIETQR, PromotionType thêm HAPPY_HOUR), 193 composite index `(tenantId, ...)`, drop 2 bảng đã thay thế (`exchange_items`, `order_return_items` → `return_line_items` — code đã chuyển sang dùng `lineItems` của `OrderReturn`)
+- **Migration `20260805170000_perf_indexes`**: 40+ index `(tenantId, ...)` dùng `IF NOT EXISTS` — an toàn chạy lại, tạo SAU migration tenant scope nên không lỗi thiếu cột
+- **Schema thêm `@@ignore` models `AiDocument`/`AiEmbedding`**: khai báo đúng cấu trúc bảng RAG (`ai_documents`/`ai_embeddings` tạo bằng raw SQL migration `20260620100000`) để Prisma Migrate **không drop bảng RAG** khi diff; `ai.service.js` vẫn dùng raw SQL (`$queryRawUnsafe`/`$executeRawUnsafe`) nên không bị ảnh hưởng bởi `@@ignore`
+- **Migration chain an toàn khi thiếu pgvector**: mọi lệnh `ALTER TABLE ai_*` trong `120001`/`160000` bọc `DO $$ IF EXISTS (...)` — DB không khởi tạo được bảng RAG (pgvector không có) vẫn migrate chạy bình thường, RAG tự fallback keyword search
+- **`prisma.config.ts`**: thêm `shadowDatabaseUrl` (mặc định `erp_shadow` từ `DATABASE_URL`) — `migrate dev`/`migrate diff` chạy được không cần sửa config
+- **Migration `20260805160000` idempotent toàn bộ**: 12 `CREATE TYPE`, 9 `ALTER TYPE ADD VALUE`, 40 `CREATE TABLE`, 128 `ADD COLUMN`, 217 `CREATE INDEX`, 40 `ADD CONSTRAINT`, DROP bảng ràng buộc — tất cả bọc `IF NOT EXISTS`/`DO $$ IF EXISTS` → chạy được trên DB đã có sẵn một phần schema (drift từ `db push` cũ) mà không lỗi, vẫn replay sạch từ đầu
+- **Migration bù `20260810070000_align_ai_tables_and_types`**: tạo lại `ai_documents`/`ai_embeddings` cho DB mà `20260620100000` nuốt lỗi do thiếu pgvector (embedding `real[] NOT NULL` fallback), align `cycle_count_items.warehouseId` (varchar→text), `portal_otps.blockedUntil` (timestamp→timestamptz)
+- **Migration `20260810080000_drop_legacy_objects`**: drop bảng/enum legacy rỗng còn sót từ db push cũ (`happy_hour_rules`, `payment_transactions`, `PaymentProvider`, `PaymentTxStatus`)
+- ⚠️ **CẤM `migrate dev` trên DB có bảng RAG**: Prisma 7.8 không biểu diễn được `real[]`/`vector` → `migrate dev`/`diff` luôn sinh `ALTER COLUMN ai_embeddings.embedding SET DATA TYPE DOUBLE PRECISION[]` (phá dữ liệu vector) và cả `DROP TABLE ai_documents` nếu `@@ignore` models bị xóa. Chỉ dùng `migrate deploy` (migrations chứa sẵn guard). Đã xóa migration rác `20260810054511_drift_check` sinh ra bởi `migrate dev --create-only`
+- ✅ Đã áp đủ **18/18 migrations** lên `erp_db` (verified: `migrate status` = up to date, schema khớp 100% với fresh replay); nếu repo cũ chưa deploy thì chạy `npm run db:migrate`
+
+### Security Audit (2026-08-01)
+- Audit toàn diện: auth/authorization, multi-tenant + injection, app config + XSS, `npm audit` (backend 15 vulns, frontend 6 vulns)
+- Kết quả: 5 CRITICAL (role escalation qua /api/users, SQLi + cross-tenant report-builder, webhook Casso không verify, portal OTP Math.random + không scope, AI RAG không tenantId), 7 HIGH, ~10 MEDIUM, ~10 LOW
+- Chi tiết + kế hoạch fix 4 đợt: `plans/security-audit-2026-08-01.md`
+
+### Security Fixes — Đợt 1: C1-C3 (2026-08-01)
+- **C1 — role escalation**: `user.service.js` thêm `getActor()` + `ROLE_RANK` — chỉ `SUPER_OMEGA_ULTRA_ADMIN` tạo/sửa được user SUPER; tenant ADMIN không gán được role cao hơn mình, không đụng user khác tenant, không tự đổi role/tự khóa mình; frontend `Users.jsx` ẩn vai trò SUPER + nút ghi khi không đủ quyền
+- **C2 — report-builder**: whitelist `aggregate.field` (chặn SQLi), ép `WHERE "tenantId"` từ tenant context (thiếu → 403), saved report kiểm tra ownership (`createdById`/`isPublic`), `POST /:id/run` yêu cầu ADMIN/MANAGER
+- **C3 — webhook VietQR**: Casso verify **HMAC-SHA256 `X-Casso-Signature`** trên raw body (raw mount trong app.js); SePay bắt buộc `Authorization: Bearer <SEPAY_WEBHOOK_TOKEN>`; fail-closed ở production (`CASSO_WEBHOOK_SECRET`/`SEPAY_WEBHOOK_TOKEN` mới có trong `.env.example`); mọi ghi Payment/debt bọc `runWithTenant()` theo tenant của entity được match; disambiguate mã ORD trùng giữa tenant bằng số tiền
+- Tests: `tests/vietqr.test.js` cập nhật theo API mới (verified flag + findMany + tenantId) — 17/17 pass; jest 279/284 (5 fail auth.e2e cần DB migrate `avatar` — pre-existing)
+
+### Security Fixes — Đợt 1: C4-C5 (2026-08-01)
+- **C4 — Portal OTP**: `crypto.randomInt()` thay `Math.random()`; OTP record gắn `tenantId` khách hàng + `verifyOtp` chạy trong `runWithTenant()` (không match được OTP của tenant khác); **lockout brute-force** — `attempts` + `blockedUntil` (migration `20260801120000_portal_otp_security`): sai 5 lần → hủy OTP + khóa 15 phút (HTTP 429); `withCustomer` bọc toàn bộ request portal trong tenant của khách
+- **C5 — AI RAG**: migration `20260801120001_ai_documents_tenant` thêm `tenant_id` vào `ai_documents` + backfill từ products/customers; `upsertDocument` gắn tenant từ context; `searchDocuments` chỉ trả tài liệu `(tenant_id = $n OR tenant_id IS NULL)` — chat AI không rò rỉ dữ liệu tenant khác, vẫn trả knowledge VAS hệ thống
+- ⚠️ Cần chạy `npm run db:migrate` để áp 2 migration mới (portal_otps.attempts/blockedUntil + ai_documents.tenant_id)
+- Tests: portal.test.js 26/26 pass (thêm 3 test lockout), jest 282/287 (5 fail auth.e2e cần DB migrate — pre-existing)
+
+### Security Fixes — Đợt 2: H1-H7 (2026-08-05)
+- **H1 — support token thu hồi được**: `auth.middleware.js` check `SupportAccessSession` còn ACTIVE + chưa expired khi dùng token impersonate (JWT đã chứa `supportSessionId`); revoke là token chết ngay, không phụ thuộc isActive user
+- **H2 — warehouse cross-tenant**: `warehouse.service.js` `updateMany({isDefault:false})` trước đây không `where` → extension không inject tenantId → reset kho mặc định của MỌI tenant; giờ scope theo `getTenantId()` ở cả create + update
+- **H3 — upload documents**: filename = `timestamp + randomBytes + ext whitelist [.pdf,.doc,.docx]` (hết path traversal); kiểm tra **magic bytes** sau upload (%PDF/D0CF11E0/PK) — file giả đuôi bị xóa + 400; `fileName` lưu DB strip CRLF/control char (chống header injection Content-Disposition)
+- **H4 — delivery webhook**: chỉ GHTK từng được verify — giờ GHN (header `Token` vs `GHN_WEBHOOK_SECRET`), VNPOST/Viettel/J&T (Bearer vs `DELIVERY_WEBHOOK_SECRET`) đều fail-closed ở production; guard thiếu `tracking_code` (trước đây `findFirst` match delivery ĐẦU TIÊN toàn hệ thống!); `findFirst` lọc đúng provider
+- **H5 — AI raw SQL**: `getSuggestions`/`getInventoryAlerts` thêm `i."tenantId" = ${tenantId}`; `/suggestions` yêu cầu ADMIN/MANAGER
+- **H6 — PII masking**: `piiMask.js` deep-mask đệ quy + thêm `address`/`cccd`/`idNumber`; `response.js` mask tự động ở response layer theo role (CASHIER/WAREHOUSE không thấy SĐT/email KH ở bất kỳ API nào, kể cả nested trong order); `audit.service.js` mask trước khi lưu beforeJson/afterJson — không lưu PII raw
+- **H7 — documents crash 500**: bỏ `InternalDocumentDepartment` khỏi `TENANT_SCOPED_MODELS` (model không có cột tenantId → mọi query trên bảng này crash); `GET /:id` thêm `checkAccess` cho role không phải ADMIN/MANAGER
+- ⚠️ Cấu hình mới trong `.env` (bắt buộc ở production, thiếu → webhook delivery bị từ chối): `GHN_WEBHOOK_SECRET`, `DELIVERY_WEBHOOK_SECRET` (xem `.env.example`)
+- Tests: delivery.service.test.js 8/8 (thêm 2 test: thiếu tracking_code → 400, GHN thiếu secret production → 401); jest 266/289 (5 fail auth.e2e cần DB migrate `avatar` + 18 fail smart-guide cần Postgres đang chạy — đều pre-existing, xác minh bằng `git stash`)
+
+### Security Fixes — Đợt 3: M1-M15 (2026-08-05)
+- **M1 — tokenVersion**: đổi mật khẩu tăng `User.tokenVersion` (migration `20260805120000_user_token_version`) + thu hồi toàn bộ refresh token; access token nhúng tokenVersion, `authenticate` so khớp DB → mọi token cũ chết ngay, không chờ hết hạn
+- **M2 — human gate thật**: `/human-gates` + `/human-gates/:id/decide` chỉ ADMIN/MANAGER (trước đây mọi role approve được write tool)
+- **M3 — role matrix AI tools**: tool PII (thông tin khách hàng/nhân viên/tài chính/nợ) chỉ chạy cho SUPER/ADMIN/MANAGER/ACCOUNTANT; CASHIER/WAREHOUSE hỏi → tạo `DATA_REQUEST` chờ ADMIN/MANAGER duyệt (nút request: danh sách gate PENDING)
+- **M4 — proxy LLM**: `/api/llm` yêu cầu `authenticate` (trước là public — dùng chùa LLM + DoS)
+- **M5 — VietQR check**: `GET /api/vietqr/check/:orderId` thêm `authenticate` (lộ payment info)
+- **M6 — rate limit**: `trust proxy` chỉ bật khi `TRUST_PROXY=true` (chống spoof X-Forwarded-For bypass rate limit); thêm limiter `/auth/refresh` (15ph/30) + `/verify-password` (15ph/10)
+- **M7 — refresh token vào httpOnly cookie**: backend set cookie `rt` (Secure production, SameSite=Lax, path `/api/auth`) ở login/refresh/logout/verify2fa — JS không đọc được → XSS không trộm được refresh token; frontend `withCredentials:true`, refresh gọi body rỗng, bỏ hẳn `refreshToken` khỏi localStorage; access token ngắn hạn vẫn ở localStorage
+- **M8 — log AI không chứa PII đầy đủ**: `logger.truncateLog()` (300 ký tự) áp dụng cho message chat + tool params
+- **M9 — chặn SVG**: upload file settings chỉ nhận jpeg/png/webp (filter + ext match); logo string validate (reject `.svg`/`data:image/svg+xml`/`<svg`) — hết stored XSS
+- **M10 — plan enforcement không bypass**: tenant không có subscription → fallback gói FREE (`key="free"` trong seed) — `checkFeature`/`requireModule`/`getMyPlanFeatures` đồng bộ plan.middleware + subscription.service
+- **M11 — portal token**: chỉ nhận từ header `x-portal-token`, bỏ query string (lọt access log/referrer)
+- **M12 — currency global chỉ nền tảng ghi**: `POST /api/currencies` + `POST /:code/rates` chuyển sang `requireSuperOmega` — catalog + tỷ giá dùng chung mọi tenant, tenant chỉ đọc
+- **M13 — promotion raw SQL tenant-scoped**: `incrementUsageAtomic` thêm `AND "tenantId" = ${tenantId}` khi có tenant context
+- **M14 — RefreshToken scoped**: thêm vào `TENANT_SCOPED_MODELS` (có cột tenantId, trước là latent hole)
+- **M15 — 2FA chống brute-force**: lockout per-account (5 lần sai → khóa 15 phút, 429); login trả **challenge JWT 5 phút** thay vì userId thô → verify2fa không tin userId từ body
+- ⚠️ Cần chạy `npm run db:migrate` để áp migration `20260805120000_user_token_version`; set `TRUST_PROXY=true` nếu chạy sau reverse proxy (xem `.env.example`)
+- Tests: jest 266/289 (23 fail pre-existing: 5 auth.e2e cần DB migrate `avatar` + 18 smart-guide cần Postgres — không phát sinh fail mới)
+
+### Security Fixes — Đợt 4: L1-L12 (2026-08-05)
+- **L1 — bcrypt cost 12**: `BCRYPT_ROUNDS=12` (env, default 12) áp dụng register/changePassword/user create+update; hash cũ cost 10 vẫn verify được
+- **L2 — access token 1h**: `JWT_EXPIRES_IN` mặc định `1h` (trước 7d) — refresh qua cookie httpOnly (M7) nên vô hại, giảm cửa sổ token rò rỉ
+- **L3 — force đổi mật khẩu admin mặc định**: `User.mustChangePassword` (migration `20260805130000_user_must_change_password`) — 3 user seed đăng nhập lần đầu bị redirect `/profile` bắt đổi mật khẩu trước khi dùng hệ thống
+- **L4 — refresh token reuse**: dùng lại token đã revoke → revoke **toàn bộ family** + 401 (nghi token bị đánh cắp)
+- **L5 — timing equalization**: login user không tồn tại vẫn chạy `bcrypt.compare` với dummy hash → không phân biệt được qua thời gian phản hồi
+- **L6 — email verify bypass**: login bỏ điều kiện `emailVerifyToken` (user admin tạo giờ `emailVerified:true` ngay từ đầu) — chặn user tự xác nhận email mình không nhận được
+- **L7 — /api/health**: public chỉ `{status, timestamp, uptime}`; chi tiết infra (DB/Redis/Ollama) chuyển `/api/health/full` — chỉ SUPER_OMEGA
+- **L8 — socket token**: bỏ `query.token` (lọt access log), chỉ nhận `handshake.auth`
+- **L9 — danh sách tài khoản ngân hàng**: `GET /api/bank-reco/bank-accounts` chỉ ADMIN/MANAGER/ACCOUNTANT
+- **L10 — ENCRYPTION_KEY**: docs bắt buộc ở production + cảnh báo đổi key → mất khả năng giải mã 2FA/integration secrets (xem `.env.example`)
+- **L11 — deps**: backend xóa dead deps AI (`@xenova/transformers`, `onnxruntime-node` — AI local chạy Python) → `npm audit`: **0 vulnerabilities** (trước: 15, trong đó 1 critical tar); express `^4.21.2` (install 4.22.2), override `tar 7.5.22`. Frontend giữ `react-router-dom ^7.18.2`: advisory còn lại (GHSA-qwww-vcr4-c8h2) chỉ ảnh hưởng RSC mode — app dùng `BrowserRouter` thuần, không RSC; downgrade 7.11 gây 9 advisory khác, upgrade 8.x breaking → **chấp nhận có ghi lý do**
+- **L12 — docs**: `.env.example` cập nhật `JWT_EXPIRES_IN=1h`, `BCRYPT_ROUNDS=12`, `ENCRYPTION_KEY` + nhắc lại `SEPAY_WEBHOOK_TOKEN`/per-provider delivery secrets (từ Đợt 2)
+- ⚠️ Cần chạy `npm run db:migrate` để áp migration `20260805130000_user_must_change_password`; set `JWT_EXPIRES_IN=1h` + `BCRYPT_ROUNDS=12` (hoặc để mặc định — code đã fallback)
+- Tests: jest 266/289 (23 fail pre-existing — không phát sinh fail mới); backend `npm audit` 0 vulnerabilities; frontend build OK + lint 0 errors
+
+### Logic & Performance Fixes — A1-A9 (2026-08-05)
+- **A1 — cache kho mặc định theo tenant**: `warehouse.helper.js` trước đây cache 1 slot global → tenant A làm tenant B dùng nhầm warehouse (cross-tenant leak); giờ `Map` keyed theo tenantId + TTL 60s
+- **A2 — kiểm kê theo từng kho**: `CycleCountItem` thêm `warehouseId` (migration `20260805140000_cycle_count_item_warehouse`) — trước đây gộp mọi kho của sản phẩm vào 1 dòng rồi complete() ghi cùng số lượng lên MỌI kho (SP ở 2 kho 10+5=15 đếm 12 → cả 2 kho thành 12, tổng 24); giờ mỗi (sản phẩm, kho) là 1 dòng, điều chỉnh đúng kho; frontend hiển thị cột Kho
+- **A3 — điều chỉnh tồn kho ghi đúng tiền**: autopost `buildInventoryAdjustmentEntry` dùng `|diff| × costPrice` thay vì số LƯỢNG làm số TIỀN (điều chỉnh 5 đơn vị trước ghi 5 VND)
+- **A4 — bỏ double-posting**: hoàn tiền trả hàng / chốt lương / thanh toán nợ NCC trước đây tạo CẢ expense (credit tiền mặt) LẪN bút toán autopost (credit tiền mặt) → tiền mặt/chi phí bị ghi 2 lần; giờ chỉ giữ bút toán double-entry chuẩn (521/511-156/632, 6411/6421-334, 331-cash)
+- **A5 — journal đơn hàng cân bằng**: thêm CR 511 cho `serviceCharge` + `tipAmount` (trước đây DR = total gồm phí còn CR = subtotal → mọi đơn F&B có phí dịch vụ rơi vào posting-error outbox)
+- **A6 — hoàn tiền cộng dồn**: `markRefunded` dùng `refundedAmount: { increment }` + so sánh lũy kế (trước ghi đè: hoàn 300 rồi 200 → mất 300)
+- **A7 — trừ kho atomic**: check-then-decrement → `updateMany({ where: { id, quantity: { gte: qty } } })` kiểm tra lại tại thời điểm ghi (order create COMPLETED/reservation, SHIPPING→COMPLETED, exportStock) — chống race bán quá tồn/âm kho
+- **A8 — sinh mã trong transaction + retry**: `ORD-*`/`CC-*` sinh trong tx với `withUniqueRetry` (2 POS tạo đơn cùng lúc trước đây trùng mã → 500)
+- **A9 — round2 tiền**: discount %, gross/subtotal/total đơn, so sánh tổng thanh toán với epsilon (9999×10% = 999.9000000000001 → thanh toán đúng 8999.10 trước đây bị từ chối), split bill ITEM
+- ⚠️ Cần chạy `npm run db:migrate` để áp migration `20260805140000_cycle_count_item_warehouse` (backfill dòng kiểm kê cũ → kho mặc định)
+- Tests: jest 267/290 (23 fail pre-existing; +1 test mới exportStock atomic); frontend lint 0 errors
+
+### Performance & Real-time Fixes — B1-B6 + C1 (2026-08-05)
+- **B1 — composite indexes (migration `20260805170000_perf_indexes`)**: 40+ index `(tenantId, ...)` cho orders/customers/products/invoices/debts/journal_entries/audit_logs/notifications/order_items/payments/work_orders + FK indexes child tables (debt_payments, cycle_count_items, return_line_items, delivery_events, lot_transactions, purchase_items, routing_operations, stock_transfer_items...) + pgvector HNSW cho AI RAG (tự skip nếu không có pgvector). Trước đây mọi query bị scope `tenantId` đều filter qua index cột đơn → full-scan theo tenant khi data lớn
+- **B2 — cache plan middleware (30s TTL, per-tenant)**: `getEffectivePlan`/`getActiveSubscription` được gọi trên MỌI request của 40+ module (`requireModule`/`checkFeature`) — trước đây 1-2 query DB mỗi request; giờ cache in-memory 30s + `invalidatePlanCache()` khi assign plan/webhook PayOS/hết hạn; count quota (maxUsers...) vẫn đếm live
+- **B5 — N+1 fixes**: bank-reco `autoMatch` (query account isCash ra khỏi vòng lặp), portal `createMyOrder` (batch product lookup thay vì per-item), serial-number `register` (1 query tìm trùng thay vì findFirst per code + dedupe batch), getTopProducts dùng nested relation filter thay vì load toàn bộ orderId rồi `IN (...)` (tránh IN clause > 65k params)
+- **C1 — socket tenant-scoped rooms**: trước đây `emitToRole` broadcast `role:MANAGER` TOÀN HỆ THỐNG → tenant A nhận thông báo/đơn hàng/AI_ACTION của tenant B; giờ mỗi connection join `tenant:{id}` + `tenant:{id}:role:{role}`, `emitToRole(role, event, payload, tenantId)` chỉ gửi trong tenant (QR ordering, notifications, AI agent CDC đều đã scope); socket kết nối refresh role/tenantId từ DB
+- ⚠️ Cần chạy `npm run db:migrate` — giờ có 6 migration chờ (4 cũ + cycle count warehouse + perf indexes)
+
+## Changelog
+
+### Phase 12 — Push Notification PWA + HKD toggle (2026-08-01)
+- **Web Push (PWA)** — backend `src/modules/push/`: `web-push`; **VAPID keys ưu tiên DB (IntegrationConfig, private mã hóa AES-256-GCM) > `.env` > tự sinh + lưu DB** — chủ shop không cần biết `.env`, key ổn định qua restart (chỉ set `.env` nếu muốn override)
+- API: `GET /api/push/config` (public key), `POST /api/push/subscribe`, `DELETE /api/push/subscribe`, `POST /api/push/test` — tất cả yêu cầu đăng nhập
+- Subscription lưu Redis `push:sub:{userId}` (JSON array, tối đa 5 thiết bị, TTL 90 ngày); không có Redis → fallback in-memory Map (warning, mất khi restart); `sendToUser` tự dọn endpoint 404/410; `sendToRole` gửi theo vai trò
+- **Mọi notification mới → push tự động**: `notification.service.createOne` gọi `sendPush` fire-and-forget (không chặn luồng)
+- Frontend: `src/sw.js` (build bằng **injectManifest** — precache toàn bộ app + SPA navigation fallback, chặn `/api/` + `/socket.io/`, listener `push` → showNotification + `notificationclick` → focus/navigate), `utils/pushSubscribe.js` (subscribe/unsubscribe + localStorage flag, phân biệt quyền denied), App.jsx tự hỏi quyền thông báo **1 lần duy nhất** (cờ `push_prompted`) sau khi đăng nhập, **NotificationsPage**: switch bật/tắt Web Push + nút "Gửi thử"
+- **HKD mode UI (Phase 11)**: Settings → Tùy chỉnh → switch "Kế toán đơn giản (HKD)" (chỉ ADMIN) → `PUT /api/settings/accounting-mode`; `authStore.accountingMode` cache localStorage; **Sidebar** khi `SIMPLIFIED_HKD`: ẩn menu double-entry (flag `hkdHidden`), nhóm kế toán đổi nhãn "THU CHI & TÀI CHÍNH", giữ Công nợ/Chi phí/NCC/Mua hàng; **chặn route** `HkdGate` trong App.jsx — gõ thẳng URL `/journal`, `/bank-reco`, `/accounting-reports`, `/financial-reports`, `/tax-reports`, `/einvoice`, `/fixed-assets`, `/currency` → redirect `/403`
+- Verify: eslint 0 errors (46 warnings pre-existing), build OK (injectManifest — precache 188 entries), node --check backend OK, jest 277/282 (5 fail auth.e2e cần DB thật — pre-existing)
+
+### Phase 6 — F&B: Floor Canvas kéo-thả (2026-08-01)
+- **Floor.jsx → sơ đồ bàn canvas**: bàn định vị tuyệt đối theo `posX/posY`, kéo thả bằng pointer events (hỗ trợ touch trên tablet/điện thoại), phân biệt click-vs-drag bằng threshold 5px (drag → lưu vị trí, click → mở menu hành động)
+- Lưu vị trí qua `PATCH /api/tables/positions` (backend đã có sẵn) — batch cập nhật posX/posY/width/height, chống trùng request
+- Shape bàn: SQUARE/ROUND/RECTANGLE (border-radius + kích thước mặc định riêng), chấm trạng thái góc bàn, legend màu trạng thái
+- Click bàn → menu ngữ cảnh theo trạng thái: Mở bàn (số khách) / Thêm món (→ POS ?table=) / Thanh toán & đóng / Dọn bàn / Sửa / Xóa (xác nhận Modal)
+- Zoom +/− (35%–150%) + nút Fit vừa màn hình; grid nền chấm; bàn mới tự chọn vị trí trống (auto-position) tránh chồng lấn
+- Verify: eslint 0 errors, build OK
+
+### Phase 6 — F&B Channels: QR Self-Ordering PWA (2026-08-01)
+- **`/q/:qrToken` PWA cho khách** (alias `/qr/:qrToken` — link sinh từ QrOrderingSetup): QrOrderingPage.jsx mobile-first, không cần đăng nhập, dùng `qrAxios.js` (axios public, không interceptor JWT → khách không bị redirect /login)
+- **Đặt món**: menu tabs theo category (sticky), grid món 2 cột (ảnh/mô tả/giá), modifier modal hỗ trợ SINGLE (radio) / MULTIPLE (checkbox, giới hạn maxSelect) / REQUIRED (bắt buộc minSelect, auto-chọn option duy nhất), priceAdjust cộng vào giá, giỏ hàng drawer đáy + FloatButton badge
+- **Theo dõi đơn realtime**: polling 6s, trạng thái từng món PENDING→FIRED→SERVED/VOIDED, tổng tiền, badge đã thanh toán; publicToken lưu localStorage (reload vẫn theo dõi)
+- **Tự phục vụ**: Gọi phục vụ (note), Feedback (Rate 1-5 + comment), Thanh toán VietQR (QRCodeSVG + thông tin tài khoản NH mặc định)
+- **Backend nâng cấp** (`qr-ordering.service.js`): `getMenu` trả thêm `table` info (code/capacity/areaName); `placeOrder` giờ tính đúng giá modifier (priceAdjust), hỗ trợ `note` + `customerName`, **tự gửi bếp** (gọi `kds.service.generateTicketsForOrder` — món có station tự ra KDS ticket, Order → CONFIRMED), emit `public:order-placed` cho role CASHIER; route mới `GET /api/qr-ordering/order/:publicToken/pay` tạo VietQR (Swagger đã ghi)
+- **Verify**: eslint 0 errors, build OK, jest 277/282 (5 fail là auth.e2e cần DB thật — pre-existing)
+
+### Phase 6 — F&B Frontend hoàn thiện (2026-08-01)
+- **11 trang UI mới**: Invoices, DeliveryManagement, Promotions, ModifierGroups, Combos, Recipes, LoyaltyRules, StampCards, Printers, QrOrderingSetup, PortalSettings — đầy đủ CRUD, tương tác với backend đã có
+- **QrOrderingSetup**: tạo QR bàn qua `qrcode.react`, xem trước menu theo shape `{menu: {categoryName: [products]}}`
+- **PortalSettings**: cấu hình Customer Portal (tên, logo, màu) — gọi API company-settings
+- **OrderInbox viết lại**: fix provider `SHAPEFOOD` → `SHOPEEFOOD`, thêm `GO_FOOD`, hiển thị + copy webhook URLs `{origin}{base}/food-delivery/webhook/{provider}`
+- **Floor.jsx nâng cấp**: CRUD đầy đủ Area + DinerTable (thêm/sửa/xóa inline)
+- **Kds.jsx nâng cấp**: Modal CRUD station hoàn chỉnh + nút edit/delete trên tag
+- **Pos.jsx F&B mode**: Segmented Tại bàn (DINE_IN) / Mang đi (TAKEAWAY) / Giao hàng (DELIVERY) cho tenant F&B; chọn/mở bàn qua TablePicker (join bàn OCCUPIED hoặc mở bàn AVAILABLE), nhận `?table=` từ Floor; phí dịch vụ % + tip (backend `order.service` giờ cộng serviceCharge + tipAmount vào total); payload F&B đầy đủ (orderType/tableId/tableSessionId/seatNumber/channel); tự đóng bàn khi thanh toán PAID; "Thanh toán sau" DINE_IN tự gửi món ra bếp (kds-generate)
+- **BillSplitModal**: tách hóa đơn 3 mode EVEN/ITEM/CUSTOM — chia đều N người, kéo món vào nhóm, chia theo số tiền (tổng phải khớp đơn); thu tiền từng nhóm (markSplitPaid); sửa route `/orders/:id/split-bill` schema khớp service (itemIds+quantities / label+amount)
+- **i18n**: thêm 8 namespace vi/en (modifiers, combos, recipes, delivery, invoices, loyalty, stampCards, printers) + `common.confirmDelete`
+- **Lint**: 0 errors (46 warnings pre-existing), fix rules-of-hooks Promotions.jsx, bỏ unused vars
+- **Swagger JSDoc**: bổ sung đầy đủ cho 12 route files (delivery, invoice, order, einvoice, pos, promotion, return, payment, customer, store-credit, loyalty, portal) — swagger-jsdoc parse 63 paths OK
+
+### Phase 5 — Đóng gói & Go-to-market (2026-07-01)
+- Landing page công khai tại `/` với hero, 6 feature cards, 3 steps, pricing preview
+- TrialBanner: hiển thị ngày dùng thử còn lại + progress bar + CTA nâng cấp trên Dashboard
+- NotFound page (404) thân thiện
+- Help/FAQ page (`/help`): 18 câu hỏi, 6 danh mục, search + collapse
+- Mobile responsive: CSS breakpoints 480px/768px cho table và KPI grid
+- Help menu item trong Sidebar (cả beginner + full mode)
+
+### Phase 4 — Hệ sinh thái kết nối (2026-07-01)
+- **Vai trò Kế toán (ACCOUNTANT)**: schema, middleware, 8 route files, Sidebar, App.jsx route guards
+- **Marketplace order persistence**: pullOrders → tạo Order + OrderItem + Payment + cập nhật Inventory trong transaction, dedup bằng tag [TMĐT]
+- **BankReco UX**: khớp thủ công (modal search bút toán + debounce), bút toán điều chỉnh (modal form), batch auto-match tất cả, journal entry search API
+- Route-menu alignment: ACCOUNTANT/CASHIER consistency, Returns → ADMIN+MANAGER group
+
+### Phase 3 — Hướng dẫn Nghiệp vụ thông minh (2026-07-01)
+- **Smart Guide** (`/smart-guide`): 4 tab — Sức khỏe shop, Báo cáo nhanh, Nhập hàng, Giá bán
+- Backend: `smart-guide.service.js` — pricing insights (margin %, đề xuất giá, cảnh báo bán dưới vốn), reorder suggestions (priority URGENT/HIGH, sales velocity, vendor), business health score 0-100 (5 thành phần: tiền mặt, lợi nhuận, tăng trưởng, công nợ, tồn kho), simple report (narrative tiếng Việt)
+- Backend tests: 18/18 smart-guide tests pass
+
+### Phase 2 — Mobile-First POS (2026-07-01)
+- **PWA**: manifest tiếng Việt, Workbox cache 3 lớp (CacheFirst static, StaleWhileRevalidate Cloudinary, NetworkFirst API 5s timeout), 159 SW entries
+- **In bill nhiệt Bluetooth**: `thermalPrinter.js` — ESC/POS (text align, bold, double size, cut paper, cash drawer), Web Bluetooth API, fallback printViaBrowser
+- **Offline Mode**: `offlineQueue.js` — IndexedDB queue, auto-sync khi online, OfflineIndicator banner
+- CameraScanner: formatsToSupport EAN-13, Code-128, QR Code cho mã VN 893...
+- POS: nút "Kết nối máy in Bluetooth", phone lookup trong mobile drawer
+
+### Phase 1 — Onboarding & UX cho người mới (2026-07-01)
+- **Onboarding Wizard**: BusinessTypeStep (10 template ngành: quần áo, tạp hóa, cafe, điện thoại, mỹ phẩm...), seed-template API tự động tạo categories + products + customers
+- **Beginner Mode**: Sidebar chỉ hiện 5 mục core, toggle đèn trong sidebar (cả collapsed + expanded), AuthStore.beginnerMode, mặc định ON
+- **Dashboard**: welcome banner cho user mới + CTA, onboarding tour tự động
+- **Tour System**: expanded tourSteps (Dashboard 4b, POS 4b, Products 3b, Orders 3b, Inventory 2b, Customers 2b, Onboarding 4b)
+- DB: `demoSeeded`, `beginnerMode`, `businessTemplate` trong CompanySettings
+
+### UX Polish (2026-07-01)
+- **Sidebar**: 9 English labels → Vietnamese (Dashboard→Tổng quan, POS→Bán hàng, Audit Log→Nhật ký, Workflow→Quy trình...)
+- **Sidebar abbreviations**: HR→Nhân sự, TC→tài chính, BC→Báo cáo, NH→ngân hàng
+- **AccountingReports**: 30+ telex strings → proper Vietnamese diacritics (Mã TK, Diễn giải, Nợ, Có, Số dư...)
+- **BankReco**: English labels → VN (Import→Nhập, Auto-match→Khớp tự động, Ref→Tham chiếu, File→Tệp tin), đ→₫, empty state, debounce search
+- **TransferQrCode**: "Thanh toan"→"Thanh toán"
+- **Marketplace service**: [MP]→[TMĐT], "credentials/API key"→"thông tin xác thực/khóa API", lastSyncAt future-date guard
+- **POS**: "VND"→"₫", "Thanh toan POS"→"Thanh toán POS"
 
 - _**Phase 1** — Tuân thủ thuế VN: E-Invoice (VNPT) + Tax Report HTKK + PIT/BHXH_
 - _**Phase 2** — Tài chính nâng cao: Bank Reconciliation (VCB/TCB) + Fixed Assets + Multi-currency_
@@ -1548,3 +1983,44 @@ _Tài liệu cập nhật: 2026-06-25 — hệ thống đã hoàn thiện 7 modu
 - _**Phase E (2026-06-25)** — Customer Portal: tự đặt hàng B2B, thanh toán công nợ qua VietQR, loyalty rewards_
 - _**Integration Center** — UI quản trị tập trung cho VNPT / Cloudinary / SMS / SMTP, mã hóa AES-256-GCM, không cần redeploy khi đổi credentials_
 - _**Subscription & Billing** — Gói dịch vụ (SubscriptionPlan), thuê bao tenant (TenantSubscription), hóa đơn (SubscriptionInvoice), SUPER_OMEGA_ULTRA_ADMIN bán gói, plan enforcement middleware_
+
+### Latest Updates (2026-07-20)
+- **Integration Center**: UI quản trị tập trung cho VNPT / Cloudinary / SMS / SMTP, mã hóa AES-256-GCM
+- **Petty Cash**: quỹ tiền mặt nhỏ cho chế độ HKD
+- **Fixed Assets**: TSCĐ + khấu hao tháng, autopost bút toán Nợ 642/Có 214
+- **Subscription & Billing**: gói Free 0₫ (5 users, 2 kho, 200 SP), Pro, Enterprise — plan enforcement middleware + module gating
+- **Super Admin UI**: dark sidebar layout, PlansManagement, TenantSubscriptionManager, InvoiceManagement
+- **Printers module**: cấu hình máy in bill ESC/POS
+- **Food Delivery**: GrabFood/ShopeeFood/BeFood inbox
+- **AI Forecast**: dự báo nhu cầu theo giờ, menu engineering (stars/dogs), dynamic pricing
+- **Stamp Card**: loyalty F&B — earn/redeem stamps
+- **Recipe/COGS**: auto-deduct nguyên liệu khi order complete
+- **Expense auto**: tự động ghi nhận chi phí định kỳ
+- **Period close service**: kết chuyển cuối kỳ, phân bổ 242, khấu hao, CIT
+- **Founder dashboard**: dashboard tổng quan cho chủ doanh nghiệp
+- **Workflow templates**: tự động seed 3 template workflow cho tenant mới
+- **AI agent service enhancement**: human-gate, proactive briefing, anomaly detection
+- **Frontend refactor**: i18n support (vi/en), onboarding wizard steps, tour system, 404 page
+
+### Security Hardening (2026-07-01)
+- **Multi-tenant isolation**: Prisma `$extends` + AsyncLocalStorage auto-inject `tenantId` vào 115 business models. Tenant A không xem được data Tenant B. Backfill 430 rows.
+- **Webhook security**: raw body verify cho Momo/VNPay/ZaloPay. Reject khi chưa config ở production (tránh forge).
+- **Auth hardening**: access token 7d→1h, refresh 30d→7d, refresh token hash SHA256 (không plaintext), DB fail→reject 503, password policy min 8 + uppercase + number.
+- **Crypto**: bỏ hardcoded fallback key `aduu-default-dev-key` → crash production nếu thiếu ENCRYPTION_KEY.
+- **PII masking**: CASHIER/WAREHOUSE thấy `09***5678` cho phone/email/taxCode.
+- **xss-clean removed** (deprecated), thêm multer fileFilter (ảnh/Excel/CSV only).
+- **Audit log**: thêm CREATE/UPDATE/DELETE_VENDOR.
+
+### F&B Verticals (2026-07-01)
+- **4 vertical F&B**: `cafe`, `nha_hang`, `do_an_nhanh`, `bar_pub` (+ 9 retail templates)
+- **Menu module**: ModifierGroup, ModifierOption, ProductVariant, Combo, HappyHourRule
+- **Tables module**: Area, DinerTable, TableSession, Reservation — open/close/merge/split/transfer
+- **KDS module**: KdsStation, KdsTicket — bump/recall/void, stale highlight >15ph
+- **QR ordering**: public routes (Zod validated) — menu/order/track/call-waiter/feedback
+- **Payment gateway**: Momo/VNPay/ZaloPay adapters (HMAC verify, mock mode)
+- **Food delivery**: GrabFood/ShopeeFood/BeFood inbox — accept/reject
+- **Recipe/COGS**: Recipe, RecipeIngredient, WasteLog — auto-deduct trên order complete
+- **Stamp card**: loyalty F&B — earn/redeem stamps
+- **AI forecast**: hourly demand, menu engineering (stars/dogs), dynamic pricing, human-gate
+- **Petty cash**: chế độ HKD (SIMPLIFIED_HKD accounting mode)
+- **Bill split**: 3 mode (ITEM/EVEN/CUSTOM)
