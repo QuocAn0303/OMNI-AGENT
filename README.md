@@ -170,7 +170,7 @@ erp-system/
 │   ├── seed_comprehensive.js    # Seeder toàn diện — tạo dữ liệu mẫu đầy đủ các module
 │   ├── inspect_prices.js       # Script kiểm tra giá sản phẩm trong DB
 │   ├── spread_orders.js         # Script phân bổ đơn hàng theo thời gian (test/demo)
-│   ├── startup.js               # Script khởi động — clean migration fail + migrate deploy + start server (Railway)
+│   ├── startup.js               # Script khởi động — clean migration fail + migrate deploy + start server; seed chỉ khi SEED_ON_START=1 (seed.js có TRUNCATE)
 │   ├── inspect_role_enum.js     # Utility: xem giá trị Role enum trong PostgreSQL
 │   ├── inspect_users.js         # Utility: xem định nghĩa cột users table
 │   └── migrations/              # Các file migration tự động sinh bởi Prisma
@@ -913,7 +913,7 @@ npx jest tests/debt.service.test.js
 # Backend (chạy ở root)
 npm install                 # cài deps
 npm run dev                 # chạy dev server (nodemon)
-npm start                   # chạy production
+npm start                   # chạy production (migrate deploy + start; seed nếu SEED_ON_START=1)
 npm run db:migrate          # tạo/cập nhật schema DB
 npm run db:seed             # nạp dữ liệu mẫu
 npm run db:studio           # mở Prisma Studio (GUI cho DB)
