@@ -40,4 +40,34 @@ const updateOnboardingStep = async (step, done = false) => {
   });
 };
 
-module.exports = { getOrCreate, update, updateOnboardingStep };
+const getBeginnerMode = async () => {
+  const settings = await getOrCreate();
+  return settings.beginnerMode;
+};
+
+const setBeginnerMode = async (enabled) => {
+  const settings = await getOrCreate();
+  return prisma.companySettings.update({
+    where: { id: settings.id },
+    data: { beginnerMode: enabled },
+  });
+};
+
+const setBusinessTemplate = async (template) => {
+  const settings = await getOrCreate();
+  return prisma.companySettings.update({
+    where: { id: settings.id },
+    data: { businessTemplate: template },
+  });
+};
+
+// Phase 11: HKD mode (SIMPLIFIED_HKD = ẩn kế toán double-entry, chỉ Thu/Chi)
+const setAccountingMode = async (mode) => {
+  const settings = await getOrCreate();
+  return prisma.companySettings.update({
+    where: { id: settings.id },
+    data: { accountingMode: mode },
+  });
+};
+
+module.exports = { getOrCreate, update, updateOnboardingStep, getBeginnerMode, setBeginnerMode, setBusinessTemplate, setAccountingMode };

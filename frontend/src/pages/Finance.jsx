@@ -29,12 +29,6 @@ import { getFounderDashboard } from "../api/accounting";
 const fmtVND = (v) => Number(v || 0).toLocaleString("vi-VN") + "đ";
 const fmtPercent = (v) => (v == null ? "—" : `${v > 0 ? "+" : ""}${v}%`);
 
-const sevColor = (s) => ({
-  critical: "error",
-  warning: "warning",
-  info: "processing",
-}[s] || "default");
-
 export default function Finance() {
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState(null);

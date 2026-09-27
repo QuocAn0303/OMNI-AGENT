@@ -1,3 +1,65 @@
+/**
+ * modules/customers/store-credit.routes.js — Routes quản lý store credit (tín dụng cửa hàng)
+ *
+ * Tổng quan:
+ * - Xem lịch sử giao dịch, số dư store credit của khách hàng
+ * - Ghi nhận giao dịch EARN/SPEND/ADJUST/REFUND (ADMIN, MANAGER)
+ * - Validate bằng Zod (createSchema)
+ */
+
+/**
+ * @swagger
+ * /api/store-credit/{customerId}:
+ *   get:
+ *     summary: Lịch sử giao dịch store credit của khách (ADMIN, MANAGER)
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: customerId
+ *         required: true
+ *         schema: { type: string }
+ *       - in: query
+ *         name: page
+ *         schema: { type: integer }
+ *       - in: query
+ *         name: limit
+ *         schema: { type: integer }
+ *     responses:
+ *       200: { description: OK }
+ *   post:
+ *     summary: Ghi nhận giao dịch store credit (ADMIN, MANAGER)
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: customerId
+ *         required: true
+ *         schema: { type: string }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               amount: { type: number }
+ *               type: { type: string, enum: [EARN, SPEND, ADJUST, REFUND] }
+ *               note: { type: string }
+ *               referenceId: { type: string }
+ *     responses:
+ *       200: { description: Ghi nhận store credit thành công }
+ *
+ * /api/store-credit/{customerId}/balance:
+ *   get:
+ *     summary: Số dư store credit của khách (ADMIN, MANAGER, CASHIER)
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: customerId
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: OK }
+ */
 const express = require('express');
 const { z } = require('zod');
 const storeCreditService = require('./store-credit.service');

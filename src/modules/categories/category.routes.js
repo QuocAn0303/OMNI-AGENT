@@ -43,8 +43,7 @@ router.get("/", authorize("ADMIN", "MANAGER"), async (req, res, next) => {
 router.post("/", authorize("ADMIN", "MANAGER"), async (req, res, next) => {
   try {
     const validatedData = categorySchema.parse(req.body);
-    const newCategory = await categoryService.create(validatedData);
-    // Trả về mã 201 Created
+    const newCategory = await categoryService.create(validatedData, req.user.id);
     res.status(201); 
     success(res, newCategory, "Tạo danh mục thành công");
   } catch (error) {
@@ -56,7 +55,7 @@ router.post("/", authorize("ADMIN", "MANAGER"), async (req, res, next) => {
 router.put("/:id", authorize("ADMIN", "MANAGER"), async (req, res, next) => {
   try {
     const validatedData = categorySchema.parse(req.body);
-    const updated = await categoryService.update(req.params.id, validatedData);
+    const updated = await categoryService.update(req.params.id, validatedData, req.user.id);
     success(res, updated, "Cập nhật danh mục thành công");
   } catch (error) {
     next(error);
@@ -66,7 +65,7 @@ router.put("/:id", authorize("ADMIN", "MANAGER"), async (req, res, next) => {
 // DELETE: Xóa danh mục (Thường chỉ dành cho ADMIN)
 router.delete("/:id", authorize("ADMIN"), async (req, res, next) => {
   try {
-    await categoryService.remove(req.params.id);
+    await categoryService.remove(req.params.id, req.user.id);
     success(res, null, "Xóa danh mục thành công");
   } catch (error) {
     next(error);

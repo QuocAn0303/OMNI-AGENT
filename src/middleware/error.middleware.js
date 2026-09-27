@@ -39,9 +39,10 @@ const errorHandler = (err, req, res, next) => {
   // Prisma known errors
   if (err instanceof Prisma.PrismaClientKnownRequestError) {
     if (err.code === "P2002") {
+      // Security: không rò tên bảng/cột DB (err.meta.target) ra client
       return res.status(409).json({
         success: false,
-        message: `Dữ liệu đã tồn tại: ${err.meta?.target}`,
+        message: "Dữ liệu đã tồn tại",
       });
     }
     if (err.code === "P2025") {

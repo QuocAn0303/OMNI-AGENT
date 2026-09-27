@@ -76,8 +76,10 @@ export default function CampaignDetail() {
     setLoading(false);
   };
 
-  useEffect(() => { loadAll(); /* eslint-disable-next-line */ }, [id]);
-  useEffect(() => { loadRecipients(); /* eslint-disable-next-line */ }, [page, filterStatus]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { loadAll(); }, [id]);
+  // eslint-disable-next-line react-hooks/exhaustive-deps
+  useEffect(() => { loadRecipients(); }, [page, filterStatus]);
 
   const sendNow = async () => {
     setSending(true);

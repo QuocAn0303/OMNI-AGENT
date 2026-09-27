@@ -17,7 +17,7 @@ import { ReloadOutlined, CheckCircleOutlined, StopOutlined, SyncOutlined, EyeOut
 import dayjs from "dayjs";
 import PageHeader from "../components/layout/PageHeader";
 import PlanGate from "../components/PlanGate";
-import { getEInvoices, getEInvoice, cancelEInvoice, syncEInvoice, issueEInvoice } from "../api/einvoice";
+import { getEInvoices, getEInvoice, cancelEInvoice, syncEInvoice } from "../api/einvoice";
 
 const { RangePicker } = DatePicker;
 
@@ -50,8 +50,8 @@ export default function EInvoice() {
       }
       const res = await getEInvoices(params);
       setData(res);
-    } catch (e) {
-      message.error(e?.response?.data?.message || "Không tải được dữ liệu");
+    } catch {
+      message.error("Không tải được dữ liệu");
     } finally {
       setLoading(false);
     }
@@ -64,7 +64,7 @@ export default function EInvoice() {
       await cancelEInvoice(id);
       message.success("Đã hủy hóa đơn");
       load();
-    } catch (e) { message.error(e?.response?.data?.message || "Lỗi hủy hóa đơn"); }
+    } catch { message.error("Lỗi hủy hóa đơn"); }
   };
 
   const handleSync = async (id) => {
@@ -72,7 +72,7 @@ export default function EInvoice() {
       await syncEInvoice(id);
       message.success("Đã đồng bộ trạng thái");
       load();
-    } catch (e) { message.error(e?.response?.data?.message || "Lỗi đồng bộ"); }
+    } catch { message.error("Lỗi đồng bộ"); }
   };
 
   const openDetail = async (id) => {
@@ -80,7 +80,7 @@ export default function EInvoice() {
       const inv = await getEInvoice(id);
       setDetail(inv);
       setDetailOpen(true);
-    } catch (e) { message.error("Không tải được chi tiết"); }
+    } catch { message.error("Không tải được chi tiết"); }
   };
 
   const cols = [

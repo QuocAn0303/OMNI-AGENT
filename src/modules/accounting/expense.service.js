@@ -27,6 +27,7 @@ const prisma = require("../../config/prisma");
 const autopostService = require("./autopost.service");
 const postingErrorService = require("./posting-error.service");
 const { withUniqueRetry } = require("./journal.service");
+const auditService = require("../audit/audit.service");
 
 const toNum = (v) => Number(v || 0);
 const round2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
@@ -192,6 +193,7 @@ const create = async (data, userId) => {
         },
       );
     }
+    auditService.log({ userId, action: 'CREATE_EXPENSE', entity: 'Expense', entityId: expense.id, after: { status: expense.status, expenseCode: expense.expenseCode } });
     if (expense.status === "PENDING_APPROVAL") {
       try {
         const notif = require("../notifications/notification.service");
@@ -216,6 +218,7 @@ const submit = async (id, userId) => {
     where: { id },
     data: { status: "PENDING_APPROVAL" },
   });
+  auditService.log({ userId, action: 'SUBMIT_EXPENSE', entity: 'Expense', entityId: id, before: { status: expense.status }, after: { status: updated.status } });
   try {
     const notif = require("../notifications/notification.service");
     await notif.notifyExpensePending(updated);
@@ -230,7 +233,7 @@ const submit = async (id, userId) => {
       data: { amount: amt, expenseId: id, categoryId: expense.categoryId },
     });
   } catch (e) {
-    console.error("[expense] workflow trigger error:", e.message);
+    logger.error("[expense] workflow trigger error:", e.message);
   }
 
   return updated;
@@ -288,6 +291,7 @@ const approve = async (id, userId, { role } = {}) => {
     },
   );
 
+  auditService.log({ userId, action: 'APPROVE_EXPENSE', entity: 'Expense', entityId: id, before: { status: updated.status }, after: { status: 'APPROVED' } });
   return updated;
 };
 
@@ -359,11 +363,13 @@ const markPaid = async (id, { method = "CASH", bankAccountId } = {}, userId) => 
     );
   }
 
+  auditService.log({ userId, action: 'PAY_EXPENSE', entity: 'Expense', entityId: result.updated.id, before: { status: result.updated.status }, after: { status: 'PAID' } });
   return result.updated;
 };
 
 const reject = async (id, userId) => {
   const auditService = require("../audit/audit.service");
+const logger = require('../../utils/logger');
   const before = await prisma.expense.findUnique({
     where: { id },
     select: { status: true, expenseCode: true },

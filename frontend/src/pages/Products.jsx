@@ -12,9 +12,9 @@
  * Exports:
  * - Products: React functional component (default export)
  */
-import { useEffect, useState } from 'react';
+import { useEffect, useState, useRef } from 'react';
 import useDebounce from '../hooks/useDebounce';
-import { Table, Input, Select, Button, Image, Popconfirm, message, Space } from 'antd';
+import { Table, Input, Select, Button, Image, Popconfirm, Space } from 'antd';
 import {
   PlusOutlined, SearchOutlined, EditOutlined, DeleteOutlined,
   ExportOutlined, FilterOutlined,
@@ -27,8 +27,9 @@ import PageHeader from '../components/layout/PageHeader';
 import StatusTag from '../components/shared/StatusTag';
 import MoneyDisplay from '../components/shared/MoneyDisplay';
 import EmptyState from '../components/shared/EmptyState';
+import useToast from '../components/shared/useToast';
 import useTour from '../hooks/useTour';
-import { getProductsTour } from '../config/tourSteps';
+import PermissionGate from '../components/shared/PermissionGate';
 
 /**
  * Products — Danh sách sản phẩm
@@ -36,8 +37,9 @@ import { getProductsTour } from '../config/tourSteps';
  */
 export default function Products() {
   const { t } = useTranslation();
-  const tour = useTour('products');
+  useTour('products');
   const navigate = useNavigate();
+  const toast = useToast();
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState([]);
   const [categories, setCategories] = useState([]);
@@ -50,8 +52,17 @@ export default function Products() {
   const [exporting, setExporting] = useState(false);
   const [page, setPage] = useState(1);
   const [total, setTotal] = useState(0);
+  const cacheRef = useRef({});
 
   const loadData = async () => {
+    const cacheKey = `/products?page=${page}&search=${debouncedSearch}&category=${categoryFilter}`;
+    const cached = cacheRef.current[cacheKey];
+    if (cached && Date.now() - cached.ts < 15000) {
+      setData(cached.data);
+      setTotal(cached.total);
+      setLoading(false);
+      return;
+    }
     setLoading(true);
     try {
       const [productsRes, categoriesRes] = await Promise.all([
@@ -59,11 +70,13 @@ export default function Products() {
         axios.get('/categories'),
       ]);
       const pData = productsRes.data?.data || [];
-      setData(pData.map(p => ({ ...p, categoryName: p.category?.name, quantity: p.inventory?.quantity ?? 0, minStock: p.inventory?.minStock ?? 0 })));
+      const mapped = pData.map(p => ({ ...p, categoryName: p.category?.name, quantity: p.inventory?.quantity ?? 0, minStock: p.inventory?.minStock ?? 0 }));
+      setData(mapped);
       setTotal(productsRes.data?.pagination?.total || 0);
       setCategories(Array.isArray(categoriesRes.data) ? categoriesRes.data : (categoriesRes.data?.data || []));
-    } catch (err) {
-      message.error('Không tải được danh sách sản phẩm');
+      cacheRef.current[cacheKey] = { ts: Date.now(), data: mapped, total: productsRes.data?.pagination?.total || 0 };
+    } catch {
+      toast.error(t('products.loadError'));
     } finally {
       setLoading(false);
     }
@@ -75,10 +88,11 @@ export default function Products() {
   const handleDelete = async (id) => {
     try {
       await axios.delete(`/products/${id}`);
-      message.success('Đã xóa sản phẩm');
+      cacheRef.current = {};
+      toast.success(t('products.deleteSuccess'));
       loadData();
-    } catch (err) {
-      message.error('Xóa thất bại');
+    } catch {
+      toast.error(t('products.deleteError'));
     }
   };
 
@@ -94,9 +108,9 @@ export default function Products() {
       link.click();
       link.remove();
       window.URL.revokeObjectURL(url);
-      message.success('Đã xuất file Excel');
+      toast.success(t('products.exportSuccess'));
     } catch {
-      message.error('Xuất Excel thất bại');
+      toast.error(t('products.exportError'));
     } finally {
       setExporting(false);
     }
@@ -111,7 +125,7 @@ export default function Products() {
 
   const columns = [
     {
-      title: 'Sản phẩm',
+      title: t('products.title'),
       dataIndex: 'name',
       width: 320,
       render: (name, row) => (
@@ -144,13 +158,13 @@ export default function Products() {
       ),
     },
     {
-      title: 'Danh mục',
+      title: t('products.category'),
       dataIndex: 'categoryName',
       width: 140,
       render: (v) => v || <span style={{ color: 'var(--text-muted)' }}>—</span>,
     },
     {
-      title: 'Giá bán',
+      title: t('products.price'),
       dataIndex: 'price',
       width: 140,
       align: 'right',
@@ -158,7 +172,7 @@ export default function Products() {
       render: (v) => <MoneyDisplay value={v} />,
     },
     {
-      title: 'Tồn kho',
+      title: t('products.stock'),
       dataIndex: 'quantity',
       width: 110,
       align: 'right',
@@ -176,7 +190,7 @@ export default function Products() {
       ),
     },
     {
-      title: 'Trạng thái',
+      title: t('common.status'),
       dataIndex: 'quantity',
       width: 130,
       render: (q, row) => (
@@ -193,22 +207,26 @@ export default function Products() {
       fixed: 'right',
       render: (_, row) => (
         <Space size={4}>
-          <Button
-            type="text"
-            size="small"
-            icon={<EditOutlined />}
-            onClick={() => navigate(`/products/${row.id}/edit`)}
-          />
-          <Popconfirm
-            title="Xóa sản phẩm này?"
-            description="Hành động không thể hoàn tác."
-            okText="Xóa"
-            cancelText="Hủy"
-            okButtonProps={{ danger: true }}
-            onConfirm={() => handleDelete(row.id)}
-          >
-            <Button type="text" size="small" danger icon={<DeleteOutlined />} />
-          </Popconfirm>
+          <PermissionGate permission="products.edit">
+            <Button
+              type="text"
+              size="small"
+              icon={<EditOutlined />}
+              onClick={() => navigate(`/products/${row.id}/edit`)}
+            />
+          </PermissionGate>
+          <PermissionGate permission="products.delete">
+            <Popconfirm
+              title={t('products.deleteConfirm')}
+              description={t('products.deleteWarning')}
+              okText={t('common.delete')}
+              cancelText={t('common.cancel')}
+              okButtonProps={{ danger: true }}
+              onConfirm={() => handleDelete(row.id)}
+            >
+              <Button type="text" size="small" danger icon={<DeleteOutlined />} />
+            </Popconfirm>
+          </PermissionGate>
         </Space>
       ),
     },
@@ -218,18 +236,22 @@ export default function Products() {
 
     <>
       <PageHeader
-        title="Sản phẩm"
-        subtitle={`${total} sản phẩm`}
+        title={t('products.title')}
+        subtitle={t('products.count', { count: total })}
         actions={
           <>
-            <Button icon={<ExportOutlined />} loading={exporting} onClick={handleExportExcel}>Xuất Excel</Button>
-            <Button
-              type="primary"
-              icon={<PlusOutlined />}
-              onClick={() => navigate('/products/create')}
-            >
-              Thêm sản phẩm
-            </Button>
+            <PermissionGate permission="reports.export">
+              <Button icon={<ExportOutlined />} loading={exporting} onClick={handleExportExcel}>{t('products.exportBtn')}</Button>
+            </PermissionGate>
+            <PermissionGate permission="products.create">
+              <Button
+                type="primary"
+                icon={<PlusOutlined />}
+                onClick={() => navigate('/products/create')}
+              >
+                {t('products.addNew')}
+              </Button>
+            </PermissionGate>
           </>
         }
       />
@@ -238,14 +260,14 @@ export default function Products() {
       <div className="filters-bar">
         <Input
           className="filters-bar__search"
-          placeholder="Tìm theo tên hoặc SKU..."
+          placeholder={t('products.searchPlaceholder')}
           prefix={<SearchOutlined style={{ color: 'var(--text-muted)' }} />}
           value={search}
           onChange={(e) => setSearch(e.target.value)}
           allowClear
         />
         <Select
-          placeholder="Danh mục"
+          placeholder={t('products.categoryPlaceholder')}
           style={{ width: 180 }}
           value={categoryFilter}
           onChange={setCategoryFilter}
@@ -254,15 +276,15 @@ export default function Products() {
           options={categories.map((c) => ({ value: c.id, label: c.name }))}
         />
         <Select
-          placeholder="Tồn kho"
+          placeholder={t('products.stockPlaceholder')}
           style={{ width: 160 }}
           value={stockFilter}
           onChange={setStockFilter}
           allowClear
           options={[
-            { value: 'IN_STOCK',  label: 'Còn hàng' },
-            { value: 'LOW_STOCK', label: 'Sắp hết' },
-            { value: 'OUT_STOCK', label: 'Hết hàng' },
+            { value: 'IN_STOCK',  label: t('products.inStock') },
+            { value: 'LOW_STOCK', label: t('products.lowStock') },
+            { value: 'OUT_STOCK', label: t('products.outOfStock') },
           ]}
         />
       </div>
@@ -281,17 +303,19 @@ export default function Products() {
             total,
             showSizeChanger: false,
             onChange: (p) => setPage(p),
-            showTotal: (t) => `${t} sản phẩm`,
+            showTotal: (totalCount) => t('products.count', { count: totalCount }),
           }}
           locale={{
             emptyText: (
               <EmptyState
-                title="Không tìm thấy sản phẩm"
-                description="Thử bỏ bộ lọc hoặc thêm sản phẩm mới."
+                title={t('products.empty')}
+                description={t('products.emptyDesc')}
                 action={
-                  <Button type="primary" icon={<PlusOutlined />} onClick={() => navigate('/products/create')}>
-                    Thêm sản phẩm đầu tiên
-                  </Button>
+                  <PermissionGate permission="products.create">
+                    <Button type="primary" icon={<PlusOutlined />} onClick={() => navigate('/products/create')}>
+                      {t('products.addFirst')}
+                    </Button>
+                  </PermissionGate>
                 }
               />
             ),

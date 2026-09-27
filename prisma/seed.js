@@ -24,6 +24,7 @@ const { PrismaPg } = require("@prisma/adapter-pg");
 const { Pool } = require("pg");
 const bcrypt = require("bcrypt");
 const { faker } = require("@faker-js/faker");
+const { seedPermissions } = require("./seed_permissions");
 
 // Use PrismaPg adapter so PrismaClient uses the Postgres adapter engine
 const pool = new Pool({
@@ -37,6 +38,32 @@ const prisma = new PrismaClient({ adapter });
 
 const rndInt = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
 const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
+
+const fmtDate = (d) => {
+  const y = d.getFullYear();
+  const m = String(d.getMonth() + 1).padStart(2, '0');
+  const day = String(d.getDate()).padStart(2, '0');
+  return `${y}${m}${day}`;
+};
+
+function spread_order(index, totalOrders) {
+  const startDate = new Date();
+  startDate.setDate(startDate.getDate() - 45);
+  startDate.setHours(7, 0, 0, 0);
+  const dayOffset = Math.floor((index / totalOrders) * 45);
+  const date = new Date(startDate);
+  date.setDate(date.getDate() + dayOffset);
+  date.setHours(rndInt(7, 22), rndInt(0, 59), rndInt(0, 59), 0);
+  return date;
+}
+
+function orderStatusByDate(date) {
+  const now = new Date();
+  const daysDiff = (now - date) / (1000 * 60 * 60 * 24);
+  if (daysDiff > 30) return pick(["COMPLETED", "COMPLETED", "COMPLETED", "CANCELLED"]);
+  if (daysDiff > 7) return pick(["COMPLETED", "COMPLETED", "SHIPPING", "CANCELLED"]);
+  return pick(["PENDING", "CONFIRMED", "SHIPPING", "COMPLETED", "COMPLETED"]);
+}
 
 async function ensureDeepDiveSchema() {
   const statements = [
@@ -79,13 +106,17 @@ async function ensureDeepDiveSchema() {
       "updatedAt" TIMESTAMP(3) NOT NULL DEFAULT CURRENT_TIMESTAMP,
       CONSTRAINT "order_returns_pkey" PRIMARY KEY ("id")
     )`,
-    `CREATE TABLE IF NOT EXISTS "order_return_items" (
+    `CREATE TABLE IF NOT EXISTS "return_line_items" (
       "id" TEXT NOT NULL,
+      "type" "LineItemType" NOT NULL DEFAULT 'RETURN',
       "returnId" TEXT NOT NULL,
-      "orderItemId" TEXT NOT NULL,
+      "orderItemId" TEXT,
+      "productId" TEXT NOT NULL,
       "quantity" INTEGER NOT NULL,
-      "refundAmount" DECIMAL(12, 2) NOT NULL,
-      CONSTRAINT "order_return_items_pkey" PRIMARY KEY ("id")
+      "unitPrice" DECIMAL(12, 2) NOT NULL DEFAULT 0,
+      "subtotal" DECIMAL(12, 2) NOT NULL DEFAULT 0,
+      "refundAmount" DECIMAL(12, 2) NOT NULL DEFAULT 0,
+      CONSTRAINT "return_line_items_pkey" PRIMARY KEY ("id")
     )`,
     `CREATE TABLE IF NOT EXISTS "cycle_counts" (
       "id" TEXT NOT NULL,
@@ -128,7 +159,7 @@ async function main() {
   // Use raw SQL TRUNCATE CASCADE to avoid FK ordering issues
   await prisma.$executeRawUnsafe(`
     TRUNCATE TABLE
-      "order_return_items",
+      "return_line_items",
       "order_returns",
       "payments",
       "order_items",
@@ -165,6 +196,7 @@ async function main() {
       isActive: true,
       emailVerified: true,
       registrationStatus: "ACTIVE",
+      mustChangePassword: true,
     },
     {
       email: "superadmin@candory.com",
@@ -173,6 +205,7 @@ async function main() {
       isActive: true,
       emailVerified: true,
       registrationStatus: "ACTIVE",
+      mustChangePassword: true,
     },
     {
       email: "admin@candory.com",
@@ -181,6 +214,7 @@ async function main() {
       isActive: true,
       emailVerified: true,
       registrationStatus: "ACTIVE",
+      mustChangePassword: true,
     },
     {
       email: "manager@candory.com",
@@ -347,15 +381,15 @@ async function main() {
     await prisma.user.update({ where: { id: u.id }, data: { tenantId: tenant.id } });
   }
 
-  // Create active subscription for CANDORY tenant
-  const proPlan = plans.find((p) => p.key === "pro");
-  if (proPlan) {
+  // Create active subscription for CANDORY tenant (enterprise plan = full access)
+  const enterprisePlan = plans.find((p) => p.key === "enterprise");
+  if (enterprisePlan) {
     const endDate = new Date();
-    endDate.setDate(endDate.getDate() + 30);
+    endDate.setFullYear(endDate.getFullYear() + 10);
     await prisma.tenantSubscription.create({
       data: {
         tenantId: tenant.id,
-        planId: proPlan.id,
+        planId: enterprisePlan.id,
         status: "ACTIVE",
         startDate: new Date(),
         endDate,
@@ -363,6 +397,17 @@ async function main() {
     });
   }
   console.log("✅ Created tenant + subscription for CANDORY SCENT");
+
+  // ---- DEPARTMENTS ----
+  const departmentNames = ["Kinh doanh", "Kế toán", "Kho", "Nhân sự", "Bếp"];
+  const departments = [];
+  for (const name of departmentNames) {
+    const dept = await prisma.department.create({
+      data: { name, tenantId: tenant.id, description: `Phòng ${name}` },
+    });
+    departments.push(dept);
+  }
+  console.log(`✅ Created ${departments.length} departments`);
 
   // ---- EMPLOYEES (linked to seeded users) ----
   const employees = [];
@@ -379,6 +424,7 @@ async function main() {
     const emp = await prisma.employee.create({
       data: {
         userId: u.id,
+        tenantId: tenant.id,
         baseSalary: base.toFixed(2),
         shiftMoney: shiftMoney.toFixed(2),
         isActive: true,
@@ -398,7 +444,7 @@ async function main() {
   const categories = [];
   for (const name of categoryNames) {
     const c = await prisma.category.create({
-      data: { name, description: `${name} - CANDORY SCENT` },
+      data: { name, tenantId: tenant.id, description: `${name} - CANDORY SCENT` },
     });
     categories.push(c);
   }
@@ -413,6 +459,7 @@ async function main() {
         code: "WH-DEFAULT",
         name: "Kho mặc định",
         isDefault: true,
+        tenantId: tenant.id,
       },
     });
   }
@@ -471,11 +518,13 @@ async function main() {
         costPrice: costPrice.toFixed(2),
         unit: "cái",
         categoryId: category.id,
+        tenantId: tenant.id,
         inventories: {
           create: {
             quantity: qty,
             minStock: rndInt(5, 20),
             warehouseId: defaultWarehouse.id,
+            tenantId: tenant.id,
           },
         },
       },
@@ -565,22 +614,22 @@ async function main() {
         email: faker.internet.email(),
         address: faker.location.streetAddress(),
         totalSpent: "0",
+        tenantId: tenant.id,
       },
     });
     customers.push(customer);
   }
   console.log(`✅ Created ${customers.length} customers`);
 
-  // ---- ORDERS (100-200) ----
-  const orderCount = rndInt(40, 60);
-  console.log(
-    `→ Creating ${orderCount} orders (this will update inventory & create transactions)...`,
-  );
+  // ---- ORDERS (~80-120 đơn trải đều 45 ngày) ----
+  const orderCount = rndInt(80, 120);
+  console.log(`→ Creating ${orderCount} orders (spread across 45 days)...`);
 
   for (let oi = 0; oi < orderCount; oi++) {
     const customer = pick(customers);
     const createdBy = pick(users);
     const itemCount = rndInt(1, 3);
+    const orderDate = spread_order(oi, orderCount);
 
     // pick distinct products for the order
     const chosen = new Set();
@@ -592,19 +641,34 @@ async function main() {
     // run a transaction for the whole order
     await prisma.$transaction(
       async (tx) => {
-        const orderCode = `ORD-${Date.now().toString().slice(-6)}-${oi}`;
+        const dateStr = fmtDate(orderDate);
+        const seq = String(oi + 1).padStart(4, '0');
+        const orderCode = `ORD-${dateStr}-${seq}`;
+
+        const status = orderStatusByDate(orderDate);
 
         // create empty order first (we'll patch totals after items)
         const order = await tx.order.create({
           data: {
             orderCode,
+            status,
             subtotal: "0",
             discount: "0",
             total: "0",
             customerId: customer.id,
             createdById: createdBy.id,
+            createdAt: orderDate,
+            tenantId: tenant.id,
           },
         });
+
+        // Also set payment status based on completion
+        if (status === "COMPLETED") {
+          await tx.order.update({
+            where: { id: order.id },
+            data: { paymentStatus: "PAID" },
+          });
+        }
 
         let orderSum = 0;
 
@@ -630,6 +694,7 @@ async function main() {
               quantity: qty,
               price: price.toFixed(2),
               subtotal: subtotal.toFixed(2),
+              tenantId: tenant.id,
             },
           });
 
@@ -639,7 +704,7 @@ async function main() {
             data: { quantity: { decrement: qty } },
           });
 
-          // create inventory transaction
+          // create inventory transaction with same date
           await tx.inventoryTransaction.create({
             data: {
               type: "EXPORT",
@@ -647,6 +712,8 @@ async function main() {
               inventoryId: inv.id,
               createdById: createdBy.id,
               note: `Order ${order.orderCode}`,
+              createdAt: orderDate,
+              tenantId: tenant.id,
             },
           });
 
@@ -689,6 +756,9 @@ async function main() {
 
     if ((oi + 1) % 25 === 0) console.log(`  → ${oi + 1} orders processed`);
   }
+
+  // ---- PERMISSIONS (RBAC) ----
+  await seedPermissions(prisma);
 
   console.log("\n🎉 Seed finished successfully!");
   console.log("📧 Sample logins (mật khẩu: 123456):");

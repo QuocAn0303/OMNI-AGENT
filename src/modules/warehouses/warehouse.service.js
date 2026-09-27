@@ -12,6 +12,7 @@
 const prisma = require("../../config/prisma");
 const auditService = require("../audit/audit.service");
 const { clearWarehouseCache } = require("../../utils/warehouse.helper");
+const { getTenantId } = require("../../config/tenantContext");
 
 const list = async () =>
   prisma.warehouse.findMany({
@@ -19,10 +20,19 @@ const list = async () =>
     orderBy: [{ isDefault: "desc" }, { name: "asc" }],
   });
 
+const resetOtherDefault = async (excludeId) => {
+  const tenantId = getTenantId();
+  if (!tenantId) return;
+  await prisma.warehouse.updateMany({
+    where: { tenantId, ...(excludeId ? { id: { not: excludeId } } : {}) },
+    data: { isDefault: false },
+  });
+  clearWarehouseCache();
+};
+
 const create = async (data, userId) => {
   if (data.isDefault) {
-    await prisma.warehouse.updateMany({ data: { isDefault: false } });
-    clearWarehouseCache();
+    await resetOtherDefault();
   }
   const wh = await prisma.warehouse.create({ data });
   await auditService.log({
@@ -37,11 +47,7 @@ const create = async (data, userId) => {
 
 const update = async (id, data, userId) => {
   if (data.isDefault) {
-    await prisma.warehouse.updateMany({
-      where: { id: { not: id } },
-      data: { isDefault: false },
-    });
-    clearWarehouseCache();
+    await resetOtherDefault(id);
   }
   const wh = await prisma.warehouse.update({ where: { id }, data });
   await auditService.log({

@@ -17,6 +17,148 @@
  * - PUT /:id: Cập nhật khách hàng — validate updateSchema
  * - DELETE /:id: Soft delete khách hàng — gọi customerService.remove()
  */
+
+/**
+ * @swagger
+ * /api/customers:
+ *   get:
+ *     summary: Danh sách khách hàng phân trang (ADMIN, MANAGER, CASHIER)
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema: { type: integer }
+ *       - in: query
+ *         name: limit
+ *         schema: { type: integer }
+ *       - in: query
+ *         name: search
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: OK }
+ *   post:
+ *     summary: Tạo khách hàng mới
+ *     security: [{ bearerAuth: [] }]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               name: { type: string }
+ *               phone: { type: string }
+ *               email: { type: string }
+ *               address: { type: string }
+ *     responses:
+ *       201: { description: Tạo khách hàng thành công }
+ *
+ * /api/customers/export:
+ *   get:
+ *     summary: Xuất Excel danh sách khách hàng (ADMIN, MANAGER)
+ *     security: [{ bearerAuth: [] }]
+ *     responses:
+ *       200:
+ *         description: File Excel
+ *         content:
+ *           application/vnd.openxmlformats-officedocument.spreadsheetml.sheet:
+ *             schema: { type: string, format: binary }
+ *
+ * /api/customers/{id}:
+ *   get:
+ *     summary: Chi tiết khách hàng
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: OK }
+ *   put:
+ *     summary: Cập nhật khách hàng
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     requestBody: { required: true, content: { application/json: { schema: { type: object } } } }
+ *     responses:
+ *       200: { description: Cập nhật thành công }
+ *   delete:
+ *     summary: Xóa (soft) khách hàng
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: Đã xóa }
+ *
+ * /api/customers/{id}/full:
+ *   get:
+ *     summary: Customer 360° (chi tiết toàn diện)
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: OK }
+ *
+ * /api/customers/{id}/loyalty:
+ *   get:
+ *     summary: Tổng quan loyalty của khách hàng
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: OK }
+ *
+ * /api/customers/{id}/loyalty/redeem:
+ *   post:
+ *     summary: Đổi điểm loyalty cho đơn hàng
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     requestBody: { required: true, content: { application/json: { schema: { type: object } } } }
+ *     responses:
+ *       200: { description: OK }
+ *
+ * /api/customers/{id}/debts:
+ *   get:
+ *     summary: Danh sách công nợ của khách hàng
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: OK }
+ *
+ * /api/customers/{id}/credit-limit:
+ *   patch:
+ *     summary: Cập nhật hạn mức tín dụng (ADMIN, MANAGER)
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     requestBody: { required: true, content: { application/json: { schema: { type: object } } } }
+ *     responses:
+ *       200: { description: OK }
+ */
 const express = require('express');
 const { z } = require('zod');
 const customerService = require('./customer.service');
@@ -24,17 +166,44 @@ const debtService = require('../debt/debt.service');
 const loyaltyService = require('../loyalty/loyalty.service');
 const { authenticate, authorize } = require('../../middleware/auth.middleware');
 const { paginated, created, success } = require('../../utils/response');
+const { maskPII } = require('../../utils/piiMask');
+const prisma = require('../../config/prisma');
+const { exportToExcel } = require('../../utils/exporter');
 
 const router = express.Router();
 
 // Yêu cầu đăng nhập để thao tác với dữ liệu khách hàng, chỉ admin, manager, cashier mới được truy cập
 router.use(authenticate, authorize('ADMIN', 'MANAGER', 'CASHIER'));
 
+// Xuất Excel — chỉ ADMIN, MANAGER
+router.get('/export', authorize('ADMIN', 'MANAGER'), async (req, res, next) => {
+  try {
+    const customers = await prisma.customer.findMany({
+      where: { isActive: true },
+      take: 10000,
+    });
+    const buf = await exportToExcel(
+      customers.map(c => ({ name: c.name, phone: c.phone || '', email: c.email || '', totalDebt: Number(c.totalDebt || 0), tier: c.tier || '' })),
+      [
+        { header: 'Tên khách hàng', key: 'name' },
+        { header: 'SĐT', key: 'phone' },
+        { header: 'Email', key: 'email' },
+        { header: 'Công nợ', key: 'totalDebt' },
+        { header: 'Hạng', key: 'tier' },
+      ],
+      'Khách hàng'
+    );
+    res.setHeader('Content-Type', 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+    res.setHeader('Content-Disposition', `attachment; filename=customers_${Date.now()}.xlsx`);
+    res.send(Buffer.from(buf));
+  } catch (e) { next(e); }
+});
+
 // API: GET /api/customers
 router.get('/', async (req, res, next) => {
   try {
     const { customers, pagination } = await customerService.getAll(req.query);
-    paginated(res, customers, pagination);
+    paginated(res, maskPII(customers, req.user.role), pagination);
   } catch (err) {
     next(err);
   }
@@ -42,7 +211,7 @@ router.get('/', async (req, res, next) => {
 
 router.get('/:id/full', async (req, res, next) => {
   try {
-    success(res, await customerService.getCustomer360(req.params.id));
+    success(res, maskPII(await customerService.getCustomer360(req.params.id), req.user.role));
   } catch (err) {
     next(err);
   }
@@ -76,7 +245,9 @@ router.post('/:id/loyalty/redeem', async (req, res, next) => {
 
 router.get('/:id/debts', async (req, res, next) => {
   try {
-    success(res, await debtService.listByCustomer(req.params.id));
+    const { page, limit } = req.query;
+    const result = await debtService.listByCustomer(req.params.id, Number(page) || 1, Number(limit) || 50);
+    success(res, result.data);
   } catch (err) {
     next(err);
   }
@@ -124,6 +295,20 @@ router.delete('/:id', async (req, res, next) => {
   try {
     const deletedCustomer = await customerService.remove(req.params.id, req.user.id);
     success(res, deletedCustomer, 'Xóa khách hàng thành công');
+  } catch (err) {
+    next(err);
+  }
+});
+
+const creditLimitSchema = z.object({
+  creditLimit: z.number().min(0, 'Hạn mức tín dụng không được âm'),
+});
+
+router.patch('/:id/credit-limit', async (req, res, next) => {
+  try {
+    const { creditLimit } = creditLimitSchema.parse(req.body);
+    const updated = await customerService.updateCreditLimit(req.params.id, creditLimit, req.user.id);
+    success(res, updated, 'Cập nhật hạn mức tín dụng thành công');
   } catch (err) {
     next(err);
   }

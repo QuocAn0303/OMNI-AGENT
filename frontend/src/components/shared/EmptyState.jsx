@@ -1,40 +1,22 @@
-/**
- * Component: shared/EmptyState — Placeholder hiển thị khi không có dữ liệu
- *
- * Tổng quan:
- * - Component dùng chung cho toàn bộ trang, hiển thị trạng thái rỗng
- * - Props: icon (ReactNode, mặc định InboxOutlined), title (string),
- *          description (string), action (ReactNode)
- * - Khi danh sách/table không có bản ghi, EmptyState được dùng làm fallback UI
- *
- * Exports:
- * - EmptyState: React functional component (default export)
- */
-import { InboxOutlined } from '@ant-design/icons';
+import { Empty, Button } from 'antd';
+import { useTranslation } from 'react-i18next';
 
-/**
- * EmptyState — placeholder khi không có dữ liệu
- *
- * Props:
- *   icon:        ReactNode (default: InboxOutlined)
- *   title:       string
- *   description: string
- *   action:      ReactNode (button, link...)
- */
-export default function EmptyState({
-  icon,
-  title = 'Chưa có dữ liệu',
-  description = 'Dữ liệu sẽ xuất hiện ở đây khi bạn thêm mới.',
-  action,
-}) {
+const EmptyState = ({ title, description, actionText, onAction, icon }) => {
+  const { t } = useTranslation();
   return (
-    <div className="empty-state">
-      <div className="empty-state__icon">
-        {icon || <InboxOutlined />}
-      </div>
-      <div className="empty-state__title">{title}</div>
-      <div className="empty-state__description">{description}</div>
-      {action && <div>{action}</div>}
-    </div>
+    <Empty
+      image={icon || Empty.PRESENTED_IMAGE_SIMPLE}
+      description={
+        <div>
+          <div style={{ fontWeight: 500, marginBottom: 4 }}>{title || t('common.noData')}</div>
+          {description && <div style={{ color: 'var(--text-muted)', fontSize: 13 }}>{description}</div>}
+        </div>
+      }
+      style={{ padding: '40px 0' }}
+    >
+      {actionText && onAction && <Button type="primary" onClick={onAction}>{actionText}</Button>}
+    </Empty>
   );
-}
+};
+
+export default EmptyState;

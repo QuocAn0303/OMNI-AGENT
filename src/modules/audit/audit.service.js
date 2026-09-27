@@ -14,6 +14,9 @@
 // Chức năng: ghi và truy vấn audit log (activity trail)
 // Ghi chú (tiếng Việt) có trong hàm để người khác dễ hiểu
 const prisma = require("../../config/prisma");
+const logger = require('../../utils/logger');
+const { getTenantId } = require('../../config/tenantContext');
+const { maskPII } = require('../../utils/piiMask');
 
 /**
  * Ghi một bản ghi audit
@@ -36,20 +39,21 @@ const log = async ({
   meta = null,
 }) => {
   try {
+    // Mask PII trước khi lưu (role null → luôn mask, không bao giờ lưu PII raw)
     await prisma.auditLog.create({
       data: {
+        tenantId: getTenantId(),
         userId,
         action,
         entity,
         entityId,
-        beforeJson: before,
-        afterJson: after,
+        beforeJson: maskPII(before, null),
+        afterJson: maskPII(after, null),
         meta,
       },
     });
   } catch (err) {
-    // Không throw để tránh làm hỏng luồng chính; chỉ log ra console
-    console.error("Audit log error:", err);
+    logger.error("Audit log error:", err);
   }
 };
 

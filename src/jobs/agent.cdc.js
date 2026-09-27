@@ -18,6 +18,7 @@
  */
 
 const { Pool } = require('pg');
+const logger = require('../utils/logger');
 const { getIo } = require('../realtime/socket');
 
 let pool = null;
@@ -50,14 +51,14 @@ const EVENT_HANDLERS = {
           note: `AI auto-generated: ${item.name} out of stock`,
           createdById: 'system',
         }).catch(e => {
-          console.error(`[CDC] PO creation error for ${item.name}:`, e.message);
+          logger.error(`[CDC] PO creation error for ${item.name}:`, e.message);
           return null;
         });
 
         if (po) {
           const io = getIo();
-          if (io) {
-            io.to(`role:MANAGER`).emit('AI_ACTION', {
+          if (io && item.tenantId) {
+            io.to(`tenant:${item.tenantId}:role:MANAGER`).emit('AI_ACTION', {
               type: 'AUTO_PO',
               message: `🤖 AI tự động tạo đơn nhập hàng cho "${item.name}" (hết tồn kho)`,
               data: po,
@@ -66,7 +67,7 @@ const EVENT_HANDLERS = {
         }
       }
     } catch (e) {
-      console.error('[CDC] LOW_STOCK handler error:', e.message);
+      logger.error('[CDC] LOW_STOCK handler error:', e.message);
     }
   },
 
@@ -74,6 +75,7 @@ const EVENT_HANDLERS = {
     try {
       const tasksService = require('../modules/crm/tasks.service');
       const prisma = require('../config/prisma');
+const logger = require('../utils/logger');
 
       const order = await prisma.order.findUnique({
         where: { id: data.id || data.id },
@@ -98,8 +100,8 @@ const EVENT_HANDLERS = {
         });
 
         const io = getIo();
-        if (io) {
-          io.to(`role:SALE`).emit('AI_ACTION', {
+        if (io && order.tenantId) {
+          io.to(`tenant:${order.tenantId}:role:SALE`).emit('AI_ACTION', {
             type: 'FOLLOW_UP_TASK',
             message: `🤖 Đã tạo task chăm sóc sau đơn hàng ${order.orderCode || ''}`,
             data: task,
@@ -107,22 +109,22 @@ const EVENT_HANDLERS = {
         }
       }
     } catch (e) {
-      console.error('[CDC] ORDER_COMPLETED handler error:', e.message);
+      logger.error('[CDC] ORDER_COMPLETED handler error:', e.message);
     }
   },
 
   PAYMENT_RECEIVED: async (data) => {
     try {
       const io = getIo();
-      if (io) {
-        io.to(`role:MANAGER`).emit('AI_ACTION', {
+      if (io && data.tenantId) {
+        io.to(`tenant:${data.tenantId}:role:MANAGER`).emit('AI_ACTION', {
           type: 'PAYMENT_NOTIFY',
           message: `💳 Thanh toán ${data.amount ? new Intl.NumberFormat('vi-VN', { style: 'currency', currency: 'VND' }).format(data.amount) : 'mới'} đã được ghi nhận.`,
           data,
         });
       }
     } catch (e) {
-      console.error('[CDC] PAYMENT_RECEIVED handler error:', e.message);
+      logger.error('[CDC] PAYMENT_RECEIVED handler error:', e.message);
     }
   },
 };
@@ -205,7 +207,7 @@ async function ensureSchema() {
       FOR EACH ROW EXECUTE FUNCTION notify_agent_payment_change()
     `);
 
-    console.log('[CDC] Database triggers ensured');
+    logger.info('[CDC] Database triggers ensured');
   } finally {
     client.release();
   }
@@ -228,23 +230,23 @@ async function startCDC() {
         const handler = EVENT_HANDLERS[event.type];
         if (handler) {
           handler(event.data || event).catch((e) =>
-            console.error(`[CDC] Handler error for ${event.type}:`, e.message)
+            logger.error(`[CDC] Handler error for ${event.type}:`, e.message)
           );
         }
       } catch (e) {
-        console.error('[CDC] Parse error:', e.message);
+        logger.error('[CDC] Parse error:', e.message);
       }
     });
 
     client.on('error', (e) => {
-      console.error('[CDC] Connection error:', e.message);
+      logger.error('[CDC] Connection error:', e.message);
       listening = false;
       setTimeout(startCDC, 5000);
     });
 
-    console.log('[CDC] Listening for agent events...');
+    logger.info('[CDC] Listening for agent events...');
   } catch (e) {
-    console.error('[CDC] Failed to start:', e.message);
+    logger.error('[CDC] Failed to start:', e.message);
     listening = false;
   }
 }
@@ -255,7 +257,7 @@ function stopCDC() {
     pool = null;
   }
   listening = false;
-  console.log('[CDC] Stopped');
+  logger.info('[CDC] Stopped');
 }
 
 module.exports = { startCDC, stopCDC, EVENT_HANDLERS };

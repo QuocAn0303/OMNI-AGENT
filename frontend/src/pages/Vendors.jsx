@@ -12,14 +12,16 @@
  * - Vendors (default): Page chính — table + search + modal CRUD
  */
 import { useEffect, useState } from "react";
+import { useNavigate } from "react-router-dom";
 import { Table, Button, Modal, Form, Input, InputNumber, Space, message, Tag, Popconfirm } from "antd";
-import { PlusOutlined, EditOutlined, DeleteOutlined } from "@ant-design/icons";
+import { PlusOutlined, EditOutlined, DeleteOutlined, NodeIndexOutlined } from "@ant-design/icons";
 import PageHeader from "../components/layout/PageHeader";
 import { getVendors, createVendor, updateVendor, deleteVendor } from "../api/accounting";
 
 const fmtVND = (v) => Number(v || 0).toLocaleString("vi-VN") + "đ";
 
 export default function Vendors() {
+  const navigate = useNavigate();
   const [loading, setLoading] = useState(false);
   const [data, setData] = useState({ vendors: [], pagination: { total: 0 } });
   const [filters, setFilters] = useState({ page: 1, limit: 20, search: "" });
@@ -86,6 +88,9 @@ export default function Vendors() {
         extra={
           <Space>
             <Input.Search placeholder="Tìm theo tên/SĐT/MST" allowClear onSearch={(s) => setFilters({ ...filters, search: s, page: 1 })} style={{ width: 280 }} />
+            <Button icon={<NodeIndexOutlined />} onClick={() => navigate("/vendors/kraljic")}>
+              Ma trận Kraljic
+            </Button>
             <Button type="primary" icon={<PlusOutlined />} onClick={() => { setEditing({}); form.resetFields(); }}>Thêm NCC</Button>
           </Space>
         }

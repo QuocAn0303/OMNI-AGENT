@@ -57,7 +57,7 @@ export default function ProductEdit() {
             minStock: p.inventory?.minStock,
           });
         }
-      } catch (err) {
+      } catch {
         message.error('Không tải được dữ liệu');
       } finally {
         setLoading(false);
@@ -83,8 +83,8 @@ export default function ProductEdit() {
         message.success('Đã tạo sản phẩm mới');
       }
       navigate('/products');
-    } catch (err) {
-      message.error(err?.response?.data?.message || 'Lưu thất bại');
+    } catch {
+      message.error('Lưu thất bại');
     } finally {
       setSaving(false);
     }
@@ -126,35 +126,38 @@ export default function ProductEdit() {
           {/* LEFT: Main info */}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
             <Card title="Thông tin cơ bản">
-              <Form.Item
-                label="Tên sản phẩm"
-                name="name"
-                rules={[{ required: true, min: 2, message: 'Tối thiểu 2 ký tự' }]}
-              >
-                <Input placeholder="VD: Áo thun cotton trắng size M" />
-              </Form.Item>
-
-              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
                 <Form.Item
-                  label="SKU"
-                  name="sku"
-                  rules={[{ required: true, message: 'Vui lòng nhập SKU' }]}
-                  tooltip="Mã định danh duy nhất, dùng để quét barcode"
+                  label="Tên sản phẩm"
+                  name="name"
+                  rules={[
+                    { required: true, message: 'Tên sản phẩm không được để trống' },
+                    { min: 2, message: 'Tối thiểu 2 ký tự' },
+                  ]}
                 >
-                  <Input placeholder="ATC-W-M-001" style={{ fontFamily: 'var(--font-mono)' }} />
+                  <Input placeholder="VD: Áo thun cotton trắng size M" />
                 </Form.Item>
 
-                <Form.Item
-                  label="Danh mục"
-                  name="categoryId"
-                  rules={[{ required: true, message: 'Chọn danh mục' }]}
-                >
-                  <Select
-                    placeholder="Chọn danh mục"
-                    options={categories.map((c) => ({ value: c.id, label: c.name }))}
-                  />
-                </Form.Item>
-              </div>
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
+                  <Form.Item
+                    label="SKU"
+                    name="sku"
+                    rules={[{ required: true, message: 'SKU không được để trống' }]}
+                    tooltip="Mã định danh duy nhất, dùng để quét barcode"
+                  >
+                    <Input placeholder="ATC-W-M-001" style={{ fontFamily: 'var(--font-mono)' }} />
+                  </Form.Item>
+
+                  <Form.Item
+                    label="Danh mục"
+                    name="categoryId"
+                    rules={[{ required: true, message: 'Chọn danh mục' }]}
+                  >
+                    <Select
+                      placeholder="Chọn danh mục"
+                      options={categories.map((c) => ({ value: c.id, label: c.name }))}
+                    />
+                  </Form.Item>
+                </div>
 
               <Form.Item label="Mô tả" name="description">
                 <Input.TextArea rows={4} placeholder="Mô tả ngắn về sản phẩm..." />
@@ -166,7 +169,10 @@ export default function ProductEdit() {
                 <Form.Item
                   label="Giá vốn"
                   name="costPrice"
-                  rules={[{ required: true, message: 'Nhập giá vốn' }, { type: 'number', min: 0, message: 'Giá trị phải >= 0' }]}
+                  rules={[
+                    { required: true, message: 'Giá vốn không được để trống' },
+                    { type: 'number', min: 0.01, message: 'Giá vốn phải lớn hơn 0' },
+                  ]}
                 >
                   <InputNumber
                     style={{ width: '100%' }}
@@ -181,7 +187,10 @@ export default function ProductEdit() {
                 <Form.Item
                   label="Giá bán"
                   name="price"
-                  rules={[{ required: true, message: 'Nhập giá bán' }, { type: 'number', min: 0, message: 'Giá trị phải >= 0' }]}
+                  rules={[
+                    { required: true, message: 'Giá bán không được để trống' },
+                    { type: 'number', min: 0.01, message: 'Giá bán phải lớn hơn 0' },
+                  ]}
                 >
                   <InputNumber
                     style={{ width: '100%' }}

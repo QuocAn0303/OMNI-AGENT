@@ -13,7 +13,7 @@
 import { useEffect, useState } from "react";
 import { useNavigate, useParams } from "react-router-dom";
 import { Button, Card, Descriptions, Table, Space, message, Tag, Modal, Form, InputNumber, Select } from "antd";
-import { ArrowLeftOutlined, SendOutlined, CheckOutlined, InboxOutlined, DollarOutlined, StopOutlined } from "@ant-design/icons";
+import { ArrowLeftOutlined, SendOutlined, CheckOutlined, InboxOutlined, DollarOutlined, StopOutlined, FileDoneOutlined } from "@ant-design/icons";
 import dayjs from "dayjs";
 import PageHeader from "../components/layout/PageHeader";
 import useAuthStore from "../stores/authStore";
@@ -75,9 +75,21 @@ export default function PurchaseOrderDetail() {
         title={po.poCode}
         subtitle={po.vendor?.name}
         extra={
-          <Button icon={<ArrowLeftOutlined />} onClick={() => navigate("/purchase-orders")}>
-            Danh sách
-          </Button>
+          <Space>
+            <Button icon={<ArrowLeftOutlined />} onClick={() => navigate("/purchase-orders")}>
+              Danh sách
+            </Button>
+            {["APPROVED", "ORDERED", "RECEIVED"].includes(po.status) && (
+              <Button icon={<InboxOutlined />} onClick={() => navigate(`/grn?poId=${po.id}`)}>
+                Phiếu nhận hàng
+              </Button>
+            )}
+            {["RECEIVED", "PAID"].includes(po.status) && (
+              <Button icon={<FileDoneOutlined />} onClick={() => navigate(`/purchase-invoices?poId=${po.id}`)}>
+                Đối soát 3-way
+              </Button>
+            )}
+          </Space>
         }
       />
 

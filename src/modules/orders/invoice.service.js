@@ -26,6 +26,7 @@ const paymentService = require("../payments/payment.service");
 const auditService = require("../audit/audit.service");
 const { numberToVietnameseWords } = require("../../utils/vietnameseMoneyWords");
 const config = require("../integrations/integration-config.service");
+const logger = require("../../utils/logger");
 
 const _ensureCloudinary = async () => {
   const cfg = await config.getMany(["CLOUDINARY_CLOUD_NAME", "CLOUDINARY_API_KEY", "CLOUDINARY_API_SECRET"]);
@@ -169,7 +170,7 @@ const generateInvoice = async (orderId, opts = {}, userId = null) => {
   try {
     pdfUrl = pdfUrl || (await uploadPdf(buffer, invoiceCode));
   } catch (e) {
-    console.warn("[invoice] Cloudinary upload skipped:", e.message);
+    logger.warn("[invoice] Cloudinary upload skipped:", e.message);
   }
 
   const invoice = await prisma.invoice.upsert({
@@ -292,4 +293,44 @@ module.exports = {
   generateInvoicePDF,
   getById,
   sendEmail,
+  list,
+};
+
+const list = async ({ page = 1, limit = 20, search = "", status = "", from = "", to = "" } = {}) => {
+  const skip = (Number(page) - 1) * Number(limit);
+  const where = {};
+  if (status) where.status = status;
+  if (from || to) {
+    where.createdAt = {};
+    if (from) where.createdAt.gte = new Date(from);
+    if (to) where.createdAt.lte = new Date(to);
+  }
+  if (search) {
+    where.OR = [
+      { invoiceCode: { contains: search, mode: "insensitive" } },
+      { order: { orderCode: { contains: search, mode: "insensitive" } } },
+    ];
+  }
+  const [invoices, total] = await Promise.all([
+    prisma.invoice.findMany({
+      where,
+      skip,
+      take: Number(limit),
+      include: {
+        order: {
+          select: {
+            orderCode: true,
+            total: true,
+            customer: { select: { name: true, email: true, phone: true } },
+          },
+        },
+      },
+      orderBy: { createdAt: "desc" },
+    }),
+    prisma.invoice.count({ where }),
+  ]);
+  return {
+    invoices,
+    pagination: { page: Number(page), limit: Number(limit), total, totalPages: Math.ceil(total / Number(limit)) },
+  };
 };

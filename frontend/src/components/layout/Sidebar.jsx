@@ -48,12 +48,22 @@ import {
   NotificationOutlined,
   ProjectOutlined,
   ExperimentOutlined,
+  SettingOutlined,
   TagOutlined,
   CrownOutlined,
   ArrowUpOutlined,
   BarcodeOutlined,
+  BulbOutlined,
+  QuestionCircleOutlined,
+  TableOutlined,
+  FireOutlined,
+  InboxOutlined,
+  WarningOutlined,
+  ThunderboltOutlined,
+  FolderOpenOutlined,
 } from "@ant-design/icons";
 import useAuthStore from "../../stores/authStore";
+import PermissionGate from "../shared/PermissionGate";
 
 /**
  * Sidebar — Menu điều hướng trái, phân nhóm theo chức năng
@@ -62,16 +72,25 @@ import useAuthStore from "../../stores/authStore";
  *   - ADMIN:            toàn bộ menu
  *   - MANAGER:          ẩn Users, Reports, Audit
  *   - CASHIER/WAREHOUSE: chỉ Dashboard, POS, Orders, Products, Customers
+ *
+ * Vertical: lọc thêm theo businessTemplate (F&B vs Retail)
+ *   - Item/group có `verticals: ['FNB']` → chỉ hiện cho F&B (cafe/nhà hàng/fast-food/bar)
+ *   - `verticals: ['RETAIL']` → chỉ hiện cho retail (không phải F&B)
+ *   - Không có `verticals` → hiện cho mọi vertical
  */
 //chỉnh cho super_admin có quyền như admin nhưng có thêm quyền quản lý user và xem audit log, báo cáo
 const ALL_ROLES = [
   "ADMIN",
   "MANAGER",
+  "ACCOUNTANT",
   "CASHIER",
   "WAREHOUSE",
   "SUPER_ADMIN",
   "SUPER_OMEGA_ULTRA_ADMIN",
 ];
+
+// Danh sách template F&B — đồng bộ với authStore.FNB_TEMPLATES
+const FNB_TEMPLATES = ["cafe", "nha_hang", "do_an_nhanh", "bar_pub"];
 
 // ----- Menu dành riêng cho SUPER_OMEGA_ULTRA_ADMIN (khu vực quản trị hệ thống) -----
 const SUPER_ADMIN_MENU_GROUPS = [
@@ -101,7 +120,7 @@ const SUPER_ADMIN_MENU_GROUPS = [
       {
         key: "/admin/subscriptions",
         icon: <TeamOutlined />,
-        label: "Subscriptions",
+        label: "Thuê bao",
       },
       {
         key: "/admin/invoices",
@@ -129,31 +148,107 @@ const SUPER_ADMIN_MENU_GROUPS = [
   },
 ];
 
-// ----- Menu definition -----
+// ----- Beginner Menu (chỉ hiển thị core features) -----
+const BEGINNER_MENU_GROUPS = [
+  {
+    key: "overview",
+    label: "TỔNG QUAN",
+    roles: ALL_ROLES,
+    items: [
+      { key: "/dashboard", icon: <DashboardOutlined />, label: "Trang chủ" },
+      { key: "/smart-guide", icon: <BulbOutlined />, label: "Trợ lý KD" },
+    ],
+  },
+  {
+    key: "sales",
+    label: "BÁN HÀNG",
+    roles: ALL_ROLES,
+    items: [
+      { key: "/pos", icon: <ShoppingCartOutlined />, label: "Bán hàng" },
+      { key: "/orders", icon: <FileTextOutlined />, label: "Đơn hàng" },
+    ],
+  },
+  {
+    key: "inventory",
+    label: "SẢN PHẨM & KHO",
+    roles: ALL_ROLES,
+    items: [
+      { key: "/products", icon: <ShoppingOutlined />, label: "Sản phẩm" },
+      {
+        key: "/inventory",
+        icon: <DatabaseOutlined />,
+        label: "Tồn kho",
+        roles: ["ADMIN", "MANAGER", "WAREHOUSE"],
+      },
+    ],
+  },
+  {
+    key: "customers",
+    label: "KHÁCH HÀNG",
+    roles: ALL_ROLES,
+    items: [
+      { key: "/customers", icon: <TeamOutlined />, label: "Khách hàng" },
+    ],
+  },
+  {
+    key: "account",
+    label: "TÀI KHOẢN",
+    roles: ALL_ROLES,
+    items: [
+      { key: "/help", icon: <QuestionCircleOutlined />, label: "Trợ giúp" },
+    ],
+  },
+];
+
+// ----- F&B Menu (chỉ hiển thị cho vertical F&B: cafe/nhà hàng/fast-food/bar) -----
+// Các mục này là placeholder — sẽ được kích hoạt ở Phase 2 (Sơ đồ bàn),
+// Phase 4 (KDS), Phase 6 (QR ordering). Hiện disabled để báo hiệu "sắp ra mắt".
+const FNB_MENU_GROUPS = [
+  {
+    key: "fnb",
+    label: "F&B",
+    roles: ALL_ROLES,
+    verticals: ["FNB"],
+    items: [
+      { key: "/floor", icon: <TableOutlined />, label: "Sơ đồ bàn" },
+      { key: "/kds", icon: <FireOutlined />, label: "Màn hình bếp (KDS)", roles: ["ADMIN", "MANAGER", "CASHIER", "WAREHOUSE"] },
+      { key: "/order-inbox", icon: <InboxOutlined />, label: "Đơn đa kênh", roles: ["ADMIN", "MANAGER", "CASHIER"] },
+      { key: "/modifier-groups", icon: <TagOutlined />, label: "Nhóm tùy chọn", roles: ["ADMIN", "MANAGER"] },
+      { key: "/combos", icon: <ClusterOutlined />, label: "Combo", roles: ["ADMIN", "MANAGER"] },
+      { key: "/recipes", icon: <ExperimentOutlined />, label: "Công thức món", roles: ["ADMIN", "MANAGER"] },
+      { key: "/qr-ordering", icon: <BarcodeOutlined />, label: "QR Đặt món", roles: ["ADMIN", "MANAGER"] },
+      { key: "/printers", icon: <FileTextOutlined />, label: "Máy in", roles: ["ADMIN", "MANAGER"] },
+      { key: "/ai-forecast", icon: <ThunderboltOutlined />, label: "AI Dự báo", roles: ["ADMIN", "MANAGER"] },
+    ],
+  },
+];
+
+// ----- Full menu -----
 const MENU_GROUPS = [
   {
     key: "overview",
     label: "TỔNG QUAN",
     roles: ALL_ROLES,
     items: [
-      { key: "/dashboard", icon: <DashboardOutlined />, label: "Dashboard" },
+      { key: "/dashboard", icon: <DashboardOutlined />, label: "Tổng quan" },
+      { key: "/smart-guide", icon: <BulbOutlined />, label: "Trợ lý KD" },
       {
         key: "/analytics",
         icon: <LineChartOutlined />,
-        label: "Analytics",
+        label: "Phân tích",
         roles: ["ADMIN", "MANAGER"],
       },
     ],
   },
   {
     key: "ai",
-    label: "AI AGENT",
+    label: "TRỢ LÝ AI",
     roles: ALL_ROLES,
     items: [
       {
         key: "/agent-analytics",
         icon: <FundOutlined />,
-        label: "AI Analytics",
+        label: "AI Phân tích",
         roles: ["ADMIN", "MANAGER"],
       },
     ],
@@ -163,12 +258,48 @@ const MENU_GROUPS = [
     label: "BÁN HÀNG",
     roles: ALL_ROLES,
     items: [
-      { key: "/pos", icon: <ShoppingCartOutlined />, label: "POS" },
+      { key: "/pos", icon: <ShoppingCartOutlined />, label: "Bán hàng" },
       { key: "/orders", icon: <FileTextOutlined />, label: "Đơn hàng" },
       {
         key: "/returns",
         icon: <UndoOutlined />,
         label: "Trả hàng",
+        roles: ["ADMIN", "MANAGER"],
+      },
+      {
+        key: "/promotions",
+        icon: <CrownOutlined />,
+        label: "Khuyến mãi",
+        roles: ["ADMIN", "MANAGER"],
+      },
+      {
+        key: "/invoices",
+        icon: <FileTextOutlined />,
+        label: "Hóa đơn",
+        roles: ["ADMIN", "MANAGER", "CASHIER"],
+      },
+      {
+        key: "/delivery",
+        icon: <ContainerOutlined />,
+        label: "Giao hàng",
+        roles: ["ADMIN", "MANAGER"],
+      },
+      {
+        key: "/loyalty-rules",
+        icon: <CrownOutlined />,
+        label: "Điểm thưởng",
+        roles: ["ADMIN", "MANAGER"],
+      },
+      {
+        key: "/stamp-cards",
+        icon: <CheckSquareOutlined />,
+        label: "Thẻ tích điểm",
+        roles: ["ADMIN", "MANAGER"],
+      },
+      {
+        key: "/portal-settings",
+        icon: <SolutionOutlined />,
+        label: "Cổng khách hàng",
         roles: ["ADMIN", "MANAGER"],
       },
     ],
@@ -194,7 +325,7 @@ const MENU_GROUPS = [
       {
         key: "/serial-numbers",
         icon: <BarcodeOutlined />,
-        label: "Serial Number",
+        label: "Số sê-ri",
         roles: ["ADMIN", "MANAGER", "WAREHOUSE"],
       },
     ],
@@ -225,7 +356,13 @@ const MENU_GROUPS = [
       {
         key: "/store-credits",
         icon: <WalletOutlined />,
-        label: "Store Credit",
+        label: "Tín dụng KH",
+        roles: ["ADMIN", "MANAGER"],
+      },
+      {
+        key: "/churn-alerts",
+        icon: <WarningOutlined />,
+        label: "Cảnh báo rời bỏ",
         roles: ["ADMIN", "MANAGER"],
       },
       {
@@ -240,7 +377,16 @@ const MENU_GROUPS = [
     key: "hr",
     label: "NHÂN SỰ",
     roles: ["ADMIN", "MANAGER"],
-    items: [{ key: "/hr", icon: <SolutionOutlined />, label: "HR & Lương" }],
+    items: [      { key: "/hr", icon: <SolutionOutlined />, label: "Nhân sự & Lương" }],
+  },
+  {
+    key: "docs",
+    label: "TÀI LIỆU",
+    roles: ALL_ROLES,
+    items: [
+      { key: "/documents/my", icon: <FileTextOutlined />, label: "Tài liệu của tôi" },
+      { key: "/documents", icon: <FolderOpenOutlined />, label: "Quản lý tài liệu", roles: ["ADMIN", "MANAGER"] },
+    ],
   },
   {
     key: "projects",
@@ -265,49 +411,70 @@ const MENU_GROUPS = [
   {
     key: "accounting",
     label: "KẾ TOÁN & TÀI CHÍNH",
-    roles: ["ADMIN", "MANAGER"],
+    roles: ["ADMIN", "MANAGER", "ACCOUNTANT"],
     items: [
-      { key: "/finance", icon: <FundOutlined />, label: "Sức khỏe TC" },
-      { key: "/accounting-reports", icon: <FileTextOutlined />, label: "Sổ sách kế toán" },
+      { key: "/finance", icon: <FundOutlined />, label: "Sức khỏe tài chính" },
+      { key: "/accounting-reports", icon: <FileTextOutlined />, label: "Sổ sách kế toán", hkdHidden: true },
       {
         key: "/debts",
         icon: <SwapOutlined />,
         label: "Công nợ",
-        roles: ["ADMIN", "MANAGER", "CASHIER"],
+        roles: ["ADMIN", "MANAGER", "ACCOUNTANT"],
       },
       { key: "/expenses", icon: <WalletOutlined />, label: "Chi phí" },
       { key: "/vendors", icon: <BankOutlined />, label: "Nhà cung cấp" },
+      {
+        key: "/vendors/kraljic",
+        icon: <ClusterOutlined />,
+        label: "Phân loại NCC (Kraljic)",
+        roles: ["ADMIN", "MANAGER"],
+      },
       {
         key: "/purchase-orders",
         icon: <ContainerOutlined />,
         label: "Mua hàng",
       },
       {
+        key: "/grn",
+        icon: <InboxOutlined />,
+        label: "Phiếu nhận hàng (GRN)",
+      },
+      {
+        key: "/purchase-invoices",
+        icon: <AuditOutlined />,
+        label: "Hoá đơn NCC (3-way)",
+      },
+      {
         key: "/financial-reports",
         icon: <PieChartOutlined />,
-        label: "BC tài chính",
+        label: "Báo cáo tài chính",
+        hkdHidden: true,
       },
       {
         key: "/tax-reports",
         icon: <FileExcelOutlined />,
         label: "Báo cáo thuế",
+        hkdHidden: true,
       },
       {
         key: "/einvoice",
         icon: <FileTextOutlined />,
         label: "Hóa đơn điện tử",
+        hkdHidden: true,
       },
       {
         key: "/bank-reco",
         icon: <ReconciliationOutlined />,
-        label: "Đối soát NH",
+        label: "Đối soát ngân hàng",
+        hkdHidden: true,
       },
       {
         key: "/fixed-assets",
         icon: <BankOutlined />,
         label: "Tài sản cố định",
+        hkdHidden: true,
       },
-      { key: "/currency", icon: <SwapOutlined />, label: "Tỷ giá ngoại tệ" },
+      { key: "/currency", icon: <SwapOutlined />, label: "Tỷ giá ngoại tệ", hkdHidden: true },
       {
         key: "/marketplace",
         icon: <ShoppingCartOutlined />,
@@ -316,14 +483,15 @@ const MENU_GROUPS = [
       {
         key: "/report-builder",
         icon: <PieChartOutlined />,
-        label: "Report Builder",
+        label: "Tạo báo cáo",
       },
-      { key: "/workflows", icon: <FundOutlined />, label: "Workflow" },
+      { key: "/workflows", icon: <FundOutlined />, label: "Quy trình" },
       {
         key: "/journal",
         icon: <AccountBookOutlined />,
         label: "Sổ kế toán",
-        roles: ["ADMIN"],
+        roles: ["ADMIN", "ACCOUNTANT"],
+        hkdHidden: true,
       },
     ],
   },
@@ -342,12 +510,12 @@ const MENU_GROUPS = [
         key: "/reports",
         icon: <FileExcelOutlined />,
         label: "Báo cáo",
-        roles: ["ADMIN"],
+        roles: ["ADMIN", "ACCOUNTANT"],
       },
       {
         key: "/audit",
         icon: <AuditOutlined />,
-        label: "Audit Log",
+        label: "Nhật ký",
         roles: ["ADMIN"],
       },
       {
@@ -359,7 +527,7 @@ const MENU_GROUPS = [
       {
         key: "/integrations",
         icon: <ApiOutlined />,
-        label: "Tích hợp & API keys",
+        label: "Tích hợp & khóa API",
         roles: ["ADMIN"],
       },
       // Admin routes moved to SuperAdminLayout (dark sidebar) — not shown here
@@ -370,28 +538,110 @@ const MENU_GROUPS = [
     label: "TÀI KHOẢN",
     roles: ALL_ROLES,
     items: [
+      { key: "/help", icon: <QuestionCircleOutlined />, label: "Trợ giúp" },
       {
         key: "/subscription",
         icon: <CrownOutlined />,
         label: "Gói dịch vụ",
       },
       {
+        key: "/settings",
+        icon: <SettingOutlined />,
+        label: "Cài đặt",
+        roles: ["ADMIN", "MANAGER"],
+      },
+      {
         key: "/profile",
         icon: <UserOutlined />,
         label: "Hồ sơ",
+      },
+      {
+        key: "/profile/sessions",
+        icon: <TableOutlined />,
+        label: "Phiên đăng nhập",
+        roles: ["ADMIN", "MANAGER"],
       },
     ],
   },
 ];
 
-function buildMenuItems(userRole, menuGroups) {
+const MENU_PERMISSION_MAP = {
+  "/products": "products.view",
+  "/inventory": "inventory.view",
+  "/cycle-count": "inventory.view",
+  "/serial-numbers": "inventory.view",
+  "/customers": "customers.view",
+  "/orders": "orders.view",
+  "/hr": "hr.view",
+  "/finance": "accounting.view",
+  "/accounting-reports": "accounting.reports",
+  "/financial-reports": "accounting.reports",
+  "/expenses": "accounting.expenses",
+  "/reports": "reports.view",
+  "/users": "settings.view",
+  "/integrations": "settings.edit",
+};
+
+const ROLE_PERMS_FALLBACK = {
+  SUPER_OMEGA_ULTRA_ADMIN: "*",
+  SUPER_ADMIN: "*",
+  ADMIN: [
+    "products.view", "orders.view", "customers.view", "inventory.view",
+    "hr.view", "accounting.view", "accounting.reports", "accounting.expenses",
+    "settings.view", "settings.edit", "reports.view",
+  ],
+  MANAGER: [
+    "products.view", "orders.view", "customers.view", "inventory.view",
+    "hr.view", "accounting.view", "accounting.reports", "accounting.expenses",
+    "settings.view", "reports.view",
+  ],
+  ACCOUNTANT: [
+    "accounting.view", "accounting.reports", "accounting.expenses",
+    "reports.view",
+  ],
+  CASHIER: [
+    "products.view", "orders.view", "customers.view", "inventory.view",
+  ],
+  WAREHOUSE: [
+    "inventory.view",
+  ],
+};
+
+function hasMenuPermission(userRole, path) {
+  const permKey = MENU_PERMISSION_MAP[path];
+  if (!permKey) return true;
+  const perms = ROLE_PERMS_FALLBACK[userRole];
+  if (!perms) return false;
+  if (perms === "*") return true;
+  return perms.includes(permKey);
+}
+
+function buildMenuItems(userRole, menuGroups, isFnB = false, isHkd = false) {
   const items = [];
   for (const group of menuGroups) {
     if (group.roles && !group.roles.includes(userRole)) continue;
 
-    const visibleItems = group.items.filter(
-      (it) => !it.roles || it.roles.includes(userRole),
-    );
+    // Lọc theo vertical: 'FNB' = chỉ F&B, 'RETAIL' = chỉ không phải F&B
+    if (group.verticals) {
+      const showForFnB = group.verticals.includes("FNB");
+      const showForRetail = group.verticals.includes("RETAIL");
+      if (showForFnB && !isFnB) continue;
+      if (showForRetail && isFnB) continue;
+    }
+
+    const visibleItems = group.items.filter((it) => {
+      if (it.roles && !it.roles.includes(userRole)) return false;
+      if (!hasMenuPermission(userRole, it.key)) return false;
+      if (it.verticals) {
+        const showForFnB = it.verticals.includes("FNB");
+        const showForRetail = it.verticals.includes("RETAIL");
+        if (showForFnB && !isFnB) return false;
+        if (showForRetail && isFnB) return false;
+      }
+      // HKD mode (SIMPLIFIED_HKD): ẩn kế toán double-entry, chỉ giữ Thu/Chi
+      if (isHkd && it.hkdHidden) return false;
+      return true;
+    });
     if (visibleItems.length === 0) continue;
 
     // SUPER_OMEGA_ULTRA_ADMIN: đổi nhãn CRM thành Marketing Hệ Thống
@@ -399,12 +649,16 @@ function buildMenuItems(userRole, menuGroups) {
     if (userRole === "SUPER_OMEGA_ULTRA_ADMIN" && group.key === "crm") {
       groupLabel = "MARKETING HỆ THỐNG";
     }
+    // HKD mode: nhóm kế toán chỉ còn Thu/Chi
+    if (isHkd && group.key === "accounting") {
+      groupLabel = "THU CHI & TÀI CHÍNH";
+    }
 
     items.push({
       type: "group",
       key: group.key,
       label: groupLabel,
-      children: visibleItems.map(({ key, icon, label }) => {
+      children: visibleItems.map(({ key, icon, label, disabled, comingSoon }) => {
         // Đổi "Chiến dịch" → "Chiến dịch Upsell" cho SUPER_OMEGA_ULTRA_ADMIN
         if (
           userRole === "SUPER_OMEGA_ULTRA_ADMIN" &&
@@ -412,7 +666,11 @@ function buildMenuItems(userRole, menuGroups) {
         ) {
           return { key, icon, label: "Chiến dịch Upsell" };
         }
-        return { key, icon, label };
+        // Coming soon → suffix + disabled
+        if (comingSoon) {
+          return { key, icon, label: `${label} (sắp ra mắt)`, disabled: true };
+        }
+        return { key, icon, label, disabled };
       }),
     });
   }
@@ -427,32 +685,43 @@ export default function Sidebar({
 }) {
   const location = useLocation();
   const navigate = useNavigate();
-  const { user, logout, originalToken } = useAuthStore();
+  const { user, logout, originalToken, beginnerMode, setBeginnerMode, businessTemplate, accountingMode } = useAuthStore();
 
   const userRole = user?.role || "CASHIER";
 
-  // SUPER_OMEGA_ULTRA_ADMIN: chỉ show menu admin, trừ khi đang support mode (impersonate)
   const isSuperAdmin = userRole === "SUPER_OMEGA_ULTRA_ADMIN";
   const isSupportMode = !!originalToken;
+  const isFnB = FNB_TEMPLATES.includes(businessTemplate);
+  const isHkd = accountingMode === "SIMPLIFIED_HKD";
 
-  const activeMenuGroups =
-    isSuperAdmin && !isSupportMode ? SUPER_ADMIN_MENU_GROUPS : MENU_GROUPS;
+  // In beginner mode (and not super admin), show simplified menu
+  const isBeginner = beginnerMode && !isSuperAdmin && !isSupportMode;
+
+  const activeMenuGroups = useMemo(() => {
+    if (isSuperAdmin && !isSupportMode) return SUPER_ADMIN_MENU_GROUPS;
+    if (isBeginner) return BEGINNER_MENU_GROUPS;
+    // Full menu: chèn group F&B (nếu vertical F&B) ngay sau group "sales"
+    if (isFnB) {
+      const salesIdx = MENU_GROUPS.findIndex((g) => g.key === "sales");
+      if (salesIdx >= 0) {
+        return [...MENU_GROUPS.slice(0, salesIdx + 1), ...FNB_MENU_GROUPS, ...MENU_GROUPS.slice(salesIdx + 1)];
+      }
+    }
+    return MENU_GROUPS;
+  }, [isSuperAdmin, isSupportMode, isBeginner, isFnB]);
 
   const menuItems = useMemo(
-    () => buildMenuItems(userRole, activeMenuGroups),
-    [userRole, activeMenuGroups],
+    () => buildMenuItems(userRole, activeMenuGroups, isFnB, isHkd),
+    [userRole, activeMenuGroups, isFnB, isHkd],
   );
 
-  // Xác định key active dựa trên pathname
   const selectedKey = useMemo(() => {
-    const allKeys = (
-      isSuperAdmin && !isSupportMode ? SUPER_ADMIN_MENU_GROUPS : MENU_GROUPS
-    ).flatMap((g) => g.items.map((i) => i.key));
+    const allKeys = activeMenuGroups.flatMap((g) => g.items.map((i) => i.key));
     const matched = allKeys.find(
       (k) => location.pathname === k || location.pathname.startsWith(k + "/"),
     );
     return matched || location.pathname;
-  }, [location.pathname, isSuperAdmin, isSupportMode]);
+  }, [location.pathname, activeMenuGroups]);
 
   const userInitials = (user?.fullName || user?.username || "U")
     .split(" ")
@@ -466,7 +735,8 @@ export default function Sidebar({
         <div
           className="sidebar-backdrop"
           onClick={onMobileClose}
-          aria-hidden="true"
+          role="presentation"
+          onKeyDown={(e) => e.key === "Escape" && onMobileClose()}
         />
       )}
       <aside
@@ -522,6 +792,68 @@ export default function Sidebar({
             style={{ background: "transparent", borderRight: 0 }}
           />
         </div>
+
+        {/* Beginner mode toggle — always visible (icon-only when collapsed) */}
+        {!isSuperAdmin && !isSupportMode && (
+          collapsed ? (
+            <div
+              onClick={() => setBeginnerMode(!beginnerMode)}
+              style={{
+                display: 'flex',
+                justifyContent: 'center',
+                padding: '10px 0',
+                borderTop: '1px solid var(--border-dark)',
+                cursor: 'pointer',
+              }}
+              title={beginnerMode ? 'Mở chế độ đầy đủ' : 'Bật chế độ đơn giản'}
+            >
+              <BulbOutlined style={{
+                color: beginnerMode ? 'var(--primary)' : 'var(--text-inverse-muted)',
+                fontSize: 18,
+              }} />
+            </div>
+          ) : (
+            <div
+              className="sidebar__beginner-toggle"
+              style={{
+                padding: '8px 16px',
+                borderTop: '1px solid var(--border-dark)',
+                borderBottom: '1px solid var(--border-dark)',
+              }}
+            >
+              <div
+                onClick={() => {
+                  setBeginnerMode(!beginnerMode);
+                  if (!beginnerMode) navigate('/dashboard');
+                }}
+                style={{
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: 10,
+                  cursor: 'pointer',
+                  padding: '6px 10px',
+                  borderRadius: 8,
+                  background: beginnerMode ? 'rgba(13, 148, 136, 0.15)' : 'transparent',
+                  transition: 'background 0.2s',
+                  fontSize: 13,
+                  color: 'var(--text-inverse-muted)',
+                }}
+              >
+                <BulbOutlined style={{ color: beginnerMode ? 'var(--primary)' : undefined, fontSize: 14 }} />
+                <div style={{ flex: 1 }}>
+                  <div style={{ color: beginnerMode ? 'var(--primary)' : 'var(--text-inverse-muted)', fontWeight: 500 }}>
+                    Chế độ Đơn giản
+                  </div>
+                  {!beginnerMode && (
+                    <div style={{ fontSize: 11, marginTop: 1 }}>
+                      Bật để ẩn menu nâng cao
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          )
+        )}
 
         {/* User footer */}
         <div className="sidebar__footer">

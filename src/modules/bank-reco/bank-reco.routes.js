@@ -25,13 +25,26 @@ const { authenticate, authorize } = require("../../middleware/auth.middleware");
 const { requireModule } = require("../../middleware/plan.middleware");
 const svc = require("./bank-reco.service");
 
-const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 20 * 1024 * 1024 } });
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 20 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    const allowed = [
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'application/vnd.ms-excel',
+      'text/csv',
+    ];
+    if (allowed.includes(file.mimetype)) cb(null, true);
+    else cb(new Error('Chỉ chấp nhận file Excel (.xlsx, .xls) hoặc CSV'));
+  },
+});
 const ok = (res, data) => res.json({ success: true, data });
 
 router.use(requireModule("bank-reco"));
 
 // GET /api/bank-reco/bank-accounts — danh sách TK ngân hàng để chọn khi import sao kê
-router.get("/bank-accounts", authenticate, async (req, res, next) => {
+// L9: thông tin TK ngân hàng là dữ liệu tài chính nhạy cảm — chỉ quản lý/kế toán
+router.get("/bank-accounts", authenticate, authorize("ADMIN", "MANAGER", "ACCOUNTANT"), async (req, res, next) => {
   try {
     const accounts = await prisma.bankAccount.findMany({
       where: { isActive: true },
@@ -46,12 +59,12 @@ router.get("/bank-accounts", authenticate, async (req, res, next) => {
 });
 
 // GET /api/bank-reco/statements
-router.get("/statements", authenticate, authorize("ADMIN", "MANAGER"), async (req, res, next) => {
+router.get("/statements", authenticate, authorize("ADMIN", "MANAGER", "ACCOUNTANT"), async (req, res, next) => {
   try { ok(res, await svc.listStatements(req.query)); } catch (e) { next(e); }
 });
 
 // GET /api/bank-reco/statements/:id/lines
-router.get("/statements/:id/lines", authenticate, authorize("ADMIN", "MANAGER"), async (req, res, next) => {
+router.get("/statements/:id/lines", authenticate, authorize("ADMIN", "MANAGER", "ACCOUNTANT"), async (req, res, next) => {
   try {
     const isMatched = req.query.isMatched !== undefined ? req.query.isMatched === "true" : undefined;
     ok(res, await svc.getStatementLines(req.params.id, { ...req.query, isMatched }));
@@ -62,7 +75,7 @@ router.get("/statements/:id/lines", authenticate, authorize("ADMIN", "MANAGER"),
 router.post(
   "/statements/import",
   authenticate,
-  authorize("ADMIN", "MANAGER"),
+  authorize("ADMIN", "MANAGER", "ACCOUNTANT"),
   upload.single("file"),
   async (req, res, next) => {
     try {
@@ -76,12 +89,12 @@ router.post(
 );
 
 // POST /api/bank-reco/statements/:id/auto-match
-router.post("/statements/:id/auto-match", authenticate, authorize("ADMIN", "MANAGER"), async (req, res, next) => {
+router.post("/statements/:id/auto-match", authenticate, authorize("ADMIN", "MANAGER", "ACCOUNTANT"), async (req, res, next) => {
   try { ok(res, await svc.autoMatch(req.params.id)); } catch (e) { next(e); }
 });
 
 // PATCH /api/bank-reco/lines/:id/match
-router.patch("/lines/:id/match", authenticate, authorize("ADMIN", "MANAGER"), async (req, res, next) => {
+router.patch("/lines/:id/match", authenticate, authorize("ADMIN", "MANAGER", "ACCOUNTANT"), async (req, res, next) => {
   try {
     const { entryId } = req.body;
     if (!entryId) throw { status: 400, message: "entryId là bắt buộc" };
@@ -90,7 +103,7 @@ router.patch("/lines/:id/match", authenticate, authorize("ADMIN", "MANAGER"), as
 });
 
 // PATCH /api/bank-reco/lines/:id/unmatch
-router.patch("/lines/:id/unmatch", authenticate, authorize("ADMIN", "MANAGER"), async (req, res, next) => {
+router.patch("/lines/:id/unmatch", authenticate, authorize("ADMIN", "MANAGER", "ACCOUNTANT"), async (req, res, next) => {
   try { ok(res, await svc.unmatch(req.params.id)); } catch (e) { next(e); }
 });
 
@@ -104,6 +117,38 @@ router.post("/lines/:id/adjustment", authenticate, authorize("ADMIN"), async (re
       amount: Number(amount),
       userId: req.user.id,
     }));
+  } catch (e) { next(e); }
+});
+
+// GET /api/bank-reco/journal-entries/search — search journal entries for manual matching
+router.get("/journal-entries/search", authenticate, authorize("ADMIN", "MANAGER", "ACCOUNTANT"), async (req, res, next) => {
+  try {
+    const { q, from, to } = req.query;
+    const where = { status: 'POSTED' };
+    if (q) {
+      where.OR = [
+        { entryCode: { contains: q, mode: 'insensitive' } },
+        { description: { contains: q, mode: 'insensitive' } },
+      ];
+    }
+    if (from) where.date = { ...where.date, gte: new Date(from) };
+    if (to) where.date = { ...where.date, lte: new Date(to) };
+
+    const entries = await prisma.journalEntry.findMany({
+      where,
+      select: { id: true, entryCode: true, date: true, description: true, source: true },
+      orderBy: { date: 'desc' },
+      take: 30,
+    });
+    ok(res, entries);
+  } catch (e) { next(e); }
+});
+
+// POST /api/bank-reco/statements/auto-match-all — batch auto-match all imported statements
+router.post("/statements/auto-match-all", authenticate, authorize("ADMIN", "MANAGER", "ACCOUNTANT"), async (req, res, next) => {
+  try {
+    const result = await svc.autoMatchAll();
+    ok(res, result);
   } catch (e) { next(e); }
 });
 

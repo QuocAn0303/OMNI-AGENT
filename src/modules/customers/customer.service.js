@@ -47,6 +47,7 @@ const getAll = async ({ page: rawPage = 1, limit: rawLimit = 10, search = "" }) 
         email: true,
         address: true,
         totalSpent: true,
+        totalDebt: true,
         createdAt: true,
         tags: { select: { tag: { select: { id: true, name: true, color: true } } } },
         //isActive: true, Lệnh này chỉ trả về trạng thái hoạt đông của khách hàng, không trả về khách hàng đã bị xóa (isActive: false)
@@ -95,7 +96,7 @@ const create = async (data, userId = null) => {
 //Cập nhật thông tin khách hàng
 
 const update = async (id, data, userId = null) => {
-  const { totalSpent, ...cleanData } = data;
+  const { totalSpent, totalDebt, creditLimit, ...cleanData } = data;
   if (cleanData.phone === "") cleanData.phone = null;
   if (cleanData.email === "") cleanData.email = null;
 
@@ -169,6 +170,7 @@ const getCustomer360 = async (id) => {
       address: true,
       totalSpent: true,
       totalDebt: true,
+      creditLimit: true,
       storeCredit: true,
       tier: true,
       loyaltyPoints: true,
@@ -268,10 +270,40 @@ const getCustomer360 = async (id) => {
   };
 };
 
+const updateCreditLimit = async (id, creditLimit, userId = null) => {
+  const before = await prisma.customer.findUnique({
+    where: { id },
+    select: { creditLimit: true, totalDebt: true, isActive: true },
+  });
+  if (!before) throw { status: 404, message: "Khách hàng không tồn tại" };
+  if (!before.isActive) throw { status: 400, message: "Không thể cập nhật khách hàng đã bị vô hiệu hóa" };
+  if (Number(creditLimit) < 0) throw { status: 400, message: "Hạn mức tín dụng không được âm" };
+  if (Number(creditLimit) > 0 && Number(creditLimit) < Number(before.totalDebt)) {
+    throw { status: 400, message: "Hạn mức tín dụng không được thấp hơn công nợ hiện tại" };
+  }
+
+  const updated = await prisma.customer.update({
+    where: { id },
+    data: { creditLimit },
+  });
+
+  auditService.log({
+    userId,
+    action: "UPDATE_CUSTOMER_CREDIT_LIMIT",
+    entity: "Customer",
+    entityId: id,
+    before: { creditLimit: before.creditLimit },
+    after: { creditLimit },
+  });
+
+  return updated;
+};
+
 module.exports = {
   getAll,
   create,
   update,
   remove,
   getCustomer360,
+  updateCreditLimit,
 };

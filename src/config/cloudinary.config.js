@@ -18,7 +18,9 @@ const cloudinary = require("cloudinary").v2;
 const { CloudinaryStorage } = require("multer-storage-cloudinary");
 const config = require("../modules/integrations/integration-config.service");
 
-let _configured = null; // { cloudName, apiKey, apiSecret } đã apply
+const MAX_FILE_SIZE = 5 * 1024 * 1024; // 5MB
+
+let _configured = null;
 let _middleware = null;
 
 const _apply = async () => {
@@ -27,8 +29,15 @@ const _apply = async () => {
   if (_middleware && _configured === sig) return _middleware;
 
   if (!cfg.CLOUDINARY_CLOUD_NAME || !cfg.CLOUDINARY_API_KEY || !cfg.CLOUDINARY_API_SECRET) {
-    // Chưa cấu hình → memory storage (upload vào RAM, không lưu được vĩnh viễn).
-    _middleware = multer({ storage: multer.memoryStorage() });
+    _middleware = multer({
+      storage: multer.memoryStorage(),
+      limits: { fileSize: MAX_FILE_SIZE },
+      fileFilter: (req, file, cb) => {
+        const allowed = ['image/jpeg', 'image/png', 'image/webp'];
+        if (allowed.includes(file.mimetype)) cb(null, true);
+        else cb(new Error('Chỉ chấp nhận ảnh (JPEG, PNG, WebP)'));
+      },
+    });
     _configured = sig;
     return _middleware;
   }
@@ -42,7 +51,7 @@ const _apply = async () => {
     cloudinary,
     params: { folder: "IS207_Products", allowed_formats: ["jpg", "jpeg", "png", "webp"] },
   });
-  _middleware = multer({ storage });
+  _middleware = multer({ storage, limits: { fileSize: MAX_FILE_SIZE } });
   _configured = sig;
   return _middleware;
 };

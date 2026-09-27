@@ -15,12 +15,13 @@
  * - getById(id): Chi tiết phiếu kiểm kê kèm items và thông tin sản phẩm
  */
 const prisma = require("../../config/prisma");
+const { withUniqueRetry } = require("../accounting/journal.service");
 
-const generateCode = async () => {
+const generateCode = async (tx = prisma) => {
   const today = new Date().toISOString().slice(0, 10).replace(/-/g, "");
   const start = new Date();
   start.setHours(0, 0, 0, 0);
-  const count = await prisma.cycleCount.count({ where: { createdAt: { gte: start } } });
+  const count = await tx.cycleCount.count({ where: { createdAt: { gte: start } } });
   return `CC-${today}-${String(count + 1).padStart(4, "0")}`;
 };
 
@@ -33,21 +34,36 @@ const create = async ({ productIds, note }, userId) => {
     throw { status: 400, message: "Một số sản phẩm không tồn tại hoặc đã ngừng kinh doanh" };
   }
 
-  const code = await generateCode();
-  return prisma.cycleCount.create({
-    data: {
-      code,
-      note,
-      createdById: userId,
-      items: {
-        create: products.map((product) => ({
-          productId: product.id,
-          systemQuantity: product.inventories.reduce((sum, inv) => sum + inv.quantity, 0),
-        })),
+  // Mỗi (sản phẩm, kho) là một dòng kiểm kê riêng — trước đây gộp mọi kho
+  // của sản phẩm vào 1 dòng khiến complete() ghi đè cùng số lượng lên MỌI kho.
+  const items = [];
+  for (const product of products) {
+    if (!product.inventories.length) {
+      items.push({ productId: product.id, systemQuantity: 0 });
+      continue;
+    }
+    for (const inv of product.inventories) {
+      items.push({
+        productId: product.id,
+        warehouseId: inv.warehouseId,
+        systemQuantity: inv.quantity,
+      });
+    }
+  }
+
+  // A8: mã sinh trong retry — 2 request tạo phiếu cùng lúc không còn trùng mã
+  return withUniqueRetry(async () => {
+    const code = await generateCode(prisma);
+    return prisma.cycleCount.create({
+      data: {
+        code,
+        note,
+        createdById: userId,
+        items: { create: items },
       },
-    },
-    include: { items: { include: { product: true } }, createdBy: { select: { fullName: true } } },
-  });
+      include: { items: { include: { product: true } }, createdBy: { select: { fullName: true } } },
+    });
+  }, 5);
 };
 
 const recordCount = async (id, items) => {
@@ -95,21 +111,24 @@ const complete = async (id, userId) => {
         throw { status: 400, message: "Vui lòng nhập đủ số lượng thực tế trước khi hoàn thành" };
       }
       if (item.variance !== 0) {
-        for (const inventory of item.product.inventories) {
-          await tx.inventory.update({
-            where: { id: inventory.id },
-            data: { quantity: item.actualQuantity },
-          });
-          await tx.inventoryTransaction.create({
-            data: {
-              inventoryId: inventory.id,
-              type: "ADJUSTMENT",
-              quantity: item.variance,
-              note: `Kiểm kê ${cycleCount.code}`,
-              createdById: userId,
-            },
-          });
-        }
+        // Mỗi dòng kiểm kê gắn đúng 1 kho (warehouseId) → chỉ điều chỉnh đúng kho đó
+        const inventory = item.warehouseId
+          ? item.product.inventories.find((inv) => inv.warehouseId === item.warehouseId)
+          : item.product.inventories[0];
+        if (!inventory) continue;
+        await tx.inventory.update({
+          where: { id: inventory.id },
+          data: { quantity: item.actualQuantity },
+        });
+        await tx.inventoryTransaction.create({
+          data: {
+            inventoryId: inventory.id,
+            type: "ADJUSTMENT",
+            quantity: item.variance,
+            note: `Kiểm kê ${cycleCount.code}`,
+            createdById: userId,
+          },
+        });
       }
     }
 

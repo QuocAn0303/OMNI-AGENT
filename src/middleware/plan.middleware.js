@@ -18,15 +18,47 @@
 
 const prisma = require("../config/prisma");
 
-const getActiveSubscription = async (tenantId) => {
-  if (!tenantId) {
-    return null;
-  }
-  return prisma.tenantSubscription.findFirst({
+// B2: cache plan theo tenant (30s) — getEffectivePlan được gọi trên MỌI request
+// có requireModule/checkFeature → trước đây 1-2 query DB mỗi request
+const CACHE_TTL_MS = 30 * 1000;
+const planCache = new Map(); // tenantId -> { sub, plan, expiresAt }
+
+const loadPlanBundle = async (tenantId) => {
+  const sub = await prisma.tenantSubscription.findFirst({
     where: { tenantId, status: { in: ["ACTIVE", "TRIAL"] } },
     include: { plan: true },
     orderBy: { createdAt: "desc" },
   });
+  if (sub) return { sub, plan: sub.plan };
+  const freePlan = await prisma.subscriptionPlan.findUnique({ where: { key: "free" } });
+  return { sub: null, plan: freePlan || null };
+};
+
+const getPlanBundle = async (tenantId) => {
+  if (!tenantId) return { sub: null, plan: null };
+  const cached = planCache.get(tenantId);
+  if (cached && cached.expiresAt > Date.now()) return cached;
+  const bundle = await loadPlanBundle(tenantId);
+  planCache.set(tenantId, { ...bundle, expiresAt: Date.now() + CACHE_TTL_MS });
+  return bundle;
+};
+
+const getActiveSubscription = async (tenantId) => {
+  if (!tenantId) return null;
+  return (await getPlanBundle(tenantId)).sub;
+};
+
+// M10: tenant không có subscription → mặc định gói FREE (key "free" trong seed)
+// Không bypass nữa — plan có module "free" mới được dùng
+const getEffectivePlan = async (tenantId) => {
+  if (!tenantId) return null;
+  return (await getPlanBundle(tenantId)).plan;
+};
+
+// Gọi sau khi đổi subscription (create/change/cancel/webhook PayOS/expire)
+const invalidatePlanCache = (tenantId) => {
+  if (tenantId) planCache.delete(tenantId);
+  else planCache.clear();
 };
 
 const checkFeature = (featureKey) => {
@@ -35,10 +67,10 @@ const checkFeature = (featureKey) => {
       const tenantId = req.user?.tenantId;
       if (!tenantId) return next();
 
-      const sub = await getActiveSubscription(tenantId);
-      if (!sub) return next();
+      const plan = await getEffectivePlan(tenantId);
+      if (!plan) return next();
 
-      const features = sub.plan.features || {};
+      const features = plan.features || {};
       const limit = features[featureKey];
 
       if (limit === false || limit === 0) {
@@ -59,7 +91,7 @@ const checkFeature = (featureKey) => {
             break;
         }
         if (count >= limit) {
-          return next({ status: 403, message: `Đã đạt giới hạn ${featureKey} (${limit}) của gói ${sub.plan.name}` });
+          return next({ status: 403, message: `Đã đạt giới hạn ${featureKey} (${limit}) của gói ${plan.name}` });
         }
       }
 
@@ -76,16 +108,16 @@ const requireModule = (moduleKey) => {
       const tenantId = req.user?.tenantId;
       if (!tenantId) return next();
 
-      const sub = await getActiveSubscription(tenantId);
-      if (!sub) return next();
+      const plan = await getEffectivePlan(tenantId);
+      if (!plan) return next();
 
-      const features = sub.plan.features || {};
+      const features = plan.features || {};
       const allowedModules = features.allowedModules || [];
 
       if (allowedModules.includes("*")) return next();
 
       if (!allowedModules.includes(moduleKey)) {
-        return next({ status: 403, message: `Gói ${sub.plan.name} không hỗ trợ tính năng này. Vui lòng nâng cấp gói.` });
+        return next({ status: 403, message: `Gói ${plan.name} không hỗ trợ tính năng này. Vui lòng nâng cấp gói.` });
       }
 
       next();
@@ -97,18 +129,19 @@ const requireModule = (moduleKey) => {
 
 const getMyPlanFeatures = async (tenantId) => {
   if (!tenantId) return null;
-  const sub = await getActiveSubscription(tenantId);
-  if (!sub) return null;
+  const plan = await getEffectivePlan(tenantId);
+  if (!plan) return null;
+  const sub = await getActiveSubscription(tenantId).catch(() => null);
   return {
-    plan: sub.plan,
+    plan,
     subscription: sub,
-    features: sub.plan.features || {},
-    isExpired: sub.status === "EXPIRED",
+    features: plan.features || {},
+    isExpired: sub?.status === "EXPIRED",
     isAllowed: (moduleKey) => {
-      const allowed = sub.plan.features?.allowedModules || [];
+      const allowed = plan.features?.allowedModules || [];
       return allowed.includes("*") || allowed.includes(moduleKey);
     },
   };
 };
 
-module.exports = { checkFeature, requireModule, getMyPlanFeatures };
+module.exports = { checkFeature, requireModule, getMyPlanFeatures, invalidatePlanCache };

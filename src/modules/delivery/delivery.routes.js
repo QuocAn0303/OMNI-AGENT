@@ -11,6 +11,72 @@
  * - PATCH /:id → deliveryService.updateDelivery (ADMIN, MANAGER). Validate body Zod
  * - POST /:id/events → deliveryService.addEvent (ADMIN, MANAGER). Validate body Zod
  */
+
+/**
+ * @swagger
+ * /api/delivery/{id}/track:
+ *   get:
+ *     summary: Theo dõi trạng thái giao hàng (public, cần gói delivery)
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: OK }
+ *       404: { description: Không tìm thấy đơn giao hàng }
+ *
+ * /api/delivery/{id}:
+ *   patch:
+ *     summary: Cập nhật đơn giao hàng (ADMIN, MANAGER)
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               trackingCode: { type: string }
+ *               status:
+ *                 type: string
+ *                 enum: [PENDING, PICKED_UP, IN_TRANSIT, DELIVERED, FAILED, RETURNED]
+ *               shippingFee: { type: number }
+ *               failedReason: { type: string }
+ *               note: { type: string }
+ *     responses:
+ *       200: { description: Cập nhật giao hàng thành công }
+ *
+ * /api/delivery/{id}/events:
+ *   post:
+ *     summary: Ghi sự kiện vận chuyển (ADMIN, MANAGER)
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               status:
+ *                 type: string
+ *                 enum: [PENDING, PICKED_UP, IN_TRANSIT, DELIVERED, FAILED, RETURNED]
+ *               location: { type: string }
+ *               note: { type: string }
+ *               occurredAt: { type: string, format: date-time }
+ *     responses:
+ *       200: { description: Ghi sự kiện thành công }
+ */
 const router = require("express").Router();
 const { z } = require("zod");
 const deliveryService = require("./delivery.service");

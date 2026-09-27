@@ -50,19 +50,18 @@ import MoneyDisplay from "../components/shared/MoneyDisplay";
 import EmptyState from "../components/shared/EmptyState";
 import useAuthStore from "../stores/authStore";
 import useTour from "../hooks/useTour";
-import { getOrdersTour } from "../config/tourSteps";
+import PermissionGate from "../components/shared/PermissionGate";
 
 const { RangePicker } = DatePicker;
 
-const paymentOptions = [
-  { value: "CASH", label: "Tiền mặt" },
-  { value: "BANK_TRANSFER", label: "Chuyển khoản" },
-  { value: "CARD", label: "Thẻ" },
-];
-
 export default function Orders() {
   const { t } = useTranslation();
-  const tour = useTour('orders');
+  const paymentOptions = [
+    { value: "CASH", label: t('orders.paymentMethods.CASH') },
+    { value: "BANK_TRANSFER", label: t('orders.paymentMethods.BANK_TRANSFER') },
+    { value: "CARD", label: t('orders.paymentMethods.CARD') },
+  ];
+  useTour('orders');
   const { user } = useAuthStore();
   const canManage = ["ADMIN", "MANAGER"].includes(user?.role);
   const [loading, setLoading] = useState(true);
@@ -107,7 +106,7 @@ export default function Orders() {
       setData(raw.map(normalizeOrder));
       setTotal(res.data?.pagination?.total || 0);
     } catch {
-      message.error("Không tải được danh sách đơn");
+      message.error(t('orders.loadError'));
     } finally {
       setLoading(false);
     }
@@ -152,7 +151,7 @@ export default function Orders() {
       setDetailData(normalizeOrder(orderRes.data?.data || orderRes.data));
       setDetailReturnable(retRes.data?.data?.items || []);
     } catch {
-      message.error("Không tải được chi tiết đơn");
+      message.error(t('orders.detailError'));
     } finally {
       setDetailLoading(false);
     }
@@ -183,7 +182,7 @@ export default function Orders() {
       link.remove();
       window.URL.revokeObjectURL(url);
     } catch {
-      message.error("Không tải được hóa đơn");
+      message.error(t('orders.invoiceError'));
     }
   };
 
@@ -191,12 +190,12 @@ export default function Orders() {
     try {
       const values = await paymentForm.validateFields();
       await axios.post(`/orders/${detailData.id}/payments`, values);
-      message.success("Đã ghi nhận thanh toán");
+      message.success(t('orders.paymentSuccess'));
       setPaymentOpen(false);
       paymentForm.resetFields();
       await refreshDetail();
     } catch (err) {
-      if (!err.errorFields) message.error(err?.response?.data?.message || "Không ghi nhận được thanh toán");
+      if (!err.errorFields) message.error(err?.response?.data?.message || t('orders.paymentError'));
     }
   };
 
@@ -211,11 +210,11 @@ export default function Orders() {
   const handleStatusUpdate = async (newStatus) => {
     try {
       await axios.patch(`/orders/${detailData.id}/status`, { status: newStatus });
-      message.success("Cập nhật trạng thái thành công");
+      message.success(t('orders.updateSuccess'));
       setDetailOpen(false);
       loadOrders();
     } catch (err) {
-      message.error(err?.response?.data?.message || "Không cập nhật được trạng thái");
+      message.error(err?.response?.data?.message || t('orders.updateError'));
     }
   };
 
@@ -225,7 +224,7 @@ export default function Orders() {
       const selected = detailReturnable.find((i) => i.orderItemId === values.orderItemId);
       const maxQty = selected?.returnable || values.quantity;
       if (values.quantity > maxQty) {
-        message.error(`Số lượng trả không được vượt quá ${maxQty}`);
+        message.error(t('orders.returnQuantityError', { max: maxQty }));
         return;
       }
       await axios.post("/returns", {
@@ -235,38 +234,38 @@ export default function Orders() {
         note: values.note,
         items: [{ orderItemId: values.orderItemId, quantity: values.quantity }],
       });
-      message.success("Đã tạo yêu cầu trả hàng");
+      message.success(t('orders.returnSuccess'));
       setReturnOpen(false);
       returnForm.resetFields();
       await refreshDetail();
     } catch (err) {
-      if (!err.errorFields) message.error(err?.response?.data?.message || "Không tạo được yêu cầu trả hàng");
+      if (!err.errorFields) message.error(err?.response?.data?.message || t('orders.returnError'));
     }
   };
 
   const columns = [
     {
-      title: "Mã đơn",
+      title: t('orders.orderCode'),
       dataIndex: "orderNumber",
       width: 150,
       render: (value) => <span style={{ fontFamily: "var(--font-mono)", fontWeight: 500 }}>{value}</span>,
     },
     {
-      title: "Khách hàng",
+      title: t('orders.customer'),
       dataIndex: "customerName",
       render: (value, row) => (
         <div>
-          <div style={{ fontWeight: 500 }}>{value || "Khách lẻ"}</div>
+          <div style={{ fontWeight: 500 }}>{value || t('orders.walkIn')}</div>
           {row.customerPhone && <div style={{ fontSize: 12, color: "var(--text-muted)" }}>{row.customerPhone}</div>}
         </div>
       ),
     },
-    { title: "Sản phẩm", dataIndex: "itemCount", width: 110, align: "right", render: (value) => `${value} mặt hàng` },
-    { title: "Tổng tiền", dataIndex: "totalAmount", width: 140, align: "right", sorter: (a, b) => a.totalAmount - b.totalAmount, render: (value) => <MoneyDisplay value={value} /> },
-    { title: "Thanh toán", dataIndex: "paymentStatus", width: 140, render: (value) => <StatusTag status={value} /> },
-    { title: "Trạng thái", dataIndex: "status", width: 140, render: (value) => <StatusTag status={value} /> },
+    { title: t('orders.items'), dataIndex: "itemCount", width: 110, align: "right", render: (value) => t('orders.itemsCount', { count: value }) },
+    { title: t('orders.total'), dataIndex: "totalAmount", width: 140, align: "right", sorter: (a, b) => a.totalAmount - b.totalAmount, render: (value) => <MoneyDisplay value={value} /> },
+    { title: t('orders.payment'), dataIndex: "paymentStatus", width: 140, render: (value) => <StatusTag status={value} /> },
+    { title: t('orders.status'), dataIndex: "status", width: 140, render: (value) => <StatusTag status={value} /> },
     {
-      title: "Ngày tạo",
+      title: t('orders.createdAt'),
       dataIndex: "createdAt",
       width: 130,
       sorter: (a, b) => dayjs(a.createdAt).unix() - dayjs(b.createdAt).unix(),
@@ -284,15 +283,32 @@ export default function Orders() {
   return (
     <>
       <PageHeader
-        title="Đơn hàng"
-        subtitle={<span>{total} đơn · <span style={{ color: "var(--primary)", fontWeight: 500 }}><MoneyDisplay value={totalRevenue} short /></span></span>}
+        title={t('orders.title')}
+        subtitle={<>{t('orders.count', { count: total })} · <span style={{ color: "var(--primary)", fontWeight: 500 }}><MoneyDisplay value={totalRevenue} short /></span></>}
+        actions={
+          <PermissionGate permission="orders.export">
+            <Button icon={<DownloadOutlined />} onClick={async () => {
+              try {
+                const res = await axios.get('/orders/export-excel', { responseType: 'blob' });
+                const url = window.URL.createObjectURL(new Blob([res.data]));
+                const link = document.createElement('a');
+                link.href = url;
+                link.setAttribute('download', 'don-hang.xlsx');
+                document.body.appendChild(link);
+                link.click();
+                link.remove();
+                window.URL.revokeObjectURL(url);
+              } catch { message.error(t('orders.exportError')); }
+            }}>{t('orders.exportBtn')}</Button>
+          </PermissionGate>
+        }
       />
 
       <div className="filters-bar">
-        <Input className="filters-bar__search" placeholder="Tìm theo mã đơn hoặc tên khách..." prefix={<SearchOutlined style={{ color: "var(--text-muted)" }} />} value={search} onChange={(e) => setSearch(e.target.value)} allowClear />
-        <Select placeholder="Trạng thái đơn" style={{ width: 170 }} value={statusFilter} onChange={setStatusFilter} allowClear suffixIcon={<FilterOutlined />} options={["PENDING", "CONFIRMED", "SHIPPING", "COMPLETED", "CANCELLED"].map((s) => ({ value: s, label: STATUS_DICT[s]?.label || s }))} />
-        <Select placeholder="Thanh toán" style={{ width: 160 }} value={paymentFilter} onChange={setPaymentFilter} allowClear options={["PAID", "UNPAID", "PARTIAL"].map((s) => ({ value: s, label: STATUS_DICT[s]?.label || s }))} />
-        <RangePicker value={dateRange} onChange={setDateRange} format="DD/MM/YYYY" placeholder={["Từ ngày", "Đến ngày"]} />
+        <Input className="filters-bar__search" placeholder={t('orders.searchPlaceholder')} prefix={<SearchOutlined style={{ color: "var(--text-muted)" }} />} value={search} onChange={(e) => setSearch(e.target.value)} allowClear />
+        <Select placeholder={t('orders.statusPlaceholder')} style={{ width: 170 }} value={statusFilter} onChange={setStatusFilter} allowClear suffixIcon={<FilterOutlined />} options={["PENDING", "CONFIRMED", "SHIPPING", "COMPLETED", "CANCELLED"].map((s) => ({ value: s, label: STATUS_DICT[s]?.label || s }))} />
+        <Select placeholder={t('orders.paymentPlaceholder')} style={{ width: 160 }} value={paymentFilter} onChange={setPaymentFilter} allowClear options={["PAID", "UNPAID", "PARTIAL"].map((s) => ({ value: s, label: STATUS_DICT[s]?.label || s }))} />
+        <RangePicker value={dateRange} onChange={setDateRange} format="DD/MM/YYYY" placeholder={[t('orders.dateFrom'), t('orders.dateTo')]} />
       </div>
 
       <div className="table-card">
@@ -303,51 +319,53 @@ export default function Orders() {
           loading={loading}
           scroll={{ x: 1100 }}
           pagination={{ current: page, pageSize: 20, total, showSizeChanger: false, onChange: (p) => setPage(p) }}
-          locale={{ emptyText: <EmptyState title="Không tìm thấy đơn hàng" description="Thử bỏ bộ lọc hoặc tạo đơn mới từ trang POS." /> }}
+          locale={{ emptyText: <EmptyState title={t('orders.noResults')} description={t('orders.noResultsDesc')} /> }}
         />
       </div>
 
       <Drawer
-        title={<span>Chi tiết đơn <span style={{ fontFamily: "var(--font-mono)", color: "var(--primary)" }}>{detailData?.orderCode}</span></span>}
+        title={<span>{t('orders.detail')} <span style={{ fontFamily: "var(--font-mono)", color: "var(--primary)" }}>{detailData?.orderCode}</span></span>}
         width={620}
         open={detailOpen}
         onClose={() => setDetailOpen(false)}
-        extra={<Space><Button icon={<DownloadOutlined />} onClick={handleDownloadInvoice}>Tải hóa đơn</Button><Button icon={<PrinterOutlined />}>In</Button></Space>}
+        extra={<Space><Button icon={<DownloadOutlined />} onClick={handleDownloadInvoice}>{t('orders.invoiceDownload')}</Button><Button icon={<PrinterOutlined />}>{t('orders.print')}</Button></Space>}
       >
         {detailLoading ? (
           <div style={{ display: "grid", placeItems: "center", padding: 60 }}><Spin /></div>
         ) : detailData ? (
           <>
             <Descriptions column={1} size="small" labelStyle={{ color: "var(--text-muted)", width: 120 }}>
-              <Descriptions.Item label="Khách hàng">{detailData.customer?.name || "Khách lẻ"}</Descriptions.Item>
-              {detailData.customer?.phone && <Descriptions.Item label="SĐT">{detailData.customer.phone}</Descriptions.Item>}
-              <Descriptions.Item label="Trạng thái">
+              <Descriptions.Item label={t('orders.customerLabel')}>{detailData.customer?.name || t('orders.walkIn')}</Descriptions.Item>
+              {detailData.customer?.phone && <Descriptions.Item label={t('orders.phoneLabel')}>{detailData.customer.phone}</Descriptions.Item>}
+              <Descriptions.Item label={t('orders.statusLabel')}>
                 <Space>
                   <StatusTag status={detailData.status} />
                   {canManage && (STATUS_TRANSITIONS[detailData.status]?.length > 0) && (
-                    <Dropdown
-                      menu={{
-                        items: STATUS_TRANSITIONS[detailData.status].map((s) => ({
-                          key: s,
-                          label: STATUS_DICT[s]?.label || s,
-                          onClick: () => handleStatusUpdate(s),
-                        })),
-                      }}
-                      trigger={["click"]}
-                    >
-                      <Button size="small" icon={<DownOutlined />}>
-                        Cập nhật
-                      </Button>
-                    </Dropdown>
+                    <PermissionGate permission="orders.edit">
+                      <Dropdown
+                        menu={{
+                          items: STATUS_TRANSITIONS[detailData.status].map((s) => ({
+                            key: s,
+                            label: STATUS_DICT[s]?.label || s,
+                            onClick: () => handleStatusUpdate(s),
+                          })),
+                        }}
+                        trigger={["click"]}
+                      >
+                        <Button size="small" icon={<DownOutlined />}>
+                          {t('orders.update')}
+                        </Button>
+                      </Dropdown>
+                    </PermissionGate>
                   )}
                 </Space>
               </Descriptions.Item>
-              <Descriptions.Item label="Thanh toán"><StatusTag status={detailData.paymentStatus} /></Descriptions.Item>
-              <Descriptions.Item label="Ngày tạo">{formatDateTime(detailData.createdAt)}</Descriptions.Item>
+              <Descriptions.Item label={t('orders.payment')}><StatusTag status={detailData.paymentStatus} /></Descriptions.Item>
+              <Descriptions.Item label={t('orders.dateLabel')}>{formatDateTime(detailData.createdAt)}</Descriptions.Item>
             </Descriptions>
 
             <Divider />
-            <SectionTitle>Chi tiết sản phẩm</SectionTitle>
+            <SectionTitle>{t('orders.orderDetail')}</SectionTitle>
             <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
               {(detailData.items || []).map((item) => (
                 <div key={item.id} style={{ display: "flex", justifyContent: "space-between", padding: 12, background: "var(--bg-tertiary)", borderRadius: "var(--radius-md)" }}>
@@ -362,13 +380,13 @@ export default function Orders() {
 
             <Divider />
             <Space style={{ marginBottom: 12 }}>
-              <Button icon={<DollarOutlined />} onClick={() => setPaymentOpen(true)}>Ghi nhận thanh toán</Button>
-              {detailData.status === "COMPLETED" && <Button icon={<UndoOutlined />} onClick={() => setReturnOpen(true)}>Trả hàng</Button>}
+              <Button icon={<DollarOutlined />} onClick={() => setPaymentOpen(true)}>{t('orders.paymentRecord')}</Button>
+              {detailData.status === "COMPLETED" && <Button icon={<UndoOutlined />} onClick={() => setReturnOpen(true)}>{t('orders.return')}</Button>}
             </Space>
 
-            <SectionTitle>Thanh toán</SectionTitle>
+            <SectionTitle>{t('orders.payment')}</SectionTitle>
             <StackList
-              empty="Chưa có thanh toán"
+              empty={t('orders.noPayments')}
               rows={(detailData.payments || []).map((payment) => ({
                 id: payment.id,
                 title: payment.method,
@@ -378,9 +396,9 @@ export default function Orders() {
             />
 
             <Divider />
-            <SectionTitle>Trả hàng</SectionTitle>
+            <SectionTitle>{t('orders.return')}</SectionTitle>
             <StackList
-              empty="Chưa có yêu cầu trả hàng"
+              empty={t('orders.noReturns')}
               rows={(detailData.returns || []).map((ret) => ({
                 id: ret.id,
                 title: ret.returnCode,
@@ -391,10 +409,10 @@ export default function Orders() {
 
             <Divider />
             <div style={{ background: "var(--bg-tertiary)", padding: 16, borderRadius: "var(--radius-md)" }}>
-              <SummaryRow label="Tạm tính" value={detailData.subtotal} />
-              <SummaryRow label="Giảm giá" value={detailData.discount} danger />
+              <SummaryRow label={t('orders.subtotal')} value={detailData.subtotal} />
+              <SummaryRow label={t('orders.discount')} value={detailData.discount} danger />
               <div style={{ display: "flex", justifyContent: "space-between", paddingTop: 10, marginTop: 10, borderTop: "1px solid var(--border)" }}>
-                <strong>Tổng cộng</strong>
+                <strong>{t('orders.grandTotal')}</strong>
                 <span style={{ fontSize: 22, fontWeight: 700, color: "var(--primary)" }}><MoneyDisplay value={detailData.total} /></span>
               </div>
             </div>
@@ -402,7 +420,7 @@ export default function Orders() {
             {detailData.note && (
               <>
                 <Divider />
-                <SectionTitle>Ghi chú</SectionTitle>
+                <SectionTitle>{t('orders.notes')}</SectionTitle>
                 <div style={{ fontSize: 13, fontStyle: "italic" }}>{detailData.note}</div>
               </>
             )}
@@ -410,42 +428,42 @@ export default function Orders() {
         ) : null}
       </Drawer>
 
-      <Modal title="Ghi nhận thanh toán" open={paymentOpen} onCancel={() => setPaymentOpen(false)} onOk={handleRecordPayment} okText="Lưu" cancelText="Hủy">
+      <Modal title={t('orders.paymentRecord')} open={paymentOpen} onCancel={() => setPaymentOpen(false)} onOk={handleRecordPayment} okText={t('orders.save')} cancelText={t('common.cancel')}>
         <Form form={paymentForm} layout="vertical" initialValues={{ method: "CASH" }}>
-          <Form.Item name="amount" label="Số tiền" rules={[{ required: true }]}><InputNumber min={1} style={{ width: "100%" }} /></Form.Item>
-          <Form.Item name="method" label="Phương thức" rules={[{ required: true }]}><Select options={paymentOptions} /></Form.Item>
-          <Form.Item name="reference" label="Mã giao dịch"><Input /></Form.Item>
-          <Form.Item name="note" label="Ghi chú"><Input.TextArea rows={2} /></Form.Item>
+          <Form.Item name="amount" label={t('orders.amount')} rules={[{ required: true }]}><InputNumber min={1} style={{ width: "100%" }} /></Form.Item>
+          <Form.Item name="method" label={t('orders.method')} rules={[{ required: true }]}><Select options={paymentOptions} /></Form.Item>
+          <Form.Item name="reference" label={t('orders.transactionCode')}><Input /></Form.Item>
+          <Form.Item name="note" label={t('orders.notes')}><Input.TextArea rows={2} /></Form.Item>
         </Form>
       </Modal>
 
-      <Modal title="Tạo yêu cầu trả hàng" open={returnOpen} onCancel={() => setReturnOpen(false)} onOk={handleCreateReturn} okText="Tạo" cancelText="Hủy">
+      <Modal title={t('orders.returnCreate')} open={returnOpen} onCancel={() => setReturnOpen(false)} onOk={handleCreateReturn} okText={t('orders.create')} cancelText={t('common.cancel')}>
         <Form form={returnForm} layout="vertical" initialValues={{ refundMethod: "CASH" }}>
-          <Form.Item name="orderItemId" label="Sản phẩm" rules={[{ required: true }]}>
+          <Form.Item name="orderItemId" label={t('orders.items')} rules={[{ required: true }]}>
             <Select
               options={(detailReturnable || []).map((item) => ({
                 value: item.orderItemId,
-                label: `${item.product?.name} (có thể trả ${item.returnable})`,
+                label: `${item.product?.name} (${t('orders.return')} ${item.returnable})`,
                 disabled: item.returnable <= 0,
               }))}
             />
           </Form.Item>
-          <Form.Item name="quantity" label="Số lượng trả" rules={[{ required: true }]}><InputNumber min={1} style={{ width: "100%" }} /></Form.Item>
-          <Form.Item name="refundMethod" label="Phương thức hoàn" rules={[{ required: true }]}>
-            <Select options={[{ value: "CASH", label: "Tiền mặt" }, { value: "BANK_TRANSFER", label: "Chuyển khoản" }, { value: "STORE_CREDIT", label: "Store credit" }]} />
+          <Form.Item name="quantity" label={t('orders.returnQty')} rules={[{ required: true }]}><InputNumber min={1} style={{ width: "100%" }} /></Form.Item>
+          <Form.Item name="refundMethod" label={t('orders.refundMethod')} rules={[{ required: true }]}>
+            <Select options={[{ value: "CASH", label: t('orders.refundMethods.CASH') }, { value: "BANK_TRANSFER", label: t('orders.refundMethods.BANK_TRANSFER') }, { value: "STORE_CREDIT", label: t('orders.refundMethods.STORE_CREDIT') }]} />
           </Form.Item>
-          <Form.Item name="reason" label="Lý do" rules={[{ required: true }]}>
+          <Form.Item name="reason" label={t('orders.reason')} rules={[{ required: true }]}>
             <Select
               options={[
-                { value: "DEFECTIVE", label: "Lỗi sản phẩm" },
-                { value: "WRONG_ITEM", label: "Sai hàng" },
-                { value: "CUSTOMER_CHANGE", label: "Khách đổi ý" },
-                { value: "EXPIRED", label: "Hết hạn" },
-                { value: "OTHER", label: "Khác" },
+                { value: "DEFECTIVE", label: t('orders.returnReasons.DEFECTIVE') },
+                { value: "WRONG_ITEM", label: t('orders.returnReasons.WRONG_ITEM') },
+                { value: "CUSTOMER_CHANGE", label: t('orders.returnReasons.CUSTOMER_CHANGE') },
+                { value: "EXPIRED", label: t('orders.returnReasons.EXPIRED') },
+                { value: "OTHER", label: t('orders.returnReasons.OTHER') },
               ]}
             />
           </Form.Item>
-          <Form.Item name="note" label="Ghi chú"><Input.TextArea rows={2} /></Form.Item>
+          <Form.Item name="note" label={t('orders.notes')}><Input.TextArea rows={2} /></Form.Item>
         </Form>
       </Modal>
     </>

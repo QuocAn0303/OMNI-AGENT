@@ -40,6 +40,10 @@ const SCHEMA = {
     keys: ["SMTP_HOST", "SMTP_PORT", "SMTP_USER", "SMTP_PASS", "SMTP_FROM", "SMTP_SECURE"],
     secrets: ["SMTP_PASS"],
   },
+  PUSH: {
+    keys: ["VAPID_PUBLIC_KEY", "VAPID_PRIVATE_KEY"],
+    secrets: ["VAPID_PRIVATE_KEY"],
+  },
 };
 
 const ALL_KEYS = Object.values(SCHEMA).flatMap((s) => s.keys);

@@ -2,6 +2,13 @@
 
 generator client {
   provider = "prisma-client-js"
+  // Đặc tả §3.2 "Full-text search qua PostgreSQL @@ operator":
+  // Prisma KHÔNG hỗ trợ attribute @@fulltext với connector postgresql (chỉ MySQL/MongoDB).
+  // Thay vào đây dùng preview feature fullTextSearchPostgres → filter { search: "..." }
+  // trong Prisma Client được compile thành `tsvector @@ tsquery` phía PostgreSQL.
+  // Apply cho các model search chính: Customer(name/email/phone), Product(name/sku), Vendor(name/taxCode).
+  // GIN index (pg_trgm) sẽ được thêm bằng raw SQL khi chạy migration có DB.
+  previewFeatures = ["fullTextSearchPostgres"]
 }
 
 datasource db {
@@ -309,6 +316,7 @@ model User {
   backupCodes             BackupCode[]
   adminBackups            AdminBackup[]
   internalDocuments       InternalDocument[] @relation("DocumentAuthor")
+  grnsCreated             GoodsReceiptNote[] @relation("GrnCreatedBy")
 
   @@index([tenantId])
   @@map("users")
@@ -378,6 +386,8 @@ model CompanySettings {
   businessTemplate String?
   accountingMode      AccountingMode @default(FULL_VAS)
   poApprovalThreshold Decimal?       @db.Decimal(15, 2)
+  // CRM: con trỏ round-robin gán lead từ webhook (Mục 2 — Lead Capture)
+  leadRoundRobinCursor Int          @default(0)
   createdAt           DateTime       @default(now())
   updatedAt           DateTime       @updatedAt
 
@@ -451,6 +461,7 @@ model Product {
   marketplaceListings       MarketplaceListing[]
   routings                  Routing[]
   serialNumbers             SerialNumber[]
+  goodsReceiptItems         GoodsReceiptItem[]
 
   @@index([name])
   @@index([sku])
@@ -481,6 +492,7 @@ model Warehouse {
   workOrders    WorkOrder[]     @relation("WorkOrderWarehouse")
   inventoryLots InventoryLot[]
   serialNumbers SerialNumber[]
+  grns          GoodsReceiptNote[]
 
   @@unique([code, tenantId])
   @@map("warehouses")
@@ -607,6 +619,15 @@ enum TaskPriority {
   HIGH
 }
 
+// CRM: trạng thái lead từ webhook đa kênh
+enum LeadStatus {
+  NEW
+  CONTACTED
+  QUALIFIED
+  CUSTOMER
+  DEAD
+}
+
 model Customer {
   id            String       @id @default(uuid())
   tenantId    String?
@@ -621,6 +642,22 @@ model Customer {
   storeCredit   Decimal      @default(0) @db.Decimal(12, 2)
   tier          CustomerTier @default(BRONZE)
   loyaltyPoints Int          @default(0)
+  // CRM: lead capture (Mục 2)
+  leadStatus         LeadStatus? @default(NEW)
+  referralSource     String?
+
+  // CRM: RFM động — tính lại bởi hook/cron sau mỗi đơn COMPLETED (Mục 3)
+  rfmRecencyDays     Int?
+  rfmFrequency       Int?
+  rfmMonetary        Decimal?  @db.Decimal(15, 2)
+  rfmSegment         String?   // Champions | Loyal | Potential | At-Risk | Hibernating
+  rfmScoredAt        DateTime?
+
+  // CRM: dự báo CLV (BG/NBD + Gamma-Gamma) & churn probability (Mục 3.3)
+  clvPredicted       Decimal?  @db.Decimal(15, 2)
+  churnProbability   Float?    // 0.00 - 1.00
+  clvScoredAt        DateTime?
+
   isActive      Boolean      @default(true)
   createdAt     DateTime     @default(now())
   updatedAt     DateTime     @updatedAt
@@ -638,6 +675,7 @@ model Customer {
   portalSessions     PortalSession[]
   campaignTrackings  CampaignTracking[]
   storeCreditTxs     StoreCreditTransaction[]
+  churnAlerts        ChurnAlert[]
 
   @@index([name])
   @@index([phone])
@@ -1223,6 +1261,7 @@ model Promotion {
   createdAt     DateTime         @default(now())
   updatedAt     DateTime         @updatedAt
   usages        PromotionUsage[]
+  churnAlerts   ChurnAlert[]
 
   @@index([status, startDate, endDate])
   @@unique([code, tenantId])
@@ -1697,6 +1736,14 @@ model DepreciationSchedule {
 
 // ==================== VENDORS / SUPPLIERS ====================
 
+// SRM: phân loại vendor theo ma trận Kraljic (Mục 5)
+enum KraljicCategory {
+  STRATEGIC
+  LEVERAGE
+  BOTTLENECK
+  ROUTINE
+}
+
 model Vendor {
   id            String   @id @default(uuid())
   tenantId    String?
@@ -1709,6 +1756,15 @@ model Vendor {
   contactPerson String?
   paymentTerms  Int      @default(30) // số ngày công nợ
   totalDebt     Decimal  @default(0) @db.Decimal(15, 2) // tổng còn nợ
+
+  // SRM: Kraljic + Vendor Scorecard (Mục 5, 6)
+  kraljicCategory    KraljicCategory?
+  profitImpactScore  Int?      // 1-10, nhập tay (MANAGER/ADMIN)
+  supplyRiskScore    Int?      // 1-10, nhập tay
+  otifScore          Float?    // 0.0 - 100.0, tính tự động hàng tháng
+  defectRate         Float?    // % hàng lỗi, tính tự động hàng tháng
+  vendorGrade        String?   // "A" | "B" | "C"
+
   isActive      Boolean  @default(true)
   createdAt     DateTime @default(now())
   updatedAt     DateTime @updatedAt
@@ -1874,6 +1930,8 @@ model PurchaseOrder {
 
   items PurchaseItem[]
   debt  Debt?
+  grns           GoodsReceiptNote[]     // Phiếu nhập kho từ PO (3-way matching)
+  invoiceRecords PurchaseInvoiceRecord[] // Hoá đơn NCC đã nhận để đối soát
 
   @@index([status])
   @@map("purchase_orders")
@@ -1894,9 +1952,132 @@ model PurchaseItem {
   taxAmount       Decimal       @default(0) @db.Decimal(15, 2)
   subtotal        Decimal       @db.Decimal(15, 2)
 
+  goodsReceiptItems GoodsReceiptItem[]
+
   @@index([purchaseOrderId])
   @@map("purchase_items")
 @@index([tenantId])
+}
+
+// ==================== CRM: CHURN ALERT (Win-back automation — Mục 4) ====================
+
+enum ChurnRiskLevel {
+  LOW
+  MEDIUM
+  HIGH
+  CRITICAL
+}
+
+enum ChurnAlertStatus {
+  PENDING
+  TRIGGERED
+  RETAINED
+  LOST
+}
+
+model ChurnAlert {
+  id          String           @id @default(uuid())
+  tenantId    String?
+  customerId  String
+  customer    Customer         @relation(fields: [customerId], references: [id], onDelete: Cascade)
+  riskLevel   ChurnRiskLevel
+  churnScore  Float            // snapshot churnProbability tại thời điểm tạo alert
+  voucherCode String?
+  promotionId String?
+  promotion   Promotion?       @relation(fields: [promotionId], references: [id])
+  status      ChurnAlertStatus @default(PENDING)
+  expiresAt   DateTime?        // hạn dùng voucher win-back (mặc định +7 ngày)
+  resolvedAt  DateTime?
+  createdAt   DateTime         @default(now())
+  updatedAt   DateTime         @updatedAt
+
+  @@index([tenantId, status])
+  @@index([customerId])
+  @@map("churn_alerts")
+  @@index([tenantId])
+}
+
+// ==================== SRM: GOODS RECEIPT NOTE (Nhận hàng PO + QC — Mục 6) ====================
+
+enum GrnStatus {
+  DRAFT
+  QC_PENDING
+  QC_DONE
+  POSTED // đã ghi nhận vào Inventory, sẵn sàng 3-way matching
+}
+
+model GoodsReceiptNote {
+  id              String        @id @default(uuid())
+  tenantId        String?
+  grnCode         String        @unique // GRN-YYYYMMDD-XXXX
+  purchaseOrderId String
+  purchaseOrder   PurchaseOrder @relation(fields: [purchaseOrderId], references: [id])
+  warehouseId     String
+  warehouse       Warehouse     @relation(fields: [warehouseId], references: [id])
+  status          GrnStatus     @default(DRAFT)
+  receivedAt      DateTime      @default(now())
+  onTime          Boolean?      // so với PurchaseOrder.expectedAt — tính khi POSTED
+  createdById     String
+  createdBy       User          @relation("GrnCreatedBy", fields: [createdById], references: [id])
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  items GoodsReceiptItem[]
+
+  @@index([tenantId, purchaseOrderId])
+  @@map("goods_receipt_notes")
+  @@index([tenantId])
+}
+
+model GoodsReceiptItem {
+  id             String           @id @default(uuid())
+  tenantId       String?
+  grnId          String
+  grn            GoodsReceiptNote @relation(fields: [grnId], references: [id], onDelete: Cascade)
+  productId      String
+  product        Product          @relation(fields: [productId], references: [id])
+  purchaseItemId String
+  purchaseItem   PurchaseItem     @relation(fields: [purchaseItemId], references: [id])
+  receivedQty    Int              // tổng nhận
+  passQty        Int              @default(0)
+  rejectQty      Int              @default(0)
+  lotCode        String?
+  expiryDate     DateTime?        @db.Date
+
+  @@index([grnId])
+  @@index([productId])
+  @@map("goods_receipt_items")
+  @@index([tenantId])
+}
+
+// ==================== SRM: HOÁ ĐƠN NCC + 3-WAY MATCHING (Mục 6.2-6.3) ====================
+
+enum MatchStatus {
+  PENDING
+  MATCHED
+  VARIANCE_HOLD // vượt dung sai ±1% — chặn thanh toán
+  APPROVED_OVERRIDE
+}
+
+model PurchaseInvoiceRecord {
+  id              String        @id @default(uuid())
+  tenantId        String?
+  purchaseOrderId String
+  purchaseOrder   PurchaseOrder @relation(fields: [purchaseOrderId], references: [id])
+  invoiceNumber   String
+  invoiceAmount   Decimal       @db.Decimal(15, 2)
+  invoiceTax      Decimal       @default(0) @db.Decimal(15, 2)
+  receivedAt      DateTime      @default(now())
+  matchStatus     MatchStatus   @default(PENDING)
+  varianceAmount  Decimal?      @db.Decimal(15, 2)
+  variancePct     Float?
+  matchedAt       DateTime?
+  createdById     String?
+  createdAt       DateTime      @default(now())
+
+  @@unique([purchaseOrderId, invoiceNumber])
+  @@map("purchase_invoice_records")
+  @@index([tenantId])
 }
 
 // ==================== TAX ====================

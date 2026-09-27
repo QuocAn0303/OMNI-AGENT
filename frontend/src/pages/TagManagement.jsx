@@ -50,7 +50,7 @@ export default function TagManagement() {
     try {
       const res = await axios.get("/crm/tags");
       setTags(res.data.data);
-    } catch (error) {
+    } catch {
       message.error("Lỗi khi tải danh sách tag");
     } finally {
       setLoading(false);
@@ -93,8 +93,8 @@ export default function TagManagement() {
       }
       setModalOpen(false);
       fetchTags();
-    } catch (error) {
-      if (!error.errorFields) message.error("Có lỗi xảy ra!");
+    } catch {
+      message.error("Có lỗi xảy ra!");
     }
   };
 
@@ -103,7 +103,7 @@ export default function TagManagement() {
       await axios.delete(`/crm/tags/${id}`);
       message.success("Đã xóa tag");
       fetchTags();
-    } catch (error) {
+    } catch {
       message.error("Không thể xóa tag");
     }
   };

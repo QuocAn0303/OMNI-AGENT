@@ -27,14 +27,17 @@ const {
   resolveWarehouseId,
   findInventory,
 } = require("../../utils/warehouse.helper");
+const { recordFifoConsumption } = require('../inventory/valuation.service');
+const logger = require('../../utils/logger');
 
 const toNumber = (value) => Number(value || 0);
+const round2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
 
-const generateOrderCode = async () => {
+const generateOrderCode = async (tx = prisma) => {
   const today = new Date().toISOString().slice(0, 10).replace(/-/g, "");
   const start = new Date();
   start.setHours(0, 0, 0, 0);
-  const count = await prisma.order.count({
+  const count = await tx.order.count({
     where: { createdAt: { gte: start } },
   });
   return `ORD-${today}-${String(count + 1).padStart(4, "0")}`;
@@ -49,7 +52,8 @@ const calculateDiscount = (base, type = "NONE", value = 0) => {
         status: 400,
         message: "Giảm giá phần trăm không được vượt quá 100%",
       };
-    return Math.min(base, (base * amount) / 100);
+    // A9: round2 chống float (9999*10/100 = 999.9000000000001)
+    return Math.min(base, round2((base * amount) / 100));
   }
   if (type === "FIXED") return Math.min(base, amount);
   return 0;
@@ -87,6 +91,7 @@ const getAll = async ({
         createdBy: { select: { id: true, fullName: true } },
         payments: true,
         returns: true,
+        delivery: { include: { events: { orderBy: { occurredAt: "desc" } } } },
         items: {
           include: { product: { select: { id: true, name: true, sku: true } } },
         },
@@ -125,7 +130,7 @@ const getById = async (id) => {
   return order;
 };
 // Tạo đơn hàng mới với logic phức tạp: kiểm tra tồn kho, tính toán giá trị đơn hàng sau khi áp dụng giảm giá, xử lý thanh toán (có thể tạo nhiều payment cho một đơn), cập nhật tồn kho nếu đơn được hoàn thành ngay, và ghi log audit chi tiết. Nếu có lỗi trong quá trình tạo đơn (ví dụ: sản phẩm không đủ tồn kho, thanh toán vượt quá tổng tiền), nghiệp vụ sẽ rollback và trả về lỗi rõ ràng.
-const create = async (orderData, userId) => {
+const create = async (orderData, userId, options = {}) => {
   const {
     customerId,
     items,
@@ -140,6 +145,15 @@ const create = async (orderData, userId) => {
     voucherCode,
     warehouseId,
     loyaltyPointsUsed = 0,
+    // F&B fields
+    orderType = "DINE_IN",
+    tableId,
+    tableSessionId,
+    seatNumber,
+    serviceChargePercent = 0,
+    tipAmount = 0,
+    channel = "POS",
+    channelOrderId,
   } = orderData;
 
   let customer = null;
@@ -201,9 +215,34 @@ const create = async (orderData, userId) => {
     }
   }
 
+  // F&B: fetch modifier options để tính priceAdjust
+  const allModifierOptionIds = items.flatMap((it) => (it.modifiers || []).map((m) => m.modifierOptionId));
+  const modifierOptionsMap = {};
+  if (allModifierOptionIds.length > 0) {
+    const opts = await prisma.modifierOption.findMany({
+      where: { id: { in: allModifierOptionIds }, isActive: true },
+    });
+    for (const o of opts) modifierOptionsMap[o.id] = o;
+  }
+
   const orderItems = items.map((item) => {
     const product = products.find((p) => p.id === item.productId);
-    const gross = toNumber(product.price) * item.quantity;
+    // F&B: tính phụ thu modifier (priceAdjust × quantity)
+    const itemModifiers = (item.modifiers || []).map((m) => {
+      const opt = modifierOptionsMap[m.modifierOptionId];
+      if (!opt) return null;
+      return {
+        modifierOptionId: m.modifierOptionId,
+        quantity: m.quantity || 1,
+        priceAdjust: toNumber(opt.priceAdjust),
+      };
+    }).filter(Boolean);
+    const modifierAdjustTotal = itemModifiers.reduce(
+      (sum, m) => sum + m.priceAdjust * m.quantity,
+      0,
+    );
+    const unitPrice = toNumber(product.price) + modifierAdjustTotal;
+    const gross = round2(unitPrice * item.quantity);
     const itemDiscountType = item.discountType || "NONE";
     const itemDiscountValue = toNumber(item.discountValue);
     const discountAmount = calculateDiscount(
@@ -214,17 +253,18 @@ const create = async (orderData, userId) => {
     return {
       productId: item.productId,
       quantity: item.quantity,
-      price: product.price,
+      price: unitPrice,
       discountType: itemDiscountType,
       discountValue: itemDiscountValue,
       discountAmount,
-      subtotal: gross - discountAmount,
+      subtotal: round2(gross - discountAmount),
+      courseId: item.courseId || 1,
+      modifiers: itemModifiers,
     };
   });
 
-  const subtotal = orderItems.reduce(
-    (sum, item) => sum + toNumber(item.subtotal),
-    0,
+  const subtotal = round2(
+    orderItems.reduce((sum, item) => sum + toNumber(item.subtotal), 0),
   );
   const requestedDiscount =
     discountType === "NONE" ? toNumber(discount) : toNumber(discountValue);
@@ -250,20 +290,61 @@ const create = async (orderData, userId) => {
   if (pointsToRedeem > 0) {
     loyaltyDiscount = loyaltyService.redeemValueFromPoints(pointsToRedeem);
   }
-  const total =
-    subtotal - orderDiscount - promotionDiscount - loyaltyDiscount;
+  // F&B: phí dịch vụ (service charge) tính trên subtotal + tip — cộng vào tổng tiền
+  const serviceCharge = Math.round(
+    (subtotal * toNumber(serviceChargePercent)) / 100,
+  );
+  const total = round2(
+    subtotal -
+      orderDiscount -
+      promotionDiscount -
+      loyaltyDiscount +
+      serviceCharge +
+      toNumber(tipAmount),
+  );
   if (total < 0) throw { status: 400, message: "Tổng đơn hàng không hợp lệ sau khuyến mãi" };
-  const paymentTotal = payments.reduce((sum, p) => sum + toNumber(p.amount), 0);
-  if (paymentTotal > total)
+  const paymentTotal = round2(payments.reduce((sum, p) => sum + toNumber(p.amount), 0));
+  // A9: so sánh sau khi round2 — trước đây 8999.10 > 8999.099999999999 (đúng tiền)
+  // vẫn bị từ chối vì lỗi float
+  if (round2(paymentTotal - total) > 0.001)
     throw { status: 400, message: "Tổng thanh toán vượt quá giá trị đơn hàng" };
 
   const finalPaymentStatus = payments.length
     ? paymentService.getPaymentStatus(total, paymentTotal)
     : paymentStatus || "UNPAID";
-  const orderCode = await generateOrderCode();
+
+  // Customer credit limit check (P2-C7) — MANAGER/ADMIN có thể override
+  if (customerId && finalPaymentStatus !== "PAID" && !options.overrideCreditLimit) {
+    const customerCredit = await prisma.customer.findUnique({
+      where: { id: customerId },
+      select: { totalDebt: true, creditLimit: true },
+    });
+    if (customerCredit && Number(customerCredit.creditLimit) > 0) {
+      const newTotalDebt = Number(customerCredit.totalDebt) + Number(total);
+      if (newTotalDebt > Number(customerCredit.creditLimit)) {
+        throw {
+          status: 400,
+          message: `Khách hàng đã vượt hạn mức tín dụng (${Number(customerCredit.creditLimit).toLocaleString()} VND). Vui lòng thu hồi công nợ trước khi tạo đơn mới.`,
+          details: { overrideAllowed: true, currentDebt: Number(customerCredit.totalDebt), creditLimit: Number(customerCredit.creditLimit), newTotal: newTotalDebt },
+        };
+      }
+    }
+  } else if (customerId && finalPaymentStatus !== "PAID" && options.overrideCreditLimit && !['MANAGER', 'ADMIN'].includes(options.userRole)) {
+    throw { status: 403, message: 'Chỉ MANAGER/ADMIN mới có thể override hạn mức tín dụng' };
+  }
+
+  // A8: mã sinh TRONG transaction + retry khi unique violation (chống 2 POS đặt
+  // cùng lúc trùng mã → 500). Trước đây sinh ngoài tx, race → P2002 crash.
+  if (options.overrideCreditLimit && customerId) {
+    logger.warn(`[order] credit limit override by userId=${userId}, customerId=${customerId}`);
+  }
+
   //2. toàn bộ DB trong 1 lần
-  const order = await prisma.$transaction(async (tx) => {
-    const newOrder = await tx.order.create({
+  const txResult = await journalService.withUniqueRetry(
+    () =>
+      prisma.$transaction(async (tx) => {
+        const orderCode = await generateOrderCode(tx);
+        const newOrder = await tx.order.create({
       data: {
         orderCode,
         customerId,
@@ -282,7 +363,20 @@ const create = async (orderData, userId) => {
         subtotal,
         total,
         note,
-        items: { create: orderItems },
+        orderType,
+        tableId: tableId || null,
+        tableSessionId: tableSessionId || null,
+        seatNumber: seatNumber || null,
+        serviceChargePercent: toNumber(serviceChargePercent),
+        tipAmount: toNumber(tipAmount),
+        channel,
+        channelOrderId: channelOrderId || null,
+        items: {
+          create: orderItems.map(({ modifiers, ...oi }) => ({
+            ...oi,
+            modifiers: modifiers && modifiers.length > 0 ? { create: modifiers } : undefined,
+          })),
+        },
         payments: {
           create: payments.map((payment) => ({
             amount: toNumber(payment.amount),
@@ -305,23 +399,36 @@ const create = async (orderData, userId) => {
       );
     }
 
+    let fifoTotalCost = 0;
     if (status === "COMPLETED") {
       for (const item of items) {
         const inv = await findInventory(tx, item.productId, whId);
+        const p = products.find((p) => p.id === item.productId);
+        if (!inv) throw { status: 400, message: `Sản phẩm "${p?.name}" chưa có tồn kho` };
         const available = inv.quantity - (inv.reserved || 0);
         if (available < item.quantity) {
-          const p = products.find((p) => p.id === item.productId);
           throw { status: 400, message: `Sản phẩm "${p?.name}" không đủ tồn kho` };
         }
-        await tx.inventory.update({
-          where: { id: inv.id },
+        // A7: atomic — điều kiện gte kiểm tra lại tại thời điểm ghi (chống race âm kho)
+        const res = await tx.inventory.updateMany({
+          where: { id: inv.id, quantity: { gte: item.quantity } },
           data: { quantity: { decrement: item.quantity } },
         });
+        if (res.count === 0) {
+          throw { status: 400, message: `Sản phẩm "${p?.name}" không đủ tồn kho` };
+        }
+        const { totalCost } = await recordFifoConsumption(tx, item.productId, whId, item.quantity, {
+          note: `Bán hàng - đơn ${orderCode}`,
+          orderId: newOrder.id,
+        });
+        fifoTotalCost += Number(totalCost || 0);
+        const avgUnitCost = totalCost > 0 ? Math.round((totalCost / item.quantity + Number.EPSILON) * 100) / 100 : null;
         await tx.inventoryTransaction.create({
           data: {
             inventoryId: inv.id,
             type: "EXPORT",
             quantity: item.quantity,
+            unitCost: avgUnitCost,
             note: `Bán hàng - đơn ${orderCode}`,
             createdById: userId,
           },
@@ -330,15 +437,20 @@ const create = async (orderData, userId) => {
     } else if (status !== "CANCELLED") {
       for (const item of items) {
         const inv = await findInventory(tx, item.productId, whId);
+        const p = products.find((p) => p.id === item.productId);
+        if (!inv) throw { status: 400, message: `Sản phẩm "${p?.name}" chưa có tồn kho` };
         const available = inv.quantity - (inv.reserved || 0);
         if (available < item.quantity) {
-          const p = products.find((p) => p.id === item.productId);
           throw { status: 400, message: `Sản phẩm "${p?.name}" không đủ tồn kho` };
         }
-        await tx.inventory.update({
-          where: { id: inv.id },
+        // A7: atomic — điều kiện gte khóa tại thời điểm ghi, chống 2 đơn giữ hàng cùng lúc
+        const res = await tx.inventory.updateMany({
+          where: { id: inv.id, quantity: { gte: item.quantity + (inv.reserved || 0) } },
           data: { reserved: { increment: item.quantity } },
         });
+        if (res.count === 0) {
+          throw { status: 400, message: `Sản phẩm "${p?.name}" không đủ tồn kho` };
+        }
         await tx.inventoryTransaction.create({
           data: {
             inventoryId: inv.id,
@@ -409,8 +521,13 @@ const create = async (orderData, userId) => {
       }
     }
 
-    return newOrder;
-  });
+    return { newOrder, fifoTotalCost };
+      }),
+    5,
+  );
+
+  const order = txResult.newOrder;
+  const fifoTotalCost = Number(txResult.fifoTotalCost || 0);
 
   // Auto-post bút toán SAU khi business transaction đã commit.
   // Nếu posting fail (CoA chưa seed, period closed, ...), nghiệp vụ vẫn an toàn,
@@ -421,6 +538,16 @@ const create = async (orderData, userId) => {
       for (const it of items) {
         await notif.checkAfterExport(it.productId);
       }
+    } catch (_) {}
+    // F&B Phase 8: auto-trừ nguyên liệu theo recipe (non-blocking)
+    try {
+      const recipeService = require("../recipe/recipe.service");
+      await recipeService.deductOnOrderComplete(order.id);
+    } catch (_) {}
+    // F&B Phase 4: sinh KDS ticket (non-blocking)
+    try {
+      const kdsService = require("../kds/kds.service");
+      await kdsService.generateTicketsForOrder(order.id);
     } catch (_) {}
     const productMap = new Map(products.map((p) => [p.id, p]));
     const itemsForPost = items.map((it) => ({
@@ -433,6 +560,7 @@ const create = async (orderData, userId) => {
       paidAmount: paymentTotal,
       payments: order.payments,
       userId,
+      fifoTotalCost,
     });
     await postingErrorService.tryPostOrQueue(
       () =>
@@ -442,6 +570,7 @@ const create = async (orderData, userId) => {
           paidAmount: paymentTotal,
           payments: order.payments,
           userId,
+          fifoTotalCost,
         }),
       {
         source: "ORDER",
@@ -460,7 +589,7 @@ const create = async (orderData, userId) => {
       before: null,
       after: { orderCode: order.orderCode, total: order.total, items: order.items },
     })
-    .catch((err) => console.error("Failed to write audit log for order:", err));
+    .catch((err) => logger.error("Failed to write audit log for order:", err));
 
   // Auto-issue e-invoice + invoice PDF khi tạo đơn trực tiếp COMPLETED (POS)
   if (status === "COMPLETED") {
@@ -468,7 +597,20 @@ const create = async (orderData, userId) => {
     einvoiceService.autoIssueForOrder(order.id, userId).catch(() => {});
     const invoiceService = require("./invoice.service");
     invoiceService.generateInvoice(order.id, {}, userId).catch(() => {});
+
+    // CRM (Mục 3.2, 4.3 đặc tả CRM/SRM): RFM động + đóng vòng churn win-back
+    if (order.customerId) {
+      require("../customers/rfm.service").onOrderCompletedForCustomer(order.customerId);
+      require("../customers/churn-automation.service").checkRetainedForOrder(order);
+    }
   }
+
+  try {
+    const webhookSvc = require('../integrations/webhook.service');
+    const { getTenantId } = require('../../config/tenantContext');
+    const tid = getTenantId();
+    if (tid) webhookSvc.emitEvent('order.created', { event: 'order.created', data: { id: order.id, code: order.orderCode, total: Number(order.total), status: order.status } }, tid);
+  } catch (_) {}
 
   return order;
 };
@@ -539,6 +681,24 @@ const updateStatusInTx = async (tx, id, status, userId = null) => {
               createdById: userId,
             },
           });
+          const consumedLots = await tx.lotTransaction.findMany({
+            where: { orderId: id, type: 'CONSUME' },
+          });
+          for (const cl of consumedLots) {
+            await tx.inventoryLot.update({
+              where: { id: cl.lotId },
+              data: { quantity: { increment: cl.quantity } },
+            });
+            await tx.lotTransaction.create({
+              data: {
+                lotId: cl.lotId,
+                type: 'RETURN',
+                quantity: cl.quantity,
+                orderId: id,
+                note: `Hoàn nhập lot - hủy đơn ${order.orderCode}`,
+              },
+            });
+          }
         } else {
           await tx.inventory.update({
             where: { id: inv.id },
@@ -572,23 +732,35 @@ const updateStatusInTx = async (tx, id, status, userId = null) => {
       }
     }
 
+    let statusFifoTotalCost = 0;
     if (order.status === "SHIPPING" && status === "COMPLETED") {
       for (const item of order.items) {
         const inv =
           item.product.inventories?.find((i) => i.warehouseId === whId) ||
           (await findInventory(tx, item.productId, whId));
-        await tx.inventory.update({
-          where: { id: inv.id },
+        // A7: atomic — kiểm tra + trừ trong 1 statement, chống race âm kho
+        const res = await tx.inventory.updateMany({
+          where: { id: inv.id, quantity: { gte: item.quantity }, reserved: { gte: item.quantity } },
           data: {
             quantity: { decrement: item.quantity },
             reserved: { decrement: item.quantity },
           },
         });
+        if (res.count === 0) {
+          throw { status: 400, message: `Sản phẩm "${item.product?.name || ""}" không đủ tồn kho` };
+        }
+        const { totalCost } = await recordFifoConsumption(tx, item.productId, whId, item.quantity, {
+          note: `Xuất bán - đơn ${order.orderCode}`,
+          orderId: id,
+        });
+        statusFifoTotalCost += Number(totalCost || 0);
+        const avgUnitCost = totalCost > 0 ? Math.round((totalCost / item.quantity + Number.EPSILON) * 100) / 100 : null;
         await tx.inventoryTransaction.create({
           data: {
             inventoryId: inv.id,
             type: "EXPORT",
             quantity: item.quantity,
+            unitCost: avgUnitCost,
             note: `Xuất bán - đơn ${order.orderCode}`,
             createdById: userId,
           },
@@ -607,8 +779,10 @@ const updateStatusInTx = async (tx, id, status, userId = null) => {
     if (order.status === "SHIPPING" && status === "COMPLETED" && ["UNPAID", "PARTIAL"].includes(order.paymentStatus)) {
       await debtService.createReceivableForOrderInTx(tx, { order: updatedOrder, userId });
     }
-    return updatedOrder;
+    return { updatedOrder, statusFifoTotalCost };
   });
+
+  const statusFifoTotalCost = Number(updated.statusFifoTotalCost || 0);
 
   if (order.status === "SHIPPING" && status === "COMPLETED") {
     try {
@@ -663,6 +837,7 @@ const updateStatusInTx = async (tx, id, status, userId = null) => {
       paidAmount: Number(paidAgg._sum.amount || 0),
       payments,
       userId,
+      fifoTotalCost: statusFifoTotalCost,
     });
     await postingErrorService.tryPostOrQueue(
       () =>
@@ -675,6 +850,7 @@ const updateStatusInTx = async (tx, id, status, userId = null) => {
           paidAmount: Number(paidAgg._sum.amount || 0),
           payments,
           userId,
+          fifoTotalCost: statusFifoTotalCost,
         }),
       {
         source: "ORDER",
@@ -704,7 +880,14 @@ const updateStatusInTx = async (tx, id, status, userId = null) => {
 
     // Auto-reorder: kiem tra tồn kho thap sau khi xuat hang
     const automation = require("../automation/automation.service");
+const logger = require('../../utils/logger');
     automation.onOrderCompleted(updated, userId);
+
+    // CRM (Mục 3.2, 4.3 đặc tả CRM/SRM): RFM động + đóng vòng churn win-back
+    if (updated.customerId) {
+      require("../customers/rfm.service").onOrderCompletedForCustomer(updated.customerId);
+      require("../customers/churn-automation.service").checkRetainedForOrder(updated);
+    }
   }
 
   return updated;

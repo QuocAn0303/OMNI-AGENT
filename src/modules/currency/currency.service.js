@@ -107,6 +107,7 @@ const getAllCurrentRates = async () => {
 const fetchRatesFromAPI = async () => {
   try {
     const https = require('https');
+const logger = require('../../utils/logger');
     const url = 'https://api.exchangerate-api.com/v4/latest/USD';
     const body = await new Promise((resolve, reject) => {
       https.get(url, (res) => {
@@ -141,7 +142,7 @@ const fetchRatesFromAPI = async () => {
     }
     return Object.keys(targets).filter((c) => targets[c]).length;
   } catch (e) {
-    console.error('[currency] fetchRatesFromAPI error:', e.message);
+    logger.error('[currency] fetchRatesFromAPI error:', e.message);
     return 0;
   }
 };

@@ -15,6 +15,7 @@
  */
 
 const prisma = require('../../config/prisma');
+const logger = require('../../utils/logger');
 
 // ─── HELPERS ───
 
@@ -442,6 +443,142 @@ const HANDLERS = {
     };
   },
 
+  // ════════════════ CRM/SRM TOOLS (YeuCauKyThuat §3.3 — 17+ query tools) ════════════════
+
+  search_churn_alerts: async (params = {}) => {
+    const where = {};
+    const VALID_STATUS = ['PENDING', 'TRIGGERED', 'RETAINED', 'LOST'];
+    const VALID_RISK = ['LOW', 'MEDIUM', 'HIGH', 'CRITICAL'];
+    if (params.status && VALID_STATUS.includes(params.status)) where.status = params.status;
+    if (params.riskLevel && VALID_RISK.includes(params.riskLevel)) where.riskLevel = params.riskLevel;
+    const rows = await prisma.churnAlert.findMany({
+      where,
+      include: { customer: { select: { id: true, name: true, phone: true, churnProbability: true, rfmSegment: true } } },
+      orderBy: { churnScore: 'desc' },
+      take: params.limit || 20,
+    });
+    if (!rows.length) return { data: [], total: 0, summary: 'Không có cảnh báo churn nào.', message: '' };
+    return {
+      data: rows,
+      total: rows.length,
+      summary: `${rows.length} cảnh báo churn`,
+      message: rows.map(a =>
+        `• ${a.customer?.name} (${a.customer?.phone || 'N/A'}) — rủi ro ${a.riskLevel} — điểm ${Number(a.churnScore).toFixed(2)} — ${a.status}`
+      ).join('\n'),
+    };
+  },
+
+  search_customer_rfm: async (params = {}) => {
+    const where = { isActive: true };
+    const VALID_SEGMENTS = ['Champions', 'Loyal', 'Potential', 'At-Risk', 'Hibernating'];
+    if (params.segment && VALID_SEGMENTS.includes(params.segment)) where.rfmSegment = params.segment;
+    else if (params.tier) where.tier = params.tier;
+    if (params.hasDebt) where.totalDebt = { gt: 0 };
+    const rows = await prisma.customer.findMany({
+      where,
+      select: {
+        id: true, name: true, phone: true, tier: true, loyaltyPoints: true, totalSpent: true,
+        rfmRecencyDays: true, rfmFrequency: true, rfmMonetary: true, rfmSegment: true,
+        clvPredicted: true, churnProbability: true,
+      },
+      orderBy: [{ rfmMonetary: 'desc' }, { totalSpent: 'desc' }],
+      take: params.limit || 20,
+    });
+    if (!rows.length) return { data: [], total: 0, summary: 'Chưa có khách hàng nào được chấm điểm RFM.', message: '' };
+    return {
+      data: rows,
+      total: rows.length,
+      summary: `${rows.length} khách hàng phân khúc RFM`,
+      message: rows.map(c =>
+        `• ${c.name} — ${c.rfmSegment || 'Chưa segment'} — R:${c.rfmRecencyDays ?? '?'} F:${c.rfmFrequency ?? '?'} — CLV: ${Number(c.clvPredicted || 0).toLocaleString()}đ — churn: ${c.churnProbability != null ? Math.round(c.churnProbability * 100) + '%' : '?'}`
+      ).join('\n'),
+    };
+  },
+
+  search_leads: async (params = {}) => {
+    const where = { referralSource: { not: null } };
+    const VALID_LEAD_STATUS = ['NEW', 'CONTACTED', 'QUALIFIED', 'CUSTOMER', 'DEAD'];
+    if (params.leadStatus && VALID_LEAD_STATUS.includes(params.leadStatus)) where.leadStatus = params.leadStatus;
+    const rows = await prisma.customer.findMany({
+      where,
+      select: { id: true, name: true, phone: true, email: true, leadStatus: true, referralSource: true, createdAt: true },
+      orderBy: { createdAt: 'desc' },
+      take: params.limit || 20,
+    });
+    if (!rows.length) return { data: [], total: 0, summary: 'Chưa có lead nào.', message: '' };
+    return {
+      data: rows,
+      total: rows.length,
+      summary: `${rows.length} lead`,
+      message: rows.map(l =>
+        `• ${l.name} (${l.phone || 'N/A'}) — nguồn: ${l.referralSource} — trạng thái: ${l.leadStatus}`
+      ).join('\n'),
+    };
+  },
+
+  search_grn: async (params = {}) => {
+    const where = {};
+    const VALID_GRN_STATUS = ['DRAFT', 'QC_PENDING', 'QC_DONE', 'POSTED'];
+    if (params.status && VALID_GRN_STATUS.includes(params.status)) where.status = params.status;
+    const rows = await prisma.goodsReceiptNote.findMany({
+      where,
+      include: { purchaseOrder: { select: { poCode: true, vendor: { select: { name: true } } } } },
+      orderBy: { receivedAt: 'desc' },
+      take: params.limit || 20,
+    });
+    if (!rows.length) return { data: [], total: 0, summary: 'Không có phiếu nhập kho (GRN) nào.', message: '' };
+    return {
+      data: rows,
+      total: rows.length,
+      summary: `${rows.length} phiếu nhập kho`,
+      message: rows.map(g =>
+        `• ${g.grnCode} — ${g.purchaseOrder?.poCode} (${g.purchaseOrder?.vendor?.name || 'N/A'}) — ${g.status} — ${new Date(g.receivedAt).toISOString().slice(0, 10)}`
+      ).join('\n'),
+    };
+  },
+
+  search_purchase_invoices: async (params = {}) => {
+    const where = {};
+    const VALID_MATCH = ['PENDING', 'MATCHED', 'VARIANCE_HOLD', 'APPROVED_OVERRIDE'];
+    if (params.matchStatus && VALID_MATCH.includes(params.matchStatus)) where.matchStatus = params.matchStatus;
+    const rows = await prisma.purchaseInvoiceRecord.findMany({
+      where,
+      include: { purchaseOrder: { select: { poCode: true, vendor: { select: { name: true } } } } },
+      orderBy: { receivedAt: 'desc' },
+      take: params.limit || 20,
+    });
+    if (!rows.length) return { data: [], total: 0, summary: 'Không có hóa đơn NCC nào.', message: '' };
+    return {
+      data: rows,
+      total: rows.length,
+      summary: `${rows.length} hóa đơn NCC (3-way matching)`,
+      message: rows.map(p =>
+        `• ${p.invoiceNumber} — ${p.purchaseOrder?.poCode} (${p.purchaseOrder?.vendor?.name || 'N/A'}) — ${Number(p.invoiceAmount).toLocaleString()}đ — ${p.matchStatus}${p.variancePct != null ? ` — lệch ${Number(p.variancePct).toFixed(2)}%` : ''}`
+      ).join('\n'),
+    };
+  },
+
+  search_vendor_performance: async (params = {}) => {
+    const rows = await prisma.vendor.findMany({
+      where: { isActive: true },
+      select: {
+        id: true, code: true, name: true, kraljicCategory: true,
+        otifScore: true, defectRate: true, vendorGrade: true, paymentTerms: true,
+      },
+      orderBy: [{ otifScore: 'desc' }, { name: 'asc' }],
+      take: params.limit || 20,
+    });
+    if (!rows.length) return { data: [], total: 0, summary: 'Không có nhà cung cấp nào.', message: '' };
+    return {
+      data: rows,
+      total: rows.length,
+      summary: `${rows.length} nhà cung cấp — hiệu suất SRM`,
+      message: rows.map(v =>
+        `• ${v.name} (${v.code}) — Kraljic: ${v.kraljicCategory || 'chưa đánh giá'} — grade: ${v.vendorGrade || '?'} — OTIF: ${v.otifScore != null ? Number(v.otifScore).toFixed(1) : '?'} — lỗi: ${v.defectRate != null ? Number(v.defectRate).toFixed(1) + '%' : '?'}`
+      ).join('\n'),
+    };
+  },
+
   // ════════════════ WRITE TOOLS ════════════════
 
   create_order: async (params = {}, userId = null) => {
@@ -644,6 +781,14 @@ const INTENT_MAP = [
   { patterns: ['tạo đơn nhập', 'tạo po', 'đặt hàng nhập', 'nhập thêm', 'tạo purchase order'], tool: 'create_po' },
   { patterns: ['nhắc nợ', 'gửi nhắc', 'nhắc khách', 'đòi nợ', 'remind'], tool: 'send_reminder' },
 
+  // CRM/SRM intents (Mục 3-6 đặc tả) — đặt trước các pattern chung chung
+  { patterns: ['churn', 'khách sắp mất', 'khách có nguy cơ', 'giữ chân khách'], tool: 'search_churn_alerts' },
+  { patterns: ['rfm', 'clv', 'phân khúc khách', 'giá trị vòng đời', 'churn probability'], tool: 'search_customer_rfm' },
+  { patterns: ['lead', 'khách tiềm năng', 'nguồn khách', 'webhook lead'], tool: 'search_leads' },
+  { patterns: ['phiếu nhập kho', 'grn', 'nhận hàng po', 'kiểm hàng'], tool: 'search_grn' },
+  { patterns: ['hóa đơn mua', 'đối soát hóa đơn', 'purchase invoice', '3-way', 'dung sai'], tool: 'search_purchase_invoices' },
+  { patterns: ['kraljic', 'hiệu suất nhà cung cấp', 'scorecard', 'xếp hạng ncc', 'otif'], tool: 'search_vendor_performance' },
+
   { patterns: ['work order', 'lệnh sản xuất', 'lệnh sx'], tool: 'search_production' },
   { patterns: ['bom', 'định mức', 'định mức nvl', 'định mức nguyên vật liệu'], tool: 'search_production' },
   { patterns: ['lô hàng', 'lô sắp hết', 'hạn sử dụng', 'hsd', 'gần hết hạn'], tool: 'search_production' },
@@ -760,7 +905,8 @@ async function processQuery(text) {
       message: `Xin lỗi, tôi chưa hiểu câu hỏi của bạn. Tôi có thể giúp bạn tra cứu:\n` +
         `• 📦 Sản phẩm, tồn kho\n• 📋 Đơn hàng, hóa đơn\n• 👤 Khách hàng, công nợ\n` +
         `• 💰 Doanh thu, tài chính, chi phí\n• 👥 Nhân sự, lương, chấm công\n` +
-        `• 🏭 Sản xuất, lệnh SX, BOM, lô hàng\n• 📊 Dashboard tổng quan`,
+        `• 🏭 Sản xuất, lệnh SX, BOM, lô hàng\n• 📊 Dashboard tổng quan\n` +
+        `• 🎯 CRM/SRM: lead, phân khúc RFM/CLV, cảnh báo churn, GRN, hóa đơn NCC, Kraljic`,
       data: null,
     };
   }
@@ -775,7 +921,7 @@ async function processQuery(text) {
   }
 
   const params = extractParams(text, tool);
-  console.log(`[DB-Agent] Tool: ${tool}, Params:`, JSON.stringify(params));
+  logger.info(`[DB-Agent] Tool: ${tool}, Params:`, logger.truncateLog(params));
 
   try {
     const result = await HANDLERS[tool](params);
@@ -789,7 +935,7 @@ async function processQuery(text) {
       message: result.message,
     };
   } catch (err) {
-    console.error(`[DB-Agent] Error in ${tool}:`, err.message);
+    logger.error(`[DB-Agent] Error in ${tool}:`, err.message);
     return {
       success: false,
       message: `Lỗi khi truy vấn: ${err.message}`,

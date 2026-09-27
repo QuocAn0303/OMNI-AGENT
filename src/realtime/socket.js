@@ -4,9 +4,11 @@
  * Tổng quan:
  * - Khởi tạo Socket.IO server gắn với HTTP server
  * - Dùng Redis adapter để scale ngang (fallback in-memory nếu không có Redis)
- * - Xác thực qua JWT trong handshake.auth.token hoặc query.token
- * - Mỗi user tự động join room user:{userId} và role:{role}
+ * - Xác thực qua JWT trong handshake.auth.token
+ * - Mỗi user tự động join room user:{userId}, role:{role},
+ *   tenant:{tenantId} và tenant:{tenantId}:role:{role}
  * - emitToUser / emitToRole gửi thông báo theo kênh
+ * - emitToRole có tenantId → chỉ gửi trong tenant đó (chống cross-tenant leak)
  * 
  * Hàm:
  * - waitForRedisReady(client): Đợi Redis client ready (timeout 3s)
@@ -24,6 +26,8 @@ const { Server } = require("socket.io");
 const { createAdapter } = require("@socket.io/redis-adapter");
 const jwt = require("jsonwebtoken");
 const { pubClient, subClient } = require("../config/redis");
+const prisma = require("../config/prisma");
+const logger = require('../utils/logger');
 
 let io;
 const REDIS_READY_TIMEOUT_MS = 3000;
@@ -70,21 +74,46 @@ const initSocket = async (httpServer) => {
         waitForRedisReady(subClient),
       ]);
       io.adapter(createAdapter(pubClient, subClient));
-      console.log("[socket] redis adapter attached");
+      logger.info("[socket] redis adapter attached");
     } catch (e) {
-      console.error("[socket] redis adapter failed, falling back to in-memory:", e.message);
+      logger.error("[socket] redis adapter failed, falling back to in-memory:", e.message);
     }
   } else {
-    console.log("[socket] running in-memory (no Redis)");
+    logger.info("[socket] running in-memory (no Redis)");
   }
 
-  io.use((socket, next) => {
+  io.use(async (socket, next) => {
     try {
-      const token = socket.handshake.auth?.token || socket.handshake.query?.token;
+      // L8: chỉ nhận token qua handshake.auth (client io(..., { auth: { token } }))
+      // Bỏ query string — token lọt vào access log/proxy log khi nối socket
+      const token = socket.handshake.auth?.token;
       if (!token) return next(new Error("Unauthorized"));
       const decoded = jwt.verify(token, process.env.JWT_SECRET, { algorithms: ["HS256"] });
+
+      // Refresh role/tenantId từ DB tại thời điểm kết nối (token có thể cũ 1h)
+      let role = decoded.role;
+      let tenantId = decoded.tenantId || null;
+      if (decoded.supportSessionId) {
+        const session = await prisma.supportAccessSession.findUnique({
+          where: { id: decoded.supportSessionId },
+          select: { status: true, expiresAt: true },
+        });
+        if (!session || session.status !== "ACTIVE" || new Date(session.expiresAt) < new Date()) {
+          return next(new Error("Unauthorized"));
+        }
+      } else {
+        const user = await prisma.user.findUnique({
+          where: { id: decoded.id },
+          select: { isActive: true, role: true, tenantId: true },
+        });
+        if (!user || !user.isActive) return next(new Error("Unauthorized"));
+        role = user.role;
+        tenantId = user.tenantId || null;
+      }
+
       socket.userId = decoded.id;
-      socket.role = decoded.role;
+      socket.role = role;
+      socket.tenantId = tenantId;
       return next();
     } catch (e) {
       return next(new Error("Unauthorized"));
@@ -94,6 +123,12 @@ const initSocket = async (httpServer) => {
   io.on("connection", (socket) => {
     if (socket.userId) socket.join(`user:${socket.userId}`);
     if (socket.role) socket.join(`role:${socket.role}`);
+    // C1: room theo tenant — emitToRole(role, event, payload, tenantId) không
+    // còn broadcast sang tenant khác
+    if (socket.tenantId) {
+      socket.join(`tenant:${socket.tenantId}`);
+      if (socket.role) socket.join(`tenant:${socket.tenantId}:role:${socket.role}`);
+    }
   });
 
   return io;
@@ -105,8 +140,14 @@ const emitToUser = (userId, event, payload) => {
   io?.to(`user:${userId}`).emit(event, payload);
 };
 
-const emitToRole = (role, event, payload) => {
-  io?.to(`role:${role}`).emit(event, payload);
+const emitToRole = (role, event, payload, tenantId = null) => {
+  // Bắt buộc tenantId — KHÔNG bao giờ fallback về room role toàn hệ thống
+  // (trước đây emitToRole không có tenantId → broadcast cross-tenant)
+  if (!tenantId) {
+    logger.warn(`[socket] emitToRole skipped: thiếu tenantId (event=${event}, role=${role})`);
+    return;
+  }
+  io?.to(`tenant:${tenantId}:role:${role}`).emit(event, payload);
 };
 
 module.exports = { initSocket, getIo, emitToUser, emitToRole };

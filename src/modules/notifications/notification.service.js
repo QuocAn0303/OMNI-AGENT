@@ -32,6 +32,8 @@
 // src/modules/notifications/notification.service.js
 const prisma = require("../../config/prisma");
 const { randomUUID } = require("crypto");
+const logger = require("../../utils/logger");
+const { runWithTenant } = require("../../config/tenantContext");
 
 const DEBOUNCE_MS = 60 * 60 * 1000;
 
@@ -48,7 +50,43 @@ const emitPayload = (notification) => {
   if (!sock?.emitToUser && !sock?.emitToRole) return;
   const payload = { type: "notification", data: notification };
   if (notification.userId) sock.emitToUser?.(notification.userId, "notification", payload);
-  if (notification.roleScope) sock.emitToRole?.(notification.roleScope, "notification", payload);
+  // emitToRole BẮT BUỘC tenantId — row tạo ngoài tenant context (tenantId null)
+  // không được broadcast cross-tenant nữa
+  if (notification.roleScope) {
+    if (!notification.tenantId) {
+      logger.warn(`[notif] emitToRole skipped: notification ${notification.id} không có tenantId`);
+      return;
+    }
+    sock.emitToRole?.(notification.roleScope, "notification", payload, notification.tenantId);
+  }
+};
+
+// Gửi Web Push (PWA) — fire-and-forget, không chặn luồng tạo notification
+const sendPush = (notification) => {
+  try {
+    const pushService = require("../push/push.service");
+    const payload = {
+      title: notification.title,
+      message: notification.message || "",
+      link: notification.link || "/",
+      severity: notification.severity || "INFO",
+    };
+    // Role-scope push BẮT BUỘC tenantId — nếu không có (notification tạo ngoài
+    // tenant context), sendToRole sẽ query user KHÔNG bị tenant-scoped → web push
+    // lọt sang tenant khác
+    if (notification.roleScope && !notification.tenantId) {
+      logger.warn(`[push] sendToRole skipped: notification ${notification.id} không có tenantId`);
+      return;
+    }
+    const run = notification.userId
+      ? pushService.sendToUser(notification.userId, payload)
+      : notification.roleScope
+        ? pushService.sendToRole(notification.roleScope, payload, notification.tenantId)
+        : Promise.resolve();
+    run.catch((e) => logger.warn?.("[push] hook failed:", e.message));
+  } catch (e) {
+    // push module chưa mount hoặc lỗi — không ảnh hưởng notification chính
+  }
 };
 
 const createOne = async ({
@@ -74,6 +112,7 @@ const createOne = async ({
   if (meta !== undefined && meta !== null) data.meta = meta;
   const row = await prisma.notification.create({ data });
   emitPayload(row);
+  sendPush(row);
   return row;
 };
 
@@ -160,24 +199,36 @@ const cronPendingOrders = async () => {
   const since = new Date(Date.now() - 24 * 60 * 60 * 1000);
   const stale = await prisma.order.findMany({
     where: { status: "PENDING", createdAt: { lt: since } },
+    select: { id: true, orderCode: true, tenantId: true },
     take: 50,
   });
+  // Chạy per-tenant: notification phải có tenantId mới hiển thị trong UI
+  // + emitToRole scoped đúng tenant (chống cross-tenant leak)
+  const byTenant = {};
   for (const o of stale) {
-    const exists = await prisma.notification.findFirst({
-      where: {
-        type: "ORDER_PENDING_LONG",
-        meta: { path: ["orderId"], equals: o.id },
-        createdAt: { gte: since },
-      },
-    });
-    if (exists) continue;
-    await notifyRoles(["MANAGER"], {
-      type: "ORDER_PENDING_LONG",
-      severity: "WARNING",
-      title: "Đơn PENDING quá lâu",
-      message: `Đơn ${o.orderCode} đã chờ > 24h`,
-      link: `/orders`,
-      meta: { orderId: o.id },
+    if (!o.tenantId) continue;
+    (byTenant[o.tenantId] ||= []).push(o);
+  }
+  for (const [tenantId, orders] of Object.entries(byTenant)) {
+    await runWithTenant(tenantId, async () => {
+      for (const o of orders) {
+        const exists = await prisma.notification.findFirst({
+          where: {
+            type: "ORDER_PENDING_LONG",
+            meta: { path: ["orderId"], equals: o.id },
+            createdAt: { gte: since },
+          },
+        });
+        if (exists) continue;
+        await notifyRoles(["MANAGER"], {
+          type: "ORDER_PENDING_LONG",
+          severity: "WARNING",
+          title: "Đơn PENDING quá lâu",
+          message: `Đơn ${o.orderCode} đã chờ > 24h`,
+          link: `/orders`,
+          meta: { orderId: o.id },
+        });
+      }
     });
   }
 };
@@ -186,21 +237,31 @@ const cronDebtOverdue = async (debtService) => {
   await debtService.markOverdueCron();
   const debts = await prisma.debt.findMany({
     where: { status: "OVERDUE" },
+    select: { id: true, type: true, amount: true, paidAmount: true, tenantId: true },
     take: 200,
   });
+  const byTenant = {};
   for (const d of debts) {
-    const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-    const exists = await prisma.notification.findFirst({
-      where: { type: "DEBT_OVERDUE", createdAt: { gte: weekAgo }, meta: { path: ["debtId"], equals: d.id } },
-    });
-    if (exists) continue;
-    await notifyRoles(["MANAGER", "ADMIN"], {
-      type: "DEBT_OVERDUE",
-      severity: "CRITICAL",
-      title: "Công nợ quá hạn",
-      message: `Công nợ ${d.type} — số tiền còn ${Number(d.amount) - Number(d.paidAmount)}`,
-      link: `/finance`,
-      meta: { debtId: d.id },
+    if (!d.tenantId) continue;
+    (byTenant[d.tenantId] ||= []).push(d);
+  }
+  for (const [tenantId, rows] of Object.entries(byTenant)) {
+    await runWithTenant(tenantId, async () => {
+      const weekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+      for (const d of rows) {
+        const exists = await prisma.notification.findFirst({
+          where: { type: "DEBT_OVERDUE", createdAt: { gte: weekAgo }, meta: { path: ["debtId"], equals: d.id } },
+        });
+        if (exists) continue;
+        await notifyRoles(["MANAGER", "ADMIN"], {
+          type: "DEBT_OVERDUE",
+          severity: "CRITICAL",
+          title: "Công nợ quá hạn",
+          message: `Công nợ ${d.type} — số tiền còn ${Number(d.amount) - Number(d.paidAmount)}`,
+          link: `/finance`,
+          meta: { debtId: d.id },
+        });
+      }
     });
   }
 };
@@ -208,42 +269,52 @@ const cronDebtOverdue = async (debtService) => {
 const cronPayrollDue = async () => {
   const startOfDay = new Date();
   startOfDay.setHours(0, 0, 0, 0);
-  const exists = await prisma.notification.findFirst({
-    where: { type: "PAYROLL_DUE", createdAt: { gte: startOfDay } },
-  });
-  if (exists) return;
-  await notifyRoles(["ADMIN"], {
-    type: "PAYROLL_DUE",
-    severity: "INFO",
-    title: "Nhắc lương",
-    message: "Ngày 25: kiểm tra kỳ lương",
-    link: `/hr`,
-    meta: {},
-  });
+  const tenants = await prisma.tenant.findMany({ select: { id: true } });
+  for (const { id: tenantId } of tenants) {
+    await runWithTenant(tenantId, async () => {
+      const exists = await prisma.notification.findFirst({
+        where: { type: "PAYROLL_DUE", createdAt: { gte: startOfDay } },
+      });
+      if (exists) return;
+      await notifyRoles(["ADMIN"], {
+        type: "PAYROLL_DUE",
+        severity: "INFO",
+        title: "Nhắc lương",
+        message: "Ngày 25: kiểm tra kỳ lương",
+        link: `/hr`,
+        meta: {},
+      });
+    });
+  }
 };
 
 const cronPeriodClosing = async () => {
   const now = new Date();
   const y = now.getFullYear();
   const m = now.getMonth() + 1;
-  const open = await prisma.fiscalPeriod.findFirst({
-    where: { year: y, month: m, status: "OPEN" },
-  });
-  if (!open) return;
-  const startOfDay = new Date();
-  startOfDay.setHours(0, 0, 0, 0);
-  const exists = await prisma.notification.findFirst({
-    where: { type: "PERIOD_CLOSING_REMINDER", createdAt: { gte: startOfDay } },
-  });
-  if (exists) return;
-  await notifyRoles(["ADMIN"], {
-    type: "PERIOD_CLOSING_REMINDER",
-    severity: "INFO",
-    title: "Nhắc đóng kỳ kế toán",
-    message: `Kỳ ${m}/${y} đang mở — chuẩn bị đóng sổ`,
-    link: `/financial-reports`,
-    meta: { year: y, month: m },
-  });
+  const tenants = await prisma.tenant.findMany({ select: { id: true } });
+  for (const { id: tenantId } of tenants) {
+    await runWithTenant(tenantId, async () => {
+      const open = await prisma.fiscalPeriod.findFirst({
+        where: { year: y, month: m, status: "OPEN" },
+      });
+      if (!open) return;
+      const startOfDay = new Date();
+      startOfDay.setHours(0, 0, 0, 0);
+      const exists = await prisma.notification.findFirst({
+        where: { type: "PERIOD_CLOSING_REMINDER", createdAt: { gte: startOfDay } },
+      });
+      if (exists) return;
+      await notifyRoles(["ADMIN"], {
+        type: "PERIOD_CLOSING_REMINDER",
+        severity: "INFO",
+        title: "Nhắc đóng kỳ kế toán",
+        message: `Kỳ ${m}/${y} đang mở — chuẩn bị đóng sổ`,
+        link: `/financial-reports`,
+        meta: { year: y, month: m },
+      });
+    });
+  }
 };
 
 const notifyExpensePending = async (expense) => {

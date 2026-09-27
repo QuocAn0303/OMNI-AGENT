@@ -19,7 +19,6 @@ import {
   CloseOutlined, SendOutlined,
   RobotOutlined, UserOutlined,
 } from '@ant-design/icons';
-import axios from '../api/axios';
 
 /**
  * ERPAssistantWidget — Floating chatbot widget (RAG-powered)

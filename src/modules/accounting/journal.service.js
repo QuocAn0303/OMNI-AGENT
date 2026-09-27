@@ -24,6 +24,7 @@
  * - getEntryById(id): Lấy chi tiết bút toán kèm lines, createdBy, reversedBy
  */
 const prisma = require("../../config/prisma");
+const auditService = require("../audit/audit.service");
 
 const toNum = (v) => Number(v || 0);
 const round2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
@@ -231,6 +232,7 @@ const postEntryOnce = async (input, tx = prisma) => {
       },
       include: { lines: { include: { account: true } } },
     });
+    auditService.log({ userId, action: 'POST_JOURNAL_ENTRY', entity: 'JournalEntry', entityId: entry.id, after: { entryCode, source, sourceId, totalDebit } });
     return entry;
   } catch (err) {
     // Race condition: 2 process post cùng (source, sourceId, operation) → P2002
@@ -331,6 +333,7 @@ const reverseEntry = async (entryId, userId = null, externalTx = null) => {
       throw { status: 409, message: "Bút toán đã bị đảo bởi tiến trình khác" };
     }
 
+    auditService.log({ userId, action: 'REVERSE_JOURNAL_ENTRY', entity: 'JournalEntry', entityId: reversal.id, after: { entryCode: reversal.entryCode, originalId: original.id } });
     return reversal;
   };
 

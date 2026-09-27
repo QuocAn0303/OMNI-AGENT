@@ -139,6 +139,12 @@ router.get(
   }
 );
 
+// ─── Department CRUD ───
+router.get("/departments", authenticate, authorize("ADMIN", "MANAGER"), controller.listDepartments);
+router.post("/departments", authenticate, authorize("ADMIN", "MANAGER"), controller.createDepartment);
+router.put("/departments/:id", authenticate, authorize("ADMIN", "MANAGER"), controller.updateDepartment);
+router.delete("/departments/:id", authenticate, authorize("ADMIN"), controller.deleteDepartment);
+
 // ─── Overtime Requests ───
 const overtimeSvc = require("./overtime.service");
 

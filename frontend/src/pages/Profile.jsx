@@ -24,6 +24,7 @@ import {
   Typography,
   Space,
   Divider,
+  Alert,
 } from "antd";
 import {
   MailOutlined,
@@ -102,6 +103,10 @@ export default function Profile() {
         "Đổi mật khẩu thành công! Vui lòng dùng mật khẩu mới ở lần đăng nhập tới.",
       );
       passwordForm.resetFields();
+      // L3: gỡ cờ bắt buộc đổi mật khẩu trong store → ProtectedRoute hết redirect
+      if (user?.mustChangePassword) {
+        setUser({ ...user, mustChangePassword: false });
+      }
     } catch (error) {
       const errorMsg =
         error.response?.data?.message ||
@@ -212,6 +217,15 @@ export default function Profile() {
       ),
       children: (
         <div style={{ maxWidth: "600px", padding: "16px 0" }}>
+          {user?.mustChangePassword && (
+            <Alert
+              type="warning"
+              showIcon
+              style={{ marginBottom: 16 }}
+              message="Bạn đang dùng mật khẩu mặc định"
+              description="Vì lý do bảo mật, bạn phải đổi mật khẩu trước khi sử dụng các tính năng khác của hệ thống."
+            />
+          )}
           <Form
             form={passwordForm}
             layout="vertical"
@@ -291,7 +305,7 @@ export default function Profile() {
         className="shadow-sm mt-4"
         style={{ borderRadius: "8px" }}
       >
-        <Tabs defaultActiveKey="1" items={items} />
+        <Tabs defaultActiveKey={user?.mustChangePassword ? "2" : "1"} items={items} />
       </Card>
     </div>
   );

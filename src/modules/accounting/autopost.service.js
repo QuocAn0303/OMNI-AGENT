@@ -29,6 +29,7 @@
 const journalService = require("./journal.service");
 
 const toNum = (v) => Number(v || 0);
+const round2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
 
 const cashAccountByMethod = (method) => {
   switch (method) {
@@ -76,14 +77,20 @@ const paymentLinesForOrder = ({ order, paidAmount = 0, payments = [] }) => {
   return { lines, paidPortion: total - remaining };
 };
 
-const buildOrderCompletedEntry = ({ order, items, paidAmount = 0, payments = [], userId }) => {
+const buildOrderCompletedEntry = ({ order, items, paidAmount = 0, payments = [], userId, fifoTotalCost }) => {
   const total = toNum(order.total);
   const subtotal = toNum(order.subtotal);
   if (total <= 0) return null;
 
+  // P2-C9: ưu tiên FIFO cost từ recordFifoConsumption (giá vốn thực tế từ lots)
+  // Fallback về costPrice tĩnh nếu không có FIFO cost (backward compat)
   let totalCost = 0;
-  for (const item of items) {
-    totalCost += toNum(item.product?.costPrice || 0) * Number(item.quantity || 0);
+  if (fifoTotalCost && Number(fifoTotalCost) > 0) {
+    totalCost = Number(fifoTotalCost);
+  } else {
+    for (const item of items) {
+      totalCost += toNum(item.product?.costPrice || 0) * Number(item.quantity || 0);
+    }
   }
 
   const { lines, paidPortion } = paymentLinesForOrder({ order, paidAmount, payments });
@@ -106,6 +113,17 @@ const buildOrderCompletedEntry = ({ order, items, paidAmount = 0, payments = [],
   const totalDiscount = toNum(order.discount) + toNum(order.promotionDiscount) + toNum(order.loyaltyDiscount);
   if (totalDiscount > 0) {
     lines.push({ accountCode: "521", debit: totalDiscount, description: `Chiet khau/KM don ${order.orderCode}` });
+  }
+
+  // A5: total = subtotal - totalDiscount + serviceCharge + tip → nếu thiếu 2 dòng này
+  // bút toán lệch (DR > CR) và mọi đơn F&B có phí dịch vụ rơi vào posting-error.
+  const serviceCharge = Math.max(0, round2(toNum(order.total) - subtotal + totalDiscount - toNum(order.tipAmount)));
+  const tip = Math.max(0, toNum(order.tipAmount));
+  if (serviceCharge > 0) {
+    lines.push({ accountCode: "511", credit: serviceCharge, description: `Phi dich vu don ${order.orderCode}` });
+  }
+  if (tip > 0) {
+    lines.push({ accountCode: "511", credit: tip, description: `Tip don ${order.orderCode}` });
   }
 
   lines.push({ accountCode: "632", debit: totalCost, description: `Giá vốn don ${order.orderCode}` });
@@ -452,21 +470,25 @@ const buildCapitalContributionEntry = ({ amount, method = "CASH", description = 
  *
  * Note: diff là chênh lệch dương = tồn thực tế > tồn sổ sách => thừa kho
  *       diff âm = tồn thực tế < tồn sổ sách => thiếu kho
+ * Số tiền = |diff| × costPrice (A3: trước đây ghi số LƯỢNG làm số TIỀN).
  */
 const buildInventoryAdjustmentEntry = ({ diff, product, userId }) => {
   const absDiff = Math.abs(diff);
   if (absDiff <= 0) return null;
   const productName = product?.name || "SP";
+  const cost = toNum(product?.costPrice);
+  const amount = round2(absDiff * cost);
+  if (amount <= 0) return null;
 
   const lines = [];
   if (diff > 0) {
     // Thừa kho: nhập thêm hàng, ghi nhận thu nhập khác
-    lines.push({ accountCode: "156", debit: absDiff, description: `Điều chỉnh tăng kho - ${productName}` });
-    lines.push({ accountCode: "711", credit: absDiff, description: `Thừa kho - ${productName}` });
+    lines.push({ accountCode: "156", debit: amount, description: `Điều chỉnh tăng kho - ${productName}` });
+    lines.push({ accountCode: "711", credit: amount, description: `Thừa kho - ${productName}` });
   } else {
     // Thiếu kho: xuất bớt hàng, ghi nhận giá vốn
-    lines.push({ accountCode: "632", debit: absDiff, description: `Thiếu kho - ${productName}` });
-    lines.push({ accountCode: "156", credit: absDiff, description: `Điều chỉnh giảm kho - ${productName}` });
+    lines.push({ accountCode: "632", debit: amount, description: `Thiếu kho - ${productName}` });
+    lines.push({ accountCode: "156", credit: amount, description: `Điều chỉnh giảm kho - ${productName}` });
   }
 
   return {

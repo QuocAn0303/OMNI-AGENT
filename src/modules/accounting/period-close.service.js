@@ -1,6 +1,7 @@
 const prisma = require("../../config/prisma");
 const journalService = require("./journal.service");
 const auditService = require("../audit/audit.service");
+const logger = require('../../utils/logger');
 
 const LOG = "[period-close]";
 
@@ -43,7 +44,7 @@ const closeRevenue = async ({ year, month, userId }) => {
     entries.push(entry);
   }
 
-  console.log(`${LOG} closeRevenue: ${entries.length} entries`);
+  logger.info(`${LOG} closeRevenue: ${entries.length} entries`);
   return entries;
 };
 
@@ -82,7 +83,7 @@ const closeExpenses = async ({ year, month, userId }) => {
     entries.push(entry);
   }
 
-  console.log(`${LOG} closeExpenses: ${entries.length} entries`);
+  logger.info(`${LOG} closeExpenses: ${entries.length} entries`);
   return entries;
 };
 
@@ -104,7 +105,7 @@ const closeProfitLoss = async ({ year, month, userId }) => {
   const profitAmount = Math.abs(netBalance);
 
   if (profitAmount === 0) {
-    console.log(`${LOG} closeProfitLoss: no profit/loss to transfer`);
+    logger.info(`${LOG} closeProfitLoss: no profit/loss to transfer`);
     return null;
   }
 
@@ -126,7 +127,7 @@ const closeProfitLoss = async ({ year, month, userId }) => {
         ],
   });
 
-  console.log(`${LOG} closeProfitLoss: ${isProfit ? "profit" : "loss"} ${profitAmount.toLocaleString()} VND`);
+  logger.info(`${LOG} closeProfitLoss: ${isProfit ? "profit" : "loss"} ${profitAmount.toLocaleString()} VND`);
   return entry;
 };
 
@@ -153,7 +154,7 @@ const runPeriodClose = async ({ year, month, userId }) => {
     entityId: `${year}-${month}`, after: { status: "CLOSED" },
   }).catch(() => {});
 
-  console.log(`${LOG} period-close ${month}/${year} completed`);
+  logger.info(`${LOG} period-close ${month}/${year} completed`);
   return results;
 };
 
@@ -199,7 +200,7 @@ const createPrepaid = async (userId, data) => {
     ],
   });
 
-  console.log(`${LOG} createPrepaid: ${prepaid.id}, ${amount.toLocaleString()} VND / ${totalMonths} thang`);
+  logger.info(`${LOG} createPrepaid: ${prepaid.id}, ${amount.toLocaleString()} VND / ${totalMonths} thang`);
   return prepaid;
 };
 
@@ -251,7 +252,7 @@ const runMonthlyAllocation = async (year, month, userId) => {
     results.push({ id: p.id, description: p.description, amount: allocAmount });
   }
 
-  console.log(`${LOG} runMonthlyAllocation: ${results.length} prepaids allocated for ${month}/${year}`);
+  logger.info(`${LOG} runMonthlyAllocation: ${results.length} prepaids allocated for ${month}/${year}`);
   return results;
 };
 
@@ -298,7 +299,7 @@ const calculateCIT = async ({ year, quarter, userId }) => {
     ],
   });
 
-  console.log(`${LOG} CIT Q${quarter}/${year}: profit=${profitBeforeTax.toLocaleString()}, CIT=${citAmount.toLocaleString()} VND`);
+  logger.info(`${LOG} CIT Q${quarter}/${year}: profit=${profitBeforeTax.toLocaleString()}, CIT=${citAmount.toLocaleString()} VND`);
   return { profitBeforeTax, citAmount };
 };
 
@@ -350,7 +351,7 @@ const runMonthlyDepreciation = async (year, month, userId) => {
     results.push({ asset: asset.name, amount: monthlyDep });
   }
 
-  console.log(`${LOG} monthlyDepreciation: ${results.length} assets, ${month}/${year}`);
+  logger.info(`${LOG} monthlyDepreciation: ${results.length} assets, ${month}/${year}`);
   return results;
 };
 
@@ -425,7 +426,7 @@ const reversePeriodClose = async ({ year, month, userId }) => {
     reversed.push(rev);
   }
 
-  console.log(`${LOG} reversePeriodClose: ${reversed.length} entries reversed for ${month}/${year}`);
+  logger.info(`${LOG} reversePeriodClose: ${reversed.length} entries reversed for ${month}/${year}`);
   return reversed;
 };
 

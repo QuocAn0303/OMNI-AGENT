@@ -31,6 +31,7 @@
 const prisma = require("../../config/prisma");
 const auditService = require("../audit/audit.service");
 const { createPaymentLink, verifyWebhook } = require("../../config/payos");
+const { invalidatePlanCache } = require("../../middleware/plan.middleware");
 
 const getPlans = async (activeOnly = true) => {
   const where = activeOnly ? { isActive: true } : {};
@@ -142,6 +143,8 @@ const assignPlanToTenant = async (tenantId, planId, userId, extras = {}) => {
     },
   });
 
+  invalidatePlanCache(tenantId);
+
   auditService.log({
     userId,
     action: "ASSIGN_PLAN",
@@ -225,14 +228,19 @@ const getAllInvoices = async (filters = {}) => {
 
 const getMyPlanFeatures = async (tenantId) => {
   const sub = await getTenantSubscription(tenantId);
-  if (!sub) return null;
+  // M10: tenant chưa đăng ký gói → fallback gói FREE (key "free" trong seed)
+  // Đồng bộ với plan.middleware.js/getEffectivePlan
+  const freePlan = !sub
+    ? await prisma.subscriptionPlan.findUnique({ where: { key: "free" } }).catch(() => null)
+    : null;
+  if (!sub && !freePlan) return null;
   return {
-    plan: sub.plan,
-    subscription: sub,
-    features: sub.plan.features || {},
-    isExpired: sub.status === "EXPIRED",
+    plan: sub?.plan || freePlan,
+    subscription: sub || null,
+    features: (sub?.plan || freePlan).features || {},
+    isExpired: sub?.status === "EXPIRED",
     isAllowed: (moduleKey) => {
-      const allowed = sub.plan.features?.allowedModules || [];
+      const allowed = (sub?.plan || freePlan).features?.allowedModules || [];
       return allowed.includes("*") || allowed.includes(moduleKey);
     },
   };
@@ -384,15 +392,25 @@ const handlePaymentWebhook = async (webhookBody) => {
     });
   });
 
+  invalidatePlanCache(invoice.tenantId);
+
   return { success: true, message: "Thanh toán thành công" };
 };
 
 const checkExpiredSubscriptions = async () => {
   const now = new Date();
+  const expiredRows = await prisma.tenantSubscription.findMany({
+    where: { status: { in: ["ACTIVE", "TRIAL"] }, endDate: { lte: now } },
+    select: { tenantId: true },
+    take: 500,
+  });
   const expired = await prisma.tenantSubscription.updateMany({
     where: { status: { in: ["ACTIVE", "TRIAL"] }, endDate: { lte: now } },
     data: { status: "EXPIRED" },
   });
+
+  // Xoá cache plan của tenant vừa hết hạn (plan enforcement áp dụng ngay)
+  for (const row of expiredRows) invalidatePlanCache(row.tenantId);
 
   return expired.count;
 };

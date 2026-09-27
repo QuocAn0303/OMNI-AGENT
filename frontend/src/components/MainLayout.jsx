@@ -41,12 +41,9 @@ const MainLayout = () => {
 
   const handleLogout = async () => {
     try {
-      const refreshToken = localStorage.getItem("refreshToken");
-      if (refreshToken) {
-        await axiosInstance.post("/auth/logout", { refreshToken });
-      } else {
-        await axiosInstance.post("/auth/logout", { all: true });
-      }
+      // M7: refresh token nằm trong httpOnly cookie → gửi tự động, body rỗng
+      // Không có cookie (đã hết hạn) → revoke tất cả session của user
+      await axiosInstance.post("/auth/logout", { all: true });
     } catch (err) {
       console.debug(
         "Logout API error (ignored):",

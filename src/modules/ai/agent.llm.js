@@ -17,9 +17,14 @@ const express = require('express');
 const { spawn } = require('child_process');
 const path = require('path');
 const os = require('os');
+const logger = require('../../utils/logger');
+const { authenticate } = require('../../middleware/auth.middleware');
 
 const INFERENCE_SCRIPT = path.join(__dirname, 'inference.py');
 const router = express.Router();
+
+// M4: proxy LLM phải có session hợp lệ — trước đây public (dùng chùa LLM + DoS)
+router.use(authenticate);
 
 let pythonProcess = null;
 let requestQueue = [];
@@ -51,10 +56,10 @@ function startPythonProcess() {
     pythonProcess.stderr.on('data', (data) => {});
 
     pythonProcess.on('error', (err) => {
-      console.error('[LLM] Process error:', err.message);
+      logger.error('[LLM] Process error:', err.message);
     });
     pythonProcess.on('exit', (code) => {
-      console.error('[LLM] Process exited:', code);
+      logger.error('[LLM] Process exited:', code);
       pythonProcess = null;
       while (requestQueue.length > 0) {
         const cb = requestQueue.shift();
@@ -62,7 +67,7 @@ function startPythonProcess() {
       }
     });
   } catch (err) {
-    console.error('[LLM] Failed to start Python:', err.message);
+    logger.error('[LLM] Failed to start Python:', err.message);
   }
 }
 
@@ -102,7 +107,7 @@ router.post('/v1/chat/completions', async (req, res) => {
 
     return await generateToolCall(query, res, stream !== false);
   } catch (e) {
-    console.error('[LLM Proxy] Error:', e.message, e.stack);
+    logger.error('[LLM Proxy] Error:', e.message, e.stack);
     if (!res.headersSent) res.status(500).json({ error: { message: e.message } });
   }
 });

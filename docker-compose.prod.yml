@@ -24,7 +24,9 @@ services:
   redis:
     image: redis:7-alpine
     restart: always
-    command: ["redis-server", "--appendonly", "yes", "--maxmemory", "512mb", "--maxmemory-policy", "allkeys-lru"]
+    environment:
+      REDIS_PASSWORD: ${REDIS_PASSWORD:-}
+    command: ["sh", "-c", "if [ -n \"$REDIS_PASSWORD\" ]; then exec redis-server --requirepass \"$REDIS_PASSWORD\" --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru; else exec redis-server --appendonly yes --maxmemory 512mb --maxmemory-policy allkeys-lru; fi"]
     volumes:
       - redisdata:/data
 
@@ -52,7 +54,7 @@ services:
     environment:
       NODE_ENV: production
       DATABASE_URL: postgresql://postgres:${DB_PASSWORD}@db:5432/erp_db
-      REDIS_URL: redis://redis:6379
+      REDIS_URL: redis://:${REDIS_PASSWORD}@redis:6379
       JWT_SECRET: ${JWT_SECRET}
       CORS_ORIGIN: ${FRONTEND_URL}
       OLLAMA_URL: http://ollama:11434
@@ -69,6 +71,12 @@ services:
       - app
     ports:
       - "80:80"
+      - "443:443"
+    volumes:
+      # TLS certs cho nginx (HTTPS) — mount từ host, ví dụ:
+      #   - ./certs/fullchain.pem:/etc/nginx/certs/fullchain.pem:ro
+      #   - ./certs/privkey.pem:/etc/nginx/certs/privkey.pem:ro
+      - ${CERT_DIR:-./certs}:/etc/nginx/certs:ro
 
 volumes:
   pgdata:

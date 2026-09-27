@@ -258,11 +258,14 @@ function COATab() {
   const [loading, setLoading] = useState(false);
 
   useEffect(() => {
-    setLoading(true);
-    getAccountTree()
-      .then((d) => setTree(d.map(toTreeNode)))
-      .catch(() => {})
-      .finally(() => setLoading(false));
+    const t = setTimeout(() => {
+      setLoading(true);
+      getAccountTree()
+        .then((d) => setTree(d.map(toTreeNode)))
+        .catch(() => {})
+        .finally(() => setLoading(false));
+    }, 0);
+    return () => clearTimeout(t);
   }, []);
 
   return (

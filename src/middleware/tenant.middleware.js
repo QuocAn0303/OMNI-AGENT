@@ -1,27 +1,26 @@
 /**
- * middleware/tenant.middleware.js — Gắn tenantId vào request
- * 
- * Tổng quan:
- * - Lấy tenantId từ req.user (đã được giải mã từ JWT)
- * - SUPER_ADMIN bỏ qua (không gắn tenantId) vì có thể thao tác đa tenant
- * - Các service sau đó dùng req.tenantId để filter dữ liệu theo tenant
- * 
- * Hàm:
- * - tenantMiddleware(): Gán req.tenantId = req.user.tenantId (nếu không phải SUPER_ADMIN)
+ * middleware/tenant.middleware.js — Gắn tenant context cho mỗi request
+ *
+ * - Đọc tenantId từ req.user (do authenticate gắn vào)
+ * - SUPER_OMEGA_ULTRA_ADMIN: bypass tenant scoping (xem được tất cả tenant)
+ * - Route không có auth (public): middleware không set context → service tự set
+ *   bằng runWithTenant() khi cần (vd: QR ordering lấy tenantId từ table)
+ *
+ * Phải mount SAU authenticate() nhưng TRƯỚC routes.
  */
+const { runWithTenant } = require('../config/tenantContext');
 
-const tenantMiddleware = (req, res, next) => {
-  if (req.user?.role === 'SUPER_ADMIN') {
-    return next()
+const tenantContext = (req, res, next) => {
+  const tenantId = req.user?.tenantId || null;
+  const bypass = req.user?.role === 'SUPER_OMEGA_ULTRA_ADMIN';
+
+  if (!tenantId && !bypass) {
+    // Không có tenantId và không phải super admin → vẫn cho đi qua
+    // (public route không qua authenticate sẽ rơi vào case này)
+    return next();
   }
 
-  const tenantId = req.user?.tenantId
-  if (!tenantId) {
-    return next({ status: 403, message: 'Tenant not found' })
-  }
+  runWithTenant(tenantId, () => next(), bypass);
+};
 
-  req.tenantId = tenantId
-  next()
-}
-
-module.exports = { tenantMiddleware }
+module.exports = { tenantContext };

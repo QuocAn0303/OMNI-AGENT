@@ -12,6 +12,8 @@
  * Hàm/Exports:
  * - Receipt: Component hoá đơn in nhiệt
  */
+import { useState } from "react";
+
 const paymentLabels = {
   CASH: "Tiền mặt",
   CARD: "Thẻ",
@@ -21,6 +23,7 @@ const paymentLabels = {
 const money = (value) => Number(value || 0).toLocaleString("vi-VN");
 
 export default function Receipt({ order }) {
+  const [now] = useState(Date.now);
   if (!order) return null;
 
   const items = order.items || [];
@@ -55,7 +58,7 @@ export default function Receipt({ order }) {
       </div>
       <div className="thermal-receipt__line" />
       <div>Mã đơn: {order.orderCode}</div>
-      <div>Ngày: {new Date(order.createdAt || Date.now()).toLocaleString("vi-VN")}</div>
+      <div>Ngày: {new Date(order.createdAt || now).toLocaleString("vi-VN")}</div>
       <div>Nhân viên: {order.createdBy?.fullName || order.cashierName || "-"}</div>
       <div>Khách: {order.customer?.name || order.customerName || "Khách lẻ"}</div>
       <div className="thermal-receipt__line" />

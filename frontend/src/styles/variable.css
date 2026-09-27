@@ -94,11 +94,20 @@
   --transition-base: 200ms cubic-bezier(0.4, 0, 0.2, 1);
   --transition-slow: 300ms cubic-bezier(0.4, 0, 0.2, 1);
 
+  /* === DATA-DENSE TABLE === */
+  --table-row-height: 42px;
+  --table-row-height-compact: 32px;
+  --table-padding: 12px 16px;
+  --table-padding-compact: 6px 8px;
+  --table-font-size: 13px;
+  --table-font-size-compact: 12px;
+
   /* === Z-INDEX === */
   --z-dropdown: 1000;
   --z-sticky: 1020;
   --z-modal: 1050;
   --z-toast: 1080;
+  --z-sidebar-backdrop: 1040;
 }
 
 /* Dark mode overrides */

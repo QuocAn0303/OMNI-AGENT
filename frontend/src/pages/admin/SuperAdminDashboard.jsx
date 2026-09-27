@@ -58,7 +58,7 @@ export default function SuperAdminDashboard() {
       setTenants(tenantsRes.data.data);
       setStats(statsRes.data.data);
       setPlans(plansRes.data.data || []);
-    } catch (err) {
+    } catch {
       message.error("Failed to load overview data");
     } finally {
       setLoading(false);
@@ -70,7 +70,7 @@ export default function SuperAdminDashboard() {
     try {
       const res = await api.get("/admin/upgrade-requests");
       setUpgradeRequests(res.data.data);
-    } catch (err) {
+    } catch {
       message.error("Failed to load upgrade requests");
     } finally {
       setLoading(false);
@@ -93,7 +93,7 @@ export default function SuperAdminDashboard() {
       await api.put(`/admin/tenants/${id}`, { isActive: !isActive });
       message.success(isActive ? "Tenant deactivated" : "Tenant activated");
       fetchOverviewData();
-    } catch (err) {
+    } catch {
       message.error("Update failed");
     }
   };
@@ -103,7 +103,7 @@ export default function SuperAdminDashboard() {
       await api.post(`/subscriptions/tenant/${tenantId}`, { planId });
       message.success("Plan updated");
       fetchOverviewData();
-    } catch (err) {
+    } catch {
       message.error("Update failed");
     }
   };
@@ -128,7 +128,7 @@ export default function SuperAdminDashboard() {
       message.success("Đã kích hoạt chế độ hỗ trợ!");
       setSupportTenantId(null);
       window.location.href = "/dashboard";
-    } catch (err) {
+    } catch {
       message.error("Không thể khởi tạo phiên hỗ trợ");
     }
   };
@@ -148,12 +148,10 @@ export default function SuperAdminDashboard() {
       await api.post(`/admin/upgrade-requests/${id}/reject`);
       message.success("Đã từ chối yêu cầu");
       fetchUpgradeRequests();
-    } catch (err) {
+    } catch {
       message.error("Từ chối thất bại");
     }
   };
-
-  const planColors = { free: "default", pro: "blue", enterprise: "purple" };
 
   // Overview Tab Content
   const overviewColumns = [

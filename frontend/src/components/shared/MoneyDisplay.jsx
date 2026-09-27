@@ -61,4 +61,3 @@ function formatShort(n) {
   return NUMBER_FORMATTER.format(n);
 }
 
-export { formatShort, VND_FORMATTER, NUMBER_FORMATTER };

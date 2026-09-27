@@ -34,7 +34,6 @@ const cors = require("cors");
 const helmet = require("helmet");
 const morgan = require("morgan");
 const hpp = require("hpp");
-const xssClean = require("xss-clean");
 const swaggerUi = require("swagger-ui-express");
 const swaggerSpec = require("./config/swagger");
 const fs = require("fs");
@@ -42,6 +41,7 @@ const path = require("path");
 
 const compression = require("compression");
 const errorHandler = require("./middleware/error.middleware");
+const { authenticate, requireSuperOmega } = require("./middleware/auth.middleware");
 
 // Routes
 const authRoutes = require("./modules/auth/auth.routes");
@@ -66,6 +66,10 @@ const accountingRoutes = require("./modules/accounting/accounting.routes");
 const debtRoutes = require("./modules/debt/debt.routes");
 const notificationRoutes = require("./modules/notifications/notification.routes");
 const purchaseOrderAliasRoutes = require("./modules/accounting/purchase-order.routes");
+const grnRoutes = require("./modules/accounting/grn.routes");
+const purchaseInvoiceRoutes = require("./modules/accounting/purchase-invoice.routes");
+const churnRoutes = require("./modules/customers/churn.routes");
+const webhookLeadRoutes = require("./modules/crm/webhook-lead.routes");
 const promotionRoutes = require("./modules/promotions/promotion.routes");
 const invoiceRoutes = require("./modules/orders/invoice.routes");
 const storeCreditRoutes = require("./modules/customers/store-credit.routes");
@@ -77,6 +81,7 @@ const stockTransferRoutes = require("./modules/warehouses/stock-transfer.routes"
 const importRoutes = require("./modules/import/import.routes");
 const settingsRoutes = require("./modules/settings/settings.routes");
 const adminRoutes = require("./modules/admin/admin.routes");
+const backupRoutes = require("./modules/admin/backup.routes");
 const subscriptionRoutes = require("./modules/subscriptions/subscription.routes");
 const crmRoutes = require("./modules/crm");
 const projectRoutes = require("./modules/projects");
@@ -84,6 +89,7 @@ const productionRoutes = require("./modules/production");
 const einvoiceRoutes = require("./modules/einvoice/einvoice.routes");
 const taxReportRoutes = require("./modules/tax-report/tax-report.routes");
 const bankRecoRoutes = require("./modules/bank-reco/bank-reco.routes");
+const bankAccountRoutes = require("./modules/integrations/bank-account.routes");
 const vietqrRoutes = require("./modules/vietqr/vietqr.routes");
 const fixedAssetsRoutes = require("./modules/fixed-assets/fixed-assets.routes");
 const currencyRoutes = require("./modules/currency/currency.routes");
@@ -92,6 +98,23 @@ const reportBuilderRoutes = require("./modules/report-builder/report-builder.rou
 const workflowRoutes = require("./modules/workflow/workflow.routes");
 const portalRoutes = require("./modules/portal/portal.routes");
 const integrationRoutes = require("./modules/integrations/integration.routes");
+const webhookRoutes = require("./modules/integrations/webhook.routes");
+const smartGuideRoutes = require("./modules/smart-guide/smart-guide.routes");
+const menuRoutes = require("./modules/menu/menu.routes");
+const tableRoutes = require("./modules/tables/table.routes");
+const kdsRoutes = require("./modules/kds/kds.routes");
+const printerRoutes = require("./modules/printers/printer.routes");
+const qrOrderingRoutes = require("./modules/qr-ordering/qr-ordering.routes");
+const paymentGatewayRoutes = require("./modules/payment-gateway/payment-gateway.routes");
+const foodDeliveryRoutes = require("./modules/food-delivery/food-delivery.routes");
+const recipeRoutes = require("./modules/recipe/recipe.routes");
+const stampCardRoutes = require("./modules/stamp-card/stamp-card.routes");
+const aiForecastRoutes = require("./modules/ai-forecast/ai-forecast.routes");
+const pettyCashRoutes = require("./modules/petty-cash/petty-cash.routes");
+const searchRoutes = require("./modules/search/search.routes");
+const pushRoutes = require("./modules/push/push.routes");
+const bulkRoutes = require("./modules/bulk/bulk.routes");
+const documentRoutes = require("./modules/documents/documents.routes");
 const deliveryService = require("./modules/delivery/delivery.service");
 const http = require("http");
 const { initSocket } = require("./realtime/socket");
@@ -99,6 +122,13 @@ const { startCrons } = require("./jobs/cron");
 const { startCDC } = require("./jobs/agent.cdc");
 
 const app = express();
+
+// Trust proxy — chỉ bật khi chạy SAU reverse proxy (TRUST_PROXY=true)
+// Mặc định tắt: tránh spoof X-Forwarded-For làm bypass rate limit khi deploy trực tiếp
+if (process.env.TRUST_PROXY === "true") {
+  app.set('trust proxy', 1);
+}
+
 const corsOrigin =
   process.env.CORS_ORIGIN || process.env.CLIENT_URL || "http://localhost:5173";
 
@@ -106,7 +136,6 @@ const corsOrigin =
 app.use(compression());
 app.use(helmet());
 app.use(morgan(process.env.NODE_ENV === "production" ? "combined" : "dev"));
-app.use(xssClean());
 app.use(hpp());
 
 const rateLimit = require('express-rate-limit')
@@ -135,6 +164,28 @@ app.use(
     allowedHeaders: ['Content-Type', 'Authorization'],
   }),
 );
+
+// M7: parse cookies (không cần cookie-parser — chỉ dùng cho refresh token httpOnly)
+app.use((req, res, next) => {
+  req.cookies = req.cookies || {};
+  const header = req.headers.cookie;
+  if (header) {
+    header.split(';').forEach((pair) => {
+      const idx = pair.indexOf('=');
+      if (idx > -1) {
+        const name = pair.slice(0, idx).trim();
+        if (name && !(name in req.cookies)) {
+          try {
+            req.cookies[name] = decodeURIComponent(pair.slice(idx + 1).trim());
+          } catch {
+            req.cookies[name] = pair.slice(idx + 1).trim();
+          }
+        }
+      }
+    });
+  }
+  next();
+});
 app.use(
   "/api/webhooks/delivery",
   express.raw({ type: "application/json" }),
@@ -147,8 +198,17 @@ app.use(
   "/api/vietqr/webhook/payos",
   express.raw({ type: "application/json" }),
 );
-app.use(express.json());
-app.use(express.urlencoded({ extended: true }));
+app.use(
+  "/api/vietqr/webhook/casso",
+  express.raw({ type: "application/json" }),
+);
+app.use(
+  "/api/payment-gateway/webhooks",
+  express.raw({ type: "application/json" }),
+);
+app.use(express.json({ limit: '100kb' }));
+app.use(express.urlencoded({ extended: true, limit: '100kb' }));
+app.use(require('./middleware/sanitize.middleware')());
 
 app.post("/api/webhooks/delivery/:provider", async (req, res) => {
   try {
@@ -161,6 +221,7 @@ app.post("/api/webhooks/delivery/:provider", async (req, res) => {
       payload,
       signature,
       rawBody,
+      req.headers,
     );
     res.json({ success: true, ...result });
   } catch (err) {
@@ -183,14 +244,24 @@ app.get("/", (req, res) => {
   res.json({ message: "Aduu - Hệ thống hoạch định nguồn lực doanh nghiệp", version: "2.0.0" });
 });
 
-// Health check endpoint
+// Health check endpoints
+// L7: /api/health public chỉ trả status tối thiểu — /api/health/full chi tiết
+// hạ tầng (DB/Redis/Ollama/memory) chỉ dành cho SUPER_OMEGA_ULTRA_ADMIN
 app.get("/api/health", async (req, res) => {
+  res.status(200).json({
+    status: "ok",
+    timestamp: new Date().toISOString(),
+    uptime: process.uptime(),
+  });
+});
+
+app.get("/api/health/full", authenticate, requireSuperOmega, async (req, res) => {
   const health = {
     status: "ok",
     timestamp: new Date().toISOString(),
     uptime: process.uptime(),
     environment: process.env.NODE_ENV || "development",
-    version: "1.0.0",
+    version: "2.0.0",
     checks: {},
   };
 
@@ -200,7 +271,7 @@ app.get("/api/health", async (req, res) => {
     await prisma.$queryRawUnsafe("SELECT 1");
     health.checks.database = { status: "ok" };
   } catch (e) {
-    health.checks.database = { status: "error", message: e.message };
+    health.checks.database = { status: "error" };
     health.status = "degraded";
   }
 
@@ -214,7 +285,7 @@ app.get("/api/health", async (req, res) => {
       health.checks.redis = { status: "not_configured" };
     }
   } catch (e) {
-    health.checks.redis = { status: "error", message: e.message };
+    health.checks.redis = { status: "error" };
     health.status = "degraded";
   }
 
@@ -226,7 +297,7 @@ app.get("/api/health", async (req, res) => {
       health.status = "degraded";
     }
   } catch (e) {
-    health.checks.ollama = { status: "error", message: e.message };
+    health.checks.ollama = { status: "error" };
     health.status = "degraded";
   }
 
@@ -249,6 +320,7 @@ app.use("/api/orders", orderRoutes);
 app.use("/api/returns", returnRoutes);
 app.use("/api/dashboard", dashboardRoutes);
 app.use("/api/customers", customerRoutes);
+app.use("/api/churn-alerts", churnRoutes);
 app.use("/api/inventory", inventoryRoutes);
 app.use("/api/categories", categoryRoutes);
 app.use("/api/reports", reportRoutes);
@@ -273,6 +345,8 @@ app.use("/api/accounting", accountingRoutes);
 app.use("/api/debts", debtRoutes);
 app.use("/api/notifications", notificationRoutes);
 app.use("/api/purchase-orders", purchaseOrderAliasRoutes);
+app.use("/api/grn", grnRoutes);
+app.use("/api/purchase-invoices", purchaseInvoiceRoutes);
 app.use("/api/promotions", promotionRoutes);
 app.use("/api/invoices", invoiceRoutes);
 app.use("/api/store-credits", storeCreditRoutes);
@@ -284,6 +358,7 @@ app.use("/api/stock-transfers", stockTransferRoutes);
 app.use("/api/import", importRoutes);
 app.use("/api/settings", settingsRoutes);
 app.use("/api/admin", adminRoutes);
+app.use("/api/admin", backupRoutes);
 app.use("/api/subscriptions", subscriptionRoutes);
 app.use("/api/crm", crmRoutes);
 app.use("/api/projects", projectRoutes);
@@ -291,6 +366,7 @@ app.use("/api/production", productionRoutes);
 app.use("/api/einvoice", einvoiceRoutes);
 app.use("/api/tax-reports", taxReportRoutes);
 app.use("/api/bank-reco", bankRecoRoutes);
+app.use("/api/bank-accounts", bankAccountRoutes);
 app.use("/api/vietqr", vietqrRoutes);
 app.use("/api/fixed-assets", fixedAssetsRoutes);
 app.use("/api/currencies", currencyRoutes);
@@ -299,6 +375,24 @@ app.use("/api/report-builder", reportBuilderRoutes);
 app.use("/api/workflows", workflowRoutes);
 app.use("/api/portal", portalRoutes);
 app.use("/api/integrations", integrationRoutes);
+app.use("/api/webhooks", webhookRoutes);
+app.use("/api/webhook", webhookLeadRoutes);
+app.use("/api/smart-guide", smartGuideRoutes);
+app.use("/api/menu", menuRoutes);
+app.use("/api/tables", tableRoutes);
+app.use("/api/kds", kdsRoutes);
+app.use("/api/printers", printerRoutes);
+app.use("/api/qr-ordering", qrOrderingRoutes);
+app.use("/api/payment-gateway", paymentGatewayRoutes);
+app.use("/api/food-delivery", foodDeliveryRoutes);
+app.use("/api/recipes", recipeRoutes);
+app.use("/api/stamp-cards", stampCardRoutes);
+app.use("/api/ai-forecast", aiForecastRoutes);
+app.use("/api/petty-cash", pettyCashRoutes);
+app.use("/api/search", searchRoutes);
+app.use("/api/push", pushRoutes);
+app.use("/api/bulk", bulkRoutes);
+app.use("/api/documents", documentRoutes);
 
 // Sentry error handler (phải trước error middleware)
 if (process.env.SENTRY_DSN) {

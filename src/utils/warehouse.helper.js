@@ -15,17 +15,26 @@
  */
 
 const prisma = require("../config/prisma");
+const { getTenantId } = require("../config/tenantContext");
 
-let cachedDefaultWarehouseId = null;
+// Cache per-tenant (trước đây là 1 slot global → tenant A làm tenant B dùng nhầm kho).
+// Key: tenantId (hoặc "GLOBAL" khi không có context) — TTL 60s để tránh data cũ
+// khi kho mặc định bị đổi qua instance khác.
+const cache = new Map();
+const DEFAULT_TTL_MS = 60 * 1000;
+
+const getCacheKey = () => getTenantId() || "GLOBAL";
 
 const getDefaultWarehouseId = async (tx = prisma) => {
   if (process.env.DEFAULT_WAREHOUSE_ID) return process.env.DEFAULT_WAREHOUSE_ID;
-  if (cachedDefaultWarehouseId) return cachedDefaultWarehouseId;
+  const key = getCacheKey();
+  const hit = cache.get(key);
+  if (hit && Date.now() - hit.fetchedAt < DEFAULT_TTL_MS) return hit.id;
   const wh = await tx.warehouse.findFirst({
     where: { isDefault: true, isActive: true },
   });
   if (!wh) throw { status: 500, message: "Chưa cấu hình kho mặc định" };
-  cachedDefaultWarehouseId = wh.id;
+  cache.set(key, { id: wh.id, fetchedAt: Date.now() });
   return wh.id;
 };
 
@@ -49,7 +58,8 @@ module.exports = {
   resolveWarehouseId,
   findInventory,
   attachDefaultInventory,
-  clearWarehouseCache: () => {
-    cachedDefaultWarehouseId = null;
+  clearWarehouseCache: (tenantId) => {
+    if (tenantId) cache.delete(String(tenantId));
+    else cache.clear();
   },
 };

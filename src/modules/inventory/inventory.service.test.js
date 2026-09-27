@@ -26,6 +26,17 @@ jest.mock('../../config/prisma', () => ({
     count: jest.fn(),
     create: jest.fn(),
   },
+  inventoryLot: {
+    findMany: jest.fn(),
+    update: jest.fn(),
+  },
+  lotTransaction: {
+    findMany: jest.fn(),
+    create: jest.fn(),
+  },
+  product: {
+    findUnique: jest.fn(),
+  },
 }));
 
 describe('Inventory Service', () => {
@@ -72,6 +83,9 @@ describe('Inventory Service', () => {
           inventoryTransaction: {
             create: jest.fn().mockResolvedValue({}),
           },
+          inventoryLot: { findMany: jest.fn().mockResolvedValue([]), findFirst: jest.fn() },
+          lotTransaction: { findMany: jest.fn().mockResolvedValue([]), create: jest.fn() },
+          product: { findUnique: jest.fn().mockResolvedValue({ costPrice: 0 }) },
         };
         return callback(tx);
       });
@@ -89,6 +103,9 @@ describe('Inventory Service', () => {
       prisma.$transaction.mockImplementation(async (callback) => {
         const tx = {
           inventory: { findUnique: jest.fn().mockResolvedValue(null) },
+          inventoryLot: { findMany: jest.fn().mockResolvedValue([]), findFirst: jest.fn() },
+          lotTransaction: { findMany: jest.fn().mockResolvedValue([]), create: jest.fn() },
+          product: { findUnique: jest.fn() },
         };
         return callback(tx);
       });
@@ -105,11 +122,22 @@ describe('Inventory Service', () => {
       prisma.$transaction.mockImplementation(async (callback) => {
         const tx = {
           inventory: {
-            findUnique: jest.fn().mockResolvedValue({ id: 'inv-1', quantity: 50 }),
-            update: jest.fn().mockResolvedValue(mockUpdated),
+            findUnique: jest.fn().mockResolvedValue({ id: 'inv-1', quantity: 50, reserved: 0 }),
+            updateMany: jest.fn().mockResolvedValue({ count: 1 }),
           },
           inventoryTransaction: {
             create: jest.fn().mockResolvedValue({}),
+          },
+          inventoryLot: {
+            findMany: jest.fn().mockResolvedValue([]),
+            update: jest.fn().mockResolvedValue({}),
+          },
+          lotTransaction: {
+            findMany: jest.fn().mockResolvedValue([]),
+            create: jest.fn().mockResolvedValue({}),
+          },
+          product: {
+            findUnique: jest.fn().mockResolvedValue({ costPrice: 0 }),
           },
         };
         return callback(tx);
@@ -120,7 +148,7 @@ describe('Inventory Service', () => {
         'user-wh'
       );
 
-      expect(result).toEqual(mockUpdated);
+      expect(result).toEqual({ id: 'inv-1', quantity: 40, reserved: 0 });
       expect(prisma.$transaction).toHaveBeenCalled();
     });
 
@@ -130,6 +158,9 @@ describe('Inventory Service', () => {
           inventory: {
             findUnique: jest.fn().mockResolvedValue({ id: 'inv-1', quantity: 5 }),
           },
+          inventoryLot: { findMany: jest.fn().mockResolvedValue([]) },
+          lotTransaction: { findMany: jest.fn().mockResolvedValue([]), create: jest.fn() },
+          product: { findUnique: jest.fn() },
         };
         return callback(tx);
       });

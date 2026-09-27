@@ -20,7 +20,19 @@ const { authenticate, authorize } = require('../../middleware/auth.middleware');
 const { requireModule } = require('../../middleware/plan.middleware');
 
 const router = express.Router();
-const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 10 * 1024 * 1024 } });
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 10 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    const allowed = [
+      'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+      'application/vnd.ms-excel',
+      'text/csv',
+    ];
+    if (allowed.includes(file.mimetype)) cb(null, true);
+    else cb(new Error('Chỉ chấp nhận file Excel (.xlsx, .xls) hoặc CSV'));
+  },
+});
 
 router.use(requireModule("import"));
 
@@ -43,7 +55,7 @@ router.get('/template/:type', authenticate, async (req, res, next) => {
     };
 
     const t = templates[req.params.type];
-    if (!t) return res.status(400).json({ success: false, message: 'Loại không hợp lệ' });
+    if (!t) throw { status: 400, message: 'Loại không hợp lệ' };
 
     const wb = new ExcelJS.Workbook();
     const ws = wb.addWorksheet('Data');
@@ -95,7 +107,7 @@ router.post('/products', authenticate, authorize('ADMIN', 'MANAGER'), upload.sin
     // Lấy default category nếu có
     const defaultCat = categories[0] || await prisma.category.findFirst();
     if (!defaultCat) {
-      return res.status(400).json({ success: false, message: 'Chưa có danh mục nào trong hệ thống' });
+      throw { status: 400, message: 'Chưa có danh mục nào trong hệ thống' };
     }
 
     // Import

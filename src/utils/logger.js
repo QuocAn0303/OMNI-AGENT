@@ -31,4 +31,14 @@ const logger = createLogger({
   ],
 });
 
+// M8: cắt chuỗi dài trước khi ghi log — tránh lộ dữ liệu nhạy cảm
+// (query AI, params tool chứa tên/sđt/địa chỉ khách hàng)
+const truncateLog = (value, max = 300) => {
+  if (value === null || value === undefined) return value;
+  const str = typeof value === "string" ? value : JSON.stringify(value);
+  if (str.length <= max) return str;
+  return str.slice(0, max) + `… (${str.length - max} chars truncated)`;
+};
+
 module.exports = logger;
+module.exports.truncateLog = truncateLog;

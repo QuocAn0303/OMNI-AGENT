@@ -29,6 +29,7 @@
 const prisma = require("../../config/prisma");
 const auditService = require("../audit/audit.service");
 const engine = require("./promotion.engine");
+const { getTenantId } = require("../../config/tenantContext");
 
 const { toNum, round2 } = engine;
 
@@ -57,20 +58,29 @@ const checkPerUserLimit = async (promotionId, customerId, perUserLimit) => {
 };
 
 const incrementUsageAtomic = async (tx, promotionId) => {
-  const rows = await tx.$executeRaw`
-    UPDATE promotions
-    SET "usageCount" = "usageCount" + 1
-    WHERE id = ${promotionId}
-      AND ("usageLimit" IS NULL OR "usageCount" < "usageLimit")
-  `;
+  const tenantId = getTenantId();
+  const rows = tenantId
+    ? await tx.$executeRaw`
+        UPDATE promotions
+        SET "usageCount" = "usageCount" + 1
+        WHERE id = ${promotionId}
+          AND "tenantId" = ${tenantId}
+          AND ("usageLimit" IS NULL OR "usageCount" < "usageLimit")
+      `
+    : await tx.$executeRaw`
+        UPDATE promotions
+        SET "usageCount" = "usageCount" + 1
+        WHERE id = ${promotionId}
+          AND ("usageLimit" IS NULL OR "usageCount" < "usageLimit")
+      `;
   if (!rows) throw { status: 409, message: "Mã khuyến mãi đã hết lượt sử dụng" };
 };
 
-const create = async (data) => {
+const create = async (data, userId = null) => {
   if (data.scope === "VOUCHER_CODE" && !data.code) {
     throw { status: 400, message: "Voucher cần mã code" };
   }
-  return prisma.promotion.create({
+  const promo = await prisma.promotion.create({
     data: {
       code: data.code?.toUpperCase() || null,
       name: data.name,
@@ -88,11 +98,18 @@ const create = async (data) => {
       endDate: new Date(data.endDate),
       usageLimit: data.usageLimit,
       perUserLimit: data.perUserLimit,
+      scheduleType: data.scheduleType,
+      cronExpression: data.cronExpression,
+      daysOfWeek: data.daysOfWeek,
+      startTime: data.startTime,
+      endTime: data.endTime,
       categoryId: data.categoryId,
       productId: data.productId,
     },
     include: { category: true, product: true },
   });
+  auditService.log({ userId, action: "CREATE_PROMOTION", entity: "Promotion", entityId: promo.id, after: { name: promo.name, type: promo.type } });
+  return promo;
 };
 
 const list = async ({ page = 1, limit = 20, status, type, activeNow } = {}) => {
@@ -147,13 +164,13 @@ const getById = async (id) => {
   };
 };
 
-const update = async (id, data) => {
+const update = async (id, data, userId = null) => {
   const existing = await prisma.promotion.findUnique({ where: { id } });
   if (!existing) throw { status: 404, message: "Không tìm thấy khuyến mãi" };
   if (existing.usageCount > 0 && data.code && data.code !== existing.code) {
     throw { status: 400, message: "Không đổi mã khi đã có lượt dùng" };
   }
-  return prisma.promotion.update({
+  const promo = await prisma.promotion.update({
     where: { id },
     data: {
       ...(data.name !== undefined && { name: data.name }),
@@ -165,21 +182,31 @@ const update = async (id, data) => {
       ...(data.endDate && { endDate: new Date(data.endDate) }),
       ...(data.usageLimit !== undefined && { usageLimit: data.usageLimit }),
       ...(data.perUserLimit !== undefined && { perUserLimit: data.perUserLimit }),
+      ...(data.scheduleType !== undefined && { scheduleType: data.scheduleType }),
+      ...(data.cronExpression !== undefined && { cronExpression: data.cronExpression }),
+      ...(data.daysOfWeek !== undefined && { daysOfWeek: data.daysOfWeek }),
+      ...(data.startTime !== undefined && { startTime: data.startTime }),
+      ...(data.endTime !== undefined && { endTime: data.endTime }),
     },
   });
+  auditService.log({ userId, action: "UPDATE_PROMOTION", entity: "Promotion", entityId: id, after: { name: promo.name } });
+  return promo;
 };
 
-const setStatus = async (id, status) => {
-  return prisma.promotion.update({ where: { id }, data: { status } });
+const setStatus = async (id, status, userId = null) => {
+  const promo = await prisma.promotion.update({ where: { id }, data: { status } });
+  auditService.log({ userId, action: "SET_PROMOTION_STATUS", entity: "Promotion", entityId: id, after: { status } });
+  return promo;
 };
 
-const remove = async (id) => {
+const remove = async (id, userId = null) => {
   const promo = await prisma.promotion.findUnique({ where: { id }, include: { _count: { select: { usages: true } } } });
   if (!promo) throw { status: 404, message: "Không tìm thấy khuyến mãi" };
   if (promo._count.usages > 0) {
     throw { status: 400, message: "Không xóa khuyến mãi đã có lượt sử dụng" };
   }
   await prisma.promotion.delete({ where: { id } });
+  auditService.log({ userId, action: "DELETE_PROMOTION", entity: "Promotion", entityId: id, before: { name: promo.name } });
 };
 
 const previewAuto = async ({ items, customerId }) => {

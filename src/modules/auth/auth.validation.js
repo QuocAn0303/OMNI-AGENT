@@ -1,30 +1,33 @@
 /**
  * modules/auth/auth.validation.js — Zod schemas cho auth endpoints
- * 
- * Tổng quan:
- * - Định nghĩa validation rules cho tất cả input của auth
- * - Dùng trong controller: schema.parse(req.body) → tự động throw ZodError nếu không hợp lệ
- * - ZodError được error.middleware bắt và trả về 400 + danh sách field lỗi
- * 
+ *
  * Schemas:
- * - loginSchema: email (email), password (min 6)
- * - changePasswordSchema: currentPassword (min 6), newPassword (min 6)
- * - refreshSchema: refreshToken (min 10)
- * - logoutSchema: refreshToken (optional), all (boolean, default false)
- * - registerSchema: companyName (min 2), email, password (min 6), industry (optional), fullName (optional, min 2)
- * - verifyEmailSchema: token (min 1)
+ * - loginSchema: email, password (min 8)
+ * - changePasswordSchema: currentPassword (min 8), newPassword (min 8 + complexity)
+ * - registerSchema: companyName, email, password (min 8 + complexity)
+ * - refreshSchema, logoutSchema, verifyEmailSchema
  */
 
 const { z } = require("zod");
 
+// Password policy: tối thiểu 8 ký tự, có ít nhất 1 chữ hoa + 1 chữ số
+const strongPassword = z
+  .string()
+  .min(8, "Mật khẩu tối thiểu 8 ký tự")
+  .regex(/[A-Z]/, "Mật khẩu phải có ít nhất 1 chữ hoa")
+  .regex(/[0-9]/, "Mật khẩu phải có ít nhất 1 chữ số");
+
+// Login: cho phép password cũ yếu (để user cũ vẫn login được), nhưng khuyến nghị đổi
+const loginPassword = z.string().min(6, "Mật khẩu tối thiểu 6 ký tự");
+
 const loginSchema = z.object({
   email: z.string().email("Email không hợp lệ"),
-  password: z.string().min(6, "Mật khẩu tối thiểu 6 ký tự"),
+  password: loginPassword,
 });
 
 const changePasswordSchema = z.object({
-  currentPassword: z.string().min(6),
-  newPassword: z.string().min(6, "Mật khẩu mới tối thiểu 6 ký tự"),
+  currentPassword: z.string().min(1),
+  newPassword: strongPassword,
 });
 
 const refreshSchema = z.object({
@@ -39,7 +42,7 @@ const logoutSchema = z.object({
 const registerSchema = z.object({
   companyName: z.string().min(2, "Tên công ty tối thiểu 2 ký tự"),
   email: z.string().email("Email không hợp lệ"),
-  password: z.string().min(6, "Mật khẩu tối thiểu 6 ký tự"),
+  password: strongPassword,
   industry: z.string().optional(),
   fullName: z.string().min(2, "Họ tên tối thiểu 2 ký tự").optional(),
 });

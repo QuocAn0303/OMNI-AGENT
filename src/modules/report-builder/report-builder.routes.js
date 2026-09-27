@@ -37,15 +37,23 @@ router.patch("/:id", authenticate, requireRole(mgr), async (req, res, next) => {
 });
 
 router.delete("/:id", authenticate, requireRole(["ADMIN"]), async (req, res, next) => {
-  try { await svc.deleteReport(req.params.id); res.json({ success: true }); } catch (e) { next(e); }
+  try { await svc.deleteReport(req.params.id, req.user.id); res.json({ success: true }); } catch (e) { next(e); }
 });
 
 router.post("/run", authenticate, requireRole(mgr), async (req, res, next) => {
   try { res.json({ success: true, data: await svc.runQuery(req.body, { limit: req.query.limit }) }); } catch (e) { next(e); }
 });
 
-router.post("/:id/run", authenticate, async (req, res, next) => {
-  try { res.json({ success: true, data: await svc.executeReport(req.params.id, req.query) }); } catch (e) { next(e); }
+router.post("/:id/run", authenticate, requireRole(mgr), async (req, res, next) => {
+  try { res.json({ success: true, data: await svc.executeReport(req.params.id, req.user.id, req.query) }); } catch (e) { next(e); }
+});
+
+// Mục 8: seed 10 báo cáo phân tích mặc định (R-01 → R-10) cho tenant — ADMIN
+router.post("/seed-defaults", authenticate, requireRole(["ADMIN"]), async (req, res, next) => {
+  try {
+    const { seedDefaultReports } = require("./default-reports.seed");
+    res.json({ success: true, data: await seedDefaultReports(req.user.id) });
+  } catch (e) { next(e); }
 });
 
 module.exports = router;

@@ -53,4 +53,12 @@ router.get("/runs", authenticate, authorize(...mgr), async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
+// Mục 7: seed template duyệt PO đa cấp theo hạn mức (5tr/50tr) — ADMIN, idempotent
+router.post("/seed-po-template", authenticate, authorize("ADMIN"), async (req, res, next) => {
+  try {
+    const { seedPoApprovalWorkflows } = require("./po-template.seed");
+    sendSuccess(res, await seedPoApprovalWorkflows(req.user.id), "Đã seed workflow duyệt PO đa cấp");
+  } catch (e) { next(e); }
+});
+
 module.exports = router;

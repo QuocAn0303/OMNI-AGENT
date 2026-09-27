@@ -16,7 +16,7 @@
 // frontend/src/api/accounting.js
 import axios from "./axios";
 
-const unwrap = (res) => res.data?.data ?? res.data;
+export const unwrap = (res) => res.data?.data ?? res.data;
 
 // ===== Chart of Accounts =====
 export const getAccounts = (params) => axios.get("/accounting/accounts", { params }).then(unwrap);

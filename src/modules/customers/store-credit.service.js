@@ -1,4 +1,5 @@
 const prisma = require('../../config/prisma');
+const auditService = require('../audit/audit.service');
 
 const listByCustomer = async (customerId, { page = 1, limit = 20 }) => {
   const offset = (page - 1) * limit;
@@ -73,6 +74,7 @@ const create = async ({ customerId, amount, type, note, referenceId }, userId) =
     return txRecord;
   });
 
+  auditService.log({ userId, action: 'CREATE_STORE_CREDIT', entity: 'StoreCreditTransaction', entityId: result.id, after: { customerId, amount, type, note } });
   return result;
 };
 

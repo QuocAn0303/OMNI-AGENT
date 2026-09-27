@@ -74,13 +74,17 @@ const register = async ({ serialCodes, productId, warehouseId, purchaseOrderId, 
     throw err;
   }
 
-  const created = [];
-  for (const code of serialCodes) {
-    const existing = await prisma.serialNumber.findFirst({
-      where: { serialCode: code, productId },
-    });
-    if (existing) continue;
+  // B5: 1 query tìm số đã tồn tại (trước đây findFirst per code — N+1),
+  // bỏ trùng trong batch, rồi create từng cái còn thiếu
+  const existingRows = await prisma.serialNumber.findMany({
+    where: { productId, serialCode: { in: serialCodes } },
+    select: { serialCode: true },
+  });
+  const existing = new Set(existingRows.map((r) => r.serialCode));
 
+  const created = [];
+  for (const code of new Set(serialCodes)) {
+    if (existing.has(code)) continue;
     const serial = await prisma.serialNumber.create({
       data: {
         serialCode: code,

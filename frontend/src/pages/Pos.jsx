@@ -23,6 +23,7 @@ import {
   Input,
   InputNumber,
   Modal,
+  Segmented,
   Select,
   Space,
   Switch,
@@ -39,18 +40,31 @@ import {
   SearchOutlined,
   ShoppingCartOutlined,
   StarFilled,
+  TableOutlined,
   UserAddOutlined,
+  WifiOutlined,
 } from "@ant-design/icons";
-import { Joyride } from "react-joyride";
-import { useTranslation } from "react-i18next";
+import { Joyride, STATUS } from "react-joyride";
+import { useSearchParams } from "react-router-dom";
 import axios from "../api/axios";
+import { useAuthStore } from "../stores/authStore";
 import MoneyDisplay from "../components/shared/MoneyDisplay";
 import Receipt from "../components/Receipt";
 import TransferQrCode from "../components/TransferQrCode";
+import TablePicker from "../components/pos/TablePicker";
+import BillSplitModal from "../components/pos/BillSplitModal";
 import useBarcodeScanner from "../hooks/useBarcodeScanner";
 import CameraScanner from "../components/CameraScanner";
+import OfflineIndicator from "../components/OfflineIndicator";
 import useTour from "../hooks/useTour";
 import { getPosTour } from "../config/tourSteps";
+import {
+  connect as connectPrinter,
+  printReceipt as printBluetooth,
+  printViaBrowser,
+  isSupported as isBluetoothSupported,
+} from "../utils/thermalPrinter";
+import { enqueueOrder, isOnline } from "../utils/offlineQueue";
 const PAYMENT_METHODS = [
   { value: "CASH", label: "Tiền mặt" },
   { value: "BANK_TRANSFER", label: "Chuyển khoản" },
@@ -71,7 +85,6 @@ const TIER_DISCOUNT = {
 };
 
 export default function Pos() {
-  const { t } = useTranslation();
   const tour = useTour("pos");
   const [products, setProducts] = useState([]);
   const [categories, setCategories] = useState([]);
@@ -110,6 +123,61 @@ export default function Pos() {
   });
   const [cartDrawer, setCartDrawer] = useState(false);
   const [isMobile, setIsMobile] = useState(window.innerWidth <= 1024);
+  const [printerConnected, setPrinterConnected] = useState(false);
+  const [printerName, setPrinterName] = useState(null);
+  const [printerConnecting, setPrinterConnecting] = useState(false);
+
+  // ============ F&B (DINE_IN / TAKEAWAY / DELIVERY) ============
+  const fnbMode = useAuthStore((s) => s.isFnB()) || false;
+  const [orderType, setOrderType] = useState("DINE_IN");
+  const [selectedTable, setSelectedTable] = useState(null);
+  const [guestCount, setGuestCount] = useState(0);
+  const [tablePickerOpen, setTablePickerOpen] = useState(false);
+  const [serviceChargePercent, setServiceChargePercent] = useState(0);
+  const [tipAmount, setTipAmount] = useState(0);
+  // Snapshot order + cart để mở modal tách hóa đơn SAU khi clear giỏ
+  const [splitContext, setSplitContext] = useState(null);
+  const [searchParams] = useSearchParams();
+  const tableParam = searchParams.get("table");
+
+  const handleSelectTable = (table, { sessionId, guestCount: guests }) => {
+    setSelectedTable({
+      id: table.id,
+      code: table.code,
+      currentSessionId: sessionId,
+    });
+    setGuestCount(guests || 0);
+  };
+
+  useEffect(() => {
+    if (!fnbMode || !tableParam) return;
+    (async () => {
+      try {
+        const res = await axios.get("/tables/areas");
+        const areas = res.data?.data || [];
+        const table = areas
+          .flatMap((area) => area.tables || [])
+          .find((t) => t.id === tableParam);
+        if (!table) return;
+        if (table.status === "OCCUPIED" && table.currentSessionId) {
+          handleSelectTable(table, {
+            sessionId: table.currentSessionId,
+            guestCount: 0,
+          });
+        } else if (table.status === "AVAILABLE") {
+          const openRes = await axios.post(`/tables/${table.id}/open`, {
+            guestCount: 2,
+          });
+          const session = openRes.data?.data || openRes.data;
+          handleSelectTable(table, { sessionId: session.id, guestCount: 2 });
+          message.success(`Đã mở bàn ${table.code}`);
+        }
+      } catch {
+        // Bàn không tìm thấy hoặc không mở được — bỏ qua, dùng POS thường
+      }
+    })();
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   useEffect(() => {
     const handler = () => setIsMobile(window.innerWidth <= 1024);
@@ -189,11 +257,15 @@ export default function Pos() {
   const actualLoyaltyPointsUsed = useLoyaltyPoints ? redeemablePoints : 0;
   const actualLoyaltyDiscount = useLoyaltyPoints ? loyaltyDiscountValue : 0;
 
-  // 4. Công thức total mới
-  const total = Math.max(
-    0,
-    subtotal - discount - tierDiscountAmount - actualLoyaltyDiscount,
-  );
+  // 4. Công thức total mới (F&B: cộng phí dịch vụ + tip — khớp backend order.service)
+  const serviceCharge = Math.round((subtotal * serviceChargePercent) / 100);
+  const total =
+    Math.max(
+      0,
+      subtotal - discount - tierDiscountAmount - actualLoyaltyDiscount,
+    ) +
+    serviceCharge +
+    tipAmount;
   // --- KẾT THÚC ĐOẠN THAY THẾ ---
 
   const splitTotal = splitPayments.reduce(
@@ -438,6 +510,11 @@ export default function Pos() {
       message.warning("Giỏ hàng trống");
       return;
     }
+    if (fnbMode && orderType === "DINE_IN" && !selectedTable) {
+      message.warning("Chọn bàn trước khi thanh toán");
+      setTablePickerOpen(true);
+      return;
+    }
     const payments = splitPayment
       ? splitPayments.map((payment) => ({
           ...payment,
@@ -453,45 +530,122 @@ export default function Pos() {
       return;
     }
 
+    const orderPayload = {
+      customerId: customer?.id || null,
+      items: cart.map((item) => ({
+        productId: item.id,
+        quantity: item.quantity,
+      })),
+      discount,
+      loyaltyPointsUsed: actualLoyaltyPointsUsed,
+      paymentMethod: payments[0]?.method || paymentMethod,
+      payments,
+      paymentStatus: "PAID",
+      status: "COMPLETED",
+      ...(fnbMode
+        ? {
+            orderType,
+            tableId:
+              orderType === "DINE_IN" ? selectedTable?.id || null : null,
+            tableSessionId:
+              orderType === "DINE_IN"
+                ? selectedTable?.currentSessionId || null
+                : null,
+            seatNumber:
+              orderType === "DINE_IN" ? guestCount || null : null,
+            serviceChargePercent:
+              orderType === "DINE_IN" ? serviceChargePercent : 0,
+            tipAmount: orderType === "DINE_IN" ? tipAmount : 0,
+          }
+        : {}),
+    };
+
+    const receiptOrder = {
+      customerName: customer?.name || "Khách lẻ",
+      items: cart.map((item) => ({
+        ...item,
+        subtotal: Number(item.price) * item.quantity,
+      })),
+      payments,
+      subtotal,
+      discount,
+      total,
+      createdAt: new Date().toISOString(),
+    };
+
+    // Offline: queue for later sync
+    if (!isOnline()) {
+      setPaying(true);
+      try {
+        const record = await enqueueOrder(orderPayload);
+        setReceipt({
+          ...receiptOrder,
+          orderCode: record.id.substring(0, 12).toUpperCase(),
+        });
+        message.success("Đơn hàng đã được lưu tạm thời, sẽ đồng bộ khi có mạng");
+        clearCart();
+        setCheckoutOpen(false);
+      } catch {
+        message.error("Không thể lưu đơn hàng ngoại tuyến");
+      } finally {
+        setPaying(false);
+      }
+      return;
+    }
+
     setPaying(true);
     try {
-      const res = await axios.post("/pos/orders", {
-        customerId: customer?.id || null,
-        items: cart.map((item) => ({
-          productId: item.id,
-          quantity: item.quantity,
-        })),
-        discount,
-        loyaltyPointsUsed: actualLoyaltyPointsUsed, // Gửi số điểm thực tế đã sử dụng đến backend
-        paymentMethod: payments[0]?.method || paymentMethod,
-        payments,
-        paymentStatus: "PAID",
-        status: "COMPLETED",
-      });
+      const res = await axios.post("/pos/orders", orderPayload);
       const order = res.data?.data || res.data;
       setReceipt({
         ...order,
-        customer,
-        customerName: customer?.name || "Khách lẻ",
-        items: cart.map((item) => ({
-          ...item,
-          subtotal: Number(item.price) * item.quantity,
-        })),
-        payments,
-        subtotal,
-        discount,
-        total,
-        createdAt: new Date().toISOString(),
+        ...receiptOrder,
       });
       message.success("Thanh toán thành công");
       clearCart();
       setCheckoutOpen(false);
       window.dispatchEvent(new CustomEvent('order-created'));
       await loadProducts();
+      // F&B DINE_IN: đóng bàn (chờ dọn) + mở modal tách hóa đơn
+      if (fnbMode && orderType === "DINE_IN" && selectedTable?.id) {
+        axios.post(`/tables/${selectedTable.id}/close`).catch(() => {});
+        setSelectedTable(null);
+        setGuestCount(0);
+        setTipAmount(0);
+        if (order?.id) setSplitContext({ order, cart });
+      }
     } catch (err) {
       message.error(err?.response?.data?.message || "Thanh toán thất bại");
     } finally {
       setPaying(false);
+    }
+  };
+
+  const handleConnectPrinter = async () => {
+    setPrinterConnecting(true);
+    try {
+      const result = await connectPrinter();
+      if (result) {
+        setPrinterConnected(true);
+        setPrinterName(result.name);
+        message.success(`Đã kết nối máy in: ${result.name}`);
+      }
+    } catch (err) {
+      message.error(err.message || "Không thể kết nối máy in");
+    } finally {
+      setPrinterConnecting(false);
+    }
+  };
+
+  const handlePrintBluetooth = async () => {
+    if (!receipt) return;
+    try {
+      await printBluetooth(receipt);
+      message.success("Đã in hóa đơn");
+    } catch (err) {
+      message.error(err.message || "In thất bại");
+      // Fallback to browser print
+      printViaBrowser();
     }
   };
 
@@ -500,9 +654,14 @@ export default function Pos() {
       message.warning("Giỏ hàng trống");
       return;
     }
+    if (fnbMode && orderType === "DINE_IN" && !selectedTable) {
+      message.warning("Chọn bàn trước khi tạo đơn");
+      setTablePickerOpen(true);
+      return;
+    }
     setPaying(true);
     try {
-      await axios.post("/pos/orders", {
+      const res = await axios.post("/pos/orders", {
         customerId: customer?.id || null,
         items: cart.map((item) => ({
           productId: item.id,
@@ -513,7 +672,27 @@ export default function Pos() {
         payments: [],
         paymentStatus: "UNPAID",
         status: "PENDING",
+        ...(fnbMode
+          ? {
+              orderType,
+              tableId:
+                orderType === "DINE_IN" ? selectedTable?.id || null : null,
+              tableSessionId:
+                orderType === "DINE_IN"
+                  ? selectedTable?.currentSessionId || null
+                  : null,
+              seatNumber: orderType === "DINE_IN" ? guestCount || null : null,
+              serviceChargePercent:
+                orderType === "DINE_IN" ? serviceChargePercent : 0,
+              tipAmount: orderType === "DINE_IN" ? tipAmount : 0,
+            }
+          : {}),
       });
+      const pendingOrder = res.data?.data || res.data;
+      // F&B DINE_IN: món đã gọi → gửi ra bếp (sinh KDS ticket) ngay
+      if (fnbMode && orderType === "DINE_IN" && pendingOrder?.id) {
+        axios.post(`/orders/${pendingOrder.id}/kds-generate`).catch(() => {});
+      }
       message.success("Đã tạo đơn — chờ thanh toán sau");
       clearCart();
       window.dispatchEvent(new CustomEvent('order-created'));
@@ -525,13 +704,60 @@ export default function Pos() {
     }
   };
 
-  const allTourSteps = getPosTour(t);
+  const allTourSteps = getPosTour();
   const tourSteps = isMobile
     ? allTourSteps.filter((s) => !s.target.includes("pos-cart"))
     : allTourSteps;
 
   return (
     <div className="pos-layout">
+      <OfflineIndicator />
+      {fnbMode && (
+        <div
+          style={{
+            display: "flex",
+            justifyContent: "center",
+            gap: 12,
+            padding: "12px 16px 0",
+            flexWrap: "wrap",
+          }}
+        >
+          <Segmented
+            value={orderType}
+            onChange={(value) => {
+              setOrderType(value);
+              if (value !== "DINE_IN") setSelectedTable(null);
+            }}
+            options={[
+              { label: "Tại bàn", value: "DINE_IN" },
+              { label: "Mang đi", value: "TAKEAWAY" },
+              { label: "Giao hàng", value: "DELIVERY" },
+            ]}
+          />
+          {orderType === "DINE_IN" &&
+            (selectedTable ? (
+              <Tag color="green" style={{ margin: 0, padding: "4px 12px" }}>
+                <TableOutlined /> Bàn {selectedTable.code}
+                {guestCount > 0 ? ` · ${guestCount} khách` : ""}
+                <Button
+                  type="text"
+                  size="small"
+                  style={{ marginLeft: 8, padding: 0, height: "auto" }}
+                  onClick={() => setTablePickerOpen(true)}
+                >
+                  Đổi
+                </Button>
+              </Tag>
+            ) : (
+              <Button
+                icon={<TableOutlined />}
+                onClick={() => setTablePickerOpen(true)}
+              >
+                Chọn bàn
+              </Button>
+            ))}
+        </div>
+      )}
       <Joyride
         steps={tourSteps}
         run={tour.run}
@@ -864,6 +1090,50 @@ export default function Pos() {
                 />
               </div>
             )}
+            {fnbMode && orderType === "DINE_IN" && (
+              <>
+                <div
+                  className="pos-cart__row"
+                  style={{ alignItems: "center" }}
+                >
+                  <span>Phí dịch vụ (%)</span>
+                  <InputNumber
+                    size="small"
+                    min={0}
+                    max={20}
+                    value={serviceChargePercent}
+                    onChange={(value) => setServiceChargePercent(value || 0)}
+                    style={{ width: 120 }}
+                  />
+                </div>
+                <div
+                  className="pos-cart__row"
+                  style={{ alignItems: "center" }}
+                >
+                  <span>Tip</span>
+                  <InputNumber
+                    size="small"
+                    min={0}
+                    step={1000}
+                    value={tipAmount}
+                    onChange={(value) => setTipAmount(value || 0)}
+                    style={{ width: 120 }}
+                  />
+                </div>
+              </>
+            )}
+            {serviceCharge > 0 && (
+              <div className="pos-cart__row" style={{ color: "var(--text-muted)" }}>
+                <span>Phí dịch vụ ({serviceChargePercent}%)</span>
+                <MoneyDisplay value={serviceCharge} />
+              </div>
+            )}
+            {tipAmount > 0 && (
+              <div className="pos-cart__row" style={{ color: "var(--text-muted)" }}>
+                <span>Tip</span>
+                <MoneyDisplay value={tipAmount} />
+              </div>
+            )}
             <div className="pos-cart__total">
               <span className="pos-cart__total-label">Tổng cộng</span>
               <span className="pos-cart__total-value">
@@ -941,6 +1211,17 @@ export default function Pos() {
             </div>
 
             <div style={{ padding: "0 16px 12px" }}>
+              <Input.Search
+                allowClear
+                placeholder="SĐT khách hàng"
+                prefix={<PhoneOutlined />}
+                value={phoneLookup}
+                onChange={(e) => setPhoneLookup(e.target.value)}
+                onSearch={lookupByPhone}
+                loading={phoneLoading}
+                enterButton="Tra cứu"
+                style={{ marginBottom: 8 }}
+              />
               <Select
                 showSearch
                 allowClear
@@ -1079,6 +1360,52 @@ export default function Pos() {
                   />
                 </div>
               )}
+              {fnbMode && orderType === "DINE_IN" && (
+                <>
+                  <div
+                    className="pos-cart__row"
+                    style={{ alignItems: "center" }}
+                  >
+                    <span>Phí dịch vụ (%)</span>
+                    <InputNumber
+                      size="small"
+                      min={0}
+                      max={20}
+                      value={serviceChargePercent}
+                      onChange={(value) =>
+                        setServiceChargePercent(value || 0)
+                      }
+                      style={{ width: 120 }}
+                    />
+                  </div>
+                  <div
+                    className="pos-cart__row"
+                    style={{ alignItems: "center" }}
+                  >
+                    <span>Tip</span>
+                    <InputNumber
+                      size="small"
+                      min={0}
+                      step={1000}
+                      value={tipAmount}
+                      onChange={(value) => setTipAmount(value || 0)}
+                      style={{ width: 120 }}
+                    />
+                  </div>
+                </>
+              )}
+              {serviceCharge > 0 && (
+                <div className="pos-cart__row" style={{ color: "var(--text-muted)" }}>
+                  <span>Phí dịch vụ ({serviceChargePercent}%)</span>
+                  <MoneyDisplay value={serviceCharge} />
+                </div>
+              )}
+              {tipAmount > 0 && (
+                <div className="pos-cart__row" style={{ color: "var(--text-muted)" }}>
+                  <span>Tip</span>
+                  <MoneyDisplay value={tipAmount} />
+                </div>
+              )}
               <div className="pos-cart__total">
                 <span className="pos-cart__total-label">Tổng cộng</span>
                 <span className="pos-cart__total-value">
@@ -1169,7 +1496,7 @@ export default function Pos() {
             {showBankQr && (
               <TransferQrCode
                 amount={bankTransferAmount}
-                addInfo="Thanh toan POS"
+                addInfo="Thanh toán POS"
               />
             )}
 
@@ -1224,7 +1551,7 @@ export default function Pos() {
                         : "var(--danger-dark)",
                   }}
                 >
-                  Còn lại: {(total - splitTotal).toLocaleString("vi-VN")} VND
+                  Còn lại: {(total - splitTotal).toLocaleString("vi-VN")} ₫
                 </div>
               </Space>
             ) : null}
@@ -1251,12 +1578,35 @@ export default function Pos() {
           </Button>,
           <Button
             key="print"
-            type="primary"
+            type="default"
             icon={<PrinterOutlined />}
-            onClick={() => printReceipt(receipt)}
+            onClick={() => printViaBrowser()}
           >
-            In hóa đơn
+            In qua trình duyệt
           </Button>,
+          isBluetoothSupported() ? (
+            !printerConnected ? (
+              <Button
+                key="connect"
+                type="primary"
+                ghost
+                icon={<WifiOutlined />}
+                loading={printerConnecting}
+                onClick={handleConnectPrinter}
+              >
+                Kết nối máy in Bluetooth
+              </Button>
+            ) : (
+              <Button
+                key="print-bt"
+                type="primary"
+                icon={<PrinterOutlined />}
+                onClick={handlePrintBluetooth}
+              >
+                In ({printerName})
+              </Button>
+            )
+          ) : null,
         ]}
         width={420}
       >
@@ -1317,6 +1667,19 @@ export default function Pos() {
           await handleScannedCode(code);
         }}
       />
+
+      <TablePicker
+        open={fnbMode && tablePickerOpen}
+        onClose={() => setTablePickerOpen(false)}
+        onSelect={handleSelectTable}
+      />
+
+      <BillSplitModal
+        open={!!splitContext}
+        order={splitContext?.order}
+        cart={splitContext?.cart || []}
+        onClose={() => setSplitContext(null)}
+      />
     </div>
   );
 }
@@ -1330,16 +1693,4 @@ function CartRow({ label, value }) {
   );
 }
 
-function printReceipt(receipt) {
-  const html = document.getElementById("pos-receipt")?.outerHTML;
-  if (!html) return;
-  const win = window.open("", "_blank", "width=420,height=640");
-  win.document.write(`
-    <html>
-      <head><title>${receipt.orderCode}</title></head>
-      <body style="margin:0">${html}</body>
-      <script>window.onload=function(){window.print();window.close();}</script>
-    </html>
-  `);
-  win.document.close();
-}
+

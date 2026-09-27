@@ -27,6 +27,19 @@ const crypto = require("crypto");
 const prisma = require("../../config/prisma");
 const auditService = require("../audit/audit.service");
 const { sendEmail } = require("../../utils/email");
+const logger = require('../../utils/logger');
+
+// Hash refresh token bằng SHA256 trước khi lưu DB (token ngẫu nhiên 48 bytes
+// có entropy cao → SHA256 đủ an toàn, không cần bcrypt)
+const hashRefreshToken = (token) =>
+  crypto.createHash("sha256").update(token).digest("hex");
+
+// L5: hash giả (bcrypt cost 12) — dùng để cân bằng thời gian phản hồi
+// khi email không tồn tại, chống timing-based user enumeration
+const DUMMY_PASSWORD_HASH =
+  "$2b$12$1StM9RqR5LqTUMfzSy4SoeAEbi8AsFm9JDKFR3.2isLPYdsIIekmy";
+
+const BCRYPT_COST = () => Number(process.env.BCRYPT_ROUNDS) || 12;
 
 // Ghi chú: Phần refresh token + logout
 // - Refresh token được lưu vào bảng `RefreshToken` (Prisma schema)
@@ -46,8 +59,10 @@ const login = async ({ email, password }) => {
   });
 
   // 2. Không tìm thấy → báo lỗi chung (không nói rõ email sai hay pass sai)
-  //    Mục đích: tránh hacker biết email nào tồn tại trong hệ thống
+  //    L5: vẫn chạy bcrypt.compare với hash giả → thời gian phản hồi tương đương
+  //    user tồn tại (chống timing-based user enumeration)
   if (!user) {
+    await bcrypt.compare(password, DUMMY_PASSWORD_HASH);
     throw { status: 401, message: "Email hoặc mật khẩu không đúng" };
   }
 
@@ -57,7 +72,10 @@ const login = async ({ email, password }) => {
   }
 
   // 4. Check email verified (only for non-super users)
-  if (!user.emailVerified && user.emailVerifyToken && user.role !== 'SUPER_OMEGA_ULTRA_ADMIN') {
+  //    L6: bỏ điều kiện emailVerifyToken — trước đây user tạo bởi admin
+  //    (không có token) lách được luồng verify; migration đã backfill
+  //    emailVerified=true cho nhóm đó (admin chứng thực khi tạo)
+  if (!user.emailVerified && user.role !== 'SUPER_OMEGA_ULTRA_ADMIN') {
     throw { status: 403, message: 'Vui lòng xác minh email trước khi đăng nhập' };
   }
 
@@ -73,38 +91,17 @@ const login = async ({ email, password }) => {
     throw { status: 401, message: "Email hoặc mật khẩu không đúng" };
   }
 
-  // 5. Tạo JWT token
-  //    Payload = dữ liệu được mã hóa trong token — middleware sẽ decode sau
-  //    Chỉ put những gì cần thiết vào payload, KHÔNG put password
-  const token = jwt.sign(
-    {
-      id: user.id,
-      email: user.email,
-      role: user.role,
-      tenantId: user.tenantId || null,
-    },
-    process.env.JWT_SECRET,
-    { expiresIn: process.env.JWT_EXPIRES_IN || "7d" },
-  );
+  // 5. Check 2FA — nếu đã bật, yêu cầu xác thực OTP trước khi cấp token
+  //    Trả challenge JWT ngắn hạn (5 phút) — FE gửi kèm OTP cho /2fa/verify
+  //    KHÔNG trả userId thô: tránh attacker tự chọn userId để brute-force OTP
+  if (user.twoFactorEnabled) {
+    return { requires2fa: true, challenge: create2faChallenge(user.id) };
+  }
 
-  // 6. Tạo refresh token và lưu vào database
-  const createRefreshToken = async (userId) => {
-    const tokenStr = crypto.randomBytes(48).toString("hex");
-    const days = Number(process.env.REFRESH_TOKEN_EXPIRES_DAYS) || 30;
-    const expiresAt = new Date(Date.now() + days * 24 * 60 * 60 * 1000);
-    await prisma.refreshToken.create({
-      data: { token: tokenStr, userId, expiresAt },
-    });
-    return tokenStr;
-  };
+  // 6. Tạo JWT + refresh token
+  const tokens = await generateTokens(user.id);
 
-  const refreshToken = await createRefreshToken(user.id);
-
-  // 7. Trả về token + refreshToken + user info
-  //    Destructure để bỏ field password ra khỏi object trước khi trả về FE
-  const { password: _removed, ...userWithoutPassword } = user;
-
-  // Ghi audit: ai đăng nhập, lúc nào
+  // 7. Ghi audit: ai đăng nhập, lúc nào
   auditService.log({
     userId: user.id,
     action: "LOGIN",
@@ -113,7 +110,7 @@ const login = async ({ email, password }) => {
     after: { email: user.email, role: user.role },
   });
 
-  return { token, refreshToken, user: userWithoutPassword };
+  return tokens;
 };
 
 // ─────────────────────────────────────────────────────────────
@@ -130,8 +127,9 @@ const getProfile = async (userId) => {
       fullName: true,
       role: true,
       isActive: true,
-      createdAt: true,
       tenantId: true,
+      mustChangePassword: true,
+      createdAt: true,
     },
   });
 
@@ -163,17 +161,24 @@ const changePassword = async (userId, { currentPassword, newPassword }) => {
   }
 
   // 3. Hash mật khẩu mới trước khi lưu
-  //    Số 10 = salt rounds — càng cao càng an toàn nhưng càng chậm
-  const hashedNewPassword = await bcrypt.hash(
-    newPassword,
-    Number(process.env.BCRYPT_ROUNDS) || 10,
-  );
+  //    Cost 12 (L1) — đổi từ 10: hash cũ vẫn so khớp được, chỉ chậm hơn
+  const hashedNewPassword = await bcrypt.hash(newPassword, BCRYPT_COST());
 
-  // 4. Cập nhật vào database
+  // 4. Cập nhật vào database + tăng tokenVersion (M1):
+  //    - tokenVersion được nhúng trong access token JWT
+  //    - authenticate() so khớp tokenVersion → mọi access token cũ
+  //      (kể cả chưa hết hạn) trở nên vô hiệu ngay lập tức
+  //    - Thu hồi toàn bộ refresh token của user (đăng xuất mọi thiết bị)
   await prisma.user.update({
     where: { id: userId },
-    data: { password: hashedNewPassword },
+    data: {
+      password: hashedNewPassword,
+      tokenVersion: { increment: 1 },
+      // L3: đã đổi mật khẩu → gỡ cờ bắt buộc đổi (nếu có)
+      mustChangePassword: false,
+    },
   });
+  await revokeRefreshToken({ userId, revokeAll: true });
 
   // Ghi audit: ai đổi mật khẩu
   auditService.log({
@@ -186,15 +191,73 @@ const changePassword = async (userId, { currentPassword, newPassword }) => {
   return { message: "Đổi mật khẩu thành công" };
 };
 
+// ─────────────────────────────────────────────────────────────
+// 2FA CHALLENGE (M15)
+// - create2faChallenge: JWT 5 phút, claim { id, purpose: '2fa' }
+// - verify2faChallenge: giải mã + kiểm tra purpose → trả userId
+//   (chỉ accept token do /login tạo, không nhận userId từ body)
+// ─────────────────────────────────────────────────────────────
+const TWO_FA_CHALLENGE_EXPIRES = "5m";
+
+const create2faChallenge = (userId) => {
+  return jwt.sign(
+    { id: userId, purpose: "2fa" },
+    process.env.JWT_SECRET,
+    { expiresIn: TWO_FA_CHALLENGE_EXPIRES },
+  );
+};
+
+const verify2faChallenge = (challenge) => {
+  if (!challenge) throw { status: 400, message: "Thiếu challenge đăng nhập 2FA" };
+  let decoded;
+  try {
+    decoded = jwt.verify(challenge, process.env.JWT_SECRET, { algorithms: ["HS256"] });
+  } catch {
+    throw { status: 400, message: "Phiên đăng nhập 2FA không hợp lệ hoặc đã hết hạn. Vui lòng đăng nhập lại." };
+  }
+  if (!decoded || decoded.purpose !== "2fa" || !decoded.id) {
+    throw { status: 400, message: "Phiên đăng nhập 2FA không hợp lệ. Vui lòng đăng nhập lại." };
+  }
+  return decoded.id;
+};
+
 // Tạo access token từ user object (tách để tái sử dụng)
 const createAccessToken = (user) => {
   return jwt.sign(
-    { id: user.id, email: user.email, role: user.role, tenantId: user.tenantId || null },
+    { id: user.id, email: user.email, role: user.role, tenantId: user.tenantId || null, tokenVersion: user.tokenVersion || 0 },
     process.env.JWT_SECRET,
     {
-      expiresIn: process.env.JWT_EXPIRES_IN || "7d",
+      // L2: access token ngắn hạn — mặc định 15p (đặc tả §3.1: access 15p + refresh 7d),
+      // frontend tự refresh qua interceptor khi 401
+      expiresIn: process.env.JWT_EXPIRES_IN || "15m",
     },
   );
+};
+
+// Tạo cặp access + refresh token cho user (dùng cho login và 2fa verify)
+const USER_SAFE_FIELDS = {
+  id: true, email: true, fullName: true, role: true, tenantId: true,
+  isActive: true, twoFactorEnabled: true, mustChangePassword: true, createdAt: true, updatedAt: true,
+};
+
+const generateTokens = async (userId) => {
+  const user = await prisma.user.findUnique({
+    where: { id: userId },
+    select: { ...USER_SAFE_FIELDS, password: true, twoFactorSecret: true, tokenVersion: true },
+  });
+  if (!user || !user.isActive) throw { status: 401, message: "Tài khoản không hợp lệ" };
+
+  const token = createAccessToken(user);
+
+  const tokenStr = crypto.randomBytes(48).toString("hex");
+  const days = Number(process.env.REFRESH_TOKEN_EXPIRES_DAYS) || 7;
+  const expiresAt = new Date(Date.now() + days * 24 * 60 * 60 * 1000);
+  await prisma.refreshToken.create({
+    data: { token: hashRefreshToken(tokenStr), userId, expiresAt },
+  });
+
+  const { password: _p, twoFactorSecret: _s, ...safeUser } = user;
+  return { token, refreshToken: tokenStr, user: safeUser };
 };
 
 // Dùng khi client gửi refresh token để lấy access token mới
@@ -202,14 +265,25 @@ const refreshAccessToken = async (providedToken) => {
   if (!providedToken) throw { status: 401, message: "Thiếu refresh token" };
 
   const stored = await prisma.refreshToken.findUnique({
-    where: { token: providedToken },
+    where: { token: hashRefreshToken(providedToken) },
   });
-  if (!stored || stored.isRevoked)
+  if (!stored) throw { status: 401, message: "Refresh token không hợp lệ" };
+  // L4: token đã revoke nhưng vẫn được dùng lại = dấu hiệu bị đánh cắp
+  // → thu hồi TOÀN BỘ refresh token của user (family), bắt đăng nhập lại
+  if (stored.isRevoked) {
+    await prisma.refreshToken.updateMany({
+      where: { userId: stored.userId },
+      data: { isRevoked: true },
+    });
     throw { status: 401, message: "Refresh token không hợp lệ" };
+  }
   if (new Date(stored.expiresAt) < new Date())
     throw { status: 401, message: "Refresh token đã hết hạn" };
 
-  const user = await prisma.user.findUnique({ where: { id: stored.userId } });
+  const user = await prisma.user.findUnique({
+    where: { id: stored.userId },
+    select: { ...USER_SAFE_FIELDS, password: true, twoFactorSecret: true, tokenVersion: true },
+  });
   if (!user || !user.isActive)
     throw { status: 401, message: "Tài khoản không hợp lệ" };
 
@@ -219,18 +293,18 @@ const refreshAccessToken = async (providedToken) => {
     data: { isRevoked: true },
   });
   const newRefresh = crypto.randomBytes(48).toString("hex");
-  const days = Number(process.env.REFRESH_TOKEN_EXPIRES_DAYS) || 30;
+  const days = Number(process.env.REFRESH_TOKEN_EXPIRES_DAYS) || 7;
   const expiresAt = new Date(Date.now() + days * 24 * 60 * 60 * 1000);
   await prisma.refreshToken.create({
-    data: { token: newRefresh, userId: user.id, expiresAt },
+    data: { token: hashRefreshToken(newRefresh), userId: user.id, expiresAt },
   });
 
   const newAccess = createAccessToken(user);
-  const { password: _p, ...userWithoutPassword } = user;
+  const { password: _p, twoFactorSecret: _s, ...safeUser } = user;
   return {
     token: newAccess,
     refreshToken: newRefresh,
-    user: userWithoutPassword,
+    user: safeUser,
   };
 };
 
@@ -245,7 +319,7 @@ const revokeRefreshToken = async ({ token, userId, revokeAll = false }) => {
   }
   if (token) {
     await prisma.refreshToken.updateMany({
-      where: { token },
+      where: { token: hashRefreshToken(token) },
       data: { isRevoked: true },
     });
     return;
@@ -275,7 +349,7 @@ const register = async ({ companyName, email, password, industry, fullName }) =>
   const existingSlug = await prisma.tenant.findUnique({ where: { slug } })
   if (existingSlug) throw { status: 400, message: 'Tên công ty đã tồn tại' }
 
-  const hashedPassword = await bcrypt.hash(password, Number(process.env.BCRYPT_ROUNDS) || 10)
+  const hashedPassword = await bcrypt.hash(password, BCRYPT_COST())
   const verifyToken = generateEmailVerifyToken()
   const verifyExpiry = new Date(Date.now() + 24 * 60 * 60 * 1000) // 24h
 
@@ -365,7 +439,7 @@ const register = async ({ companyName, email, password, industry, fullName }) =>
   });
 
   if (emailResult.mock) {
-    console.log(`[DEV] SMTP chưa cấu hình, verify link cho ${email}: ${verifyLink}`);
+    logger.info(`[DEV] SMTP chưa cấu hình, verify link cho ${email}: ${verifyLink}`);
   }
 
   auditService.log({
@@ -378,6 +452,14 @@ const register = async ({ companyName, email, password, industry, fullName }) =>
 
   return { message: 'Vui lòng kiểm tra email để xác minh tài khoản' }
 }
+
+const verifyPassword = async (userId, password) => {
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  if (!user) throw { status: 404, message: "Không tìm thấy người dùng" };
+  const isValid = await bcrypt.compare(password, user.password);
+  if (!isValid) throw { status: 400, message: "Mật khẩu không đúng" };
+  return { message: "Xác thực mật khẩu thành công" };
+};
 
 const verifyEmail = async (token) => {
   const user = await prisma.user.findFirst({
@@ -416,6 +498,10 @@ module.exports = {
   verifyEmail,
   getProfile,
   changePassword,
+  verifyPassword,
   refreshAccessToken,
   revokeRefreshToken,
+  generateTokens,
+  create2faChallenge,
+  verify2faChallenge,
 };

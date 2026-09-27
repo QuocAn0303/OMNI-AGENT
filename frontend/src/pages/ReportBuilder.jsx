@@ -27,7 +27,7 @@ const OPS = ["=", "!=", ">", "<", ">=", "<=", "ILIKE"];
 export default function ReportBuilder() {
   const [tables, setTables]         = useState([]);
   const [savedReports, setSavedReports] = useState([]);
-  const [loading, setLoading]       = useState(false);
+  const [loading]       = useState(false);
 
   // Builder state
   const [selectedTable, setSelectedTable] = useState(null);
@@ -60,7 +60,7 @@ export default function ReportBuilder() {
       const config = { table: selectedTable, fields: selectedFields, filters, groupBy, aggregate };
       const data = await runAdHoc(config);
       setResults(Array.isArray(data) ? data : []);
-    } catch (e) { message.error(e?.response?.data?.message || "Lỗi chạy báo cáo"); }
+    } catch { message.error("Lỗi chạy báo cáo"); }
     finally { setRunning(false); }
   };
 
@@ -74,14 +74,14 @@ export default function ReportBuilder() {
       saveForm.resetFields();
       const r = await getReports();
       setSavedReports(r || []);
-    } catch (e) { message.error(e?.response?.data?.message || "Lỗi lưu"); }
+    } catch { message.error("Lỗi lưu"); }
     finally { setSaving(false); }
   };
 
   const handleRunSaved = async (id) => {
     setRunning(true);
     try { setResults(await runSavedReport(id)); }
-    catch (e) { message.error("Lỗi chạy báo cáo"); }
+    catch { message.error("Lỗi chạy báo cáo"); }
     finally { setRunning(false); }
   };
 

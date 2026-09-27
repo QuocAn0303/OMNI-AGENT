@@ -12,7 +12,7 @@
  * Hàm/Exports:
  * - ProtectedRoute: Component kiểm tra isAuthenticated và fetch user
  */
-import { Navigate } from "react-router-dom";
+import { Navigate, useLocation } from "react-router-dom";
 import useAuthStore from "../stores/authStore";
 import { useEffect, useState } from "react";
 import axiosInstance from "../api/axios";
@@ -20,6 +20,7 @@ import { Spin } from "antd";
 
 const ProtectedRoute = ({ children }) => {
   const { isAuthenticated, user, setUser, logout } = useAuthStore();
+  const location = useLocation();
   const [loading, setLoading] = useState(!user && isAuthenticated);
 
   useEffect(() => {
@@ -35,8 +36,6 @@ const ProtectedRoute = ({ children }) => {
           logout();
           setLoading(false);
         });
-    } else {
-      setLoading(false);
     }
   }, [isAuthenticated, user, setUser, logout]);
 
@@ -58,6 +57,12 @@ const ProtectedRoute = ({ children }) => {
         <Spin size="large" />
       </div>
     );
+  }
+
+  // L3: tài khoản mặc định (seed) phải đổi mật khẩu trước khi dùng hệ thống
+  // — chỉ cho vào /profile (nơi có form đổi mật khẩu), mọi trang khác redirect
+  if (user?.mustChangePassword && location.pathname !== "/profile") {
+    return <Navigate to="/profile" replace />;
   }
 
   return children;

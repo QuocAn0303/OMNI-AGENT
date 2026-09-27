@@ -35,7 +35,7 @@ const parsePeriod = (req) => {
 };
 
 // GET /api/tax-reports/vat?year=2024&month=11
-router.get("/vat", authenticate, authorize("ADMIN", "MANAGER"), async (req, res, next) => {
+router.get("/vat", authenticate, authorize("ADMIN", "MANAGER", "ACCOUNTANT"), async (req, res, next) => {
   try {
     const { year, month } = parsePeriod(req);
     const [vat, sales, purchases] = await Promise.all([
@@ -48,7 +48,7 @@ router.get("/vat", authenticate, authorize("ADMIN", "MANAGER"), async (req, res,
 });
 
 // GET /api/tax-reports/pit?year=2024&month=11
-router.get("/pit", authenticate, authorize("ADMIN", "MANAGER"), async (req, res, next) => {
+router.get("/pit", authenticate, authorize("ADMIN", "MANAGER", "ACCOUNTANT"), async (req, res, next) => {
   try {
     const { year, month } = parsePeriod(req);
     ok(res, await svc.generatePIT(year, month));
@@ -56,7 +56,7 @@ router.get("/pit", authenticate, authorize("ADMIN", "MANAGER"), async (req, res,
 });
 
 // GET /api/tax-reports/vat/excel?year=2024&month=11
-router.get("/vat/excel", authenticate, authorize("ADMIN", "MANAGER"), async (req, res, next) => {
+router.get("/vat/excel", authenticate, authorize("ADMIN", "MANAGER", "ACCOUNTANT"), async (req, res, next) => {
   try {
     const { year, month } = parsePeriod(req);
     const wb = await svc.exportExcel(year, month);
@@ -68,7 +68,7 @@ router.get("/vat/excel", authenticate, authorize("ADMIN", "MANAGER"), async (req
 });
 
 // GET /api/tax-reports/vat/xml?year=2024&month=11
-router.get("/vat/xml", authenticate, authorize("ADMIN", "MANAGER"), async (req, res, next) => {
+router.get("/vat/xml", authenticate, authorize("ADMIN", "MANAGER", "ACCOUNTANT"), async (req, res, next) => {
   try {
     const { year, month } = parsePeriod(req);
     const company = await prisma.companySettings.findFirst();
@@ -86,7 +86,7 @@ router.get("/vat/xml", authenticate, authorize("ADMIN", "MANAGER"), async (req, 
 });
 
 // GET /api/tax-reports/bhxh/excel?year=2024&month=11
-router.get("/bhxh/excel", authenticate, authorize("ADMIN", "MANAGER"), async (req, res, next) => {
+router.get("/bhxh/excel", authenticate, authorize("ADMIN", "MANAGER", "ACCOUNTANT"), async (req, res, next) => {
   try {
     const { year, month } = parsePeriod(req);
     const wb = await svc.exportBHXH(year, month);

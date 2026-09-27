@@ -50,26 +50,26 @@ router.use(authenticate, requireModule("accounting"));
 
 // ==================== CHART OF ACCOUNTS ====================
 
-router.get("/accounts", authorize("ADMIN", "MANAGER"), async (req, res, next) => {
+router.get("/accounts", authorize("ADMIN", "MANAGER", "ACCOUNTANT"), async (req, res, next) => {
   try {
     const data = await accountService.list(req.query);
     success(res, data);
   } catch (e) { next(e); }
 });
 
-router.get("/accounts/tree", authorize("ADMIN", "MANAGER"), async (req, res, next) => {
+router.get("/accounts/tree", authorize("ADMIN", "MANAGER", "ACCOUNTANT"), async (req, res, next) => {
   try {
     success(res, await accountService.tree());
   } catch (e) { next(e); }
 });
 
-router.get("/accounts/:id", authorize("ADMIN", "MANAGER"), async (req, res, next) => {
+router.get("/accounts/:id", authorize("ADMIN", "MANAGER", "ACCOUNTANT"), async (req, res, next) => {
   try {
     success(res, await accountService.getById(req.params.id));
   } catch (e) { next(e); }
 });
 
-router.get("/accounts/:id/balance", authorize("ADMIN", "MANAGER"), async (req, res, next) => {
+router.get("/accounts/:id/balance", authorize("ADMIN", "MANAGER", "ACCOUNTANT"), async (req, res, next) => {
   try {
     success(res, await accountService.getBalance(req.params.id, req.query));
   } catch (e) { next(e); }
@@ -93,19 +93,19 @@ const manualEntrySchema = z.object({
   lines: z.array(journalLineSchema).min(2),
 });
 
-router.get("/journal", authorize("ADMIN", "MANAGER"), async (req, res, next) => {
+router.get("/journal", authorize("ADMIN", "MANAGER", "ACCOUNTANT"), async (req, res, next) => {
   try {
     success(res, await journalService.listEntries(req.query));
   } catch (e) { next(e); }
 });
 
-router.get("/journal/:id", authorize("ADMIN", "MANAGER"), async (req, res, next) => {
+router.get("/journal/:id", authorize("ADMIN", "MANAGER", "ACCOUNTANT"), async (req, res, next) => {
   try {
     success(res, await journalService.getEntryById(req.params.id));
   } catch (e) { next(e); }
 });
 
-router.post("/journal", authorize("ADMIN", "MANAGER"), async (req, res, next) => {
+router.post("/journal", authorize("ADMIN", "MANAGER", "ACCOUNTANT"), async (req, res, next) => {
   try {
     const data = manualEntrySchema.parse(req.body);
     const entry = await journalService.postEntry({
@@ -183,41 +183,83 @@ const vendorSchema = z.object({
   paymentTerms: z.number().int().nonnegative().optional(),
 });
 
-router.get("/vendors", authorize("ADMIN", "MANAGER"), async (req, res, next) => {
+router.get("/vendors", authorize("ADMIN", "MANAGER", "ACCOUNTANT"), async (req, res, next) => {
   try { success(res, await vendorService.list(req.query)); }
   catch (e) { next(e); }
 });
 
-router.get("/vendors/:id/debts", authorize("ADMIN", "MANAGER"), async (req, res, next) => {
+router.get("/vendors/:id/debts", authorize("ADMIN", "MANAGER", "ACCOUNTANT"), async (req, res, next) => {
   try {
-    success(res, await debtService.listByVendor(req.params.id));
+    const { page, limit } = req.query;
+    const result = await debtService.listByVendor(req.params.id, Number(page) || 1, Number(limit) || 50);
+    success(res, result.data);
   } catch (e) {
     next(e);
   }
 });
 
-router.get("/vendors/:id", authorize("ADMIN", "MANAGER"), async (req, res, next) => {
+router.get("/vendors/:id", authorize("ADMIN", "MANAGER", "ACCOUNTANT"), async (req, res, next) => {
   try { success(res, await vendorService.getById(req.params.id)); }
   catch (e) { next(e); }
 });
 
-router.post("/vendors", authorize("ADMIN", "MANAGER"), async (req, res, next) => {
+router.post("/vendors", authorize("ADMIN", "MANAGER", "ACCOUNTANT"), async (req, res, next) => {
   try {
     const data = vendorSchema.parse(req.body);
-    created(res, await vendorService.create(data), "Đã tạo nhà cung cấp");
+    created(res, await vendorService.create(data, req.user.id), "Đã tạo nhà cung cấp");
   } catch (e) { next(e); }
 });
 
-router.put("/vendors/:id", authorize("ADMIN", "MANAGER"), async (req, res, next) => {
+router.put("/vendors/:id", authorize("ADMIN", "MANAGER", "ACCOUNTANT"), async (req, res, next) => {
   try {
     const data = vendorSchema.partial().parse(req.body);
-    success(res, await vendorService.update(req.params.id, data), "Đã cập nhật");
+    success(res, await vendorService.update(req.params.id, data, req.user.id), "Đã cập nhật");
   } catch (e) { next(e); }
 });
 
 router.delete("/vendors/:id", authorize("ADMIN"), async (req, res, next) => {
-  try { success(res, await vendorService.remove(req.params.id), "Đã vô hiệu hóa"); }
+  try { success(res, await vendorService.remove(req.params.id, req.user.id), "Đã vô hiệu hóa"); }
   catch (e) { next(e); }
+});
+
+// SRM Mục 5: cập nhật điểm Kraljic — server tự suy kraljicCategory (>=6 = Cao)
+const kraljicSchema = z.object({
+  profitImpactScore: z.number().int().min(1).max(10),
+  supplyRiskScore: z.number().int().min(1).max(10),
+});
+
+/**
+ * @swagger
+ * /api/vendors/{id}/kraljic:
+ *   patch:
+ *     summary: Cập nhật đánh giá Kraljic cho nhà cung cấp (profit/supply impact 1-10)
+ *     tags: [Accounting - Vendors]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             required: [profitImpactScore, supplyRiskScore]
+ *             properties:
+ *               profitImpactScore: { type: integer, minimum: 1, maximum: 10 }
+ *               supplyRiskScore: { type: integer, minimum: 1, maximum: 10 }
+ *     responses:
+ *       200: { description: Đã cập nhật — trả vendor kèm kraljicCategory }
+ *       400: { description: Điểm không hợp lệ }
+ *       404: { description: Không tìm thấy vendor }
+ */
+router.patch("/vendors/:id/kraljic", authorize("ADMIN", "MANAGER"), async (req, res, next) => {
+  try {
+    const data = kraljicSchema.parse(req.body);
+    success(res, await vendorService.updateKraljic(req.params.id, data, req.user.id), "Đã cập nhật đánh giá Kraljic");
+  } catch (e) { next(e); }
 });
 
 // ==================== EXPENSES ====================
@@ -230,7 +272,7 @@ const expenseSchema = z.object({
   description: z.string().min(2),
   amount: z.number().positive(),
   taxRateId: z.string().optional().nullable(),
-  paymentMethod: z.enum(["CASH", "BANK_TRANSFER", "CARD"]).optional(),
+  paymentMethod: z.enum(["CASH", "BANK_TRANSFER", "CARD", "MOMO", "VNPAY", "ZALOPAY", "PAYOS", "VIETQR"]).optional(),
   bankAccountId: z.string().optional().nullable(),
   status: z.enum(["DRAFT", "PENDING_APPROVAL", "APPROVED", "PAID"]).optional(),
   invoiceNumber: z.string().optional(),
@@ -238,28 +280,28 @@ const expenseSchema = z.object({
   note: z.string().optional(),
 });
 
-router.get("/expenses", authorize("ADMIN", "MANAGER"), async (req, res, next) => {
+router.get("/expenses", authorize("ADMIN", "MANAGER", "ACCOUNTANT"), async (req, res, next) => {
   try {
     success(res, await expenseService.list(req.query));
   } catch (e) { next(e); }
 });
 
-router.get("/expense-categories", authorize("ADMIN", "MANAGER"), async (req, res, next) => {
+router.get("/expense-categories", authorize("ADMIN", "MANAGER", "ACCOUNTANT"), async (req, res, next) => {
   try { success(res, await expenseService.listCategories()); }
   catch (e) { next(e); }
 });
 
-router.get("/expenses/summary", authorize("ADMIN", "MANAGER"), async (req, res, next) => {
+router.get("/expenses/summary", authorize("ADMIN", "MANAGER", "ACCOUNTANT"), async (req, res, next) => {
   try { success(res, await expenseService.summary(req.query)); }
   catch (e) { next(e); }
 });
 
-router.get("/expenses/:id", authorize("ADMIN", "MANAGER"), async (req, res, next) => {
+router.get("/expenses/:id", authorize("ADMIN", "MANAGER", "ACCOUNTANT"), async (req, res, next) => {
   try { success(res, await expenseService.getById(req.params.id)); }
   catch (e) { next(e); }
 });
 
-router.post("/expenses", authorize("ADMIN", "MANAGER"), async (req, res, next) => {
+router.post("/expenses", authorize("ADMIN", "MANAGER", "ACCOUNTANT"), async (req, res, next) => {
   try {
     const data = expenseSchema.parse(req.body);
     created(res, await expenseService.create(data, req.user.id), "Đã ghi nhận chi phí");
@@ -271,7 +313,7 @@ router.post("/expenses/:id/submit", authorize("ADMIN", "MANAGER", "CASHIER"), as
   catch (e) { next(e); }
 });
 
-router.post("/expenses/:id/approve", authorize("ADMIN", "MANAGER"), async (req, res, next) => {
+router.post("/expenses/:id/approve", authorize("ADMIN", "MANAGER", "ACCOUNTANT"), async (req, res, next) => {
   try {
     success(res, await expenseService.approve(req.params.id, req.user.id, { role: req.user.role }), "Đã duyệt");
   } catch (e) { next(e); }
@@ -287,7 +329,7 @@ router.post("/expenses/:id/pay", authorize("ADMIN", "MANAGER", "CASHIER"), async
   catch (e) { next(e); }
 });
 
-router.post("/expenses/:id/reject", authorize("ADMIN", "MANAGER"), async (req, res, next) => {
+router.post("/expenses/:id/reject", authorize("ADMIN", "MANAGER", "ACCOUNTANT"), async (req, res, next) => {
   try { success(res, await expenseService.reject(req.params.id, req.user.id), "Đã từ chối"); }
   catch (e) { next(e); }
 });
@@ -307,12 +349,12 @@ const poSchema = z.object({
   })).min(1),
 });
 
-router.get("/purchase-orders", authorize("ADMIN", "MANAGER"), async (req, res, next) => {
+router.get("/purchase-orders", authorize("ADMIN", "MANAGER", "ACCOUNTANT"), async (req, res, next) => {
   try { success(res, await purchaseService.list(req.query)); }
   catch (e) { next(e); }
 });
 
-router.get("/purchase-orders/:id", authorize("ADMIN", "MANAGER"), async (req, res, next) => {
+router.get("/purchase-orders/:id", authorize("ADMIN", "MANAGER", "ACCOUNTANT"), async (req, res, next) => {
   try { success(res, await purchaseService.getById(req.params.id)); }
   catch (e) { next(e); }
 });
@@ -329,7 +371,7 @@ router.post("/purchase-orders/:id/submit", authorize("ADMIN", "MANAGER", "WAREHO
   catch (e) { next(e); }
 });
 
-router.post("/purchase-orders/:id/approve", authorize("ADMIN", "MANAGER"), async (req, res, next) => {
+router.post("/purchase-orders/:id/approve", authorize("ADMIN", "MANAGER", "ACCOUNTANT"), async (req, res, next) => {
   try { success(res, await purchaseService.approve(req.params.id, req.user.role, req.user.id), "Đã duyệt"); }
   catch (e) { next(e); }
 });
@@ -353,66 +395,66 @@ router.post("/purchase-orders/:id/pay", authorize("ADMIN", "MANAGER", "CASHIER")
   } catch (e) { next(e); }
 });
 
-router.post("/purchase-orders/:id/cancel", authorize("ADMIN", "MANAGER"), async (req, res, next) => {
+router.post("/purchase-orders/:id/cancel", authorize("ADMIN", "MANAGER", "ACCOUNTANT"), async (req, res, next) => {
   try { success(res, await purchaseService.cancel(req.params.id, req.user.id), "Đã hủy"); }
   catch (e) { next(e); }
 });
 
 // ==================== TAX ====================
 
-router.get("/tax-rates", authorize("ADMIN", "MANAGER"), async (_, res, next) => {
+router.get("/tax-rates", authorize("ADMIN", "MANAGER", "ACCOUNTANT"), async (_, res, next) => {
   try { success(res, await taxService.list()); } catch (e) { next(e); }
 });
 
-router.get("/reports/vat", authorize("ADMIN", "MANAGER"), async (req, res, next) => {
+router.get("/reports/vat", authorize("ADMIN", "MANAGER", "ACCOUNTANT"), async (req, res, next) => {
   try { success(res, await taxService.vatReport(req.query)); }
   catch (e) { next(e); }
 });
 
 // ==================== FINANCIAL REPORTS ====================
 
-router.get("/reports/balance-sheet", authorize("ADMIN", "MANAGER"), checkFeature("accountingBalanceSheet"), async (req, res, next) => {
+router.get("/reports/balance-sheet", authorize("ADMIN", "MANAGER", "ACCOUNTANT"), checkFeature("accountingBalanceSheet"), async (req, res, next) => {
   try { success(res, await reportService.balanceSheet(req.query)); }
   catch (e) { next(e); }
 });
 
-router.get("/reports/profit-loss", authorize("ADMIN", "MANAGER"), async (req, res, next) => {
+router.get("/reports/profit-loss", authorize("ADMIN", "MANAGER", "ACCOUNTANT"), async (req, res, next) => {
   try { success(res, await reportService.profitAndLoss(req.query)); }
   catch (e) { next(e); }
 });
 
-router.get("/reports/cash-flow", authorize("ADMIN", "MANAGER"), checkFeature("accountingCashFlow"), async (req, res, next) => {
+router.get("/reports/cash-flow", authorize("ADMIN", "MANAGER", "ACCOUNTANT"), checkFeature("accountingCashFlow"), async (req, res, next) => {
   try { success(res, await reportService.cashFlow(req.query)); }
   catch (e) { next(e); }
 });
 
-router.get("/reports/trial-balance", authorize("ADMIN", "MANAGER"), async (req, res, next) => {
+router.get("/reports/trial-balance", authorize("ADMIN", "MANAGER", "ACCOUNTANT"), async (req, res, next) => {
   try { success(res, await reportService.trialBalance(req.query)); }
   catch (e) { next(e); }
 });
 
-router.get("/reports/general-ledger", authorize("ADMIN", "MANAGER"), async (req, res, next) => {
+router.get("/reports/general-ledger", authorize("ADMIN", "MANAGER", "ACCOUNTANT"), async (req, res, next) => {
   try {
     if (!req.query.accountId) throw { status: 400, message: "Cần accountId" };
     success(res, await reportService.generalLedger(req.query));
   } catch (e) { next(e); }
 });
 
-router.get("/reports/aging", authorize("ADMIN", "MANAGER"), async (req, res, next) => {
+router.get("/reports/aging", authorize("ADMIN", "MANAGER", "ACCOUNTANT"), async (req, res, next) => {
   try { success(res, await reportService.agingReport(req.query)); }
   catch (e) { next(e); }
 });
 
 // ==================== FOUNDER DASHBOARD ====================
 
-router.get("/dashboard", authorize("ADMIN", "MANAGER"), async (_, res, next) => {
+router.get("/dashboard", authorize("ADMIN", "MANAGER", "ACCOUNTANT"), async (_, res, next) => {
   try { success(res, await founderService.overview()); }
   catch (e) { next(e); }
 });
 
 // ==================== POSTING ERRORS (OUTBOX) ====================
 
-router.get("/posting-errors", authorize("ADMIN", "MANAGER"), async (req, res, next) => {
+router.get("/posting-errors", authorize("ADMIN", "MANAGER", "ACCOUNTANT"), async (req, res, next) => {
   try { success(res, await postingErrorService.list(req.query)); }
   catch (e) { next(e); }
 });
@@ -429,7 +471,7 @@ router.post("/posting-errors/:id/dismiss", authorize("ADMIN"), async (req, res, 
 
 // ==================== FISCAL PERIOD ====================
 
-router.get("/fiscal-periods", authorize("ADMIN", "MANAGER"), async (_, res, next) => {
+router.get("/fiscal-periods", authorize("ADMIN", "MANAGER", "ACCOUNTANT"), async (_, res, next) => {
   try { success(res, await fiscalService.list()); } catch (e) { next(e); }
 });
 
@@ -511,7 +553,7 @@ router.post("/depreciation/run", authorize("ADMIN"), async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
-router.get("/reports/inventory-valuation", authorize("ADMIN", "MANAGER"), async (req, res, next) => {
+router.get("/reports/inventory-valuation", authorize("ADMIN", "MANAGER", "ACCOUNTANT"), async (req, res, next) => {
   try {
     const y = parseInt(req.query.year) || new Date().getFullYear();
     const m = parseInt(req.query.month) || new Date().getMonth() + 1;
@@ -519,7 +561,7 @@ router.get("/reports/inventory-valuation", authorize("ADMIN", "MANAGER"), async 
   } catch (e) { next(e); }
 });
 
-router.post("/prepaid", authorize("ADMIN", "MANAGER"), async (req, res, next) => {
+router.post("/prepaid", authorize("ADMIN", "MANAGER", "ACCOUNTANT"), async (req, res, next) => {
   try { success(res, await periodCloseService.createPrepaid(req.user.id, req.body), "Tạo chi phí trả trước thành công"); }
   catch (e) { next(e); }
 });
@@ -533,7 +575,7 @@ router.post("/prepaid/allocate", authorize("ADMIN"), async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
-router.post("/tax/cit", authorize("ADMIN", "MANAGER"), async (req, res, next) => {
+router.post("/tax/cit", authorize("ADMIN", "MANAGER", "ACCOUNTANT"), async (req, res, next) => {
   try {
     const { year, quarter } = req.body;
     success(res, await periodCloseService.calculateCIT({
@@ -544,32 +586,32 @@ router.post("/tax/cit", authorize("ADMIN", "MANAGER"), async (req, res, next) =>
 
 // ==================== TT200 UPGRADED REPORTS ====================
 
-router.get("/reports/trial-balance-6col", authorize("ADMIN", "MANAGER"), async (req, res, next) => {
+router.get("/reports/trial-balance-6col", authorize("ADMIN", "MANAGER", "ACCOUNTANT"), async (req, res, next) => {
   try { success(res, await reportService.trialBalance6Col(req.query)); }
   catch (e) { next(e); }
 });
 
-router.get("/reports/general-journal", authorize("ADMIN", "MANAGER"), async (req, res, next) => {
+router.get("/reports/general-journal", authorize("ADMIN", "MANAGER", "ACCOUNTANT"), async (req, res, next) => {
   try { success(res, await reportService.generalJournal(req.query)); }
   catch (e) { next(e); }
 });
 
-router.get("/reports/account-ledger", authorize("ADMIN", "MANAGER"), async (req, res, next) => {
+router.get("/reports/account-ledger", authorize("ADMIN", "MANAGER", "ACCOUNTANT"), async (req, res, next) => {
   try { success(res, await reportService.accountLedger(req.query)); }
   catch (e) { next(e); }
 });
 
-router.get("/reports/sub-ledger", authorize("ADMIN", "MANAGER"), async (req, res, next) => {
+router.get("/reports/sub-ledger", authorize("ADMIN", "MANAGER", "ACCOUNTANT"), async (req, res, next) => {
   try { success(res, await reportService.subLedger(req.query)); }
   catch (e) { next(e); }
 });
 
-router.get("/reports/balance-sheet-b01", authorize("ADMIN", "MANAGER"), checkFeature("accountingBalanceSheet"), async (req, res, next) => {
+router.get("/reports/balance-sheet-b01", authorize("ADMIN", "MANAGER", "ACCOUNTANT"), checkFeature("accountingBalanceSheet"), async (req, res, next) => {
   try { success(res, await reportService.balanceSheetB01(req.query)); }
   catch (e) { next(e); }
 });
 
-router.get("/reports/profit-loss-b02", authorize("ADMIN", "MANAGER"), async (req, res, next) => {
+router.get("/reports/profit-loss-b02", authorize("ADMIN", "MANAGER", "ACCOUNTANT"), async (req, res, next) => {
   try { success(res, await reportService.profitAndLossB02(req.query)); }
   catch (e) { next(e); }
 });

@@ -248,6 +248,8 @@ module.exports = {
   REDEEM_POINTS,
   REDEEM_VALUE,
   TIER_LABEL,
+  TIER_THRESHOLDS,
+  TIER_DISCOUNT,
   computeTier,
   getTierDiscountPercent,
   applyTierDiscount,

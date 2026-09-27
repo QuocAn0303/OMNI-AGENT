@@ -33,8 +33,9 @@ export default function Pricing() {
         setPlans(res.data.data);
       }).catch(() => {}).finally(() => setLoading(false));
     } else {
-      setLoading(false);
-      setPlans([
+      const t = setTimeout(() => {
+        setLoading(false);
+        setPlans([
         { id: "free", key: "free", name: "FREE", price: 0, currency: "USD", durationDays: 99999,
           features: { warehouses: "1", products: "100", users: "2", basicReports: true } },
         { id: "pro", key: "pro", name: "PRO", price: 29, currency: "USD", durationDays: 30, popular: true,
@@ -42,6 +43,8 @@ export default function Pricing() {
         { id: "enterprise", key: "enterprise", name: "ENTERPRISE", price: 99, currency: "USD", durationDays: 30,
           features: { warehouses: "unlimited", products: "unlimited", users: "unlimited", allFeatures: true, apiAccess: true, prioritySupport: true } },
       ]);
+      }, 0);
+      return () => clearTimeout(t);
     }
   }, [isAuthenticated]);
 

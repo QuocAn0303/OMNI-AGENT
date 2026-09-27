@@ -75,7 +75,7 @@ export default function Marketplace() {
       setCreateOpen(false);
       createForm.resetFields();
       await loadShops();
-    } catch (e) { message.error(e?.response?.data?.message || "Lỗi"); }
+    } catch { message.error("Lỗi"); }
     finally { setCreating(false); }
   };
 
@@ -93,7 +93,7 @@ export default function Marketplace() {
       const r = await pushInventory(activeShop.id);
       message.success(`Đã push tồn kho: ${r.pushed} sản phẩm${r.errors ? `, ${r.errors} lỗi` : ""}`);
       setSyncLogs(await getSyncLogs(activeShop.id));
-    } catch (e) { message.error("Lỗi push"); }
+    } catch { message.error("Lỗi push"); }
     finally { setPushing(false); }
   };
 
@@ -104,7 +104,7 @@ export default function Marketplace() {
       const r = await pullOrders(activeShop.id);
       message.success(`Đã pull ${r.pulled} đơn hàng`);
       setSyncLogs(await getSyncLogs(activeShop.id));
-    } catch (e) { message.error("Lỗi pull"); }
+    } catch { message.error("Lỗi pull"); }
     finally { setPulling(false); }
   };
 
@@ -122,7 +122,7 @@ export default function Marketplace() {
       message.success("Đã lưu credentials");
       setCredOpen(false);
       await loadShops();
-    } catch (e) { message.error(e?.response?.data?.message || "Lỗi"); }
+    } catch { message.error("Lỗi"); }
     finally { setCredSaving(false); }
   };
 

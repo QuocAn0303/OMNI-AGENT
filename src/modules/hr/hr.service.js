@@ -4,7 +4,7 @@
  * Tổng quan:
  * - Cung cấp logic nghiệp vụ cho module HR: quản lý nhân viên, chấm công, bảng lương, vi phạm
  * - Sử dụng Prisma ORM để thao tác với DB, tích hợp payroll.calc để tính lương
- * - Gọi expenseAuto để tự động ghi nhận chi phí khi khóa lương
+ * - Khóa lương → autopost bút toán chi phí lương (DR 6411/6421, CR 334)
  *
  * Hàm:
  * - createEmployee(payload): Tạo nhân viên mới kèm User account trong transaction. Tự sinh email nếu không có, hash password mặc định, map position → role
@@ -14,11 +14,10 @@
  * - listAttendance({ from, to, employeeId }): Liệt kê chấm công (shifts) trong khoảng thời gian, trả về flat object mỗi shift
  * - listPayroll(monthKey): Liệt kê bảng lương của tháng, trả về flat object kèm tính netSalary
  * - listEmployeesWithPreview(): Lấy danh sách nhân viên kèm preview lương tháng hiện tại
- * - lockPayroll(payrollId, userId): Khóa bảng lương, tự động ghi nhận chi phí qua expenseAuto
+ * - lockPayroll(payrollId, userId): Khóa bảng lương, autopost bút toán chi phí lương
  */
 const prisma = require("../../config/prisma");
 const { calculatePayroll } = require("./payroll.calc");
-const expenseAuto = require("../accounting/expense-auto.service");
 const autopostService = require("../accounting/autopost.service");
 const postingErrorService = require("../accounting/posting-error.service");
 const bcrypt = require("bcrypt");
@@ -34,7 +33,7 @@ const POSITION_TO_ROLE = {
 const createEmployee = async (payload) => {
   const {
     employeeCode, fullName, phone, email,
-    position = "OTHER", baseSalary = 0, hireDate, address,
+    position = "OTHER", baseSalary = 0, hireDate, address, departmentId,
   } = payload;
 
   // Tạo User + Employee trong transaction
@@ -63,6 +62,7 @@ const createEmployee = async (payload) => {
         hireDate: hireDate ? new Date(hireDate) : null,
         address: address || null,
         baseSalary,
+        departmentId: departmentId || null,
       },
       include: { user: true },
     });
@@ -84,6 +84,7 @@ const flattenEmployee = (emp) => ({
   baseSalary: Number(emp.baseSalary),
   shiftMoney: Number(emp.shiftMoney),
   isActive: emp.isActive,
+  departmentId: emp.departmentId,
   role: emp.user.role,
 });
 
@@ -187,7 +188,7 @@ const parseMonthKey = (monthKey) => {
   return { month, year };
 };
 
-const listAttendance = async ({ from, to, employeeId }) => {
+const listAttendance = async ({ from, to, employeeId, page = 1, limit = 50 }) => {
   if (!from || !to) {
     throw { status: 400, message: "Vui lòng chon khoang thoi gian" };
   }
@@ -196,17 +197,26 @@ const listAttendance = async ({ from, to, employeeId }) => {
   start.setHours(0, 0, 0, 0);
   const end = new Date(to);
   end.setHours(23, 59, 59, 999);
+  const skip = (Math.max(1, page) - 1) * Math.min(limit, 200);
+  const take = Math.min(limit, 200);
 
-  const shifts = await prisma.shift.findMany({
-    where: {
-      date: { gte: start, lte: end },
-      ...(employeeId ? { employeeId } : {}),
-    },
-    include: { employee: { include: { user: true } } },
-    orderBy: { date: "desc" },
-  });
+  const where = {
+    date: { gte: start, lte: end },
+    ...(employeeId ? { employeeId } : {}),
+  };
 
-  return shifts.map((shift) => ({
+  const [shifts, total] = await Promise.all([
+    prisma.shift.findMany({
+      where,
+      include: { employee: { include: { user: true } } },
+      skip,
+      take,
+      orderBy: { date: "desc" },
+    }),
+    prisma.shift.count({ where }),
+  ]);
+
+  const data = shifts.map((shift) => ({
     id: shift.id,
     date: shift.date,
     employeeId: shift.employeeId,
@@ -219,17 +229,28 @@ const listAttendance = async ({ from, to, employeeId }) => {
     totalHours: 8,
     isLate: false,
   }));
+
+  return { data, pagination: { page: Math.max(1, page), limit: take, total, totalPages: Math.ceil(total / take) } };
 };
 
-const listPayroll = async (monthKey) => {
+const listPayroll = async (monthKey, page = 1, limit = 50) => {
   const { month, year } = parseMonthKey(monthKey);
-  const payrolls = await prisma.payroll.findMany({
-    where: { month, year },
-    include: { employee: { include: { user: true } } },
-    orderBy: { createdAt: "desc" },
-  });
+  const skip = (Math.max(1, page) - 1) * Math.min(limit, 200);
+  const take = Math.min(limit, 200);
+  const where = { month, year };
 
-  return payrolls.map((p) => ({
+  const [payrolls, total] = await Promise.all([
+    prisma.payroll.findMany({
+      where,
+      include: { employee: { include: { user: true } } },
+      skip,
+      take,
+      orderBy: { createdAt: "desc" },
+    }),
+    prisma.payroll.count({ where }),
+  ]);
+
+  const data = payrolls.map((p) => ({
     id: p.id,
     employeeId: p.employeeId,
     employeeName: p.employee.user.fullName,
@@ -250,10 +271,14 @@ const listPayroll = async (monthKey) => {
     netSalary: Math.max(0, Number(p.finalSalary) - Number(p.bhxhEmployee) - Number(p.pitAmount)),
     isLocked: p.isLocked,
   }));
+
+  return { data, pagination: { page: Math.max(1, page), limit: take, total, totalPages: Math.ceil(total / take) } };
 };
 
-const listEmployeesWithPreview = async () => {
-  const emps = await prisma.employee.findMany({ include: { user: true } });
+const listEmployeesWithPreview = async (page = 1, limit = 50) => {
+  const skip = (Math.max(1, page) - 1) * Math.min(limit, 200);
+  const take = Math.min(limit, 200);
+  const emps = await prisma.employee.findMany({ include: { user: true }, skip, take });
   const res = [];
   const now = new Date();
   const month = now.getMonth() + 1;
@@ -320,8 +345,9 @@ const lockPayroll = async (payrollId, userId) => {
     data: { isLocked: true },
   });
 
-  await expenseAuto.fromPayrollLock({ payroll: updated, userId }).catch(() => {});
-
+  // A4: KHÔNG tạo expense lương nữa — postPayrollAccrual (bên dưới) đã ghi
+  // DR 6411/6421 CR 334 đúng chuẩn. Trước đây ghi thêm 1 expense APPROVED
+  // → chi phí lương bị nhân đôi trên P&L (và ghi nhầm CR 331 phải trả NCC).
   await postingErrorService.tryPostOrQueue(
     () => autopostService.postPayrollAccrual({ payroll: updated, employee: payroll.employee, userId }),
     { source: "PAYROLL", sourceId: payrollId, payload: { operation: "PAYROLL_ACCRUAL" } },

@@ -11,6 +11,7 @@
  * - remove(id): Soft delete danh mục, chặn xóa nếu danh mục còn chứa sản phẩm (throw 400)
  */
 const prisma = require("../../config/prisma");
+const auditService = require("../audit/audit.service");
 
 const categoryService = {
   // 1. Lấy danh sách danh mục (Chỉ lấy danh mục đang hoạt động)
@@ -24,7 +25,7 @@ const categoryService = {
   },
 
   // 2. Tạo danh mục mới
-  create: async (data) => {
+  create: async (data, userId = null) => {
     const existing = await prisma.category.findFirst({
       where: { name: data.name, isActive: true },
     });
@@ -35,17 +36,20 @@ const categoryService = {
       throw err;
     }
 
-    return await prisma.category.create({
+    const category = await prisma.category.create({
       data: {
         name: data.name,
         description: data.description,
         isActive: true,
       },
     });
+
+    auditService.log({ userId, action: 'CREATE_CATEGORY', entity: 'Category', entityId: category.id, after: { name: category.name } });
+    return category;
   },
 
   // 3. Cập nhật danh mục
-  update: async (id, data) => {
+  update: async (id, data, userId = null) => {
     const category = await prisma.category.findUnique({ where: { id } });
     
     if (!category || !category.isActive) {
@@ -54,17 +58,20 @@ const categoryService = {
       throw err;
     }
 
-    return await prisma.category.update({
+    const updated = await prisma.category.update({
       where: { id },
       data: {
         name: data.name,
         description: data.description,
       },
     });
+
+    auditService.log({ userId, action: 'UPDATE_CATEGORY', entity: 'Category', entityId: id, before: { name: category.name }, after: { name: updated.name } });
+    return updated;
   },
 
   // 4. Xóa mềm danh mục (Chuyển isActive = false)
-  remove: async (id) => {
+  remove: async (id, userId = null) => {
     const category = await prisma.category.findUnique({
       where: { id },
       include: { _count: { select: { products: true } } }
@@ -83,10 +90,12 @@ const categoryService = {
       throw err;
     }
 
-    return await prisma.category.update({
+    await prisma.category.update({
       where: { id },
       data: { isActive: false },
     });
+
+    auditService.log({ userId, action: 'DELETE_CATEGORY', entity: 'Category', entityId: id, before: { name: category.name } });
   }
 };
 

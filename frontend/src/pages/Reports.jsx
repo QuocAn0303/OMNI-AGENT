@@ -109,7 +109,7 @@ export default function Reports() {
       a.click();
       URL.revokeObjectURL(url);
       message.success('Đã tải xuống');
-    } catch (err) {
+    } catch {
       message.error('Không tạo được báo cáo');
     } finally {
       setDownloading(null);

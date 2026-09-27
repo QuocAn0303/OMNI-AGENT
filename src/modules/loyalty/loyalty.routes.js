@@ -10,6 +10,43 @@
  * Hàm:
  * - POST /adjust: Điều chỉnh điểm loyalty cho khách hàng — validate (customerId, points, note), gọi loyaltyService.adjustPoints(), ghi audit log (ADMIN)
  */
+
+/**
+ * @swagger
+ * /api/loyalty/config:
+ *   get:
+ *     summary: Cấu hình loyalty (tỷ lệ tích điểm, đổi điểm, hạng khách) (ADMIN, MANAGER)
+ *     security: [{ bearerAuth: [] }]
+ *     responses:
+ *       200:
+ *         description: OK
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 pointsPer1000: { type: number }
+ *                 redeemPoints: { type: number }
+ *                 redeemValue: { type: number }
+ *                 tiers: { type: object }
+ *
+ * /api/loyalty/adjust:
+ *   post:
+ *     summary: Điều chỉnh điểm loyalty thủ công (ADMIN)
+ *     security: [{ bearerAuth: [] }]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               customerId: { type: string }
+ *               points: { type: integer, description: Số dương cộng, số âm trừ }
+ *               note: { type: string }
+ *     responses:
+ *       200: { description: Điều chỉnh điểm thành công }
+ */
 const express = require("express");
 const { z } = require("zod");
 const loyaltyService = require("./loyalty.service");
@@ -21,6 +58,32 @@ const { success } = require("../../utils/response");
 const router = express.Router();
 
 router.use(authenticate, requireModule("loyalty"));
+
+router.get(
+  "/config",
+  authorize("ADMIN", "MANAGER"),
+  async (req, res, next) => {
+    try {
+      success(res, {
+        pointsPer1000: loyaltyService.POINTS_PER_1000,
+        redeemPoints: loyaltyService.REDEEM_POINTS,
+        redeemValue: loyaltyService.REDEEM_VALUE,
+        tiers: Object.fromEntries(
+          Object.entries(loyaltyService.TIER_LABEL).map(([key, label]) => [
+            key,
+            {
+              threshold: loyaltyService.TIER_THRESHOLDS[key] || 0,
+              discountPercent: loyaltyService.TIER_DISCOUNT[key] || 0,
+              label,
+            },
+          ]),
+        ),
+      });
+    } catch (err) {
+      next(err);
+    }
+  },
+);
 
 router.post(
   "/adjust",

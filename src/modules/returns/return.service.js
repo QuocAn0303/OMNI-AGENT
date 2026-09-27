@@ -6,21 +6,21 @@
  * - Tự động sinh mã phiếu trả (RET-YYYYMMDD-xxxx)
  * - Tính toán số tiền hoàn trả dựa trên tỷ lệ giá trị đơn hàng
  * - Kiểm tra chính sách thời gian trả hàng (7 ngày mặc định, có ghi đè)
- * - Xử lý hoàn kho, cập nhật store credit, exchange hàng, giảm công nợ
+ * - Xử lý hoàn kho, cập nhật store credit, exchange (ReturnLineItem), giảm công nợ
  * - Tích hợp audit log, accounting auto-post, expense tracking
  *
  * Hàm:
  * - generateReturnCode(): Tự sinh mã phiếu trả dạng RET-YYYYMMDD-xxxx dựa trên số phiếu trong ngày
- * - getReturnedQuantity(orderItemId, tx): Lấy tổng số lượng đã trả của 1 order item (không tính REJECTED)
+ * - getReturnedQuantity(orderItemId, tx): Lấy tổng số lượng đã trả của 1 order item (type RETURN, không tính REJECTED)
  * - calcUnitRefund(orderItem, order): Tính số tiền hoàn trả cho 1 đơn vị sản phẩm dựa trên tỷ lệ order.total / order.subtotal
  * - assertPolicyWindow(order, overridePolicy, userRole): Kiểm tra thời gian trả hàng trong 7 ngày, cho phép ADMIN/MANAGER ghi đè
  * - getReturnableItems(orderId): Trả về danh sách sản phẩm có thể trả của 1 đơn hàng (kèm số lượng đã trả, còn được trả, unitRefund)
- * - create(data, userId, { overridePolicy, userRole }): Tạo phiếu trả hàng, kiểm tra đơn COMPLETED, policy window, số lượng, cap tiền hoàn không vượt tổng đơn, hỗ trợ exchange items
+ * - create(data, userId, { overridePolicy, userRole }): Tạo phiếu trả hàng, kiểm tra đơn COMPLETED, policy window, số lượng, cap tiền hoàn không vượt tổng đơn, hỗ trợ EXCHANGE line items
  * - approve(returnId, userId, userRole): Duyệt phiếu trả (PENDING → APPROVED), kiểm tra four-eyes nếu > 5tr
  * - complete(returnId, userId): Hoàn tất phiếu trả trong transaction: hoàn kho (restockable), cập nhật store credit, xử lý exchange/chênh lệch, giảm totalSpent, cập nhật công nợ, paymentStatus, auto-post accounting & expense
  * - reject(returnId, userId): Từ chối phiếu trả (→ REJECTED)
  * - getAll({ page, limit, status }): Lấy danh sách phiếu trả có phân trang, lọc theo status
- * - getById(id): Lấy chi tiết 1 phiếu trả kèm items, exchange items, người tạo/duyệt
+ * - getById(id): Lấy chi tiết 1 phiếu trả kèm lineItems, người tạo/duyệt
  * - getByOrderId(orderId): Lấy tất cả phiếu trả của 1 đơn hàng
  * - debtServiceReduceOrCreate(tx, order, amount, userId): Helper cập nhật công nợ khi exchange chênh lệch
  * - RETURN_POLICY_DAYS: Hằng số 7 ngày
@@ -30,7 +30,6 @@ const auditService = require("../audit/audit.service");
 const paymentService = require("../payments/payment.service");
 const autopostService = require("../accounting/autopost.service");
 const postingErrorService = require("../accounting/posting-error.service");
-const expenseAuto = require("../accounting/expense-auto.service");
 const { findInventory } = require("../../utils/warehouse.helper");
 const { withCodeRetry } = require("../accounting/journal.service");
 
@@ -48,9 +47,10 @@ const generateReturnCode = async () => {
 };
 
 const getReturnedQuantity = async (orderItemId, tx = prisma) => {
-  const result = await tx.orderReturnItem.aggregate({
+  const result = await tx.returnLineItem.aggregate({
     where: {
       orderItemId,
+      type: "RETURN",
       return: { status: { in: ["APPROVED", "COMPLETED", "PENDING"] } },
     },
     _sum: { quantity: true },
@@ -114,23 +114,40 @@ const create = async (data, userId, { overridePolicy = false, userRole } = {}) =
   }
   assertPolicyWindow(order, overridePolicy, userRole);
 
-  const returnItems = [];
-  for (const item of data.items) {
-    const orderItem = order.items.find((it) => it.id === item.orderItemId);
-    if (!orderItem) throw { status: 400, message: "Sản phẩm trả hàng không thuộc đơn gốc" };
-    const returned = await getReturnedQuantity(item.orderItemId);
-    if (item.quantity > orderItem.quantity - returned) {
-      throw { status: 400, message: "Số lượng trả vượt quá số lượng còn được trả" };
+  const returnLineItems = [];
+  let refundAmount = 0;
+  for (const item of data.lineItems) {
+    if (item.type === "RETURN") {
+      const orderItem = order.items.find((it) => it.id === item.orderItemId);
+      if (!orderItem) throw { status: 400, message: "Sản phẩm trả hàng không thuộc đơn gốc" };
+      const returned = await getReturnedQuantity(item.orderItemId);
+      if (item.quantity > orderItem.quantity - returned) {
+        throw { status: 400, message: "Số lượng trả vượt quá số lượng còn được trả" };
+      }
+      const unitRefund = calcUnitRefund(orderItem, order);
+      const refund = round2(unitRefund * item.quantity);
+      refundAmount += refund;
+      returnLineItems.push({
+        type: "RETURN",
+        orderItemId: item.orderItemId,
+        productId: item.productId || orderItem.productId,
+        quantity: item.quantity,
+        unitPrice: toNumber(orderItem.unitPrice),
+        subtotal: round2(toNumber(orderItem.unitPrice) * item.quantity),
+        refundAmount: refund,
+      });
+    } else if (item.type === "EXCHANGE") {
+      const exSubtotal = round2(item.quantity * (item.unitPrice || 0));
+      returnLineItems.push({
+        type: "EXCHANGE",
+        productId: item.productId,
+        quantity: item.quantity,
+        unitPrice: item.unitPrice || 0,
+        subtotal: exSubtotal,
+        refundAmount: 0,
+      });
     }
-    const unitRefund = calcUnitRefund(orderItem, order);
-    returnItems.push({
-      orderItemId: item.orderItemId,
-      quantity: item.quantity,
-      refundAmount: round2(unitRefund * item.quantity),
-    });
   }
-
-  const refundAmount = round2(returnItems.reduce((sum, item) => sum + item.refundAmount, 0));
 
   // Cap: tổng tất cả phiếu trả (kể cả các phiếu cũ chưa CANCELLED) + phiếu này
   // không được vượt order.total — chống hoàn nhiều hơn đã thu.
@@ -160,21 +177,10 @@ const create = async (data, userId, { overridePolicy = false, userRole } = {}) =
           refundAmount,
           note: data.note,
           createdById: userId,
-          items: { create: returnItems },
-          ...(data.exchangeItems?.length && {
-            exchangeItems: {
-              create: data.exchangeItems.map((ex) => ({
-                productId: ex.productId,
-                quantity: ex.quantity,
-                unitPrice: ex.unitPrice,
-                subtotal: round2(ex.quantity * ex.unitPrice),
-              })),
-            },
-          }),
+          lineItems: { create: returnLineItems },
         },
         include: {
-          items: { include: { orderItem: { include: { product: true } } } },
-          exchangeItems: { include: { product: true } },
+          lineItems: { include: { orderItem: { include: { product: true } }, product: true } },
           order: true,
         },
       }),
@@ -196,7 +202,7 @@ const approve = async (returnId, userId, userRole) => {
   const updated = await prisma.orderReturn.update({
     where: { id: returnId },
     data: { status: "APPROVED", approvedById: userId },
-    include: { items: true, order: true, exchangeItems: true },
+    include: { lineItems: true, order: true },
   });
 
   auditService.log({
@@ -216,8 +222,7 @@ const complete = async (returnId, userId) => {
       where: { id: returnId },
       include: {
         order: { include: { customer: true, debt: true } },
-        items: { include: { orderItem: { include: { product: { include: { inventories: true } } } } } },
-        exchangeItems: { include: { product: true } },
+        lineItems: { include: { orderItem: { include: { product: { include: { inventories: true } } } }, product: true } },
       },
     });
     if (!ret) throw { status: 404, message: "Không tìm thấy phiếu trả hàng" };
@@ -233,9 +238,12 @@ const complete = async (returnId, userId) => {
       throw { status: 409, message: "Phiếu trả đã được xử lý bởi tiến trình khác" };
     }
 
+    const returnItems = ret.lineItems.filter((li) => li.type === "RETURN");
+    const exchangeItems = ret.lineItems.filter((li) => li.type === "EXCHANGE");
+
     if (ret.restockable) {
-      for (const item of ret.items) {
-        const inventory = item.orderItem.product.inventories?.[0];
+      for (const item of returnItems) {
+        const inventory = item.orderItem?.product?.inventories?.[0];
         if (!inventory) continue;
         await tx.inventory.update({
           where: { id: inventory.id },
@@ -262,9 +270,9 @@ const complete = async (returnId, userId) => {
       });
     }
 
-    if (ret.refundMethod === "EXCHANGE" && ret.exchangeItems.length) {
-      const exchangeTotal = ret.exchangeItems.reduce((s, e) => s + toNumber(e.subtotal), 0);
-      for (const ex of ret.exchangeItems) {
+    if (ret.refundMethod === "EXCHANGE" && exchangeItems.length) {
+      const exchangeTotal = exchangeItems.reduce((s, e) => s + toNumber(e.subtotal), 0);
+      for (const ex of exchangeItems) {
         const exInv = await findInventory(tx, ex.productId, ret.order.warehouseId);
         if (exInv) {
           const exAvailable = exInv.quantity - (exInv.reserved || 0);
@@ -335,24 +343,27 @@ const complete = async (returnId, userId) => {
     return tx.orderReturn.findUnique({
       where: { id: returnId },
       include: {
-        items: { include: { orderItem: { include: { product: true } } } },
-        exchangeItems: true,
+        lineItems: { include: { orderItem: { include: { product: true } }, product: true } },
         order: true,
       },
     });
   });
 
-  if (["CASH", "BANK_TRANSFER"].includes(result.refundMethod)) {
-    await expenseAuto.fromReturnRefund({ orderReturn: result, userId }).catch(() => {});
-  }
+  // A4: KHÔNG tạo expense hoàn tiền nữa — postOrderReturn (bên dưới) đã ghi nhận
+  // giảm doanh thu (521) + trừ tiền mặt (111/112) đúng chuẩn double-entry.
+  // Trước đây cả 2 cùng credit tiền mặt → tiền mặt bị ghi trừ 2 lần.
+
+  const returnItemsForPosting = result.lineItems
+    .filter((li) => li.type === "RETURN")
+    .map((it) => ({
+      quantity: it.quantity,
+      product: it.orderItem?.product,
+    }));
 
   const postingPayload = autopostService.buildOrderReturnEntry({
     orderReturn: result,
     order: result.order,
-    items: result.items.map((it) => ({
-      quantity: it.quantity,
-      product: it.orderItem.product,
-    })),
+    items: returnItemsForPosting,
     userId,
   });
   await postingErrorService.tryPostOrQueue(
@@ -360,10 +371,7 @@ const complete = async (returnId, userId) => {
       autopostService.postOrderReturn({
         orderReturn: result,
         order: result.order,
-        items: result.items.map((it) => ({
-          quantity: it.quantity,
-          product: it.orderItem.product,
-        })),
+        items: returnItemsForPosting,
         userId,
       }),
     { source: "RETURN", sourceId: result.id, payload: postingPayload },
@@ -414,7 +422,7 @@ const getAll = async ({ page = 1, limit = 20, status = "" }) => {
         order: { select: { id: true, orderCode: true } },
         createdBy: { select: { id: true, fullName: true } },
         approvedBy: { select: { id: true, fullName: true } },
-        items: true,
+        lineItems: true,
       },
       orderBy: { createdAt: "desc" },
     }),
@@ -433,8 +441,7 @@ const getById = async (id) => {
       order: true,
       createdBy: { select: { id: true, fullName: true } },
       approvedBy: { select: { id: true, fullName: true } },
-      items: { include: { orderItem: { include: { product: true } } } },
-      exchangeItems: { include: { product: true } },
+      lineItems: { include: { orderItem: { include: { product: true } }, product: true } },
     },
   });
   if (!ret) throw { status: 404, message: "Không tìm thấy phiếu trả hàng" };
@@ -445,8 +452,7 @@ const getByOrderId = async (orderId) => {
   return prisma.orderReturn.findMany({
     where: { orderId },
     include: {
-      items: { include: { orderItem: { include: { product: true } } } },
-      exchangeItems: true,
+      lineItems: { include: { orderItem: { include: { product: true } }, product: true } },
     },
     orderBy: { createdAt: "desc" },
   });

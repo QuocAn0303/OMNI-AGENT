@@ -17,6 +17,7 @@
 // src/modules/workflow/workflow.service.js
 const prisma = require("../../config/prisma");
 const notifService = require("../notifications/notification.service");
+const logger = require('../../utils/logger');
 
 const TRIGGERS = ["EXPENSE_ABOVE", "PO_ABOVE", "LEAVE_REQUEST", "CUSTOM", "PAYMENT_APPROVAL", "DISCOUNT_APPROVAL", "RETURN_APPROVAL", "CONTRACT_APPROVAL", "ADVANCE_APPROVAL"];
 
@@ -105,7 +106,13 @@ const evaluateCondition = (workflow, data) => {
     return Number(data.amount || 0) > Number(cfg.threshold || 0);
   }
   if (workflow.trigger === "PO_ABOVE") {
-    return Number(data.totalAmount || 0) > Number(cfg.threshold || 0);
+    // Mục 7: hỗ trợ dải hạn mức (minAmount/maxAmount) cho PO đa cấp:
+    // < 5tr → không workflow nào kích hoạt (auto-approve);
+    // 5tr–50tr → workflow MANAGER; > 50tr → workflow ADMIN (xem po-template.seed.js).
+    const amount = Number(data.totalAmount || 0);
+    const passesMin = cfg.minAmount == null || amount >= Number(cfg.minAmount);
+    const passesMax = cfg.maxAmount == null || amount <= Number(cfg.maxAmount);
+    return amount > Number(cfg.threshold || 0) && passesMin && passesMax;
   }
   if (workflow.trigger === "PAYMENT_APPROVAL") {
     return Number(data.amount || 0) > Number(cfg.threshold || 0);
@@ -191,8 +198,26 @@ const decide = async (approvalId, userId, { status, comment }) => {
           const expenseSvc = require("../accounting/expense.service");
           await expenseSvc.approve(run.entityId, userId, { role: "ADMIN" });
         } else if (wf?.trigger === "PO_ABOVE") {
-          const purchaseSvc = require("../accounting/purchase.service");
-          await purchaseSvc.approve(run.entityId, "ADMIN", userId);
+          const po = await prisma.purchaseOrder.findUnique({ where: { id: run.entityId } });
+          if (po?.status === "PENDING_APPROVAL") {
+            await prisma.purchaseOrder.update({
+              where: { id: run.entityId },
+              data: { status: "APPROVED", approvedById: userId },
+            });
+            const auditService = require("../audit/audit.service");
+            await auditService.log({
+              userId,
+              action: "PO_APPROVE",
+              entity: "PurchaseOrder",
+              entityId: run.entityId,
+              before: { status: "PENDING_APPROVAL" },
+              after: { status: "APPROVED", approvedById: userId },
+              meta: { source: "workflow", workflowRunId: run.id },
+            }).catch(() => {});
+          } else {
+            const purchaseSvc = require("../accounting/purchase.service");
+            await purchaseSvc.approve(run.entityId, "ADMIN", userId);
+          }
         } else if (wf?.trigger === "LEAVE_REQUEST") {
           const leaveSvc = require("../hr/leave.service");
           await leaveSvc.approveLeave(run.id, userId);
@@ -200,16 +225,42 @@ const decide = async (approvalId, userId, { status, comment }) => {
           const returnSvc = require("../returns/return.service");
           await returnSvc.approve(run.entityId, userId, "ADMIN");
         } else if (wf?.trigger === "DISCOUNT_APPROVAL") {
-          console.log(`[workflow] Discount ${run.entityId} approved`);
+          logger.info(`[workflow] Discount ${run.entityId} approved`);
         } else if (wf?.trigger === "CONTRACT_APPROVAL") {
-          console.log(`[workflow] Contract ${run.entityId} approved`);
+          logger.info(`[workflow] Contract ${run.entityId} approved`);
         } else if (wf?.trigger === "ADVANCE_APPROVAL") {
-          console.log(`[workflow] Advance ${run.entityId} approved`);
+          logger.info(`[workflow] Advance ${run.entityId} approved`);
         } else if (wf?.trigger === "PAYMENT_APPROVAL") {
-          console.log(`[workflow] Payment ${run.entityId} approved`);
+          logger.info(`[workflow] Payment ${run.entityId} approved`);
         }
       } catch (e) {
-        console.error(`[workflow] auto-approve entity ${run.entityId} failed:`, e.message);
+        logger.error(`[workflow] auto-approve entity ${run.entityId} failed:`, e.message);
+      }
+    } else {
+      // Handle rejection — update entity status to REJECTED
+      try {
+        const wf = await prisma.workflow.findUnique({ where: { id: run.workflowId } });
+        if (wf?.trigger === "PO_ABOVE") {
+          const po = await prisma.purchaseOrder.findUnique({ where: { id: run.entityId } });
+          if (po && ["PENDING", "PENDING_APPROVAL"].includes(po.status)) {
+            await prisma.purchaseOrder.update({
+              where: { id: run.entityId },
+              data: { status: "REJECTED" },
+            });
+            const auditService = require("../audit/audit.service");
+            await auditService.log({
+              userId,
+              action: "PO_REJECT",
+              entity: "PurchaseOrder",
+              entityId: run.entityId,
+              before: { status: po.status },
+              after: { status: "REJECTED" },
+              meta: { source: "workflow", workflowRunId: run.id },
+            }).catch(() => {});
+          }
+        }
+      } catch (e) {
+        logger.error(`[workflow] auto-reject entity ${run.entityId} failed:`, e.message);
       }
     }
   }

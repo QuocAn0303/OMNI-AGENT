@@ -22,12 +22,19 @@
 const prisma = require("../../config/prisma");
 const crypto = require("crypto");
 const { sendSms } = require("../../utils/sms");
+const { runWithTenant } = require("../../config/tenantContext");
+const logger = require("../../utils/logger");
+const auditService = require("../audit/audit.service");
 
 const OTP_EXPIRY_MINUTES = 5;
 const SESSION_EXPIRY_HOURS = 24;
+const OTP_ATTEMPT_LIMIT = 5;
+const OTP_BLOCK_MINUTES = 15;
 
-const generateOtp = () => Math.floor(100000 + Math.random() * 900000).toString();
+// crypto.randomInt — không dùng Math.random (không an toàn cho OTP)
+const generateOtp = () => crypto.randomInt(100000, 1000000).toString();
 const generateToken = () => crypto.randomBytes(32).toString("hex");
+const hashOtp = (otp) => crypto.createHash('sha256').update(String(otp)).digest('hex');
 
 // Step 1: Send OTP (in production, integrate FPT/Viettel SMS)
 const requestOtp = async (phone) => {
@@ -35,18 +42,22 @@ const requestOtp = async (phone) => {
   if (!customer) throw { status: 404, message: "Không tìm thấy khách hàng với số điện thoại này" };
 
   const otp = generateOtp();
+  const otpHash = hashOtp(otp);
   const expiresAt = new Date(Date.now() + OTP_EXPIRY_MINUTES * 60 * 1000);
 
   // Invalidate previous OTPs for this phone
   await prisma.portalOtp.updateMany({ where: { phone, used: false }, data: { used: true } });
 
-  await prisma.portalOtp.create({ data: { phone, otp, expiresAt } });
+  // Gắn tenantId của khách hàng vào OTP record → verify sau này scope đúng tenant
+  await prisma.portalOtp.create({
+    data: { phone, otp: otpHash, expiresAt, tenantId: customer.tenantId || null },
+  });
 
   try {
     await sendSms(phone, `Ma OTP đăng nhập Aduu ERP: ${otp}. Co hieu luc ${OTP_EXPIRY_MINUTES} phut.`);
   } catch (e) {
-    console.warn(`[portal-otp] SMS thất bại, fallback log: ${e.message}`);
-    console.log(`[portal-otp] Phone: ${phone} OTP: ${otp}`);
+    logger.warn(`[portal-otp] SMS thất bại: ${e.message}`);
+    logger.info(`[portal-otp] OTP requested for phone: ${phone.replace(/(\d{3})\d+(\d{2})/, '$1***$2')} (không log OTP)`);
   }
 
   return { message: "OTP đã được gửi", expiresIn: OTP_EXPIRY_MINUTES * 60 };
@@ -54,20 +65,52 @@ const requestOtp = async (phone) => {
 
 // Step 2: Verify OTP and create session
 const verifyOtp = async (phone, otp) => {
-  const record = await prisma.portalOtp.findFirst({
-    where: { phone, otp, used: false, expiresAt: { gt: new Date() } },
-    orderBy: { createdAt: "desc" },
-  });
-  if (!record) throw { status: 401, message: "OTP không đúng hoặc đã hết hạn" };
-
-  await prisma.portalOtp.update({ where: { id: record.id }, data: { used: true } });
-
   const customer = await prisma.customer.findFirst({ where: { phone } });
-  const token = generateToken();
-  const expiresAt = new Date(Date.now() + SESSION_EXPIRY_HOURS * 3600 * 1000);
+  if (!customer) throw { status: 401, message: "OTP không đúng hoặc đã hết hạn" };
 
-  await prisma.portalSession.create({ data: { customerId: customer.id, token, expiresAt } });
-  return { token, expiresAt, customerId: customer.id };
+  // Scope toàn bộ luồng verify theo tenant của khách hàng
+  return runWithTenant(customer.tenantId || null, async () => {
+    const record = await prisma.portalOtp.findFirst({
+      where: { phone, used: false, expiresAt: { gt: new Date() } },
+      orderBy: { createdAt: "desc" },
+    });
+    if (!record) throw { status: 401, message: "OTP không đúng hoặc đã hết hạn" };
+
+    // Đang bị khóa do thử sai quá nhiều
+    if (record.blockedUntil && new Date(record.blockedUntil) > new Date()) {
+      const minutes = Math.ceil((new Date(record.blockedUntil) - new Date()) / 60000);
+      throw { status: 429, message: `Quá nhiều lần thử sai. Vui lòng thử lại sau ${minutes} phút` };
+    }
+
+    if (record.otp !== hashOtp(otp)) {
+      const attempts = Number(record.attempts || 0) + 1;
+      if (attempts >= OTP_ATTEMPT_LIMIT) {
+        // Đạt ngưỡng → khóa 15 phút + hủy OTP hiện tại
+        await prisma.portalOtp.update({
+          where: { id: record.id },
+          data: {
+            attempts,
+            used: true,
+            blockedUntil: new Date(Date.now() + OTP_BLOCK_MINUTES * 60 * 1000),
+          },
+        });
+        throw { status: 429, message: `Quá nhiều lần thử sai. Vui lòng thử lại sau ${OTP_BLOCK_MINUTES} phút` };
+      }
+      await prisma.portalOtp.update({ where: { id: record.id }, data: { attempts } });
+      throw { status: 401, message: "OTP không đúng hoặc đã hết hạn" };
+    }
+
+    await prisma.portalOtp.update({ where: { id: record.id }, data: { used: true } });
+
+    const token = generateToken();
+    const expiresAt = new Date(Date.now() + SESSION_EXPIRY_HOURS * 3600 * 1000);
+
+    await prisma.portalSession.create({
+      data: { customerId: customer.id, tenantId: customer.tenantId || null, token, expiresAt },
+    });
+    auditService.log({ action: 'PORTAL_LOGIN', entity: 'PortalSession', entityId: null, after: { customerId: customer.id } });
+    return { token, expiresAt, customerId: customer.id, tenantId: customer.tenantId };
+  });
 };
 
 // Resolve session to customer
@@ -78,6 +121,10 @@ const resolveSession = async (token) => {
   });
   if (!session || session.expiresAt < new Date()) {
     throw { status: 401, message: "Phiên đăng nhập hết hạn, vui lòng đăng nhập lại" };
+  }
+  // Session phải có tenant — dữ liệu khách hàng chỉ truy cập trong scope tenant
+  if (!session.customer?.tenantId) {
+    throw { status: 401, message: "Phiên không hợp lệ, vui lòng đăng nhập lại" };
   }
   return session.customer;
 };
@@ -139,11 +186,16 @@ const createMyOrder = async (customerId, { items, note, paymentMethod = "BANK_TR
   const orderService = require("../orders/order.service");
   const resolvedItems = [];
 
+  // B5: batch fetch product — trước đây 1 query DB mỗi sản phẩm trong giỏ (N+1)
+  const productIds = items.map((item) => item.productId);
+  const products = await prisma.product.findMany({
+    where: { id: { in: productIds }, isActive: true },
+    select: { id: true, name: true, price: true },
+  });
+  const productMap = new Map(products.map((p) => [p.id, p]));
+
   for (const item of items) {
-    const product = await prisma.product.findUnique({
-      where: { id: item.productId, isActive: true },
-      select: { id: true, name: true, price: true },
-    });
+    const product = productMap.get(item.productId);
     if (!product) throw { status: 404, message: `Sản phẩm ${item.productId} không ton tai` };
     resolvedItems.push({
       productId: product.id,
@@ -160,6 +212,7 @@ const createMyOrder = async (customerId, { items, note, paymentMethod = "BANK_TR
     status: "PENDING",
   }, null);
 
+  auditService.log({ action: 'PORTAL_CREATE_ORDER', entity: 'Order', entityId: order.id, after: { customerId, total: Number(order.total) } });
   return { orderCode: order.orderCode, total: Number(order.total), items: resolvedItems.length };
 };
 
@@ -197,7 +250,7 @@ const payMyDebt = async (customerId) => {
         accountName: bankAccount.accountName,
       });
     } catch (e) {
-      console.warn("[portal] VietQR generation failed:", e.message);
+      logger.warn("[portal] VietQR generation failed:", e.message);
     }
   }
 
@@ -309,6 +362,7 @@ const redeemReward = async (customerId, rewardId) => {
     }),
   ]);
 
+  auditService.log({ action: 'PORTAL_REDEEM_REWARD', entity: 'LoyaltyTransaction', entityId: null, after: { customerId, rewardId, points: reward.points } });
   return {
     success: true,
     redeemed: reward,

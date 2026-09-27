@@ -29,6 +29,7 @@ const ROLE_LABELS = {
   SUPER_ADMIN:             { label: 'Super Admin',     color: '#7c3aed' },
   ADMIN:                   { label: 'Admin',           color: '#7c3aed' },
   MANAGER:                 { label: 'Manager',         color: '#0284c7' },
+  ACCOUNTANT:              { label: 'Kế toán',         color: '#0891b2' },
   CASHIER:                 { label: 'Thu ngân',        color: '#0f766e' },
   WAREHOUSE:               { label: 'Kho',             color: '#ca8a04' },
 };
@@ -36,6 +37,13 @@ const ROLE_LABELS = {
 export default function Users() {
   const user = useAuthStore((s) => s.user);
   const isSuper = user?.role === 'SUPER_OMEGA_ULTRA_ADMIN' || user?.role === 'SUPER_ADMIN';
+  // Chỉ SUPER_OMEGA_ULTRA_ADMIN được gán vai trò SUPER; tenant (hoặc support session) chỉ gán được vai trò tenant
+  const canAssignSuperRole = user?.role === 'SUPER_OMEGA_ULTRA_ADMIN';
+  // Có quyền ghi khi: SUPER_OMEGA_ULTRA_ADMIN, hoặc có tenant context (ADMIN tenant / đang trong support session)
+  const canWrite = user?.role === 'SUPER_OMEGA_ULTRA_ADMIN' || Boolean(user?.tenantId);
+  const roleOptions = Object.entries(ROLE_LABELS)
+    .filter(([k]) => (canAssignSuperRole || !k.startsWith('SUPER_')))
+    .map(([k, v]) => ({ value: k, label: v.label }));
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -72,7 +80,7 @@ export default function Users() {
     if (userData) {
       form.setFieldsValue({ ...userData, password: undefined });
     } else {
-      form.setFieldsValue({ role: isSuper ? 'SUPER_ADMIN' : 'CASHIER', isActive: true });
+      form.setFieldsValue({ role: canAssignSuperRole ? 'SUPER_ADMIN' : 'CASHIER', isActive: true });
     }
     setModalOpen(true);
   };
@@ -153,13 +161,13 @@ export default function Users() {
     },
     {
       title: '', width: 100, align: 'right', fixed: 'right',
-      render: (_, row) => (
+      render: (_, row) => canWrite ? (
         <>
           <Button type="text" size="small" icon={<EditOutlined />} onClick={() => openModal(row)} />
           <Button type="text" size="small" danger={row.isActive} icon={<LockOutlined />}
             onClick={() => handleToggleStatus(row)} title={row.isActive ? 'Khóa' : 'Mở khóa'} />
         </>
-      ),
+      ) : null,
     },
   ];
 
@@ -168,11 +176,11 @@ export default function Users() {
       <PageHeader
         title="Quản lý tài khoản"
         subtitle={`${total} tài khoản`}
-        actions={
+        actions={canWrite ? (
           <Button type="primary" icon={<PlusOutlined />} onClick={() => openModal()}>
             Thêm tài khoản
           </Button>
-        }
+        ) : null}
       />
 
       <div className="filters-bar">
@@ -183,7 +191,7 @@ export default function Users() {
         />
         <Select placeholder="Vai trò" style={{ width: 180 }} value={roleFilter}
           onChange={setRoleFilter} allowClear
-          options={Object.entries(ROLE_LABELS).map(([k, v]) => ({ value: k, label: v.label }))}
+          options={roleOptions}
         />
       </div>
 
@@ -222,7 +230,7 @@ export default function Users() {
 
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 16 }}>
             <Form.Item label="Vai trò" name="role" rules={[{ required: true }]}>
-              <Select options={Object.entries(ROLE_LABELS).map(([k, v]) => ({ value: k, label: v.label }))} />
+              <Select options={roleOptions} />
             </Form.Item>
             <Form.Item label="Hoạt động" name="isActive" valuePropName="checked">
               <Switch />

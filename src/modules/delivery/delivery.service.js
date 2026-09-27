@@ -19,6 +19,7 @@ const crypto = require("crypto");
 const prisma = require("../../config/prisma");
 const auditService = require("../audit/audit.service");
 const orderService = require("../orders/order.service");
+const logger = require("../../utils/logger");
 
 const createForOrder = async (orderId, data, userId) => {
   const order = await prisma.order.findUnique({
@@ -160,12 +161,51 @@ const verifyGhtkSignature = (rawBody, signature) => {
   return crypto.timingSafeEqual(a, b);
 };
 
-const handleWebhook = async (provider, payload, signature, rawBody) => {
-  if (provider === "ghtk" && !verifyGhtkSignature(rawBody, signature)) {
-    throw { status: 401, message: "Chữ ký webhook không hợp lệ" };
+const timingSafeEqualStr = (a, b) => {
+  const x = Buffer.from(String(a || ""), "utf8");
+  const y = Buffer.from(String(b || ""), "utf8");
+  if (x.length !== y.length) return false;
+  return crypto.timingSafeEqual(x, y);
+};
+
+const verifyProviderWebhook = (provider, headers = {}, rawBody, signature) => {
+  const p = String(provider || "").toLowerCase();
+
+  if (p === "ghtk") {
+    return verifyGhtkSignature(rawBody, signature);
+  }
+
+  // GHN: token trong header "Token" (chuẩn GHN)
+  if (p === "ghn") {
+    const secret = process.env.GHN_WEBHOOK_SECRET || "";
+    const token = headers["token"] || headers["x-token"];
+    return Boolean(secret && timingSafeEqualStr(token, secret));
+  }
+
+  // VNPOST / ViettelPost / J&T / SELF / OTHER: dùng chung cơ chế bearer/token
+  const secret = process.env.DELIVERY_WEBHOOK_SECRET || "";
+  const auth = headers["authorization"] || "";
+  const token =
+    headers["x-webhook-token"] ||
+    (auth.startsWith("Bearer ") ? auth.slice(7) : auth);
+  return Boolean(secret && timingSafeEqualStr(token, secret));
+};
+
+const handleWebhook = async (provider, payload, signature, rawBody, headers = {}) => {
+  const verified = verifyProviderWebhook(provider, headers, rawBody, signature);
+  if (!verified) {
+    if (process.env.NODE_ENV === "production") {
+      throw { status: 401, message: "Chữ ký webhook không hợp lệ" };
+    }
+    logger.warn(
+      `[delivery] webhook ${provider} thiếu secret — chấp nhận ở môi trường dev (chặn khi production)`,
+    );
   }
 
   const trackingCode = payload.tracking_code || payload.trackingCode;
+  if (!trackingCode) {
+    throw { status: 400, message: "Thiếu tracking_code" };
+  }
   const statusMap = {
     delivered: "DELIVERED",
     delivering: "IN_TRANSIT",
@@ -177,11 +217,11 @@ const handleWebhook = async (provider, payload, signature, rawBody) => {
     ? new Date(payload.action_time * 1000)
     : new Date();
 
-  const providerKey = String(provider || "").toUpperCase();
+  const providerKey = (String(provider || "").toUpperCase() || "OTHER").replace(/-/g, "_");
   const delivery = await prisma.delivery.findFirst({
     where: {
       trackingCode,
-      ...(providerKey === "GHTK" ? { provider: "GHTK" } : {}),
+      provider: providerKey,
     },
   });
   if (!delivery) return { ok: true, skipped: true };

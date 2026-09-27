@@ -26,6 +26,7 @@ const segmentsService = require("./segments.service");
 const { render, customerVars } = require("../../utils/template");
 const { sendEmail } = require("../../utils/email");
 const { sendZaloMessage } = require("../../utils/zalo");
+const logger = require('../../utils/logger');
 
 const BATCH_SIZE = 50;
 const BATCH_DELAY_MS = 1000;
@@ -394,7 +395,7 @@ const cronProcessScheduled = async () => {
       await executeCampaign(c.id);
       processed += 1;
     } catch (e) {
-      console.error("[cron] campaign", c.id, e.message);
+      logger.error("[cron] campaign", c.id, e.message);
       // Đặt FAILED để không retry vô tận
       await prisma.customerCampaign.update({
         where: { id: c.id },

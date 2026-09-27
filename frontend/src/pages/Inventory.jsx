@@ -18,14 +18,16 @@ import { Tabs, Table, Button, Input, Select, message, Modal, Form, InputNumber, 
 import {
   PlusOutlined, MinusOutlined, SearchOutlined, ImportOutlined, ExportOutlined,
 } from '@ant-design/icons';
-import { Joyride } from 'react-joyride';
-import { useTranslation } from 'react-i18next';
 import dayjs from 'dayjs';
 import axios from '../api/axios';
 import PageHeader from '../components/layout/PageHeader';
 import StatusTag from '../components/shared/StatusTag';
 import MoneyDisplay from '../components/shared/MoneyDisplay';
 import EmptyState from '../components/shared/EmptyState';
+import PermissionGate from '../components/shared/PermissionGate';
+import useAuthStore from '../stores/authStore';
+import { Joyride } from 'react-joyride';
+import { useTranslation } from 'react-i18next';
 import useTour from '../hooks/useTour';
 import { getInventoryTour } from '../config/tourSteps';
 
@@ -42,25 +44,64 @@ import { getInventoryTour } from '../config/tourSteps';
 export default function Inventory() {
   const { t } = useTranslation();
   const tour = useTour('inventory');
+
   const [activeTab, setActiveTab] = useState('stock');
+
+  const role = useAuthStore((s) => s.user?.role);
+
+  const ROLE_TAB_PERMS = {
+    SUPER_OMEGA_ULTRA_ADMIN: ['inventory.view', 'inventory.import', 'inventory.export', 'inventory.adjust'],
+    SUPER_ADMIN: ['inventory.view', 'inventory.import', 'inventory.export', 'inventory.adjust'],
+    ADMIN: ['inventory.view', 'inventory.import', 'inventory.export', 'inventory.adjust'],
+    MANAGER: ['inventory.view', 'inventory.import', 'inventory.export'],
+    CASHIER: ['inventory.view'],
+    WAREHOUSE: ['inventory.view', 'inventory.import', 'inventory.export'],
+    ACCOUNTANT: [],
+  };
+  const userTabPerms = ROLE_TAB_PERMS[role] || [];
+
+  const tabItems = [
+    { key: 'stock',     label: t('inventory.stock'),     children: <StockTab />, permission: 'inventory.view' },
+    { key: 'import',    label: t('inventory.importTab'),    children: <ImportTab />, permission: 'inventory.import' },
+    { key: 'export',    label: t('inventory.exportTab'),    children: <ExportTab />, permission: 'inventory.export' },
+    { key: 'adjust',    label: t('inventory.adjust'),    children: <AdjustTab />, permission: 'inventory.adjust' },
+    { key: 'history',   label: t('inventory.historyTab'),   children: <HistoryTab />, permission: 'inventory.view' },
+  ].filter(tab => userTabPerms.includes(tab.permission));
 
   return (
     <>
+      <Joyride
+        steps={getInventoryTour(t)}
+        run={tour.run}
+        continuous
+        showSkipButton
+        showProgress
+        locale={{
+          back: t('tour.joyride.back'),
+          close: t('tour.joyride.close'),
+          last: t('tour.joyride.last'),
+          next: t('tour.joyride.next'),
+          skip: t('tour.joyride.skip'),
+        }}
+        styles={{
+          options: { zIndex: 10000, primaryColor: '#0d9488' },
+        }}
+        callback={(data) => {
+          if (data.status === 'finished' || data.status === 'skipped') {
+            tour.markDone();
+          }
+        }}
+      />
+
       <PageHeader
-        title="Kho hàng"
-        subtitle="Quản lý tồn kho, nhập xuất, lịch sử giao dịch"
+        title={t('inventory.pageTitle')}
+        subtitle={t('inventory.pageSubtitle')}
       />
 
       <Tabs
         activeKey={activeTab}
-        onChange={setActiveTab}
-        items={[
-          { key: 'stock',     label: 'Tồn kho',     children: <StockTab /> },
-          { key: 'import',    label: 'Nhập kho',    children: <ImportTab /> },
-          { key: 'export',    label: 'Xuất kho',    children: <ExportTab /> },
-          { key: 'adjust',    label: 'Kiểm kho',    children: <AdjustTab /> },
-          { key: 'history',   label: 'Lịch sử',     children: <HistoryTab /> },
-        ]}
+        onChange={(key) => setActiveTab(key)}
+        items={tabItems}
       />
     </>
   );
@@ -68,6 +109,7 @@ export default function Inventory() {
 
 // ===== TAB 1: Stock =====
 function StockTab() {
+  const { t } = useTranslation();
   const [data, setData] = useState([]);
   const [alerts, setAlerts] = useState({ critical: [], warning: [] });
   const [loading, setLoading] = useState(true);
@@ -117,7 +159,7 @@ function StockTab() {
       <div className="filters-bar" style={{ marginTop: 8 }}>
         <Input
           className="filters-bar__search"
-          placeholder="Tìm sản phẩm theo tên hoặc SKU..."
+          placeholder={t('inventory.stock') + '...'}
           prefix={<SearchOutlined style={{ color: 'var(--text-muted)' }} />}
           value={search}
           onChange={(e) => setSearch(e.target.value)}
@@ -143,7 +185,7 @@ function StockTab() {
           rowKey="id"
           scroll={{ x: 1000 }}
           pagination={{ current: page, pageSize: 20, total, showSizeChanger: false, onChange: (p) => setPage(p) }}
-          locale={{ emptyText: <EmptyState title="Chưa có sản phẩm" /> }}
+          locale={{ emptyText: <EmptyState title={t('inventory.noProducts')} /> }}
           columns={[
             {
               title: 'Sản phẩm',
@@ -384,6 +426,7 @@ function AdjustTab() {
 
 // ===== TAB 5: History =====
 function HistoryTab() {
+  const { t } = useTranslation();
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [typeFilter, setTypeFilter] = useState(null);
@@ -442,7 +485,7 @@ function HistoryTab() {
           rowKey="id"
           scroll={{ x: 1100 }}
           pagination={{ pageSize: 20 }}
-          locale={{ emptyText: <EmptyState title="Chưa có giao dịch" /> }}
+          locale={{ emptyText: <EmptyState title={t('inventory.noTransactions')} /> }}
           columns={[
             {
               title: 'Thời gian',

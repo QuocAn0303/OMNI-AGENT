@@ -29,6 +29,15 @@ const postingErrorService = require("./posting-error.service");
 const { withCodeRetry } = require("./journal.service");
 const auditService = require("../audit/audit.service");
 const debtService = require("../debt/debt.service");
+const logger = require("../../utils/logger");
+
+const getPoApprovalThreshold = async () => {
+  try {
+    const settings = await prisma.companySettings.findFirst();
+    if (settings?.poApprovalThreshold != null) return Number(settings.poApprovalThreshold);
+  } catch (_) {}
+  return 5_000_000;
+};
 
 const toNum = (v) => Number(v || 0);
 const round2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
@@ -112,6 +121,10 @@ const create = async (data, userId) => {
   const taxAmount = round2(computed.reduce((s, i) => s + i.taxAmount, 0));
   const total = round2(subtotal + taxAmount);
 
+  const threshold = await getPoApprovalThreshold();
+  const needsApproval = total >= threshold;
+  const status = needsApproval ? "PENDING_APPROVAL" : "DRAFT";
+
   const po = await withCodeRetry(
     () => generateCode(),
     (code) =>
@@ -120,7 +133,7 @@ const create = async (data, userId) => {
           poCode: code,
           date: new Date(),
           vendorId,
-          status: "DRAFT",
+          status,
           paymentStatus: "UNPAID",
           subtotal,
           taxAmount,
@@ -155,6 +168,19 @@ const create = async (data, userId) => {
       after: { poCode: po.poCode, status: po.status, total: po.total },
     })
     .catch(() => {});
+
+  if (needsApproval) {
+    try {
+      const workflowService = require("../workflow/workflow.service");
+      await workflowService.trigger("PO_ABOVE", {
+        entityType: "PurchaseOrder",
+        entityId: po.id,
+        data: { totalAmount: total, poCode: po.poCode, vendorId },
+      });
+    } catch (e) {
+      logger.error("[PO] workflow trigger error on create:", e.message);
+    }
+  }
 
   return po;
 };
@@ -199,7 +225,7 @@ const submit = async (id, userId) => {
       data: { totalAmount: toNum(updated.total), poCode: updated.poCode, vendorId: updated.vendorId },
     });
   } catch (e) {
-    console.error("[PO] workflow trigger error:", e.message);
+    logger.error("[PO] workflow trigger error:", e.message);
   }
 
   return updated;
@@ -208,7 +234,9 @@ const submit = async (id, userId) => {
 const approve = async (id, approverRole, userId) => {
   const po = await prisma.purchaseOrder.findUnique({ where: { id } });
   if (!po) throw { status: 404, message: "Không tìm thấy PO" };
-  if (po.status !== "PENDING") throw { status: 400, message: "Chỉ PO chờ duyệt mới được duyệt" };
+  if (!["PENDING", "PENDING_APPROVAL"].includes(po.status)) {
+    throw { status: 400, message: "Chỉ PO chờ duyệt mới được duyệt" };
+  }
   if (toNum(po.total) >= PO_APPROVE_THRESHOLD && !["ADMIN", "MANAGER"].includes(approverRole)) {
     throw { status: 403, message: `PO từ ${PO_APPROVE_THRESHOLD.toLocaleString("vi-VN")}đ cần MANAGER trở lên duyệt` };
   }
@@ -225,7 +253,7 @@ const approve = async (id, approverRole, userId) => {
       action: "PO_APPROVE",
       entity: "PurchaseOrder",
       entityId: id,
-      before: { status: "PENDING" },
+      before: { status: po.status },
       after: { status: "APPROVED", approvedById: userId },
     })
     .catch(() => {});
@@ -383,6 +411,7 @@ const pay = async (id, { amount, method = "BANK_TRANSFER" }, userId) => {
 
     const newPaid = round2(toNum(po.paidAmount) + payAmount);
     const paymentStatus = require("../payments/payment.service").getPaymentStatus(toNum(po.total), newPaid);
+const logger = require('../../utils/logger');
     const newStatus = newPaid >= toNum(po.total) ? "PAID" : po.status;
 
     const updated = await tx.purchaseOrder.update({
@@ -434,7 +463,7 @@ const pay = async (id, { amount, method = "BANK_TRANSFER" }, userId) => {
 const cancel = async (id, userId) => {
   const po = await prisma.purchaseOrder.findUnique({ where: { id } });
   if (!po) throw { status: 404, message: "Không tìm thấy PO" };
-  if (!["DRAFT", "PENDING", "APPROVED"].includes(po.status)) {
+  if (!["DRAFT", "PENDING", "PENDING_APPROVAL", "APPROVED", "REJECTED"].includes(po.status)) {
     throw { status: 400, message: "Không thể hủy PO đã nhập kho / đã thanh toán" };
   }
   const updated = await prisma.purchaseOrder.update({ where: { id }, data: { status: "CANCELLED" } });

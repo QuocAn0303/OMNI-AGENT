@@ -31,6 +31,7 @@ const journalService = require("./journal.service");
 
 // Lazy-require để tránh circular dep
 const getAutopostService = () => require("./autopost.service");
+const logger = require('../../utils/logger');
 
 // Registry: mỗi operation map tới một function rebuild + post.
 // `payload.operation` (vd: ORDER_COMPLETED, PAYMENT_RECEIVED, ...) quyết định cách rebuild.
@@ -198,7 +199,7 @@ const tryPostOrQueue = async (postFn, meta) => {
       await recordError({ ...meta, error: err });
     } catch (e2) {
       // Last resort: log to console
-      console.error("[posting-error] failed to record outbox:", e2.message, "original:", err.message);
+      logger.error("[posting-error] failed to record outbox:", e2.message, "original:", err.message);
     }
     return null;
   }

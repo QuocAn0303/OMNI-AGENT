@@ -23,7 +23,7 @@ import api from '../../api/axios';
 
 const { Text, Paragraph } = Typography;
 
-export default function CRMActionCard({ customerId, customerName, sentiment, description, priority = 'high' }) {
+export default function CRMActionCard({ customerName, sentiment, description, priority = 'high' }) {
   const [loading, setLoading] = useState(false);
   const [done, setDone] = useState(false);
   const [customDesc, setCustomDesc] = useState(description || `Gọi điện xin lỗi khách hàng ${customerName}`);
@@ -31,7 +31,7 @@ export default function CRMActionCard({ customerId, customerName, sentiment, des
   const handleCreateTask = async () => {
     setLoading(true);
     try {
-      const { data } = await api.post('/agent/chat', {
+      await api.post('/agent/chat', {
         message: `Tạo task ưu tiên ${priority} cho khách ${customerName}: ${customDesc}`,
         history: [],
       });

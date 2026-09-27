@@ -24,6 +24,7 @@ const ExcelJS = require("exceljs");
 const { parseVCB } = require("./importers/vcb.importer");
 const { parseTCB } = require("./importers/tcb.importer");
 const journalService = require("../accounting/journal.service");
+const logger = require('../../utils/logger');
 
 const toNum = (v) => Number(v || 0);
 
@@ -106,6 +107,10 @@ const autoMatch = async (statementId) => {
   });
   if (!stmt) throw { status: 404, message: "Không tìm thấy sao kê" };
 
+  // B5: lấy 1 lần TRƯỚC vòng lặp — trước đây query account mỗi dòng (N+1)
+  const cashAccounts = await prisma.account.findMany({ where: { isCash: true }, select: { id: true } });
+  const cashIds = cashAccounts.map((a) => a.id);
+
   let matched = 0;
   for (const line of stmt.lines) {
     const amount = toNum(line.credit) > 0 ? toNum(line.credit) : toNum(line.debit);
@@ -115,9 +120,6 @@ const autoMatch = async (statementId) => {
     const to   = new Date(line.txDate); to.setDate(to.getDate() + 3);
 
     // Tìm journal entries có cash account (isCash=true) + amount khớp + date ±3
-    const cashAccounts = await prisma.account.findMany({ where: { isCash: true }, select: { id: true } });
-    const cashIds = cashAccounts.map((a) => a.id);
-
     const candidates = await prisma.journalEntry.findMany({
       where: {
         status: "POSTED",
@@ -263,12 +265,12 @@ const autoMatchAll = async () => {
       totalMatched += result.matched;
       totalUnmatched += result.unmatched;
     } catch (e) {
-      console.error(`[bank-reco] autoMatch failed for statement ${stmt.id}:`, e.message);
+      logger.error(`[bank-reco] autoMatch failed for statement ${stmt.id}:`, e.message);
     }
   }
 
   if (totalMatched > 0 || totalUnmatched > 0) {
-    console.log(`[bank-reco] autoMatchAll: ${totalMatched} matched, ${totalUnmatched} unmatched across ${statements.length} statements`);
+    logger.info(`[bank-reco] autoMatchAll: ${totalMatched} matched, ${totalUnmatched} unmatched across ${statements.length} statements`);
   }
 
   return { statements: statements.length, matched: totalMatched, unmatched: totalUnmatched };

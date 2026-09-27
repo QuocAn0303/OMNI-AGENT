@@ -13,23 +13,29 @@
  */
 import axios from "axios";
 import * as Sentry from "@sentry/react";
+import useAuthStore from "../stores/authStore";
 // Dev: luôn gọi `/api` cùng origin với Vite rồi proxy sang backend (xem vite.config.js).
 // Khi đó không bị "lệch cổng" chỉ vì file .env cập nhật sau khi Vite đã start.
-const envApi = String(import.meta.env.VITE_API_URL || "").replace(/\/$/, "");
-const API_BASE = import.meta.env.DEV
-  ? "/api"
-  : envApi || "http://localhost:4000/api";
+const API_BASE = import.meta.env.VITE_API_URL;
+if (!API_BASE && import.meta.env.PROD) {
+  throw new Error("VITE_API_URL must be set in production");
+}
+const API_URL = (API_BASE || "http://localhost:4000/api").replace(/\/$/, "");
+const API_BASE_URL = import.meta.env.DEV ? "/api" : API_URL;
 
 // Khởi tạo instance của axios (dùng cho hầu hết request)
 const axiosInstance = axios.create({
-  baseURL: API_BASE,
+  baseURL: API_BASE_URL,
   headers: { "Content-Type": "application/json" },
+  // M7: refresh token nằm trong httpOnly cookie → cần gửi kèm cookie mọi request
+  withCredentials: true,
 });
 
 // Request Interceptor: thêm Bearer token vào mỗi request nếu có
+// M7+ (security): token đọc từ Zustand store (in-memory) — KHÔNG đọc localStorage
 axiosInstance.interceptors.request.use(
   (config) => {
-    const token = localStorage.getItem("token");
+    const token = useAuthStore.getState().token;
     if (token) config.headers.Authorization = `Bearer ${token}`;
     return config;
   },
@@ -66,12 +72,6 @@ axiosInstance.interceptors.response.use(
       }
 
       originalRequest._retry = true;
-      const refreshToken = localStorage.getItem("refreshToken");
-      if (!refreshToken) {
-        localStorage.removeItem("token");
-        window.location.href = "/login";
-        return Promise.reject(err);
-      }
 
       if (isRefreshing) {
         return new Promise(function (resolve, reject) {
@@ -86,14 +86,12 @@ axiosInstance.interceptors.response.use(
 
       isRefreshing = true;
       try {
-        const response = await axios.post(`${API_BASE}/auth/refresh`, {
-          refreshToken,
-        });
+        // M7: refresh token nằm trong httpOnly cookie — gửi tự động, KHÔNG đọc từ localStorage
+        const response = await axios.post(`${API_BASE_URL}/auth/refresh`, {}, { withCredentials: true });
         const newToken = response.data?.data?.token;
-        const newRefresh = response.data?.data?.refreshToken;
         if (newToken) {
-          localStorage.setItem("token", newToken);
-          if (newRefresh) localStorage.setItem("refreshToken", newRefresh);
+          // M7+: lưu token mới vào store (in-memory) — không đụng localStorage
+          useAuthStore.getState().setToken(newToken);
           axiosInstance.defaults.headers.common.Authorization =
             "Bearer " + newToken;
           processQueue(null, newToken);
@@ -103,8 +101,7 @@ axiosInstance.interceptors.response.use(
         throw new Error("Không nhận được token khi refresh");
       } catch (refreshErr) {
         processQueue(refreshErr, null);
-        localStorage.removeItem("token");
-        localStorage.removeItem("refreshToken");
+        useAuthStore.getState().logout();
         window.location.href = "/login";
         return Promise.reject(refreshErr);
       } finally {

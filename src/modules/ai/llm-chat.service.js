@@ -14,6 +14,7 @@
 
 const { queryModel, startPythonProcess } = require('./agent.llm');
 const { HANDLERS, resolveIntent, extractParams } = require('./db-agent.service');
+const logger = require('../../utils/logger');
 
 const TOOL_DESCRIPTIONS = [
   { name: 'search_products', desc: 'Tra cứu sản phẩm', params: 'search (từ khóa), categoryId (danh mục), minPrice, maxPrice, limit, sortBy (price/name/createdAt), sortOrder (asc/desc)' },
@@ -33,6 +34,14 @@ const TOOL_DESCRIPTIONS = [
   { name: 'search_deliveries', desc: 'Tra cứu giao hàng', params: 'status, provider, period, limit' },
   { name: 'search_returns', desc: 'Tra cứu trả hàng', params: 'period, status, limit' },
   { name: 'get_dashboard', desc: 'Dashboard tổng quan kinh doanh', params: '(không cần tham số)' },
+
+  // CRM/SRM tools (Mục 3-6 đặc tả — 17+ query tools)
+  { name: 'search_churn_alerts', desc: 'Tra cứu cảnh báo churn', params: 'status (PENDING/TRIGGERED/RETAINED/LOST), riskLevel (LOW/MEDIUM/HIGH/CRITICAL), limit' },
+  { name: 'search_customer_rfm', desc: 'Phân khúc RFM/CLV khách hàng', params: 'segment (Champions/Loyal/Potential/At-Risk/Hibernating), tier, hasDebt (true), limit' },
+  { name: 'search_leads', desc: 'Tra cứu lead từ webhook/CRM', params: 'leadStatus (NEW/CONTACTED/QUALIFIED/CUSTOMER/DEAD), limit' },
+  { name: 'search_grn', desc: 'Tra cứu phiếu nhập kho (GRN)', params: 'status (DRAFT/QC_PENDING/QC_DONE/POSTED), limit' },
+  { name: 'search_purchase_invoices', desc: 'Tra cứu hóa đơn NCC + 3-way matching', params: 'matchStatus (PENDING/MATCHED/VARIANCE_HOLD/APPROVED_OVERRIDE), limit' },
+  { name: 'search_vendor_performance', desc: 'Hiệu suất nhà cung cấp (Kraljic, OTIF, defect, grade)', params: 'limit' },
 
   // Write tools — HÀNH ĐỘNG (cần xác nhận human-gate)
   { name: 'create_order', desc: 'Tạo đơn hàng mới', params: 'customerName (tên KH), customerPhone (SĐT KH), items (mảng [{productName, quantity, price}]), paymentMethod (CASH/BANK_TRANSFER/CARD), note (ghi chú)' },
@@ -57,6 +66,12 @@ Cac cong cu:
 - search_purchase_orders: Tra cuu don nhập hàng (PO). Tham so: status, vendorId, period, limit
 - search_promotions: Tra cuu khuyen mai. Tham so: status, type, limit
 - search_invoices: Tra cuu hoa don. Tham so: period, limit
+- search_churn_alerts: Tra cuu canh bao churn/khach san mat. Tham so: status (PENDING/TRIGGERED/RETAINED/LOST), riskLevel (LOW/MEDIUM/HIGH/CRITICAL), limit
+- search_customer_rfm: Phan khuc RFM/CLV khach hang. Tham so: segment (Champions/Loyal/Potential/At-Risk/Hibernating), tier, hasDebt, limit
+- search_leads: Tra cuu lead CRM/webhook. Tham so: leadStatus (NEW/CONTACTED/QUALIFIED/DEAD), limit
+- search_grn: Tra cuu phieu nhap kho GRN. Tham so: status (DRAFT/QC_PENDING/QC_DONE/POSTED), limit
+- search_purchase_invoices: Tra cuu hoa don NCC / doi soat 3-way. Tham so: matchStatus (PENDING/MATCHED/VARIANCE_HOLD), limit
+- search_vendor_performance: Hieu suat nha cung cap (Kraljic/OTIF/grade). Tham so: limit
 - get_dashboard: Dashboard tong quan kinh doanh. (không can tham so)
 
 - create_order: TAO đơn hàng moi (can ADMIN/MANAGER). Tham so: customerName, customerPhone, items (mang [{productName, quantity, price}]), paymentMethod (CASH/BANK_TRANSFER/CARD), note
@@ -100,7 +115,7 @@ async function inferTool(query) {
     }
     return null;
   } catch (err) {
-    console.error('[LLM-Chat] inferTool error:', err.message);
+    logger.error('[LLM-Chat] inferTool error:', err.message);
     return null;
   }
 }
@@ -131,7 +146,7 @@ Trả lời:`;
     if (response && response.response) return response.response.trim();
     return null;
   } catch (err) {
-    console.error('[LLM-Chat] generateNLResponse error:', err.message);
+    logger.error('[LLM-Chat] generateNLResponse error:', err.message);
     return null;
   }
 }
@@ -153,7 +168,7 @@ async function chat(query) {
   }
 
   // Step 3: Execute tool
-  console.log(`[LLM-Chat] Executing: ${intent.tool}`, JSON.stringify(intent.params));
+  logger.info(`[LLM-Chat] Executing: ${intent.tool}`, logger.truncateLog(intent.params));
 
   let result;
   try {

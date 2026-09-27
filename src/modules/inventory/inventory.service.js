@@ -20,6 +20,9 @@ const auditService = require('../audit/audit.service');
 const postingErrorService = require('../accounting/posting-error.service');
 const autopostService = require('../accounting/autopost.service');
 const { findInventory, resolveWarehouseId } = require('../../utils/warehouse.helper');
+const { recordFifoConsumption } = require('./valuation.service');
+
+const round2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
 
 const inventoryService = {
   getByProduct: async (productId, warehouseId) => {
@@ -32,16 +35,24 @@ const inventoryService = {
     return full;
   },
 
-  listByWarehouse: async (warehouseId) => {
+  listByWarehouse: async (warehouseId, page = 1, limit = 50) => {
     const whId = await resolveWarehouseId(warehouseId);
-    return prisma.inventory.findMany({
-      where: { warehouseId: whId, product: { isActive: true } },
-      include: {
-        product: { select: { id: true, name: true, sku: true } },
-        warehouse: { select: { code: true, name: true } },
-      },
-      orderBy: { product: { name: 'asc' } },
-    });
+    const skip = (Math.max(1, page) - 1) * Math.min(limit, 200);
+    const take = Math.min(limit, 200);
+    const [data, total] = await Promise.all([
+      prisma.inventory.findMany({
+        where: { warehouseId: whId, product: { isActive: true } },
+        include: {
+          product: { select: { id: true, name: true, sku: true } },
+          warehouse: { select: { code: true, name: true } },
+        },
+        skip,
+        take,
+        orderBy: { product: { name: 'asc' } },
+      }),
+      prisma.inventory.count({ where: { warehouseId: whId, product: { isActive: true } } }),
+    ]);
+    return { data, pagination: { page: Math.max(1, page), limit: take, total, totalPages: Math.ceil(total / take) } };
   },
 
   importStock: async (data, userId) => {
@@ -88,6 +99,7 @@ const inventoryService = {
               warehouseId: inventory.warehouseId,
               quantity,
               originalQty: quantity,
+              unitCost: unitCost ? Math.round(unitCost * 100) / 100 : null,
               mfgDate: mfgDate ? new Date(mfgDate) : null,
               expDate: expDate ? new Date(expDate) : null,
             },
@@ -106,6 +118,7 @@ const inventoryService = {
         }
       });
 
+      auditService.log({ userId, action: 'IMPORT_STOCK', entity: 'Inventory', entityId: updatedInventory.id, after: { productId, warehouseId, quantity } });
       return updatedInventory;
     });
   },
@@ -121,24 +134,34 @@ const inventoryService = {
         throw { status: 400, message: "Tồn kho không đủ để xuất." };
       }
 
-      const inv = await tx.inventory.update({
-        where: { id: inventory.id },
+      // A7: atomic — điều kiện gte kiểm tra tại thời điểm ghi, chống race âm kho
+      const res = await tx.inventory.updateMany({
+        where: { id: inventory.id, quantity: { gte: quantity } },
         data: { quantity: { decrement: quantity } },
       });
+      if (res.count === 0) {
+        throw { status: 400, message: "Tồn kho không đủ để xuất." };
+      }
+
+      const { totalCost } = await recordFifoConsumption(tx, productId, warehouseId, quantity, { note: note || 'Xuất kho' });
+
+      const avgUnitCost = totalCost > 0 ? round2(totalCost / quantity) : null;
 
       await tx.inventoryTransaction.create({
         data: {
-          inventoryId: inv.id,
+          inventoryId: inventory.id,
           type: "EXPORT",
           quantity,
           note,
+          unitCost: avgUnitCost,
           createdById: userId,
         },
       });
 
-      return inv;
+      return { ...inventory, quantity: inventory.quantity - quantity };
     });
 
+    auditService.log({ userId, action: 'EXPORT_STOCK', entity: 'Inventory', entityId: updatedInventory.id, after: { productId, warehouseId, quantity } });
     try {
       const notif = require("../notifications/notification.service");
       await notif.checkAfterExport(productId);
@@ -175,7 +198,7 @@ const inventoryService = {
         }
       });
 
-      return updated;
+      return { inventory: updated, diff };
     });
 
     auditService.log({
@@ -187,22 +210,25 @@ const inventoryService = {
       after: { actualQuantity, note, warehouseId },
     }).catch(() => {});
 
-    if (diff !== 0) {
-      const product = await prisma.product.findUnique({ where: { id: productId }, select: { name: true } }).catch(() => null);
+    if (result.diff !== 0) {
+      const product = await prisma.product
+        .findUnique({ where: { id: productId }, select: { name: true, costPrice: true } })
+        .catch(() => null);
       postingErrorService.tryPostOrQueue(
-        () => autopostService.postInventoryAdjustment({ diff, productId, inventoryId: result.id, product, userId }),
-        { source: "INVENTORY", sourceId: result.id, payload: { operation: "INVENTORY_ADJUSTMENT", diff, productId, inventoryId: result.id } },
+        () => autopostService.postInventoryAdjustment({ diff: result.diff, productId, inventoryId: result.inventory.id, product, userId }),
+        { source: "INVENTORY", sourceId: result.inventory.id, payload: { operation: "INVENTORY_ADJUSTMENT", diff: result.diff, productId, inventoryId: result.inventory.id, product } },
       );
     }
 
-    return result;
+    return result.inventory;
   },
 
   getLowStock: async (threshold = 10) => {
     const inventories = await prisma.inventory.findMany({
       where: { product: { isActive: true } },
       include: { product: { select: { name: true, sku: true, isActive: true } } },
-      orderBy: { quantity: 'asc' }
+      orderBy: { quantity: 'asc' },
+      take: 200,
     });
     return inventories
       .map((item) => ({ ...item, available: item.quantity - (item.reserved || 0) }))
@@ -214,9 +240,11 @@ const inventoryService = {
     const inventories = await prisma.inventory.findMany({
       where: { product: { isActive: true } },
       include: { product: { select: { id: true, name: true, sku: true } } },
+      take: 500,
     });
     const alerts = inventories.map((inv) => ({
       productId: inv.productId,
+      tenantId: inv.tenantId,
       name: inv.product?.name,
       sku: inv.product?.sku,
       quantity: inv.quantity,

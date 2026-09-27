@@ -20,7 +20,7 @@ import {
   DashboardOutlined, ShopOutlined, CrownOutlined, TeamOutlined,
   FileTextOutlined, FundOutlined,
   ArrowUpOutlined, LeftOutlined, RightOutlined, LogoutOutlined,
-  AuditOutlined,
+  AuditOutlined, CloudUploadOutlined,
 } from "@ant-design/icons";
 import useAuthStore from "../stores/authStore";
 
@@ -50,6 +50,7 @@ const NAV_GROUPS = [
     key: "system", label: "SYSTEM",
     items: [
       { key: "/admin/upgrade-requests", icon: <ArrowUpOutlined />, label: "Yêu cầu nâng gói" },
+      { key: "/admin/backups", icon: <CloudUploadOutlined />, label: "Backup & Restore" },
       { key: "/admin/audit", icon: <AuditOutlined />, label: "Audit Log (toàn bộ hệ thống)" },
     ],
   },

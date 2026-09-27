@@ -13,7 +13,7 @@
  */
 // src/modules/currency/currency.routes.js
 const router = require("express").Router();
-const { authenticate, requireRole } = require("../../middleware/auth.middleware");
+const { authenticate, requireSuperOmega } = require("../../middleware/auth.middleware");
 const { requireModule } = require("../../middleware/plan.middleware");
 const svc = require("./currency.service");
 
@@ -33,16 +33,19 @@ router.get("/:code/rates", authenticate, async (req, res, next) => {
   } catch (e) { next(e); }
 });
 
-// POST /api/currencies/:code/rates — set exchange rate (ADMIN/MANAGER)
-router.post("/:code/rates", authenticate, requireRole(["ADMIN", "MANAGER"]), async (req, res, next) => {
+// POST /api/currencies/:code/rates — set exchange rate
+// M12: Currency/ExchangeRate là catalog GLOBAL (không tenantId) — tỷ giá tenant A
+// ảnh hưởng tenant B. Chỉ nền tảng (SUPER_OMEGA) mới được ghi; tenant chỉ đọc.
+router.post("/:code/rates", authenticate, requireSuperOmega, async (req, res, next) => {
   try {
     const data = await svc.setRate(req.params.code, req.body);
     res.json({ success: true, data });
   } catch (e) { next(e); }
 });
 
-// POST /api/currencies — add / update currency (ADMIN)
-router.post("/", authenticate, requireRole(["ADMIN"]), async (req, res, next) => {
+// POST /api/currencies — add / update currency
+// M12: catalog tiền tệ GLOBAL → chỉ nền tảng ghi, tenant chỉ đọc
+router.post("/", authenticate, requireSuperOmega, async (req, res, next) => {
   try {
     const data = await svc.upsertCurrency(req.body);
     res.json({ success: true, data });

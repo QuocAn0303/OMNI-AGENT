@@ -3,7 +3,7 @@
  * 
  * Tổng quan:
  * - Xác thực token JWT (Bearer) từ header Authorization
- * - Phân quyền dựa trên role: SUPER_OMEGA_ULTRA_ADMIN, SUPER_ADMIN, ADMIN, MANAGER, CASHIER, WAREHOUSE
+ * - Phân quyền dựa trên role: SUPER_OMEGA_ULTRA_ADMIN, SUPER_ADMIN, ADMIN, MANAGER, ACCOUNTANT, CASHIER, WAREHOUSE
  * - Tất cả middleware đều trả về lỗi chuẩn qua next(err) để error.middleware xử lý
  * 
  * Hàm:
@@ -14,8 +14,9 @@
  */
 
 const jwt = require("jsonwebtoken");
-
-// Thêm vào file src/middleware/auth.middleware.js hoặc một file middleware riêng cho admin
+const prisma = require("../config/prisma");
+const { runWithTenant } = require("../config/tenantContext");
+const logger = require('../utils/logger');
 
 const requireSuperOmega = (req, res, next) => {
   if (!req.user) {
@@ -32,7 +33,7 @@ const requireSuperOmega = (req, res, next) => {
   next();
 };
 
-const authenticate = (req, res, next) => {
+const authenticate = async (req, res, next) => {
   const authHeader = req.headers.authorization;
 
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
@@ -45,8 +46,45 @@ const authenticate = (req, res, next) => {
     const decoded = jwt.verify(token, process.env.JWT_SECRET, {
       algorithms: ["HS256"],
     });
-    req.user = decoded;
-    next();
+
+    // Check user still exists and is active
+    try {
+      // Lưu ý: chạy TRƯỚC runWithTenant → không có tenant context → extension
+      // auto-scoping bỏ qua → query theo id toàn cục đúng như mong muốn.
+      // Support access token: kiểm tra phiên còn ACTIVE + chưa hết hạn (thu hồi được thật)
+      if (decoded.supportSessionId) {
+        const session = await prisma.supportAccessSession.findUnique({
+          where: { id: decoded.supportSessionId },
+          select: { id: true, status: true, expiresAt: true },
+        });
+        if (!session || session.status !== "ACTIVE" || new Date(session.expiresAt) < new Date()) {
+          return next({ status: 401, message: "Phiên hỗ trợ đã hết hạn hoặc bị thu hồi" });
+        }
+        req.user = decoded;
+        runWithTenant(decoded.tenantId, () => next(), false);
+        return;
+      }
+      const user = await prisma.user.findUnique({
+        where: { id: decoded.id },
+        select: { id: true, isActive: true, role: true, tenantId: true, tokenVersion: true },
+      });
+      if (!user || !user.isActive) {
+        return next({ status: 401, message: "Tài khoản đã bị vô hiệu hoá" });
+      }
+      // M1: tokenVersion mismatch = mật khẩu đã đổi sau khi token được cấp
+      // → token cũ (kể cả chưa hết hạn) bị vô hiệu ngay lập tức
+      if ((decoded.tokenVersion || 0) !== user.tokenVersion) {
+        return next({ status: 401, message: "Phiên đăng nhập đã hết hạn. Vui lòng đăng nhập lại." });
+      }
+      // Token thường: refresh tenantId/role từ DB (tránh token cũ có giá trị sai)
+      req.user = { ...decoded, tenantId: user.tenantId || null, role: user.role };
+    } catch (dbErr) {
+      logger.error("[auth] DB check failed — rejecting request:", dbErr.message);
+      return next({ status: 503, message: "Không thể xác thực lúc này, vui lòng thử lại" });
+    }
+    // Set tenant context cho Prisma extension auto-scoping
+    const bypass = req.user.role === "SUPER_OMEGA_ULTRA_ADMIN";
+    runWithTenant(req.user.tenantId, () => next(), bypass);
   } catch (err) {
     return next({ status: 401, message: "Token không hợp lệ hoặc đã hết hạn" });
   }

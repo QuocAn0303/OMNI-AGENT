@@ -1,20 +1,20 @@
 # Aduu ERP
 
-**Aduu ERP** — Hệ thống hoạch định nguồn lực doanh nghiệp **SaaS multi-tenant** cho doanh nghiệp bán lẻ + F&B + dịch vụ + sản xuất nhỏ và vừa, **tối ưu cho thị trường Việt Nam**. Backend Node.js + Express + Prisma 7 (133 models, 59 enums) + PostgreSQL, frontend React 19 + Vite + Ant Design 6. Mục tiêu: giúp chủ shop mới mở quản lý sản phẩm, kho, đơn hàng, khách hàng, kế toán, nhân sự một cách đơn giản — **không cần biết kế toán**.
+**Aduu ERP** — Hệ thống hoạch định nguồn lực doanh nghiệp **SaaS multi-tenant** cho doanh nghiệp bán lẻ + F&B + dịch vụ + sản xuất nhỏ và vừa, **tối ưu cho thị trường Việt Nam**. Backend Node.js + Express + Prisma 7 (141 models, 59 enums) + PostgreSQL, frontend React 19 + Vite + Ant Design 6. Mục tiêu: giúp chủ shop mới mở quản lý sản phẩm, kho, đơn hàng, khách hàng, kế toán, nhân sự một cách đơn giản — **không cần biết kế toán**.
 
 **Kiến trúc & Stack**
 
-- Backend: Node.js, Express, Prisma 7 (PostgreSQL, 133 models, 59 enums), Zod, JWT, Socket.IO + Redis, node-cron, Winston
+- Backend: Node.js, Express, Prisma 7 (PostgreSQL, 141 models, 59 enums), Zod, JWT, Socket.IO + Redis, node-cron, Winston
 - Frontend: React 19, Vite, Ant Design 6, Zustand, Axios, Recharts, React Router 7
 - Storage: Cloudinary (ảnh sản phẩm)
 - Auth: JWT access token + refresh token, role-based (7 roles), hỗ trợ impersonate session
 - Docs: Swagger UI tại `/api-docs` (dev only)
-- Test: Jest + setup mock Prisma
+- Test: Jest + setup mock Prisma (39 file test, `npm test` chạy `--runInBand`)
 - Deploy: Docker multi-stage (Railway auto deploy + migrate), Docker Compose (PostgreSQL + Redis)
 
 **Tính năng chính**
 
-- **54 modules backend** — phủ toàn bộ nghiệp vụ doanh nghiệp VN
+- **60 modules backend** — phủ toàn bộ nghiệp vụ doanh nghiệp VN
 - Xác thực: JWT + refresh token, role-based (7 roles: SUPER_OMEGA_ULTRA_ADMIN / SUPER_ADMIN / ADMIN / MANAGER / **ACCOUNTANT** / CASHIER / WAREHOUSE)
 - **Landing page công khai** tại `/`: hero, feature cards, steps, pricing preview
 - **Onboarding Wizard thông minh**: 6 bước — chọn ngành (13 templates: quần áo, tạp hóa, cafe, điện thoại...), nhập thông tin shop, tạo kho, thêm danh mục, thêm nhân viên, chọn thanh toán. Tự động seed dữ liệu mẫu theo ngành
@@ -38,6 +38,7 @@
 - Hóa đơn điện tử (E-Invoice): VNPT adapter — phát hành, hủy, tra cứu mã CQT
 - Báo cáo thuế HTKK: 01/GTGT, 05/KK-TNCN, D02-LT (BHXH) — xuất XML + Excel
 - **Đối soát ngân hàng**: import sao kê VCB/TCB/MB/BIDV, auto-match + thủ công, tạo bút toán điều chỉnh
+- **SCM / Quan hệ nhà cung cấp (SRM)**: phiếu nhận hàng (GRN) từ PO — ghi nhận QC + nhập kho; **đối soát 3-way hoá đơn NCC** (PO ↔ GRN ↔ HĐNCC) với dung sai ±1%, vượt ngưỡng tự động chặn thanh toán; **ma trận Kraljic** phân loại NCC theo lợi nhuận/rủi ro (Chiến lược / Đòn bẩy / Nút thắt / Thông thường) + Vendor Scorecard tính tự động OTIF%, tỷ lệ lỗi, hạng A/B/C hàng tháng; **chăm sóc khách hàng giữ chân (Churn Win-Back)**: cron tự động phát hiện khách có churn probability cao → hình thành Churn Alert → tự động phát voucher win-back + theo dõi trạng thái RETAINED/LOST
 - Tài sản cố định: quản lý TSCĐ + cron khấu hao tháng (straight-line) + autopost
 - Đa tiền tệ: Currency master, tỷ giá theo ngày, quy đổi
 - **Marketplace**: adapter Shopee/TikTok, pull orders → tự động tạo đơn ERP, push inventory
@@ -47,9 +48,10 @@
 - Báo cáo & Dashboard, Analytics (xu hướng, RFM khách hàng)
 - Audit log: tenant-scoped, ghi lịch sử thao tác đầy đủ
 - **Trợ lý Kinh doanh (Smart Guide)**: gợi ý giá bán, nhập hàng, điểm sức khỏe DN 0-100
-- AI Agent: chat NL → 20+ tool DB; human-gate; proactive briefing; anomaly detection
+- AI Agent: chat NL → **15 intents** + **26 tool DB** (23 tra cứu + 3 hành động ghi: `create_order`/`create_po`/`send_reminder`); phủ CRM/SRM (churn, RFM/CLV, leads, GRN, hoá đơn NCC 3-way, Kraljic/OTIF); human-gate có kiểm ngưỡng chi tiêu; proactive briefing; anomaly detection
 - Automation Flows: auto-reorder, auto-payroll, debt-collection, auto-invoice, bank-reco auto-match
-- **Chatbot AI**: tích hợp Qwen 2.5 (1.5B + LoRA) / OpenAI, RAG, 17 tools
+- **Chatbot AI**: tích hợp Qwen 2.5 (1.5B + LoRA) / OpenAI, RAG, 26 tool handlers
+- **Business Ops Multi-Agent (AISC 2026)**: Procurement Agent tạo PO qua ngôn ngữ tự nhiên (`db-agent.service.js` tool `create_po`), BOM Resolver đa cấp DFS chống vòng lặp (`production/bom-resolver.js`), Auto-Reorder tự tạo PO khi tồn kho chạm ngưỡng `minStock` (`automation.service.js checkAutoReorder`), Human-Gate phê duyệt qua `AgentHumanGate` + `/human-gates`
 - **F&B Module**: sơ đồ bàn, KDS, QR ordering, đơn đa kênh (GrabFood/ShopeeFood/BeFood), AI dự báo
 - Subscription / Billing: gói dịch vụ, thuê bao tenant, hóa đơn định kỳ, PayOS, plan enforcement
 - Support Access Session: SUPER_OMEGA_ULTRA_ADMIN impersonate tenant
@@ -59,7 +61,7 @@
 - 14 cron jobs: Morning Briefing, anomaly detection, debt auto-collection, payroll, depreciation...
 - Trung tâm Tích hợp: UI cấu hình VNPT/Cloudinary/SMS/SMTP, mã hóa AES-256-GCM
 - Email xác minh khi đăng ký, bulk import Excel/CSV
-- Multi-tenant isolation: Prisma $extends + AsyncLocalStorage (115 models auto-scope)
+- Multi-tenant isolation: Prisma $extends + AsyncLocalStorage (128 models auto-scope)
 
 **Mô hình dữ liệu (tóm tắt)**
 
@@ -160,10 +162,14 @@ erp-system/
 │   ├── promotion.engine.test.js # Test engine tính khuyến mãi
 │   ├── stock-transfer.service.test.js  # Test chuyển kho giữa các warehouse
 │   ├── automation.service.test.js     # Test auto-reorder, debt, briefing, anomaly
-│   └── agent-handlers.test.js         # Test AI agent tools + intent resolution
+│   ├── agent-handlers.test.js         # Test AI agent tools + intent resolution
+│   ├── agent-intents.test.js          # 15 intents + 26 tools (đặc tả §3.3, phủ CRM/SRM)
+│   ├── agent-chat.route.test.js       # E2E POST /api/agent/chat (fast-path, human-gate, role)
+│   ├── webhook-lead.route.test.js     # E2E POST /api/webhook/crm-lead (401/400/201/duplicate)
+│   └── auth.token-expiry.test.js      # Access token 15m + refresh 7d (đặc tả §3.1)
 │
 ├── prisma/                      # Prisma ORM — schema, migration, seeder
-│       ├── schema.prisma            # Định nghĩa toàn bộ mô hình dữ liệu (133 models, 59 enums)
+│       ├── schema.prisma            # Định nghĩa toàn bộ mô hình dữ liệu (141 models, 59 enums)
 │   ├── seed.js                  # Seeder chính — tạo admin (admin@erp.com / admin123)
 │   ├── seed_accounting.js       # Seeder hệ thống tài khoản kế toán (Chart of Accounts)
 │   ├── seed_accounting_demo.js  # Seeder dữ liệu demo bút toán, giao dịch kế toán
@@ -733,7 +739,7 @@ NODE_ENV=development
 DATABASE_URL="postgresql://postgres:uit@localhost:5432/erp_db?schema=public"
 # Production: thêm ?sslmode=require vào DATABASE_URL để mã hóa kết nối DB
 JWT_SECRET=hay_doi_thanh_chuoi_ngau_nhien_dai_32_ky_tu_tro_len
-JWT_EXPIRES_IN=1h
+JWT_EXPIRES_IN=15m
 REFRESH_TOKEN_EXPIRES_DAYS=7
 BCRYPT_ROUNDS=10
 
@@ -810,6 +816,10 @@ npm run db:migrate
 
 # Tạo dữ liệu mẫu: admin + sản phẩm + đơn hàng + kế toán demo
 npm run db:seed
+
+# (tuỳ chọn) Full-text search: GIN/pg_trgm index cho Customer/Product/Vendor
+# Prisma không hỗ trợ @@fulltext với postgresql → index tạo bằng raw SQL
+psql "$DATABASE_URL" -f prisma/sql/fulltext_search.sql
 ```
 
 Sau bước này DB đã có:
@@ -1089,6 +1099,8 @@ Hệ thống đã được hardening đầy đủ cho production với dữ li�
 - File: `auth.service.js`, `auth.validation.js`, `auth.middleware.js`
 
 ### Webhook Security
+- **X-Tenant-Key webhook CRM lead**: `POST /api/webhook/crm-lead` public, xác thực bằng API key của tenant (lưu `IntegrationConfig` category `LEAD_WEBHOOK`, rotate qua `POST /api/webhook/crm-lead-key`)
+- **Idempotency-Key** (tùy chọn header): webhook retry trong 24h trả về kết quả đã ghi nhận (`duplicate: true`, HTTP 200) — không tạo trùng lead/customer
 - **Raw body verification**: `express.raw` cho payment-gateway webhooks (Momo/VNPay/ZaloPay)
 - **HMAC signature verify**: đúng thuật toán từng provider (Momo SHA256, VNPay SHA512, ZaloPay SHA256)
 - **Reject khi chưa cấu hình**: production `return false` (không `return true` như cũ)
@@ -1104,6 +1116,8 @@ Hệ thống đã được hardening đầy đủ cho production với dữ li�
 - **helmet**: security headers (X-Content-Type-Options, X-Frame-Options, etc.)
 - **hpp**: HTTP Parameter Pollution protection
 - **Rate limiting**: global 100 req/min, login 5/min, AI 10/min
+- **Full-text search (PostgreSQL)**: bật preview `fullTextSearchPostgres` (Prisma 7) → filter `{ search: "..." }` compile thành `tsvector @@ tsquery`; GIN index (pg_trgm) cho Customer/Product/Vendor tạo bằng `prisma/sql/fulltext_search.sql` khi migrate (Prisma không hỗ trợ attribute `@@fulltext` cho connector postgresql)
+- **Refresh token rotation**: access token mặc định **15m**, refresh 7d (`RefreshToken` table, revoke-all khi reuse)
 - **Body limit**: 100kb
 - **File upload**: multer fileFilter — chỉ ảnh (JPEG/PNG/WebP/SVG) hoặc Excel/CSV
 - **CORS**: single-origin + credentials
@@ -1795,6 +1809,17 @@ _Tài liệu cập nhật: 2026-08-01_
 
 ## Changelog
 
+### Hiện trạng đã verify — Business Ops Multi-Agent & AISC 2026 (2026-09-17)
+- **Kiểm kê số liệu (đếm trực tiếp từ source, không ước lượng)**: `prisma/schema.prisma` có **141 models + 59 enums**; `src/modules/` có **58 module**; `tests/` có **26 file test** (`npm test` → `jest --runInBand`)
+- **Business Ops Multi-Agent (trục cạnh tranh AISC 2026)**:
+  - Procurement Agent: tạo PO qua ngôn ngữ tự nhiên — `src/modules/ai/db-agent.service.js` tool `create_po` → gọi `purchase.service.js` `create()`; phân quyền write-tool chỉ ADMIN/MANAGER (`agent.routes.js`)
+  - BOM Resolver đa cấp: `src/modules/production/bom-resolver.js` — `flattenBom` (DFS, guard vòng lặp, maxDepth) + `mergeFlatBom` (merge trùng SKU) + `resolveForWorkOrder`
+  - Auto-Reorder: `automation.service.js` `checkAutoReorder()` — tự tạo PO khi `available ≤ minStock`, auto-approve nếu subtotal < 5.000.000₫, ngược lại giữ DRAFT chờ duyệt; trigger từ `onOrderCompleted()`
+- **Human-Gate theo ngưỡng chi tiêu (3 tầng)**: model `AgentHumanGate` (PENDING/APPROVED/REJECTED + `expiresAt`) + endpoints `GET /human-gates`, `POST /human-gates/:id/decide`; ngưỡng: auto-reorder 5tr / PO approval từ `CompanySettings.poApprovalThreshold` / workflow trigger `PO_ABOVE`
+- **Multi-tenant scope**: `TENANT_SCOPED_MODELS` (`src/config/prisma.js`) giờ gồm **128 models** tự động inject `tenantId` qua Prisma $extends + AsyncLocalStorage
+- **Migration & startup**: chuỗi 18/18 migrations deployable từ DB sạch lẫn drifted (commit `e0f5dbd`); `prisma/startup.js` restored — unified migrate deploy + optional seed + start (commit `7dcea0b`)
+- ⚠️ **Lưu ý cho hồ sơ dự thi AISC**: dự báo nhu cầu hiện là baseline thống kê (moving average + day-of-week — `ai-forecast.service.js`); XGBoost/WAPE, phân loại ABC-XYZ (CV = σ/μ), Vendor Scorecard/OTIF và Safety Stock động `SS = Z×√(L×σd²+d²×σL²)` **chưa được implement** — trình bày trong hồ sơ phải ghi rõ đây là hướng phát triển, không được ghi là đã làm
+
 ### Multi-tenant Scope & Migration Chain (2026-08-10)
 - **Migration `20260805160000_add_tenant_scope_and_new_models`**: thêm cột `tenantId` vào 82+ bảng business (Prisma auto-scope `TENANT_SCOPED_MODELS`), DropEnum/AddEnum (Role thêm `ACCOUNTANT`, PaymentMethod thêm MOMO/VNPAY/ZALOPAY/PAYOS/VIETQR, PromotionType thêm HAPPY_HOUR), 193 composite index `(tenantId, ...)`, drop 2 bảng đã thay thế (`exchange_items`, `order_return_items` → `return_line_items` — code đã chuyển sang dùng `lineItems` của `OrderReturn`)
 - **Migration `20260805170000_perf_indexes`**: 40+ index `(tenantId, ...)` dùng `IF NOT EXISTS` — an toàn chạy lại, tạo SAU migration tenant scope nên không lỗi thiếu cột
@@ -1856,7 +1881,7 @@ _Tài liệu cập nhật: 2026-08-01_
 
 ### Security Fixes — Đợt 4: L1-L12 (2026-08-05)
 - **L1 — bcrypt cost 12**: `BCRYPT_ROUNDS=12` (env, default 12) áp dụng register/changePassword/user create+update; hash cũ cost 10 vẫn verify được
-- **L2 — access token 1h**: `JWT_EXPIRES_IN` mặc định `1h` (trước 7d) — refresh qua cookie httpOnly (M7) nên vô hại, giảm cửa sổ token rò rỉ
+- **L2 — access token 15m**: `JWT_EXPIRES_IN` mặc định **15m** (đặc tả §3.1: access 15p + refresh 7d) — refresh qua interceptor khi 401, giảm cửa sổ token rò rỉ
 - **L3 — force đổi mật khẩu admin mặc định**: `User.mustChangePassword` (migration `20260805130000_user_must_change_password`) — 3 user seed đăng nhập lần đầu bị redirect `/profile` bắt đổi mật khẩu trước khi dùng hệ thống
 - **L4 — refresh token reuse**: dùng lại token đã revoke → revoke **toàn bộ family** + 401 (nghi token bị đánh cắp)
 - **L5 — timing equalization**: login user không tồn tại vẫn chạy `bcrypt.compare` với dummy hash → không phân biệt được qua thời gian phản hồi

@@ -5,6 +5,8 @@
 // (prisma/migrations/20260620100000_add_ai_vector_tables/migration.sql)
 // va KHONG co trong Prisma schema. Moi truy vấn deu dung $queryRawUnsafe/$executeRawUnsafe.
 const prisma = require("../../config/prisma");
+const logger = require('../../utils/logger');
+const { getTenantId } = require("../../config/tenantContext");
 
 // --------------- Ollama Config ---------------
 const OLLAMA_BASE = process.env.OLLAMA_URL || "http://localhost:11434";
@@ -87,20 +89,23 @@ const checkOllamaHealth = async () => {
 
 /**
  * Upsert document + embedding vao pgvector.
+ * tenant_id gắn từ tenant context — knowledge (hệ thống) để NULL (global).
  */
 const upsertDocument = async (entityType, entityId, content, metadata = {}) => {
   const embedding = await createEmbedding(content);
   const vectorStr = `[${embedding.join(",")}]`;
+  const tenantId = getTenantId() || null;
 
   await prisma.$executeRawUnsafe(
-    `INSERT INTO ai_documents (id, entity_type, entity_id, content, metadata, updated_at)
-     VALUES (gen_random_uuid(), $1, $2, $3, $4::jsonb, NOW())
+    `INSERT INTO ai_documents (id, entity_type, entity_id, content, metadata, tenant_id, updated_at)
+     VALUES (gen_random_uuid(), $1, $2, $3, $4::jsonb, $5, NOW())
      ON CONFLICT (entity_type, entity_id)
      DO UPDATE SET content = $3, metadata = $4::jsonb, updated_at = NOW()`,
     entityType,
     entityId,
     content,
     JSON.stringify(metadata),
+    tenantId,
   );
 
   const [doc] = await prisma.$queryRawUnsafe(
@@ -123,11 +128,14 @@ const upsertDocument = async (entityType, entityId, content, metadata = {}) => {
 
 /**
  * Vector similarity search: tim top-K documents gan nhat voi query.
- * entityTypes duoc truyen qua parameterized query de tranh SQL injection.
+ * Chỉ trả về tài liệu của tenant hiện tại + knowledge global (tenant_id IS NULL)
+ * — ngăn cross-tenant leak. entityTypes truyen qua parameterized query.
  */
 const searchDocuments = async (queryText, topK = TOP_K, entityTypes = null) => {
   const queryEmbedding = await createEmbedding(queryText);
   const vectorStr = `[${queryEmbedding.join(",")}]`;
+  const tenantId = getTenantId() || null;
+  const tenantFilter = tenantId ? `(d.tenant_id = $${entityTypes && entityTypes.length > 0 ? 4 : 3} OR d.tenant_id IS NULL)` : `d.tenant_id IS NULL`;
 
   // Neu co filter entityTypes, dung ANY($3::text[]) de parameterize
   if (entityTypes && entityTypes.length > 0) {
@@ -136,12 +144,13 @@ const searchDocuments = async (queryText, topK = TOP_K, entityTypes = null) => {
               1 - (e.embedding <=> $1::vector) AS similarity
        FROM ai_embeddings e
        JOIN ai_documents d ON d.id = e.document_id
-       WHERE d.entity_type = ANY($3::text[])
+       WHERE ${tenantFilter} AND d.entity_type = ANY($3::text[])
        ORDER BY e.embedding <=> $1::vector
        LIMIT $2`,
       vectorStr,
       topK,
       entityTypes,
+      ...(tenantId ? [tenantId] : []),
     );
     return results;
   }
@@ -151,10 +160,12 @@ const searchDocuments = async (queryText, topK = TOP_K, entityTypes = null) => {
             1 - (e.embedding <=> $1::vector) AS similarity
      FROM ai_embeddings e
      JOIN ai_documents d ON d.id = e.document_id
+     WHERE ${tenantFilter}
      ORDER BY e.embedding <=> $1::vector
      LIMIT $2`,
     vectorStr,
     topK,
+    ...(tenantId ? [tenantId] : []),
   );
 
   return results;
@@ -172,7 +183,7 @@ const processBatch = async (items, batchSize, processFn, label) => {
     await Promise.all(batch.map(processFn));
     processed += batch.length;
     if (items.length > batchSize) {
-      console.log(`[ai:sync] ${label}: ${processed}/${items.length}`);
+      logger.info(`[ai:sync] ${label}: ${processed}/${items.length}`);
     }
   }
   return processed;
@@ -181,7 +192,7 @@ const processBatch = async (items, batchSize, processFn, label) => {
 const syncERPData = async () => {
   const stats = { products: 0, customers: 0, knowledge: 0 };
   const startTime = Date.now();
-  console.log("[ai:sync] Bat dau dong bo dữ liệu ERP...");
+  logger.info("[ai:sync] Bat dau dong bo dữ liệu ERP...");
 
   // Sync products
   const products = await prisma.product.findMany({
@@ -302,7 +313,7 @@ const syncERPData = async () => {
   }
 
   const elapsed = ((Date.now() - startTime) / 1000).toFixed(1);
-  console.log(`[ai:sync] Hoan tat trong ${elapsed}s: ${stats.products} products, ${stats.customers} customers, ${stats.knowledge} knowledge docs`);
+  logger.info(`[ai:sync] Hoan tat trong ${elapsed}s: ${stats.products} products, ${stats.customers} customers, ${stats.knowledge} knowledge docs`);
 
   return stats;
 };
@@ -334,7 +345,7 @@ const chat = async (req, res) => {
     try {
       contextDocs = await searchDocuments(message, TOP_K);
     } catch (e) {
-      console.warn("[ai] vector search failed (pgvector not ready?):", e.message);
+      logger.warn("[ai] vector search failed (pgvector not ready?):", e.message);
     }
 
     // 2. Real-time stats
@@ -400,7 +411,7 @@ const chat = async (req, res) => {
       })),
     });
   } catch (error) {
-    console.error("[ai] chat error:", error);
+    logger.error("[ai] chat error:", error);
 
     let errorMsg = "Loi xu ly AI";
     if (error.cause?.code === "ECONNREFUSED" || error.message?.includes("ECONNREFUSED")) {
@@ -418,7 +429,7 @@ const triggerSync = async (req, res) => {
     const stats = await syncERPData();
     res.json({ success: true, message: "Dong bo dữ liệu AI thành công", stats });
   } catch (error) {
-    console.error("[ai] sync error:", error);
+    logger.error("[ai] sync error:", error);
 
     let errorMsg = "Loi dong bo dữ liệu AI";
     if (error.message?.includes("ECONNREFUSED")) {
@@ -434,13 +445,15 @@ const getSuggestions = async (req, res) => {
   try {
     const suggestions = [];
 
+    const tenantId = getTenantId();
+
     // Low stock
-    const lowStockItems = await prisma.$queryRawUnsafe(
-      `SELECT i.quantity, i."minStock", p.name as "productName", p.sku
-       FROM inventories i JOIN products p ON p.id = i."productId"
-       WHERE i.quantity <= i."minStock" AND p."isActive" = true
-       ORDER BY i.quantity ASC LIMIT 5`
-    ).catch(() => []);
+    const lowStockItems = await prisma.$queryRaw`
+      SELECT i.quantity, i."minStock", p.name as "productName", p.sku
+      FROM "inventories" i JOIN "products" p ON p.id = i."productId"
+      WHERE i.quantity <= i."minStock" AND p."isActive" = true AND i."tenantId" = ${tenantId}
+      ORDER BY i.quantity ASC LIMIT 5
+    `.catch(() => []);
 
     if (lowStockItems.length > 0) {
       suggestions.push({
@@ -487,7 +500,7 @@ const getSuggestions = async (req, res) => {
 
     res.json({ success: true, suggestions });
   } catch (error) {
-    console.error("[ai] suggestions error:", error);
+    logger.error("[ai] suggestions error:", error);
     res.status(500).json({ success: false, message: "Loi lay goi y" });
   }
 };
@@ -520,12 +533,14 @@ const getQuickOrderStats = async () => {
 
 const getInventoryAlerts = async () => {
   try {
-    const alerts = await prisma.$queryRawUnsafe(
-      `SELECT p.name as "productName", i.quantity, i."minStock"
-       FROM inventories i JOIN products p ON p.id = i."productId"
-       WHERE i.quantity <= i."minStock" AND p."isActive" = true
-       ORDER BY i.quantity ASC LIMIT 5`
-    );
+    const tenantId = getTenantId();
+    if (!tenantId) return [];
+    const alerts = await prisma.$queryRaw`
+      SELECT p.name as "productName", i.quantity, i."minStock"
+      FROM "inventories" i JOIN "products" p ON p.id = i."productId"
+      WHERE i.quantity <= i."minStock" AND p."isActive" = true AND i."tenantId" = ${tenantId}
+      ORDER BY i.quantity ASC LIMIT 5
+    `;
     return alerts || [];
   } catch {
     return [];

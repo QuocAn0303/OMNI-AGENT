@@ -23,6 +23,8 @@ const cycleCountRoutes = require("./cyclecount.routes");
 const { authenticate, authorize } = require("../../middleware/auth.middleware");
 const { requireModule } = require("../../middleware/plan.middleware");
 const { success } = require("../../utils/response");
+const { exportToExcel } = require("../../utils/exporter");
+const prisma = require("../../config/prisma");
 const { z } = require("zod");
 
 router.use(authenticate, requireModule("inventory"));
@@ -30,11 +32,64 @@ router.use("/cycle-counts", cycleCountRoutes);
 
 router.get("/", authorize("ADMIN", "MANAGER", "WAREHOUSE"), async (req, res, next) => {
   try {
-    const rows = await inventoryService.listByWarehouse(req.query.warehouseId);
-    success(res, rows);
+    const { warehouseId, page, limit } = req.query;
+    const result = await inventoryService.listByWarehouse(warehouseId, Number(page) || 1, Number(limit) || 50);
+    success(res, result.data);
   } catch (err) {
     next(err);
   }
+});
+
+/**
+ * @swagger
+ * /api/inventory/export:
+ *   get:
+ *     summary: Xuất danh sách tồn kho ra Excel (ADMIN, MANAGER)
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: query
+ *         name: warehouseId
+ *         schema: { type: string, format: uuid }
+ *     responses:
+ *       200: { description: File .xlsx }
+ */
+router.get("/export", authorize("ADMIN", "MANAGER"), async (req, res, next) => {
+  try {
+    const { warehouseId } = req.query;
+    const where = { ...(warehouseId ? { warehouseId } : {}) };
+    const items = await prisma.inventory.findMany({
+      where,
+      include: {
+        product: { select: { sku: true, name: true, unit: true, costPrice: true } },
+        warehouse: { select: { name: true } },
+      },
+      take: 10000,
+    });
+    const buf = await exportToExcel(
+      items.map((i) => ({
+        sku: i.product?.sku || "",
+        name: i.product?.name || "",
+        warehouse: i.warehouse?.name || "",
+        quantity: i.quantity,
+        reserved: i.reserved || 0,
+        minStock: i.minStock || 0,
+        costPrice: Number(i.product?.costPrice || 0),
+      })),
+      [
+        { header: "SKU", key: "sku" },
+        { header: "Tên sản phẩm", key: "name" },
+        { header: "Kho", key: "warehouse" },
+        { header: "Tồn kho", key: "quantity" },
+        { header: "Đã đặt", key: "reserved" },
+        { header: "Tồn tối thiểu", key: "minStock" },
+        { header: "Giá vốn", key: "costPrice" },
+      ],
+      "Tồn kho"
+    );
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    res.setHeader("Content-Disposition", `attachment; filename=ton-kho_${Date.now()}.xlsx`);
+    res.send(Buffer.from(buf));
+  } catch (e) { next(e); }
 });
 
 const importSchema = z.object({

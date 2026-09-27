@@ -40,7 +40,8 @@ const periodCloseService = require("../modules/accounting/period-close.service")
 const subscriptionService = require("../modules/subscriptions/subscription.service");
 const currencyService = require("../modules/currency/currency.service");
 const prisma = require("../config/prisma");
-const logger = require("../utils/logger"); // Sử dụng winston logger có sẵn của dự án
+const { runWithTenant } = require("../config/tenantContext");
+const logger = require("../utils/logger");
 
 // Quét các phiên hỗ trợ hết hạn mỗi 5 phút
 cron.schedule("*/5 * * * *", async () => {
@@ -73,12 +74,54 @@ cron.schedule("*/5 * * * *", async () => {
   }
 });
 
+// Cron: Subscription renewal reminder — 7 days before endDate
+const renewalReminder = async () => {
+  try {
+    const sevenDaysFromNow = new Date(Date.now() + 7 * 86400000);
+    const expiringSubs = await prisma.tenantSubscription.findMany({
+      where: {
+        endDate: { lte: sevenDaysFromNow, gte: new Date() },
+        status: "ACTIVE",
+      },
+      include: { tenant: { select: { id: true, name: true } } },
+    });
+    for (const sub of expiringSubs) {
+      // Chạy trong tenant context → Prisma extension auto-inject tenantId
+      // vào notification.create (nếu không, row có tenantId null sẽ không
+      // bao giờ hiện trong listForUser vì query đọc bị tenant-scoped).
+      await runWithTenant(sub.tenantId, async () => {
+        const adminUsers = await prisma.user.findMany({
+          where: { tenantId: sub.tenantId, role: { in: ["ADMIN", "SUPER_ADMIN"] }, isActive: true },
+          select: { id: true },
+        });
+        for (const user of adminUsers) {
+          await prisma.notification.create({
+            data: {
+              userId: user.id,
+              title: `Gói dịch vụ sắp hết hạn`,
+              body: `Gói của ${sub.tenant.name} sẽ hết hạn vào ${sub.endDate.toLocaleDateString("vi-VN")}. Vui lòng gia hạn để tiếp tục sử dụng dịch vụ.`,
+              type: "SUBSCRIPTION",
+              severity: "WARNING",
+              link: "/subscription",
+            },
+          });
+        }
+      });
+    }
+    if (expiringSubs.length > 0) {
+      logger.info(`[cron] Renewal reminder: ${expiringSubs.length} subscriptions expiring soon`);
+    }
+  } catch (err) {
+    logger.error("[cron] Renewal reminder error:", err.message);
+  }
+};
+
 const startCrons = () => {
   cron.schedule("0 * * * *", async () => {
     try {
       await notif.cronPendingOrders();
     } catch (e) {
-      console.error("[cron] pending orders", e.message);
+      logger.error("[cron] pending orders", e.message);
     }
   });
 
@@ -86,7 +129,7 @@ const startCrons = () => {
     try {
       await notif.cronDebtOverdue(debtService);
     } catch (e) {
-      console.error("[cron] debt overdue", e.message);
+      logger.error("[cron] debt overdue", e.message);
     }
   });
 
@@ -94,7 +137,7 @@ const startCrons = () => {
     try {
       await notif.cronPayrollDue();
     } catch (e) {
-      console.error("[cron] payroll due", e.message);
+      logger.error("[cron] payroll due", e.message);
     }
   });
 
@@ -102,29 +145,29 @@ const startCrons = () => {
     try {
       await notif.cronPeriodClosing();
     } catch (e) {
-      console.error("[cron] period closing", e.message);
+      logger.error("[cron] period closing", e.message);
     }
   });
 
   cron.schedule("0 0 * * *", async () => {
     try {
       const n = await promotionService.expirePromotions();
-      if (n) console.log(`[cron] expired ${n} promotions`);
+      if (n) logger.info(`[cron] expired ${n} promotions`);
     } catch (e) {
-      console.error("[cron] promotion expire", e.message);
+      logger.error("[cron] promotion expire", e.message);
     }
     try {
       const expiredPts = await loyaltyService.expirePoints();
       if (expiredPts)
-        console.log(`[cron] expired ${expiredPts} loyalty batches`);
+        logger.info(`[cron] expired ${expiredPts} loyalty batches`);
     } catch (e) {
-      console.error("[cron] loyalty expire", e.message);
+      logger.error("[cron] loyalty expire", e.message);
     }
     try {
       const expired = await subscriptionService.checkExpiredSubscriptions();
-      if (expired) console.log(`[cron] expired ${expired} subscriptions`);
+      if (expired) logger.info(`[cron] expired ${expired} subscriptions`);
     } catch (e) {
-      console.error("[cron] subscription expiry", e.message);
+      logger.error("[cron] subscription expiry", e.message);
     }
   });
 
@@ -132,9 +175,9 @@ const startCrons = () => {
     try {
       const created = await expenseAuto.generateRecurring();
       if (created.length)
-        console.log(`[cron] recurring expenses: ${created.length}`);
+        logger.info(`[cron] recurring expenses: ${created.length}`);
     } catch (e) {
-      console.error("[cron] recurring expenses", e.message);
+      logger.error("[cron] recurring expenses", e.message);
     }
   });
 
@@ -142,9 +185,9 @@ const startCrons = () => {
   cron.schedule("0 8 * * *", async () => {
     try {
       const n = await crmTasksService.cronRemindUpcoming();
-      if (n) console.log(`[cron] CRM task reminders sent: ${n}`);
+      if (n) logger.info(`[cron] CRM task reminders sent: ${n}`);
     } catch (e) {
-      console.error("[cron] crm task reminder", e.message);
+      logger.error("[cron] crm task reminder", e.message);
     }
   });
 
@@ -152,9 +195,9 @@ const startCrons = () => {
   cron.schedule("30 8 * * *", async () => {
     try {
       const n = await currencyService.fetchRatesFromAPI();
-      console.log(`[cron] exchange rates: updated ${n} currencies`);
+      logger.info(`[cron] exchange rates: updated ${n} currencies`);
     } catch (e) {
-      console.error("[cron] exchange rates", e.message);
+      logger.error("[cron] exchange rates", e.message);
     }
   });
 
@@ -162,9 +205,9 @@ const startCrons = () => {
   cron.schedule("* * * * *", async () => {
     try {
       const n = await crmCampaignsService.cronProcessScheduled();
-      if (n) console.log(`[cron] CRM campaigns processed: ${n}`);
+      if (n) logger.info(`[cron] CRM campaigns processed: ${n}`);
     } catch (e) {
-      console.error("[cron] crm campaign scheduler", e.message);
+      logger.error("[cron] crm campaign scheduler", e.message);
     }
   });
 
@@ -176,11 +219,11 @@ const startCrons = () => {
         now.getFullYear(),
         now.getMonth() + 1,
       );
-      console.log(
+      logger.info(
         `[cron] depreciation ${result.period}: ${result.processed} assets processed`,
       );
     } catch (e) {
-      console.error("[cron] depreciation", e.message);
+      logger.error("[cron] depreciation", e.message);
     }
   });
 
@@ -188,11 +231,30 @@ const startCrons = () => {
   cron.schedule("0 7 * * *", async () => {
     try {
       const lots = await lotService.getExpiringLots(30);
-      if (lots.length)
-        console.log(`[cron] ${lots.length} lô hàng sắp hết hạn trong 30 ngày`);
-      // TODO: send notifications to ADMIN/MANAGER
+      if (lots.length) {
+        logger.info(`[cron] ${lots.length} lô hàng sắp hết hạn trong 30 ngày`);
+        // Per-tenant: notification cần tenantId để hiển thị trong UI
+        // + emitToRole scoped đúng tenant
+        const byTenant = {};
+        for (const lot of lots) {
+          if (!lot.tenantId) continue;
+          (byTenant[lot.tenantId] ||= []).push(lot);
+        }
+        for (const [tenantId, tenantLots] of Object.entries(byTenant)) {
+          await runWithTenant(tenantId, async () => {
+            await notif.notifyRoles(["ADMIN", "MANAGER"], {
+              type: "LOT_EXPIRY",
+              severity: "WARNING",
+              title: "Lô hàng sắp hết hạn",
+              message: `${tenantLots.length} lô hàng sắp hết hạn trong 30 ngày`,
+              link: "/lot-tracking",
+              meta: { count: tenantLots.length, period: 30 },
+            });
+          });
+        }
+      }
     } catch (e) {
-      console.error("[cron] lot expiry check", e.message);
+      logger.error("[cron] lot expiry check", e.message);
     }
   });
 
@@ -201,7 +263,7 @@ const startCrons = () => {
     try {
       await automation.autoPayroll();
     } catch (e) {
-      console.error("[cron] auto-payroll", e.message);
+      logger.error("[cron] auto-payroll", e.message);
     }
   });
 
@@ -211,7 +273,7 @@ const startCrons = () => {
     try {
       await automation.debtAutoCollection();
     } catch (e) {
-      console.error("[cron] debt-auto-collection", e.message);
+      logger.error("[cron] debt-auto-collection", e.message);
     }
   });
 
@@ -220,7 +282,7 @@ const startCrons = () => {
     try {
       await bankRecoService.autoMatchAll();
     } catch (e) {
-      console.error("[cron] bank-reco auto-match", e.message);
+      logger.error("[cron] bank-reco auto-match", e.message);
     }
   });
 
@@ -229,16 +291,19 @@ const startCrons = () => {
     try {
       await automation.morningBriefing();
     } catch (e) {
-      console.error("[cron] morning-briefing", e.message);
+      logger.error("[cron] morning-briefing", e.message);
     }
   });
+
+  // Subscription renewal reminder: 8h sang moi ngay
+  cron.schedule("0 8 * * *", renewalReminder);
 
   // AI Proactive: Anomaly Detection 8h sang moi ngay
   cron.schedule("0 8 * * *", async () => {
     try {
       await automation.anomalyDetection();
     } catch (e) {
-      console.error("[cron] anomaly-detection", e.message);
+      logger.error("[cron] anomaly-detection", e.message);
     }
   });
 
@@ -251,10 +316,10 @@ const startCrons = () => {
         const n = await periodCloseService.runMonthlyAllocation(
           now.getFullYear(), now.getMonth() + 1, systemUser.id
         );
-        if (n.length) console.log(`[cron] prepaid-allocation: ${n.length} items`);
+        if (n.length) logger.info(`[cron] prepaid-allocation: ${n.length} items`);
       }
     } catch (e) {
-      console.error("[cron] prepaid-allocation", e.message);
+      logger.error("[cron] prepaid-allocation", e.message);
     }
   });
 
@@ -267,10 +332,10 @@ const startCrons = () => {
         const n = await periodCloseService.runMonthlyDepreciation(
           now.getFullYear(), now.getMonth() + 1, systemUser.id
         );
-        if (n.length) console.log(`[cron] monthly-depreciation: ${n.length} assets`);
+        if (n.length) logger.info(`[cron] monthly-depreciation: ${n.length} assets`);
       }
     } catch (e) {
-      console.error("[cron] monthly-depreciation", e.message);
+      logger.error("[cron] monthly-depreciation", e.message);
     }
   });
 
@@ -279,7 +344,7 @@ const startCrons = () => {
     try {
       await automation.weeklyPnLEmail();
     } catch (e) {
-      console.error("[cron] weekly-pnl", e.message);
+      logger.error("[cron] weekly-pnl", e.message);
     }
   });
 
@@ -288,7 +353,7 @@ const startCrons = () => {
     try {
       await automation.autoCloseDormantCustomers();
     } catch (e) {
-      console.error("[cron] auto-close-dormant", e.message);
+      logger.error("[cron] auto-close-dormant", e.message);
     }
   });
 
@@ -297,12 +362,71 @@ const startCrons = () => {
     try {
       await automation.autoArchiveData();
     } catch (e) {
-      console.error("[cron] auto-archive", e.message);
+      logger.error("[cron] auto-archive", e.message);
     }
   });
 
-  console.log(
-    "[cron] scheduled: orders hourly, debt 09:00, payroll 25th, period 28th, promo daily, recurring 1st, CRM tasks 08:00, CRM campaigns every minute, depreciation 28th 01:00, lot expiry 07:00, exchange rates 08:30, auto-payroll 25th 06:00, debt-collection 09:00, bank-reco-auto-match 10:00, morning-briefing 07:00, anomaly-detection 08:00, prepaid-allocation 1st 02:00, monthly-depreciation 1st 03:00, weekly-pnl Mon 08:00, auto-close-dormant 1st 04:00, auto-archive 1st 05:00",
+  // Webhook retry: moi 5 phut
+  cron.schedule("*/5 * * * *", async () => {
+    try {
+      const webhookSvc = require("../modules/integrations/webhook.service");
+      await webhookSvc.retryFailed();
+    } catch (e) {
+      logger.error("[cron] webhook retry", e.message);
+    }
+  });
+
+  // CRM: CLV forecast + Churn win-back automation — hang dem 01:00 (Mục 3.3, 4)
+  cron.schedule("0 1 * * *", async () => {
+    try {
+      const churnAutomation = require("../modules/customers/churn-automation.service");
+      const res = await churnAutomation.runAllTenants();
+      logger.info(`[cron] churn-automation: ${JSON.stringify(res)}`);
+    } catch (e) {
+      logger.error("[cron] churn-automation", e.message);
+    }
+  });
+
+  // CRM: RFM recalculation hàng đêm 01:30 (Mục 3.2)
+  cron.schedule("30 1 * * *", async () => {
+    try {
+      const rfmService = require("../modules/customers/rfm.service");
+      const res = await rfmService.runAllTenants();
+      logger.info(`[cron] rfm-recalc: ${JSON.stringify(res)}`);
+    } catch (e) {
+      logger.error("[cron] rfm-recalc", e.message);
+    }
+  });
+
+  // SRM: Vendor Scorecard (OTIF/Defect/Grade) — ngay 1 hang thang luc 06:00 (Mục 6.4)
+  cron.schedule("0 6 1 * *", async () => {
+    try {
+      const vendorScorecard = require("./vendor-scorecard.job");
+      const res = await vendorScorecard.runAll();
+      logger.info(`[cron] vendor-scorecard: ${res.length} vendors`);
+    } catch (e) {
+      logger.error("[cron] vendor-scorecard", e.message);
+    }
+  });
+
+  // Cron: Daily DB backup at 02:00 (only on instance 0)
+  if (!process.env.NODE_APP_INSTANCE || process.env.NODE_APP_INSTANCE === "0") {
+    cron.schedule("0 2 * * *", async () => {
+      try {
+        const backupService = require("../modules/admin/backup.service");
+        const adminUser = await prisma.user.findFirst({
+          where: { role: "SUPER_OMEGA_ULTRA_ADMIN" },
+          select: { id: true },
+        });
+        if (adminUser) await backupService.create(adminUser.id);
+      } catch (err) {
+        logger.error("[cron] Daily backup error:", err.message);
+      }
+    });
+  }
+
+  logger.info(
+    "[cron] scheduled: orders hourly, debt 09:00, payroll 25th, period 28th, promo daily, recurring 1st, CRM tasks 08:00, CRM campaigns every minute, depreciation 28th 01:00, lot expiry 07:00, exchange rates 08:30, auto-payroll 25th 06:00, debt-collection 09:00, bank-reco-auto-match 10:00, morning-briefing 07:00, anomaly-detection 08:00, renewal-reminder 08:00, prepaid-allocation 1st 02:00, monthly-depreciation 1st 03:00, weekly-pnl Mon 08:00, auto-close-dormant 1st 04:00, auto-archive 1st 05:00, daily-backup 02:00, webhook-retry every 5min, churn-automation daily 01:00, vendor-scorecard 1st 06:00",
   );
 };
 

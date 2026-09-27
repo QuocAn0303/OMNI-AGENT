@@ -31,12 +31,8 @@ const downloadBlob = (res, filename) => {
   URL.revokeObjectURL(url);
 };
 
-export default function TaxReports() {
-  const now = dayjs();
-  const [year,  setYear]  = useState(now.year());
-  const [month, setMonth] = useState(now.month() + 1);
-
-  const PeriodSelector = () => (
+function PeriodSelector({ year, month, setYear, setMonth }) {
+  return (
     <Space style={{ marginBottom: 16 }}>
       <DatePicker
         picker="month"
@@ -48,6 +44,12 @@ export default function TaxReports() {
       />
     </Space>
   );
+}
+
+export default function TaxReports() {
+  const now = dayjs();
+  const [year,  setYear]  = useState(now.year());
+  const [month, setMonth] = useState(now.month() + 1);
 
   return (
     <PlanGate moduleKey="tax" moduleName="Báo cáo thuế">
@@ -55,9 +57,9 @@ export default function TaxReports() {
       <PageHeader title="Báo cáo thuế" subtitle="01/GTGT, TNCN, BHXH — xuất Excel + XML HTKK" />
       <Tabs
         items={[
-          { key: "vat", label: "VAT (01/GTGT)",  children: <VATTab year={year} month={month} PeriodSelector={PeriodSelector} /> },
-          { key: "pit", label: "TNCN (05/KK-TNCN)", children: <PITTab year={year} month={month} PeriodSelector={PeriodSelector} /> },
-          { key: "bhxh", label: "BHXH (D02-LT)", children: <BHXHTab year={year} month={month} PeriodSelector={PeriodSelector} /> },
+          { key: "vat", label: "VAT (01/GTGT)",  children: <VATTab year={year} month={month} setYear={setYear} setMonth={setMonth} /> },
+          { key: "pit", label: "TNCN (05/KK-TNCN)", children: <PITTab year={year} month={month} setYear={setYear} setMonth={setMonth} /> },
+          { key: "bhxh", label: "BHXH (D02-LT)", children: <BHXHTab year={year} month={month} setYear={setYear} setMonth={setMonth} /> },
         ]}
       />
     </div>
@@ -65,7 +67,7 @@ export default function TaxReports() {
   );
 }
 
-function VATTab({ year, month, PeriodSelector }) {
+function VATTab({ year, month, setYear, setMonth }) {
   const [data, setData]     = useState(null);
   const [loading, setLoading] = useState(false);
   const [dlLoading, setDlLoading] = useState("");
@@ -87,7 +89,7 @@ function VATTab({ year, month, PeriodSelector }) {
         const res = await downloadVATXML({ year, month });
         downloadBlob(res, `01-GTGT-${year}-${String(month).padStart(2,"0")}.xml`);
       }
-    } catch (e) { message.error("Lỗi tải file"); }
+    } catch { message.error("Lỗi tải file"); }
     finally { setDlLoading(""); }
   };
 
@@ -112,7 +114,7 @@ function VATTab({ year, month, PeriodSelector }) {
 
   return (
     <div>
-      <PeriodSelector />
+      <PeriodSelector year={year} month={month} setYear={setYear} setMonth={setMonth} />
       <Space style={{ marginBottom: 16 }}>
         <Button icon={<ReloadOutlined />} type="primary" onClick={load} loading={loading}>Tính toán</Button>
         <Button icon={<FileExcelOutlined />} onClick={() => handleDownload("excel")} loading={dlLoading === "excel"}>Xuất Excel</Button>
@@ -150,7 +152,7 @@ function VATTab({ year, month, PeriodSelector }) {
   );
 }
 
-function PITTab({ year, month, PeriodSelector }) {
+function PITTab({ year, month, setYear, setMonth }) {
   const [data, setData]     = useState(null);
   const [loading, setLoading] = useState(false);
 
@@ -174,7 +176,7 @@ function PITTab({ year, month, PeriodSelector }) {
 
   return (
     <div>
-      <PeriodSelector />
+      <PeriodSelector year={year} month={month} setYear={setYear} setMonth={setMonth} />
       <Button icon={<ReloadOutlined />} type="primary" onClick={load} loading={loading} style={{ marginBottom: 16 }}>Tính toán</Button>
 
       {data && (
@@ -192,7 +194,7 @@ function PITTab({ year, month, PeriodSelector }) {
   );
 }
 
-function BHXHTab({ year, month, PeriodSelector }) {
+function BHXHTab({ year, month, setYear, setMonth }) {
   const [dlLoading, setDlLoading] = useState(false);
 
   const handleDownload = async () => {
@@ -200,13 +202,13 @@ function BHXHTab({ year, month, PeriodSelector }) {
     try {
       const res = await downloadBHXHExcel({ year, month });
       downloadBlob(res, `D02-LT-${year}-${String(month).padStart(2,"0")}.xlsx`);
-    } catch (e) { message.error("Lỗi tải file BHXH"); }
+    } catch { message.error("Lỗi tải file BHXH"); }
     finally { setDlLoading(false); }
   };
 
   return (
     <div>
-      <PeriodSelector />
+      <PeriodSelector year={year} month={month} setYear={setYear} setMonth={setMonth} />
       <Card style={{ maxWidth: 500 }}>
         <p>Xuất file D02-LT (danh sách lao động tham gia BHXH/BHYT/BHTN) để nộp cho cơ quan BHXH hoặc nhập vào phần mềm eBH.</p>
         <p>Tỷ lệ NV đóng: BHXH 8% + BHYT 1.5% + BHTN 1% = <strong>10.5%</strong></p>

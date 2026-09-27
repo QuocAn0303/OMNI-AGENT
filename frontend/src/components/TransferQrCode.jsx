@@ -8,14 +8,14 @@
  * 
  * Props:
  * - amount: number — số tiền (nếu <= 0 thì không hiển thị)
- * - addInfo: string (default: "Thanh toan POS") — nội dung chuyển khoản
+ * - addInfo: string (default: "Thanh toán POS") — nội dung chuyển khoản
  * 
  * Hàm/Exports:
  * - TransferQrCode: Component hiển thị mã QR chuyển khoản
  * - buildVietQrImageUrl: Hàm xây dựng URL ảnh VietQR
  * - isTransferQrConfigured: Hàm kiểm tra đã cấu hình ngân hàng chưa
  */
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { Alert } from "antd";
 import MoneyDisplay from "./shared/MoneyDisplay";
 
@@ -33,14 +33,14 @@ function sanitizeAddInfo(text) {
     .slice(0, 50);
 }
 
-export function buildVietQrImageUrl({ amount, addInfo } = {}) {
+function buildVietQrImageUrl({ amount, addInfo } = {}) {
   if (!BANK_ID || !BANK_ACCOUNT) return null;
 
   const base = `https://img.vietqr.io/image/${BANK_ID}-${BANK_ACCOUNT}-compact2.jpg`;
   const params = new URLSearchParams();
   const roundedAmount = Math.round(Number(amount || 0));
   if (roundedAmount > 0) params.set("amount", String(roundedAmount));
-  const info = sanitizeAddInfo(addInfo || "Thanh toan POS");
+  const info = sanitizeAddInfo(addInfo || "Thanh toán POS");
   if (info) params.set("addInfo", info);
   if (BANK_ACCOUNT_NAME) params.set("accountName", BANK_ACCOUNT_NAME);
 
@@ -48,20 +48,16 @@ export function buildVietQrImageUrl({ amount, addInfo } = {}) {
   return query ? `${base}?${query}` : base;
 }
 
-export function isTransferQrConfigured() {
+function isTransferQrConfigured() {
   return Boolean(BANK_ID && BANK_ACCOUNT);
 }
 
-export default function TransferQrCode({ amount, addInfo = "Thanh toan POS" }) {
+export default function TransferQrCode({ amount, addInfo = "Thanh toán POS" }) {
   const [imageError, setImageError] = useState(false);
   const qrUrl = useMemo(
     () => buildVietQrImageUrl({ amount, addInfo }),
     [amount, addInfo],
   );
-
-  useEffect(() => {
-    setImageError(false);
-  }, [qrUrl]);
 
   if (!isTransferQrConfigured()) {
     return (
@@ -126,10 +122,12 @@ export default function TransferQrCode({ amount, addInfo = "Thanh toan POS" }) {
         />
       ) : (
         <img
+          key={qrUrl}
           src={qrUrl}
           alt="Mã QR chuyển khoản VietQR"
           className="transfer-qr__image"
           onError={() => setImageError(true)}
+          onLoad={() => setImageError(false)}
         />
       )}
       <div className="transfer-qr__meta">

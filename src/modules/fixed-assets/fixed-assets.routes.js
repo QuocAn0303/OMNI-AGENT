@@ -26,7 +26,7 @@ const ok = (res, data) => res.json({ success: true, data });
 router.use(requireModule("fixed-assets"));
 
 // Categories
-router.get("/categories", authenticate, authorize("ADMIN", "MANAGER"), async (req, res, next) => {
+router.get("/categories", authenticate, authorize("ADMIN", "MANAGER", "ACCOUNTANT"), async (req, res, next) => {
   try { ok(res, await svc.listCategories()); } catch (e) { next(e); }
 });
 router.post("/categories", authenticate, authorize("ADMIN"), async (req, res, next) => {
@@ -34,10 +34,10 @@ router.post("/categories", authenticate, authorize("ADMIN"), async (req, res, ne
 });
 
 // Assets
-router.get("/", authenticate, authorize("ADMIN", "MANAGER"), async (req, res, next) => {
+router.get("/", authenticate, authorize("ADMIN", "MANAGER", "ACCOUNTANT"), async (req, res, next) => {
   try { ok(res, await svc.listAssets(req.query)); } catch (e) { next(e); }
 });
-router.get("/:id", authenticate, authorize("ADMIN", "MANAGER"), async (req, res, next) => {
+router.get("/:id", authenticate, authorize("ADMIN", "MANAGER", "ACCOUNTANT"), async (req, res, next) => {
   try { ok(res, await svc.getAsset(req.params.id)); } catch (e) { next(e); }
 });
 router.post("/", authenticate, authorize("ADMIN"), async (req, res, next) => {

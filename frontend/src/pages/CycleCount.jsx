@@ -11,7 +11,7 @@
  * - CycleCount (default export): Danh sách + drawer chi tiết + modal tạo phiếu
  */
 import { useEffect, useMemo, useState } from "react";
-import { Button, Drawer, Form, InputNumber, Modal, Select, Space, Table, Tag, message } from "antd";
+import { Button, Drawer, Form, Input, InputNumber, Modal, Select, Space, Table, Tag, message } from "antd";
 import PlanGate from "../components/PlanGate";
 import api from "../api/axios";
 
@@ -40,7 +40,10 @@ export default function CycleCount() {
   };
 
   useEffect(() => {
-    loadData().catch(() => message.error("Không tải được dữ liệu kiểm kê"));
+    const t = setTimeout(() => {
+      loadData().catch(() => message.error("Không tải được dữ liệu kiểm kê"));
+    }, 0);
+    return () => clearTimeout(t);
   }, []);
 
   const productOptions = useMemo(() => products.map((p) => ({
@@ -51,12 +54,13 @@ export default function CycleCount() {
   const openDetail = async (row) => {
     try {
       const res = await api.get(`/inventory/cycle-counts/${row.id}`);
-      setSelected(res.data?.data);
+      const data = res.data?.data;
+      setSelected(data);
       countForm.setFieldsValue({
-        items: (res.data?.data?.items || []).map((item) => ({
+        items: (data?.items || []).map((item) => ({
           id: item.id,
           actualQuantity: item.actualQuantity ?? item.systemQuantity,
-          note: item.note,
+          note: item.note || "",
         })),
       });
     } catch {
@@ -150,6 +154,14 @@ export default function CycleCount() {
                         return `${item.product?.name} (${item.product?.sku})`;
                       },
                     },
+                    {
+                      title: "Kho",
+                      width: 90,
+                      render: (_, field) => {
+                        const item = selected.items[field.name];
+                        return item.warehouseId ? `#${item.warehouseId.slice(0, 8)}` : "-";
+                      },
+                    },
                     { title: "Hệ thống", render: (_, field) => selected.items[field.name].systemQuantity },
                     {
                       title: "Thực tế",
@@ -174,6 +186,20 @@ export default function CycleCount() {
                           }}
                         </Form.Item>
                       ),
+                    },
+                    {
+                      title: "Lý do chênh lệch",
+                      width: 200,
+                      render: (_, field) => {
+                        const item = selected.items[field.name];
+                        const variance = (item.actualQuantity ?? item.systemQuantity) - item.systemQuantity;
+                        if (variance === 0) return <span style={{ color: "#999" }}>-</span>;
+                        return (
+                          <Form.Item name={[field.name, "note"]} style={{ margin: 0 }}>
+                            <Input.TextArea rows={2} placeholder={variance < 0 ? "Lý do thiếu hụt..." : "Lý do thừa..."} />
+                          </Form.Item>
+                        );
+                      },
                     },
                   ]}
                 />

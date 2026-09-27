@@ -56,18 +56,21 @@ export default function Analytics() {
 
   useEffect(() => {
     if (!dateRange) return;
-    setLoading(true);
-    axios
-      .get('/analytics', {
-        params: {
-          from: dateRange[0].format('YYYY-MM-DD'),
-          to: dateRange[1].format('YYYY-MM-DD'),
-          groupBy,
-        },
-      })
-      .then((res) => setData(res.data?.data || res.data))
-      .catch(() => message.error('Không tải được dữ liệu phân tích'))
-      .finally(() => setLoading(false));
+    const t = setTimeout(() => {
+      setLoading(true);
+      axios
+        .get('/analytics', {
+          params: {
+            from: dateRange[0].format('YYYY-MM-DD'),
+            to: dateRange[1].format('YYYY-MM-DD'),
+            groupBy,
+          },
+        })
+        .then((res) => setData(res.data?.data || res.data))
+        .catch(() => message.error('Không tải được dữ liệu phân tích'))
+        .finally(() => setLoading(false));
+    }, 0);
+    return () => clearTimeout(t);
   }, [dateRange, groupBy]);
 
   return (

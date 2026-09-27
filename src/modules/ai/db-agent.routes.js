@@ -73,6 +73,13 @@ function getToolDescription(name) {
     search_deliveries: 'Tra cứu giao hàng',
     search_returns: 'Tra cứu trả hàng',
     get_dashboard: 'Xem dashboard tổng quan kinh doanh',
+    // CRM/SRM (Mục 3-6 đặc tả)
+    search_churn_alerts: 'Tra cứu cảnh báo churn (khách sắp rời bỏ)',
+    search_customer_rfm: 'Phân khúc RFM/CLV khách hàng',
+    search_leads: 'Tra cứu lead từ webhook/CRM',
+    search_grn: 'Tra cứu phiếu nhập kho (GRN)',
+    search_purchase_invoices: 'Tra cứu hóa đơn NCC (3-way matching)',
+    search_vendor_performance: 'Hiệu suất nhà cung cấp (Kraljic, OTIF, scorecard)',
   };
   return descs[name] || name;
 }

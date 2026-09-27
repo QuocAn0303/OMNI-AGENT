@@ -41,6 +41,7 @@ const pool = new Pool({ connectionString: process.env.DATABASE_URL });
 const adapter = new PrismaPg(pool);
 const prisma = new PrismaClient({ adapter });
 
+let _tenantId = null;
 const rndInt = (min, max) => Math.floor(Math.random() * (max - min + 1)) + min;
 const pick = (arr) => arr[Math.floor(Math.random() * arr.length)];
 const round2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
@@ -58,7 +59,7 @@ async function ensureDefaultWarehouse() {
   let wh = await prisma.warehouse.findFirst({ where: { isDefault: true } });
   if (!wh) {
     wh = await prisma.warehouse.create({
-      data: { code: "WH-DEFAULT", name: "Kho mặc định", isDefault: true },
+      data: { code: "WH-DEFAULT", name: "Kho mặc định", isDefault: true, tenantId: _tenantId },
     });
   }
   return wh;
@@ -72,9 +73,9 @@ async function seedFiscalPeriods() {
     const startDate = new Date(year, m - 1, 1);
     const endDate = new Date(year, m, 0, 23, 59, 59, 999);
     await prisma.fiscalPeriod.upsert({
-      where: { year_month: { year, month: m } },
+      where: { tenantId_year_month: { tenantId: _tenantId, year, month: m } },
       update: { status: "OPEN", startDate, endDate },
-      create: { year, month: m, startDate, endDate, status: "OPEN" },
+      create: { year, month: m, startDate, endDate, status: "OPEN", tenantId: _tenantId },
     });
     count++;
   }
@@ -84,9 +85,9 @@ async function seedFiscalPeriods() {
     const startDate = new Date(prevYear, m - 1, 1);
     const endDate = new Date(prevYear, m, 0, 23, 59, 59, 999);
     await prisma.fiscalPeriod.upsert({
-      where: { year_month: { year: prevYear, month: m } },
+      where: { tenantId_year_month: { tenantId: _tenantId, year: prevYear, month: m } },
       update: { status: "OPEN", startDate, endDate },
-      create: { year: prevYear, month: m, startDate, endDate, status: "OPEN" },
+      create: { year: prevYear, month: m, startDate, endDate, status: "OPEN", tenantId: _tenantId },
     });
     count++;
   }
@@ -151,7 +152,7 @@ async function seedVendors() {
     const row = await prisma.vendor.upsert({
       where: { code: v.code },
       update: { name: v.name, phone: v.phone, email: v.email, address: v.address },
-      create: v,
+      create: { ...v, tenantId: _tenantId },
     });
     vendors.push(row);
   }
@@ -190,6 +191,7 @@ async function seedCapital(admin, autopost) {
         reference: "CAP-INIT-500M",
         description: "Góp vốn chủ sở hữu - khởi nghiệp",
         createdById: admin.id,
+        tenantId: _tenantId,
       },
     });
   }
@@ -260,6 +262,7 @@ async function seedExpenses(admin, vendors, autopost) {
             paidAt: tpl.status === "PAID" ? date : null,
             createdById: admin.id,
             approvedById: tpl.status !== "PENDING_APPROVAL" ? admin.id : null,
+            tenantId: _tenantId,
           },
           include: { category: true, vendor: true },
         });
@@ -294,6 +297,7 @@ async function seedExpenses(admin, vendors, autopost) {
           paidAt: tpl.status === "PAID" ? date : null,
           createdById: admin.id,
           approvedById: tpl.status !== "PENDING_APPROVAL" ? admin.id : null,
+          tenantId: _tenantId,
         },
         include: { category: true, vendor: true },
       });
@@ -311,7 +315,7 @@ async function receivePoItems(po, items, warehouse, admin) {
     const inv = await prisma.inventory.upsert({
       where: { productId_warehouseId: { productId: it.productId, warehouseId: warehouse.id } },
       update: { quantity: { increment: it.quantity } },
-      create: { productId: it.productId, warehouseId: warehouse.id, quantity: it.quantity, minStock: 10 },
+      create: { productId: it.productId, warehouseId: warehouse.id, quantity: it.quantity, minStock: 10, tenantId: _tenantId },
     });
     await prisma.inventoryTransaction.create({
       data: {
@@ -320,6 +324,7 @@ async function receivePoItems(po, items, warehouse, admin) {
         inventoryId: inv.id,
         createdById: admin.id,
         note: `Nhap hang PO ${po.poCode}`,
+        tenantId: _tenantId,
       },
     });
   }
@@ -398,9 +403,10 @@ async function seedPurchaseOrders(admin, vendors, autopost, warehouse) {
         total,
         paidAmount,
         receivedAt: date,
-        createdById: admin.id,
-        approvedById: admin.id,
-        items: { create: items.map((it) => ({ ...it, taxRateId: vat10?.id })) },
+      createdById: admin.id,
+      approvedById: admin.id,
+      tenantId: _tenantId,
+      items: { create: items.map((it) => ({ ...it, taxRateId: vat10?.id, tenantId: _tenantId })) },
       },
       include: { vendor: true, items: true },
     });
@@ -472,6 +478,7 @@ async function seedOrderPaymentsAndJournals(admin, autopost) {
             method,
             note: "Thanh toán đơn hàng (demo seed)",
             createdById: admin.id,
+            tenantId: _tenantId,
           },
         });
         paid = payAmount;
@@ -562,6 +569,7 @@ async function seedPayrollJournals(admin, autopost) {
             penalties: calc.penalties,
             finalSalary: calc.finalSalary,
             isLocked: true,
+            tenantId: _tenantId,
           },
         });
         payrollCount++;
@@ -607,6 +615,7 @@ async function seedDebtPayments(admin, autopost) {
         note: "Thanh toán một phần (demo seed)",
         createdById: admin.id,
         paidAt: daysAgo(rndInt(1, 14)),
+        tenantId: _tenantId,
       },
     });
 
@@ -685,7 +694,7 @@ async function seedAccountingNotifications(admin) {
 
   for (const n of items) {
     await prisma.notification.create({
-      data: { ...n, userId: admin.id, roleScope: admin.role },
+      data: { ...n, userId: admin.id, roleScope: admin.role, tenantId: _tenantId },
     });
   }
   console.log(`  ✅ ${items.length} accounting notifications`);
@@ -709,6 +718,8 @@ async function main() {
   }
 
   const autopost = require("../src/modules/accounting/autopost.service");
+  const tenant = await prisma.tenant.findFirst({ where: { slug: "candory-scent" } });
+  _tenantId = tenant?.id || null;
   const warehouse = await ensureDefaultWarehouse();
 
   await seedFiscalPeriods();
@@ -720,6 +731,11 @@ async function main() {
   await seedPayrollJournals(admin, autopost);
   await seedDebtPayments(admin, autopost);
   await seedAccountingNotifications(admin);
+
+  // Fix tenantId for records created via autopost/debtSvc (no tenant context)
+  await prisma.debt.updateMany({ where: { tenantId: null }, data: { tenantId: _tenantId } });
+  await prisma.journalEntry.updateMany({ where: { tenantId: null }, data: { tenantId: _tenantId } });
+  await prisma.journalLine.updateMany({ where: { tenantId: null }, data: { tenantId: _tenantId } });
 
   console.log("\n🎉 Accounting demo seed completed!");
   const stats = {

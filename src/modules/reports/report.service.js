@@ -102,21 +102,18 @@ const getRevenueMonthly = async () => {
 
 // ==================== GET TOP PRODUCTS ====================
 const getTopProducts = async (limit = 10) => {
-  const completedOrders = await prisma.order.findMany({
-    where: { status: "COMPLETED" },
-    select: { id: true },
-  });
-  const orderIds = completedOrders.map((o) => o.id);
-
-  if (orderIds.length === 0) return [];
-
+  // B6: trước đây load TOÀN BỘ order COMPLETED (id) rồi WHERE orderId IN (...)
+  // → IN clause > 65k params khi nhiều đơn + 2 query;
+  // giờ filter nested relation ngay trong groupBy — 1 query, không IN khổng lồ
   const topItems = await prisma.orderItem.groupBy({
     by: ["productId"],
-    where: { orderId: { in: orderIds } },
+    where: { order: { is: { status: "COMPLETED" } } },
     _sum: { quantity: true, subtotal: true },
     orderBy: { _sum: { quantity: "desc" } },
     take: Number(limit),
   });
+
+  if (topItems.length === 0) return [];
 
   const productIds = topItems.map((item) => item.productId);
   const products = await prisma.product.findMany({

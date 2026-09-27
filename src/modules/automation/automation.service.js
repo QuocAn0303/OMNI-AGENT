@@ -1,4 +1,5 @@
 const prisma = require("../../config/prisma");
+const logger = require('../../utils/logger');
 
 const LOG = "[automation]";
 
@@ -29,7 +30,7 @@ const checkAutoReorder = async (productIds, warehouseId) => {
 
       const vendor = lastPO?.purchaseOrder?.vendor;
       if (!vendor || !vendor.isActive) {
-        console.log(`${LOG} auto-reorder: không tìm thấy vendor cho ${inv.product.sku}, skip`);
+        logger.info(`${LOG} auto-reorder: không tìm thấy vendor cho ${inv.product.sku}, skip`);
         continue;
       }
 
@@ -41,7 +42,7 @@ const checkAutoReorder = async (productIds, warehouseId) => {
         },
       });
       if (existingDraft) {
-        console.log(`${LOG} auto-reorder: da co PO draft ${existingDraft.poCode} cho ${inv.product.sku}, skip`);
+        logger.info(`${LOG} auto-reorder: da co PO draft ${existingDraft.poCode} cho ${inv.product.sku}, skip`);
         continue;
       }
 
@@ -76,7 +77,7 @@ const checkAutoReorder = async (productIds, warehouseId) => {
         include: { vendor: true },
       });
 
-      console.log(`${LOG} auto-reorder: tao PO ${poCode} cho ${inv.product.sku}, qty=${reorderQty}, total=${subtotal}, autoApprove=${autoApprove}`);
+      logger.info(`${LOG} auto-reorder: tao PO ${poCode} cho ${inv.product.sku}, qty=${reorderQty}, total=${subtotal}, autoApprove=${autoApprove}`);
 
       if (autoApprove) {
         await notif.notifyRoles(["MANAGER", "ADMIN"], {
@@ -99,7 +100,7 @@ const checkAutoReorder = async (productIds, warehouseId) => {
       }
     }
   } catch (err) {
-    console.error(`${LOG} auto-reorder error:`, err.message);
+    logger.error(`${LOG} auto-reorder error:`, err.message);
   }
 };
 
@@ -117,15 +118,15 @@ const autoPayroll = async () => {
       where: { month, year, isLocked: true },
     });
     if (existing) {
-      console.log(`${LOG} auto-payroll: thang ${month}/${year} da co payroll locked, skip`);
+      logger.info(`${LOG} auto-payroll: thang ${month}/${year} da co payroll locked, skip`);
       return;
     }
 
-    console.log(`${LOG} auto-payroll: bat dau tinh luong thang ${month}/${year}...`);
+    logger.info(`${LOG} auto-payroll: bat dau tinh luong thang ${month}/${year}...`);
     const payrolls = await hrService.generatePayrollForMonth(month, year);
 
     if (!payrolls.length) {
-      console.log(`${LOG} auto-payroll: không co nhân viên active`);
+      logger.info(`${LOG} auto-payroll: không co nhân viên active`);
       return;
     }
 
@@ -156,9 +157,9 @@ const autoPayroll = async () => {
           userId: await getSystemUserId(),
           lines,
         });
-        console.log(`${LOG} auto-payroll: da tao but toan luong ${totalSalary.toLocaleString()} VND`);
+        logger.info(`${LOG} auto-payroll: da tao but toan luong ${totalSalary.toLocaleString()} VND`);
       } catch (err) {
-        console.error(`${LOG} auto-payroll: loi tao but toan:`, err.message);
+        logger.error(`${LOG} auto-payroll: loi tao but toan:`, err.message);
       }
     }
 
@@ -171,9 +172,9 @@ const autoPayroll = async () => {
       meta: { month, year, count: payrolls.length, total: totalSalary },
     });
 
-    console.log(`${LOG} auto-payroll: hoan tat ${payrolls.length} nhân viên, tong ${totalSalary.toLocaleString()} VND`);
+    logger.info(`${LOG} auto-payroll: hoan tat ${payrolls.length} nhân viên, tong ${totalSalary.toLocaleString()} VND`);
   } catch (err) {
-    console.error(`${LOG} auto-payroll error:`, err.message);
+    logger.error(`${LOG} auto-payroll error:`, err.message);
   }
 };
 
@@ -322,10 +323,10 @@ const debtAutoCollection = async () => {
 
     const total = upcomingDebts.length + overdueDebts7.length + overdueDebts30.length;
     if (total > 0) {
-      console.log(`${LOG} debt-collection: ${upcomingDebts.length} sap han, ${overdueDebts7.length} qua 7d, ${overdueDebts30.length} qua 30d`);
+      logger.info(`${LOG} debt-collection: ${upcomingDebts.length} sap han, ${overdueDebts7.length} qua 7d, ${overdueDebts30.length} qua 30d`);
     }
   } catch (err) {
-    console.error(`${LOG} debt-collection error:`, err.message);
+    logger.error(`${LOG} debt-collection error:`, err.message);
   }
 };
 
@@ -336,7 +337,7 @@ const onOrderCompleted = async (order, userId) => {
     if (productIds.length && warehouseId) {
       setTimeout(() => {
         checkAutoReorder(productIds, warehouseId).catch((e) =>
-          console.error(`${LOG} onOrderCompleted auto-reorder error:`, e.message)
+          logger.error(`${LOG} onOrderCompleted auto-reorder error:`, e.message)
         );
       }, 1000);
     }
@@ -352,7 +353,7 @@ const onOrderCompleted = async (order, userId) => {
       } catch (_) {}
     }
   } catch (err) {
-    console.error(`${LOG} onOrderCompleted error:`, err.message);
+    logger.error(`${LOG} onOrderCompleted error:`, err.message);
   }
 };
 
@@ -441,10 +442,10 @@ const morningBriefing = async () => {
       },
     });
 
-    console.log(`${LOG} morning-briefing: sent. revenue=${revenueT.toLocaleString()} VND, alert=${!!anomaly}`);
+    logger.info(`${LOG} morning-briefing: sent. revenue=${revenueT.toLocaleString()} VND, alert=${!!anomaly}`);
     return { success: true, anomaly: !!anomaly };
   } catch (err) {
-    console.error(`${LOG} morning-briefing error:`, err.message);
+    logger.error(`${LOG} morning-briefing error:`, err.message);
     return { success: false, error: err.message };
   }
 };
@@ -533,12 +534,12 @@ const anomalyDetection = async () => {
         meta: { alerts },
       });
 
-      console.log(`${LOG} anomaly-detection: ${alerts.length} alerts`);
+      logger.info(`${LOG} anomaly-detection: ${alerts.length} alerts`);
     }
 
     return { success: true, alerts: alerts.length };
   } catch (err) {
-    console.error(`${LOG} anomaly-detection error:`, err.message);
+    logger.error(`${LOG} anomaly-detection error:`, err.message);
     return { success: false, error: err.message };
   }
 };
@@ -563,9 +564,9 @@ const autoCloseDormantCustomers = async () => {
     });
     if (!dormant.length) return { count: 0 };
     await prisma.customer.updateMany({ where: { id: { in: dormant.map((c) => c.id) } }, data: { isActive: false } });
-    console.log(`${LOG} autoCloseDormant: ${dormant.length} customers`);
+    logger.info(`${LOG} autoCloseDormant: ${dormant.length} customers`);
     return { count: dormant.length };
-  } catch (err) { console.error(`${LOG} autoCloseDormant error:`, err.message); return { success: false }; }
+  } catch (err) { logger.error(`${LOG} autoCloseDormant error:`, err.message); return { success: false }; }
 };
 
 // ===================== 7. AUTO-ARCHIVE OLD DATA =====================
@@ -575,9 +576,9 @@ const autoArchiveData = async () => {
     const now = new Date();
     const a = await prisma.auditLog.deleteMany({ where: { createdAt: { lt: new Date(now.getTime() - 365 * 86400000) } } });
     const n = await prisma.notification.deleteMany({ where: { createdAt: { lt: new Date(now.getTime() - 90 * 86400000) }, isRead: true } });
-    if (a.count || n.count) console.log(`${LOG} autoArchive: ${a.count} audit, ${n.count} notifs`);
+    if (a.count || n.count) logger.info(`${LOG} autoArchive: ${a.count} audit, ${n.count} notifs`);
     return { auditLogs: a.count, notifications: n.count };
-  } catch (err) { console.error(`${LOG} autoArchive error:`, err.message); return { success: false }; }
+  } catch (err) { logger.error(`${LOG} autoArchive error:`, err.message); return { success: false }; }
 };
 
 // ===================== 8. WEEKLY P&L EMAIL =====================
@@ -595,9 +596,9 @@ const weeklyPnLEmail = async () => {
     ]);
     const revW = Number(rw._sum.total || 0); const expW = Number(ew._sum.amount || 0); const prof = revW - expW;
     await notif.notifyRoles(["ADMIN", "MANAGER"], { type: "SYSTEM", severity: "INFO", title: `P&L tuan ${now.toLocaleDateString("vi-VN")}`, message: `${o} don — DT: ${revW.toLocaleString()} VND — CP: ${expW.toLocaleString()} VND — LN: ${prof.toLocaleString()} VND (${revW ? ((prof / revW) * 100).toFixed(1) : 0}%)`, link: "/finance", meta: { revenue: revW, expenses: expW, profit: prof } });
-    console.log(`${LOG} weeklyPnL: ${revW.toLocaleString()} VND`);
+    logger.info(`${LOG} weeklyPnL: ${revW.toLocaleString()} VND`);
     return { revenue: revW, profit: prof };
-  } catch (err) { console.error(`${LOG} weeklyPnL error:`, err.message); return { success: false }; }
+  } catch (err) { logger.error(`${LOG} weeklyPnL error:`, err.message); return { success: false }; }
 };
 
 module.exports = {

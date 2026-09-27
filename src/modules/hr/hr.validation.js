@@ -27,6 +27,7 @@ const createEmployeeSchema = z.object({
   baseSalary: z.number().nonnegative().optional().default(0),
   hireDate: z.string().optional().nullable(),
   address: z.string().optional(),
+  departmentId: z.string().uuid().optional().nullable(),
 });
 
 const createShiftSchema = z.object({
@@ -77,6 +78,7 @@ const updateEmployeeSchema = z.object({
   hireDate: z.string().optional().nullable(),
   address: z.string().optional().nullable(),
   isActive: z.boolean().optional(),
+  departmentId: z.string().uuid().optional().nullable(),
 });
 
 const setCountsSchema = z.object({

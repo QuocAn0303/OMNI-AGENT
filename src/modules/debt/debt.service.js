@@ -17,7 +17,7 @@
  * - summary(): Tính tổng dư nợ phải thu/phải trả đang mở và quá hạn
  * - listByCustomer(customerId): Lấy danh sách công nợ của 1 khách hàng kèm order và payments
  * - listByVendor(vendorId): Lấy danh sách công nợ của 1 nhà cung cấp kèm PO và payments
- * - recordDebtPayment(debtId, { amount, method, note }, userId): Ghi nhận thanh toán công nợ trong transaction — cập nhật debt, tạo payment cho đơn hàng (RECEIVABLE) hoặc cập nhật PO (PAYABLE), auto-post accounting & expense
+ * - recordDebtPayment(debtId, { amount, method, note }, userId): Ghi nhận thanh toán công nợ trong transaction — cập nhật debt, tạo payment cho đơn hàng (RECEIVABLE) hoặc cập nhật PO (PAYABLE), auto-post accounting
  * - markOverdueCron(): Cron job đánh dấu công nợ quá hạn (OPEN/PARTIAL → OVERDUE)
  */
 const { randomUUID } = require("crypto");
@@ -25,7 +25,6 @@ const prisma = require("../../config/prisma");
 const auditService = require("../audit/audit.service");
 const autopostService = require("../accounting/autopost.service");
 const postingErrorService = require("../accounting/posting-error.service");
-const expenseAuto = require("../accounting/expense-auto.service");
 const paymentService = require("../payments/payment.service");
 
 const toNum = (v) => Number(v || 0);
@@ -239,20 +238,38 @@ const summary = async () => {
   };
 };
 
-const listByCustomer = async (customerId) => {
-  return prisma.debt.findMany({
-    where: { customerId },
-    orderBy: { createdAt: "desc" },
-    include: { order: { select: { id: true, orderCode: true } }, payments: true },
-  });
+const listByCustomer = async (customerId, page = 1, limit = 50) => {
+  const skip = (Math.max(1, page) - 1) * Math.min(limit, 200);
+  const take = Math.min(limit, 200);
+  const where = { customerId };
+  const [data, total] = await Promise.all([
+    prisma.debt.findMany({
+      where,
+      skip,
+      take,
+      orderBy: { createdAt: "desc" },
+      include: { order: { select: { id: true, orderCode: true } }, payments: true },
+    }),
+    prisma.debt.count({ where }),
+  ]);
+  return { data, pagination: { page: Math.max(1, page), limit: take, total, totalPages: Math.ceil(total / take) } };
 };
 
-const listByVendor = async (vendorId) => {
-  return prisma.debt.findMany({
-    where: { vendorId },
-    orderBy: { createdAt: "desc" },
-    include: { purchaseOrder: { select: { id: true, poCode: true } }, payments: true },
-  });
+const listByVendor = async (vendorId, page = 1, limit = 50) => {
+  const skip = (Math.max(1, page) - 1) * Math.min(limit, 200);
+  const take = Math.min(limit, 200);
+  const where = { vendorId };
+  const [data, total] = await Promise.all([
+    prisma.debt.findMany({
+      where,
+      skip,
+      take,
+      orderBy: { createdAt: "desc" },
+      include: { purchaseOrder: { select: { id: true, poCode: true } }, payments: true },
+    }),
+    prisma.debt.count({ where }),
+  ]);
+  return { data, pagination: { page: Math.max(1, page), limit: take, total, totalPages: Math.ceil(total / take) } };
 };
 
 const recordDebtPayment = async (debtId, { amount, method = "CASH", note }, userId) => {
@@ -357,9 +374,9 @@ const recordDebtPayment = async (debtId, { amount, method = "CASH", note }, user
     },
   );
 
-  if (debt.type === "PAYABLE") {
-    await expenseAuto.fromDebtPayment({ debtPayment, debt, userId }).catch(() => {});
-  }
+  // A4: KHÔNG tạo expense thanh toán nợ NCC nữa — postDebtPayment (bên trên) đã
+  // ghi DR 331 CR tiền mặt đúng chuẩn (chi phí đã ghi nhận lúc nhập hàng/nhận PO).
+  // Trước đây ghi thêm expense PAID → tiền mặt bị trừ 2 lần + phí sai tăng.
 
   await auditService
     .log({

@@ -26,7 +26,7 @@ import api from '../../api/axios';
 
 const { Text, Paragraph } = Typography;
 
-export default function SmartApprovalCard({ actionSummary, expenseId, vendorId, amount, budgetRemaining, gateId }) {
+export default function SmartApprovalCard({ actionSummary, expenseId, amount, budgetRemaining, gateId }) {
   const [loading, setLoading] = useState(false);
   const [decision, setDecision] = useState(null);
 

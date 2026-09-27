@@ -20,6 +20,7 @@ const prisma = require("../../config/prisma");
 const vnpt = require("./provider/vnpt.adapter");
 const config = require("../integrations/integration-config.service");
 const auditService = require("../audit/audit.service");
+const logger = require('../../utils/logger');
 
 const toNum = (v) => Number(v || 0);
 
@@ -128,7 +129,7 @@ const autoIssueForOrder = async (orderId, userId = null) => {
     return await issueForOrder(orderId, userId);
   } catch (err) {
     // Non-blocking: log và tiếp tục
-    console.error(`[einvoice] autoIssue failed for order ${orderId}:`, err?.message || err);
+    logger.error(`[einvoice] autoIssue failed for order ${orderId}:`, err?.message || err);
     return null;
   }
 };

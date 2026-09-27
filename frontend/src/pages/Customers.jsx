@@ -14,8 +14,9 @@
  */
 import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
+import { useTranslation } from 'react-i18next';
 import useDebounce from '../hooks/useDebounce';
-import { Table, Input, Button, Avatar, message, Modal, Form, Tag } from 'antd';
+import { Table, Input, Button, Avatar, Modal, Form, Tag } from 'antd';
 import {
   SearchOutlined, PlusOutlined, EditOutlined, DeleteOutlined,
   PhoneOutlined, MailOutlined, EnvironmentOutlined,
@@ -25,13 +26,18 @@ import axios from '../api/axios';
 import PageHeader from '../components/layout/PageHeader';
 import MoneyDisplay from '../components/shared/MoneyDisplay';
 import EmptyState from '../components/shared/EmptyState';
+import useToast from '../components/shared/useToast';
+import useConfirm from '../components/shared/useConfirm';
 
 /**
  * Customers — Quản lý khách hàng
  * Endpoints: GET/POST/PUT/DELETE /customers
  */
 export default function Customers() {
+  const { t } = useTranslation();
   const navigate = useNavigate();
+  const toast = useToast();
+  const confirm = useConfirm();
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -49,7 +55,7 @@ export default function Customers() {
       setData(res.data?.data || []);
       setTotal(res.data?.pagination?.total || 0);
     } catch {
-      message.error('Không tải được khách hàng');
+      toast.error(t('customers.loadError'));
     } finally {
       setLoading(false);
     }
@@ -69,31 +75,30 @@ export default function Customers() {
       const values = await form.validateFields();
       if (editing) {
         await axios.put(`/customers/${editing.id}`, values);
-        message.success('Đã cập nhật khách hàng');
+        toast.success(t('customers.updateSuccess'));
       } else {
         await axios.post('/customers', values);
-        message.success('Đã thêm khách hàng');
+        toast.success(t('customers.createSuccess'));
       }
       setModalOpen(false);
       load();
     } catch (err) {
-      if (err.errorFields) return; // validation error
-      message.error('Lưu thất bại');
+      if (err.errorFields) return;
+      toast.error(t('customers.saveError'));
     }
   };
 
   const handleDelete = (id) => {
-    Modal.confirm({
-      title: 'Xóa khách hàng?',
-      content: 'Lịch sử đơn hàng sẽ vẫn được giữ.',
-      okText: 'Xóa', okButtonProps: { danger: true }, cancelText: 'Hủy',
+    confirm.deleteConfirm({
+      title: t('customers.deleteConfirmTitle'),
+      content: t('customers.deleteConfirmContent'),
       onOk: async () => {
         try {
           await axios.delete(`/customers/${id}`);
-          message.success('Đã xóa');
+          toast.success(t('customers.deleteSuccess'));
           load();
         } catch {
-          message.error('Xóa thất bại');
+          toast.error(t('customers.deleteError'));
         }
       },
     });
@@ -110,7 +115,7 @@ export default function Customers() {
 
   const columns = [
     {
-      title: 'Khách hàng',
+      title: t('customers.title'),
       dataIndex: 'name',
       render: (name, row) => (
         <div style={{ display: 'flex', gap: 12, alignItems: 'center' }}>
@@ -135,7 +140,7 @@ export default function Customers() {
       ),
     },
     {
-      title: 'Liên hệ',
+      title: t('customers.contact'),
       width: 160,
       render: (_, row) => (
         <div>
@@ -160,7 +165,7 @@ export default function Customers() {
       ),
     },
     {
-      title: 'Số đơn',
+      title: t('customers.orderCount'),
       dataIndex: 'orderCount',
       width: 90,
       align: 'right',
@@ -170,7 +175,7 @@ export default function Customers() {
       ),
     },
     {
-      title: 'Tổng chi tiêu',
+      title: t('customers.totalSpent'),
       dataIndex: 'totalSpent',
       width: 140,
       align: 'right',
@@ -182,7 +187,7 @@ export default function Customers() {
       ),
     },
     {
-      title: 'Tags',
+      title: t('customers.tags'),
       dataIndex: 'tags',
       width: 180,
       render: (tags) =>
@@ -196,7 +201,7 @@ export default function Customers() {
         ) : <span style={{ color: 'var(--text-muted)' }}>—</span>,
     },
     {
-      title: 'Lần mua cuối',
+      title: t('customers.lastOrder'),
       dataIndex: 'lastOrderAt',
       width: 130,
       render: (d) => d ? (
@@ -233,11 +238,11 @@ export default function Customers() {
   return (
     <>
       <PageHeader
-        title="Khách hàng"
-        subtitle={`${total} khách hàng`}
+        title={t('customers.title')}
+        subtitle={t('customers.count', { count: total })}
         actions={
           <Button type="primary" icon={<PlusOutlined />} onClick={() => openModal()}>
-            Thêm khách hàng
+            {t('customers.add')}
           </Button>
         }
       />
@@ -245,7 +250,7 @@ export default function Customers() {
       <div className="filters-bar">
         <Input
           className="filters-bar__search"
-          placeholder="Tìm theo tên, SĐT, email..."
+          placeholder={t('customers.searchPlaceholder')}
           prefix={<SearchOutlined style={{ color: 'var(--text-muted)' }} />}
           value={search}
           onChange={(e) => setSearch(e.target.value)}
@@ -268,12 +273,9 @@ export default function Customers() {
           locale={{
             emptyText: (
               <EmptyState
-                title="Chưa có khách hàng"
-                action={
-                  <Button type="primary" icon={<PlusOutlined />} onClick={() => openModal()}>
-                    Thêm khách hàng đầu tiên
-                  </Button>
-                }
+                title={t('customers.empty')}
+                actionText={t('customers.addFirst')}
+                onAction={() => openModal()}
               />
             ),
           }}
@@ -281,38 +283,43 @@ export default function Customers() {
       </div>
 
       <Modal
-        title={editing ? 'Sửa khách hàng' : 'Thêm khách hàng'}
+        title={editing ? t('customers.edit') : t('customers.create')}
         open={modalOpen}
         onCancel={() => setModalOpen(false)}
         onOk={handleSave}
-        okText="Lưu"
-        cancelText="Hủy"
+        okText={t('common.save')}
+        cancelText={t('common.cancel')}
         width={480}
       >
         <Form form={form} layout="vertical" size="large" style={{ marginTop: 16 }}>
           <Form.Item
-            label="Tên khách hàng"
+            label={t('customers.name')}
             name="name"
-            rules={[{ required: true, message: 'Vui lòng nhập tên' }]}
+            rules={[
+              { required: true, message: t('customers.nameRequired') },
+              { min: 2, message: 'Tên khách hàng phải có ít nhất 2 ký tự' },
+            ]}
           >
-            <Input placeholder="Nguyễn Văn A" />
+            <Input placeholder={t('customers.namePlaceholder')} />
           </Form.Item>
-          <Form.Item label="Số điện thoại" name="phone">
+          <Form.Item label={t('customers.phone')} name="phone">
             <Input
               prefix={<PhoneOutlined style={{ color: 'var(--text-muted)' }} />}
-              placeholder="0901234567"
+              placeholder={t('customers.phonePlaceholder')}
             />
           </Form.Item>
-          <Form.Item label="Email" name="email" rules={[{ type: 'email', message: 'Email không hợp lệ' }]}>
+          <Form.Item label={t('customers.email')} name="email" rules={[
+            { type: 'email', message: t('customers.emailInvalid') },
+          ]} normalize={(value) => value || ''}>
             <Input
               prefix={<MailOutlined style={{ color: 'var(--text-muted)' }} />}
-              placeholder="example@email.com"
+              placeholder={t('customers.emailPlaceholder')}
             />
           </Form.Item>
-          <Form.Item label="Địa chỉ" name="address">
+          <Form.Item label={t('customers.address')} name="address">
             <Input.TextArea
               rows={2}
-              placeholder="Địa chỉ giao hàng..."
+              placeholder={t('customers.addressPlaceholder')}
             />
           </Form.Item>
         </Form>

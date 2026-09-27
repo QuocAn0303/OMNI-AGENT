@@ -19,6 +19,8 @@ import './styles/global.css'
 import './styles/layout.css'
 import './styles/pages.css'
 import App from './App.jsx'
+import { initOfflineMode } from './utils/offlineQueue'
+import axios from './api/axios'
 
 if (import.meta.env.VITE_SENTRY_DSN) {
   Sentry.init({
@@ -29,21 +31,22 @@ if (import.meta.env.VITE_SENTRY_DSN) {
   });
 }
 
-const FallbackUI = () => (
-  <div style={{ display: 'grid', placeItems: 'center', minHeight: '100vh', padding: 32, textAlign: 'center' }}>
-    <div>
-      <h2 style={{ marginBottom: 8 }}>Đã xảy ra lỗi</h2>
-      <p style={{ color: '#64748b', marginBottom: 16 }}>Vui lòng tải lại trang hoặc liên hệ hỗ trợ.</p>
-      <button onClick={() => window.location.reload()} style={{ padding: '8px 20px', borderRadius: 8, border: '1px solid #e2e8f0', background: '#0f766e', color: '#fff', cursor: 'pointer' }}>
-        Tải lại trang
-      </button>
-    </div>
-  </div>
-);
+// Initialize offline mode
+initOfflineMode(axios);
 
 createRoot(document.getElementById('root')).render(
   <StrictMode>
-    <Sentry.ErrorBoundary fallback={FallbackUI}>
+    <Sentry.ErrorBoundary fallback={() => (
+      <div style={{ display: 'grid', placeItems: 'center', minHeight: '100vh', padding: 32, textAlign: 'center' }}>
+        <div>
+          <h2 style={{ marginBottom: 8 }}>Đã xảy ra lỗi</h2>
+          <p style={{ color: '#64748b', marginBottom: 16 }}>Vui lòng tải lại trang hoặc liên hệ hỗ trợ.</p>
+          <button onClick={() => window.location.reload()} style={{ padding: '8px 20px', borderRadius: 8, border: '1px solid #e2e8f0', background: '#0f766e', color: '#fff', cursor: 'pointer' }}>
+            Tải lại trang
+          </button>
+        </div>
+      </div>
+    )}>
       <App />
     </Sentry.ErrorBoundary>
   </StrictMode>,

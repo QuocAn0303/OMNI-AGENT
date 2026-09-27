@@ -13,9 +13,21 @@ const express = require('express');
 const multer = require('multer');
 const { authenticate, authorize } = require('../../middleware/auth.middleware');
 const settingsService = require('./settings.service');
+const BUSINESS_TEMPLATES = require('../../config/business-templates');
+const { success, created } = require('../../utils/response');
 
 const router = express.Router();
-const upload = multer({ storage: multer.memoryStorage(), limits: { fileSize: 5 * 1024 * 1024 } });
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024 },
+  fileFilter: (req, file, cb) => {
+    // M9: chặn SVG — stored XSS (script bên trong SVG chạy khi trình duyệt render)
+    const allowed = ['image/jpeg', 'image/png', 'image/webp'];
+    const ext = (file.originalname || '').toLowerCase().match(/\.(jpe?g|png|webp)$/);
+    if (allowed.includes(file.mimetype) && ext) cb(null, true);
+    else cb(new Error('Chỉ chấp nhận file ảnh (JPEG, PNG, WebP)'));
+  },
+});
 
 // GET /api/settings
 router.get('/', authenticate, async (req, res, next) => {
@@ -32,6 +44,19 @@ router.put('/', authenticate, authorize('ADMIN'), async (req, res, next) => {
     const data = Object.fromEntries(
       Object.entries(req.body).filter(([k]) => allowed.includes(k))
     );
+
+    // M9: logo phải là URL http(s) hoặc data-URI ảnh raster — chặn SVG (stored XSS)
+    if (typeof data.logo === 'string' && data.logo) {
+      const svgPattern = /\.svg($|\?)|data:image\/svg\+xml|<svg/i;
+      if (svgPattern.test(data.logo)) {
+        throw { status: 400, message: 'Không hỗ trợ logo SVG — dùng PNG, JPEG hoặc WebP' };
+      }
+      const valid = /^(https?:\/\/|data:image\/(png|jpe?g|webp)[;,])/i.test(data.logo);
+      if (!valid) {
+        throw { status: 400, message: 'Logo phải là URL http(s) hoặc ảnh PNG/JPEG/WebP' };
+      }
+    }
+
     const settings = await settingsService.update(data);
     res.json({ success: true, data: settings });
   } catch (err) { next(err); }
@@ -46,109 +71,154 @@ router.put('/onboarding', authenticate, authorize('ADMIN'), async (req, res, nex
   } catch (err) { next(err); }
 });
 
-// POST /api/settings/seed-demo — quick-start demo data
-router.post('/seed-demo', authenticate, authorize('ADMIN'), async (req, res, next) => {
+// PUT /api/settings/beginner-mode
+router.put('/beginner-mode', authenticate, authorize('ADMIN'), async (req, res, next) => {
+  try {
+    const { enabled } = req.body;
+    const settings = await settingsService.setBeginnerMode(!!enabled);
+    res.json({ success: true, data: settings });
+  } catch (err) { next(err); }
+});
+
+// PUT /api/settings/business-template
+router.put('/business-template', authenticate, authorize('ADMIN'), async (req, res, next) => {
+  try {
+    const { template } = req.body;
+    const settings = await settingsService.setBusinessTemplate(template);
+    res.json({ success: true, data: settings });
+  } catch (err) { next(err); }
+});
+
+// PUT /api/settings/accounting-mode — HKD mode toggle (FULL_VAS | SIMPLIFIED_HKD)
+router.put('/accounting-mode', authenticate, authorize('ADMIN'), async (req, res, next) => {
+  try {
+    const { mode } = req.body;
+    if (!['FULL_VAS', 'SIMPLIFIED_HKD'].includes(mode)) {
+      throw { status: 400, message: 'Mode: FULL_VAS | SIMPLIFIED_HKD' };
+    }
+    const settings = await settingsService.setAccountingMode(mode);
+    res.json({ success: true, data: settings });
+  } catch (err) { next(err); }
+});
+
+// POST /api/settings/seed-template — seed data based on business template
+router.post('/seed-template', authenticate, authorize('ADMIN'), async (req, res, next) => {
   try {
     const prisma = require('../../config/prisma');
+    const { template } = req.body;
+
+    const tpl = BUSINESS_TEMPLATES[template];
+    if (!tpl) {
+      throw { status: 400, message: 'Unknown template: ' + template };
+    }
+
     const settings = await settingsService.getOrCreate();
     if (settings.demoSeeded) {
-      return res.json({ success: true, data: { message: 'Demo data already seeded', created: 0 } });
+      return success(res, { message: 'Demo data already seeded', created: 0 });
     }
 
     const warehouse = await prisma.warehouse.create({
-      data: { name: 'Kho chính', address: settings.address || '', isDefault: true },
+      data: { code: 'KHOCHINH', name: 'Kho chinh', address: settings.address || '', isDefault: true },
     });
 
-    const category = await prisma.category.create({
-      data: { name: 'Sản phẩm mẫu', description: 'Danh mục mẫu' },
-    });
-
-    const products = await Promise.all([
-      prisma.product.create({ data: { name: 'Áo thun nam', sku: 'AT001', categoryId: category.id, price: 150000, costPrice: 80000, unit: 'cái' } }),
-      prisma.product.create({ data: { name: 'Áo sơ mi', sku: 'AS001', categoryId: category.id, price: 250000, costPrice: 120000, unit: 'cái' } }),
-      prisma.product.create({ data: { name: 'Quần jeans', sku: 'QJ001', categoryId: category.id, price: 350000, costPrice: 180000, unit: 'cái' } }),
-      prisma.product.create({ data: { name: 'Giày thể thao', sku: 'GT001', categoryId: category.id, price: 500000, costPrice: 300000, unit: 'đôi' } }),
-      prisma.product.create({ data: { name: 'Túi xách', sku: 'TX001', categoryId: category.id, price: 450000, costPrice: 250000, unit: 'cái' } }),
-      prisma.product.create({ data: { name: 'Đồng hồ', sku: 'DH001', categoryId: category.id, price: 800000, costPrice: 450000, unit: 'cái' } }),
-      prisma.product.create({ data: { name: 'Kính mát', sku: 'KM001', categoryId: category.id, price: 180000, costPrice: 90000, unit: 'cái' } }),
-      prisma.product.create({ data: { name: 'Nón lưỡi trai', sku: 'NL001', categoryId: category.id, price: 120000, costPrice: 60000, unit: 'cái' } }),
-      prisma.product.create({ data: { name: 'Vớ thể thao', sku: 'VT001', categoryId: category.id, price: 45000, costPrice: 20000, unit: 'đôi' } }),
-      prisma.product.create({ data: { name: 'Áo khoác gió', sku: 'AK001', categoryId: category.id, price: 420000, costPrice: 220000, unit: 'cái' } }),
-    ]);
-
-    for (const p of products) {
-      await prisma.inventory.create({
-        data: { productId: p.id, warehouseId: warehouse.id, quantity: 100, minStock: 10 },
-      });
+    const createdCategories = [];
+    for (const cat of tpl.categories) {
+      try {
+        const c = await prisma.category.create({ data: { name: cat.name, description: cat.desc || '' } });
+        createdCategories.push(c);
+      } catch { /* duplicate name — skip */ }
     }
 
-    const customers = await Promise.all([
-      prisma.customer.create({ data: { name: 'Nguyễn Văn A', phone: '0901234567', email: 'a@email.com', address: '123 Nguyễn Huệ, Q1' } }),
-      prisma.customer.create({ data: { name: 'Trần Thị B', phone: '0902234568', email: 'b@email.com', address: '456 Lê Lợi, Q3' } }),
-      prisma.customer.create({ data: { name: 'Lê Văn C', phone: '0903234569', email: 'c@email.com', address: '789 Hai Bà Trưng, Q1' } }),
-      prisma.customer.create({ data: { name: 'Phạm Thị D', phone: '0904234570', email: 'd@email.com', address: '321 Võ Văn Tần, Q3' } }),
-      prisma.customer.create({ data: { name: 'Hoàng Văn E', phone: '0905234571', email: 'e@email.com', address: '654 Điện Biên Phủ, Bình Thạnh' } }),
-    ]);
+    let totalProducts = 0;
+    let totalVariants = 0;
+    const catMap = new Map();
+    for (let i = 0; i < tpl.products.length; i++) {
+      const p = tpl.products[i];
+      const catIdx = i % createdCategories.length;
+      const categoryId = createdCategories[catIdx]?.id;
+      if (!categoryId) continue;
 
-    const vendors = await Promise.all([
-      prisma.vendor.create({ data: { name: 'Công ty TNHH May mặc ABC', code: 'ABC', contactPerson: 'Nguyễn Văn F', phone: '0281234567', taxCode: '0301234567' } }),
-      prisma.vendor.create({ data: { name: 'Công ty CP Giày dép XYZ', code: 'XYZ', contactPerson: 'Trần Văn G', phone: '0282234567', taxCode: '0302234567' } }),
-      prisma.vendor.create({ data: { name: 'Nhà phân phối Phụ kiện 123', code: 'PK123', contactPerson: 'Lê Thị H', phone: '0283234567', taxCode: '0303234567' } }),
-    ]);
+      const baseInventory = p.unit === 'kg' || p.unit === 'lit' ? 50 : 100;
+      const minStockBase = p.unit === 'kg' || p.unit === 'lit' ? 5 : 10;
 
-    const order = await prisma.order.create({
-      data: {
-        orderCode: await (async () => {
-          const today = new Date().toISOString().slice(0, 10).replace(/-/g, '');
-          const count = await prisma.order.count({ where: { createdAt: { gte: new Date(new Date().setHours(0, 0, 0, 0)) } } });
-          return `ORD-${today}-${String(count + 1).padStart(4, '0')}`;
-        })(),
-        customerId: customers[0].id,
-        status: 'COMPLETED',
-        paymentStatus: 'PAID',
-        paymentMethod: 'CASH',
-        subtotal: 500000,
-        total: 500000,
-        items: { create: [{ productId: products[0].id, quantity: 2, price: 150000, subtotal: 300000 }, { productId: products[3].id, quantity: 1, price: 200000, subtotal: 200000 }] },
-        payments: { create: [{ amount: 500000, method: 'CASH', paidAt: new Date() }] },
-      },
-    });
+      try {
+        const product = await prisma.product.create({
+          data: {
+            sku: p.sku,
+            name: p.name,
+            categoryId,
+            price: p.price,
+            costPrice: p.costPrice,
+            unit: p.unit,
+            trackByLot: p.trackByLot || false,
+            trackBySerial: p.trackBySerial || false,
+            shelfLifeDays: p.shelfLifeDays || null,
+            kdsStationId: p.kdsStationId || null,
+          },
+        });
 
-    await settingsService.update({ demoSeeded: true });
+        await prisma.inventory.create({
+          data: { productId: product.id, warehouseId: warehouse.id, quantity: baseInventory, minStock: minStockBase },
+        });
 
-    // Seed template workflows
+        if (p.variants && p.variants.length > 0) {
+          for (const v of p.variants) {
+            try {
+              await prisma.productVariant.create({
+                data: { productId: product.id, name: v.name, sku: v.sku, priceAdjust: 0 },
+              });
+              totalVariants++;
+            } catch { /* skip dup variant sku */ }
+          }
+        }
+
+        totalProducts++;
+      } catch { /* duplicate sku — skip */ }
+    }
+
+    const createdCustomers = [];
+    for (const cust of tpl.customers) {
+      try {
+        const c = await prisma.customer.create({
+          data: {
+            name: cust.name,
+            phone: cust.phone,
+            email: cust.email || null,
+            address: cust.address || null,
+            loyaltyPoints: cust.loyaltyPoints || 0,
+            tier: cust.tier || 'BRONZE',
+          },
+        });
+        createdCustomers.push(c);
+      } catch { /* skip dup phone */ }
+    }
+
+    await settingsService.update({ demoSeeded: true, businessTemplate: template });
+
+    // CRM/SRM upgrade: seed workflow duyệt PO đa cấp + 10 báo cáo mặc định (Mục 7, 8)
+    let crmSrmSeed = {};
     try {
-      const workflowService = require("../workflow/workflow.service");
-      const existing = await prisma.workflow.count();
-      if (existing === 0) {
-        await workflowService.createWorkflow(req.user.id, {
-          name: "Duyet chi phi > 5 trieu",
-          trigger: "EXPENSE_ABOVE",
-          config: { threshold: 5000000 },
-          steps: [{ sequence: 1, type: "APPROVAL", config: { approverId: req.user.id } }],
-        });
-        await workflowService.createWorkflow(req.user.id, {
-          name: "Duyet PO > 10 trieu",
-          trigger: "PO_ABOVE",
-          config: { threshold: 10000000 },
-          steps: [{ sequence: 1, type: "APPROVAL", config: { approverId: req.user.id } }],
-        });
-        await workflowService.createWorkflow(req.user.id, {
-          name: "Duyet nghi phep",
-          trigger: "LEAVE_REQUEST",
-          config: {},
-          steps: [{ sequence: 1, type: "APPROVAL", config: { approverId: req.user.id } }],
-        });
-      }
-    } catch (e) {
-      console.error("[settings] workflow seed error:", e.message);
+      const { seedPoApprovalWorkflows } = require('../workflow/po-template.seed');
+      crmSrmSeed.poWorkflows = await seedPoApprovalWorkflows(req.user.id);
+      const { seedDefaultReports } = require('../report-builder/default-reports.seed');
+      crmSrmSeed.reports = await seedDefaultReports(req.user.id);
+    } catch (seedErr) {
+      const logger = require('../../utils/logger');
+      logger.error('[seed-template] CRM/SRM seed failed:', seedErr.message);
     }
 
     res.json({
       success: true,
       data: {
-        message: 'Đã tạo dữ liệu mẫu thành công',
-        created: { products: products.length, customers: customers.length, vendors: vendors.length, orders: 1, warehouse: 1 },
+        message: `Da tao du lieu mau cho "${tpl.name}"`,
+        created: {
+          categories: createdCategories.length,
+          products: totalProducts,
+          variants: totalVariants,
+          customers: createdCustomers.length,
+          warehouse: 1,
+        },
+        crmSrmSeed,
       },
     });
   } catch (err) { next(err); }

@@ -36,7 +36,8 @@ import { io } from "socket.io-client";
 import useAuthStore from "../../stores/authStore";
 import usePlan from "../../hooks/usePlan";
 import { getUnreadCount } from "../../api/notifications";
-import api from "../../api/axios"; // Import api để gọi revoke
+import api from "../../api/axios";
+import GlobalSearch from "../shared/GlobalSearch";
 
 function getSocketOrigin() {
   if (import.meta.env.DEV) return window.location.origin;
@@ -60,6 +61,7 @@ const ROUTE_LABELS = {
   "/purchase-orders": "Mua hàng",
   "/debts": "Công nợ",
   "/profile": "Hồ sơ cá nhân",
+  "/settings": "Cài đặt",
 };
 
 export default function TopBar({ onMenuClick }) {
@@ -78,6 +80,18 @@ export default function TopBar({ onMenuClick }) {
   const { plan, loading: planLoading } = usePlan();
   const { t, i18n } = useTranslation();
   const [unread, setUnread] = useState(0);
+  const [searchOpen, setSearchOpen] = useState(false);
+
+  useEffect(() => {
+    const handler = (e) => {
+      if ((e.ctrlKey || e.metaKey) && e.key === 'k') {
+        e.preventDefault();
+        setSearchOpen(true);
+      }
+    };
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, []);
 
   const langMenu = {
     items: [
@@ -181,7 +195,7 @@ export default function TopBar({ onMenuClick }) {
         key: "settings",
         icon: <SettingOutlined />,
         label: t("topbar.settings"),
-        onClick: () => navigate("/intergrations"),
+        onClick: () => navigate("/settings"),
       },
       {
         key: "tour",
@@ -255,6 +269,7 @@ export default function TopBar({ onMenuClick }) {
             className="topbar__icon-btn"
             aria-label="Tìm kiếm"
             title="Tìm kiếm (Ctrl + K)"
+            onClick={() => setSearchOpen(true)}
           >
             <SearchOutlined style={{ fontSize: 16 }} />
           </button>
@@ -323,6 +338,8 @@ export default function TopBar({ onMenuClick }) {
           </Dropdown>
         </div>
       </header>
+
+      <GlobalSearch open={searchOpen} onClose={() => setSearchOpen(false)} />
     </>
   );
 }

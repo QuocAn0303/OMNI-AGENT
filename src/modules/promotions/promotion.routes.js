@@ -18,6 +18,109 @@
  * - DELETE /:id: Xoá khuyến mãi — gọi promotionService.remove() (ADMIN)
  * - router.cartItemsSchema: Export schema để các module khác sử dụng
  */
+
+/**
+ * @swagger
+ * /api/promotions:
+ *   post:
+ *     summary: Tạo khuyến mãi mới (ADMIN, MANAGER)
+ *     security: [{ bearerAuth: [] }]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               code: { type: string }
+ *               name: { type: string }
+ *               type: { type: string, enum: [PERCENTAGE, FIXED_AMOUNT, BUY_X_GET_Y, CATEGORY_DISCOUNT, PRODUCT_DISCOUNT, FREE_SHIPPING, HAPPY_HOUR] }
+ *               scope: { type: string, enum: [AUTO, VOUCHER_CODE] }
+ *               value: { type: number }
+ *               startDate: { type: string, format: date-time }
+ *               endDate: { type: string, format: date-time }
+ *     responses:
+ *       201: { description: Tạo khuyến mãi thành công }
+ *   get:
+ *     summary: Danh sách khuyến mãi phân trang (ADMIN, MANAGER)
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema: { type: integer }
+ *       - in: query
+ *         name: limit
+ *         schema: { type: integer }
+ *       - in: query
+ *         name: search
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: OK }
+ *
+ * /api/promotions/report:
+ *   get:
+ *     summary: Báo cáo hiệu quả khuyến mãi (ADMIN, MANAGER)
+ *     security: [{ bearerAuth: [] }]
+ *     responses:
+ *       200: { description: OK }
+ *
+ * /api/promotions/{id}:
+ *   get:
+ *     summary: Chi tiết khuyến mãi (ADMIN, MANAGER)
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: OK }
+ *   patch:
+ *     summary: Cập nhật khuyến mãi (ADMIN, MANAGER)
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     requestBody: { required: true, content: { application/json: { schema: { type: object } } } }
+ *     responses:
+ *       200: { description: Cập nhật thành công }
+ *   delete:
+ *     summary: Xóa khuyến mãi (ADMIN)
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: Đã xóa khuyến mãi }
+ *
+ * /api/promotions/{id}/activate:
+ *   post:
+ *     summary: Kích hoạt khuyến mãi (ADMIN, MANAGER)
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: Đã kích hoạt }
+ *
+ * /api/promotions/{id}/pause:
+ *   post:
+ *     summary: Tạm dừng khuyến mãi (ADMIN, MANAGER)
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: Đã tạm dừng }
+ */
 const express = require("express");
 const { z } = require("zod");
 const promotionService = require("./promotion.service");
@@ -38,6 +141,7 @@ const promotionSchema = z.object({
     "CATEGORY_DISCOUNT",
     "PRODUCT_DISCOUNT",
     "FREE_SHIPPING",
+    "HAPPY_HOUR",
   ]),
   scope: z.enum(["AUTO", "VOUCHER_CODE"]).default("AUTO"),
   value: z.number().positive(),
@@ -52,6 +156,12 @@ const promotionSchema = z.object({
   perUserLimit: z.number().int().positive().optional(),
   categoryId: z.string().uuid().optional(),
   productId: z.string().uuid().optional(),
+  // Happy Hour fields
+  scheduleType: z.enum(["ALWAYS", "CRON"]).optional(),
+  cronExpression: z.string().optional(),
+  daysOfWeek: z.string().optional(),
+  startTime: z.string().optional(),
+  endTime: z.string().optional(),
 });
 
 const cartItemsSchema = z.object({
@@ -70,7 +180,7 @@ router.use(authenticate, requireModule("promotions"));
 router.post("/", authorize("ADMIN", "MANAGER"), async (req, res, next) => {
   try {
     const data = promotionSchema.parse(req.body);
-    created(res, await promotionService.create(data), "Tạo khuyến mãi thành công");
+    created(res, await promotionService.create(data, req.user.id), "Tạo khuyến mãi thành công");
   } catch (e) { next(e); }
 });
 
@@ -95,25 +205,26 @@ router.get("/:id", authorize("ADMIN", "MANAGER"), async (req, res, next) => {
 
 router.patch("/:id", authorize("ADMIN", "MANAGER"), async (req, res, next) => {
   try {
-    success(res, await promotionService.update(req.params.id, req.body), "Cập nhật thành công");
+    const data = promotionSchema.partial().parse(req.body);
+    success(res, await promotionService.update(req.params.id, data, req.user.id), "Cập nhật thành công");
   } catch (e) { next(e); }
 });
 
 router.post("/:id/activate", authorize("ADMIN", "MANAGER"), async (req, res, next) => {
   try {
-    success(res, await promotionService.setStatus(req.params.id, "ACTIVE"), "Đã kích hoạt");
+    success(res, await promotionService.setStatus(req.params.id, "ACTIVE", req.user.id), "Đã kích hoạt");
   } catch (e) { next(e); }
 });
 
 router.post("/:id/pause", authorize("ADMIN", "MANAGER"), async (req, res, next) => {
   try {
-    success(res, await promotionService.setStatus(req.params.id, "PAUSED"), "Đã tạm dừng");
+    success(res, await promotionService.setStatus(req.params.id, "PAUSED", req.user.id), "Đã tạm dừng");
   } catch (e) { next(e); }
 });
 
 router.delete("/:id", authorize("ADMIN"), async (req, res, next) => {
   try {
-    await promotionService.remove(req.params.id);
+    await promotionService.remove(req.params.id, req.user.id);
     success(res, null, "Đã xóa khuyến mãi");
   } catch (e) { next(e); }
 });

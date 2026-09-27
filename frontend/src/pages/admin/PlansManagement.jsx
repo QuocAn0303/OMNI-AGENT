@@ -59,7 +59,7 @@ export default function PlansManagement() {
       }
       setModalOpen(false);
       fetchPlans();
-    } catch (err) { message.error("Lỗi lưu gói"); }
+    } catch { message.error("Lỗi lưu gói"); }
   };
 
   const handleDelete = async (id) => {

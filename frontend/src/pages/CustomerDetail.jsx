@@ -90,12 +90,6 @@ const taskPriorityMeta = (v) =>
   TASK_PRIORITY.find((p) => p.value === v) || TASK_PRIORITY[1];
 
 const AVATAR_COLORS = ["#0f766e", "#0891b2", "#7c3aed", "#db2777", "#d97706"];
-const getColor = (id) => {
-  if (!id || typeof id !== "string") return AVATAR_COLORS[0];
-  let hash = 0;
-  for (let i = 0; i < id.length; i++) hash = (hash * 31 + id.charCodeAt(i)) | 0;
-  return AVATAR_COLORS[Math.abs(hash) % AVATAR_COLORS.length];
-};
 
 export default function CustomerDetail() {
   const { id } = useParams();
@@ -144,7 +138,7 @@ export default function CustomerDetail() {
       setAllTags(resTags.data?.data || []);
       setUsers(resUsers.data?.data || []);
       await loadTasks();
-    } catch (err) {
+    } catch {
       message.error("Không tải được thông tin khách hàng");
     } finally {
       setLoading(false);
@@ -573,6 +567,20 @@ export default function CustomerDetail() {
             }}
           >
             <MoneyDisplay value={customer.totalDebt} />
+          </div>
+        </Card>
+        <Card size="small">
+          <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
+            Hạn mức tín dụng
+          </div>
+          <div
+            style={{
+              fontSize: 20,
+              fontWeight: 600,
+              color: "var(--primary)",
+            }}
+          >
+            <MoneyDisplay value={customer.creditLimit || 0} />
           </div>
         </Card>
       </div>

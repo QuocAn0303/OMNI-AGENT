@@ -17,6 +17,7 @@
 const prisma = require("../../config/prisma");
 const autopostService = require("../accounting/autopost.service");
 const postingErrorService = require("../accounting/posting-error.service");
+const auditService = require("../audit/audit.service");
 
 const toNumber = (value) => Number(value || 0);
 
@@ -102,6 +103,15 @@ const recordPayment = async (data, userId) => {
       },
     );
   }
+
+  auditService.log({ userId, action: 'RECORD_PAYMENT', entity: 'Payment', entityId: result.payment.id, after: { orderId, amount: paymentAmount, method } });
+
+  try {
+    const webhookSvc = require('../integrations/webhook.service');
+    const { getTenantId } = require('../../config/tenantContext');
+    const tid = getTenantId();
+    if (tid) webhookSvc.emitEvent('payment.paid', { event: 'payment.paid', data: { paymentId: result.payment.id, orderId, amount: paymentAmount, method } }, tid);
+  } catch (_) {}
 
   return result.payment;
 };

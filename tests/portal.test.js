@@ -97,9 +97,9 @@ describe("portal — customer self-service", () => {
   // ════════════════ SELF-ORDER (B2B) ════════════════
   describe("createMyOrder", () => {
     test("should create order with valid items", async () => {
-      prisma.product.findUnique.mockResolvedValue({
-        id: "p1", name: "Sản phẩm A", price: 200000, isActive: true,
-      });
+      prisma.product.findMany.mockResolvedValue([
+        { id: "p1", name: "Sản phẩm A", price: 200000, isActive: true },
+      ]);
       orderService.create.mockResolvedValue({
         orderCode: "ORD-20260625-0010", total: 400000, items: [],
       });
@@ -129,7 +129,7 @@ describe("portal — customer self-service", () => {
     });
 
     test("should reject order with non-existent product", async () => {
-      prisma.product.findUnique.mockResolvedValue(null);
+      prisma.product.findMany.mockResolvedValue([]);
 
       await expect(
         createMyOrder("c1", {
@@ -139,7 +139,7 @@ describe("portal — customer self-service", () => {
     });
 
     test("should reject order with inactive product", async () => {
-      prisma.product.findUnique.mockResolvedValue(null);
+      prisma.product.findMany.mockResolvedValue([]);
 
       await expect(
         createMyOrder("c1", {
@@ -149,9 +149,9 @@ describe("portal — customer self-service", () => {
     });
 
     test("should enforce minimum quantity of 1", async () => {
-      prisma.product.findUnique.mockResolvedValue({
-        id: "p1", name: "A", price: 100000, isActive: true,
-      });
+      prisma.product.findMany.mockResolvedValue([
+        { id: "p1", name: "A", price: 100000, isActive: true },
+      ]);
       orderService.create.mockResolvedValue({
         orderCode: "ORD-001", total: 100000, items: [],
       });
@@ -170,9 +170,10 @@ describe("portal — customer self-service", () => {
     });
 
     test("should handle multiple items in one order", async () => {
-      prisma.product.findUnique
-        .mockResolvedValueOnce({ id: "p1", name: "A", price: 100000, isActive: true })
-        .mockResolvedValueOnce({ id: "p2", name: "B", price: 200000, isActive: true });
+      prisma.product.findMany.mockResolvedValue([
+        { id: "p1", name: "A", price: 100000, isActive: true },
+        { id: "p2", name: "B", price: 200000, isActive: true },
+      ]);
       orderService.create.mockResolvedValue({
         orderCode: "ORD-MULTI", total: 500000, items: [],
       });
@@ -394,27 +395,84 @@ describe("portal — customer self-service", () => {
   });
 
   describe("verifyOtp", () => {
+    const crypto = require("crypto");
+    const hash = (otp) => crypto.createHash("sha256").update(otp).digest("hex");
+
     test("should verify valid OTP and create session", async () => {
       prisma.portalOtp.findFirst.mockResolvedValue({
-        id: "otp1", phone: "0901234567", otp: "123456", used: false,
+        id: "otp1", phone: "0901234567", otp: hash("123456"), used: false, attempts: 0,
         expiresAt: new Date(Date.now() + 300000),
       });
       prisma.customer.findFirst.mockResolvedValue({
-        id: "c1", name: "Test KH",
+        id: "c1", name: "Test KH", tenantId: "tenant-1",
       });
 
       const result = await verifyOtp("0901234567", "123456");
 
       expect(result.token).toBeDefined();
-      expect(prisma.portalSession.create).toHaveBeenCalled();
+      expect(result.tenantId).toBe("tenant-1");
+      expect(prisma.portalSession.create).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ customerId: "c1", tenantId: "tenant-1" }),
+        })
+      );
     });
 
     test("should reject wrong OTP", async () => {
       prisma.portalOtp.findFirst.mockResolvedValue(null);
+      prisma.customer.findFirst.mockResolvedValue({ id: "c1", tenantId: "tenant-1" });
 
       await expect(
         verifyOtp("0901234567", "999999")
       ).rejects.toEqual(expect.objectContaining({ status: 401 }));
+    });
+
+    test("should increment attempts on wrong OTP", async () => {
+      prisma.portalOtp.findFirst.mockResolvedValue({
+        id: "otp1", phone: "0901234567", otp: hash("123456"), used: false, attempts: 0,
+        expiresAt: new Date(Date.now() + 300000),
+      });
+      prisma.customer.findFirst.mockResolvedValue({ id: "c1", tenantId: "tenant-1" });
+
+      await expect(
+        verifyOtp("0901234567", "000000")
+      ).rejects.toEqual(expect.objectContaining({ status: 401 }));
+
+      expect(prisma.portalOtp.update).toHaveBeenCalledWith(
+        expect.objectContaining({ data: expect.objectContaining({ attempts: 1 }) })
+      );
+    });
+
+    test("should block OTP after 5 wrong attempts", async () => {
+      prisma.portalOtp.findFirst.mockResolvedValue({
+        id: "otp1", phone: "0901234567", otp: hash("123456"), used: false, attempts: 4,
+        expiresAt: new Date(Date.now() + 300000),
+      });
+      prisma.customer.findFirst.mockResolvedValue({ id: "c1", tenantId: "tenant-1" });
+
+      await expect(
+        verifyOtp("0901234567", "000000")
+      ).rejects.toEqual(expect.objectContaining({ status: 429 }));
+
+      expect(prisma.portalOtp.update).toHaveBeenCalledWith(
+        expect.objectContaining({
+          data: expect.objectContaining({ attempts: 5, used: true, blockedUntil: expect.any(Date) }),
+        })
+      );
+    });
+
+    test("should reject while OTP is blocked", async () => {
+      prisma.portalOtp.findFirst.mockResolvedValue({
+        id: "otp1", phone: "0901234567", otp: hash("123456"), used: false, attempts: 5,
+        blockedUntil: new Date(Date.now() + 600000),
+        expiresAt: new Date(Date.now() + 300000),
+      });
+      prisma.customer.findFirst.mockResolvedValue({ id: "c1", tenantId: "tenant-1" });
+
+      await expect(
+        verifyOtp("0901234567", "123456")
+      ).rejects.toEqual(expect.objectContaining({ status: 429 }));
+      expect(prisma.portalSession.create).not.toHaveBeenCalled();
     });
   });
 });

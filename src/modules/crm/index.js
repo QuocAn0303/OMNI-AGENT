@@ -16,6 +16,6 @@ router.use("/tags", require("./tags.routes"));
 router.use("/tasks", require("./tasks.routes"));
 router.use("/segments", require("./segments.routes"));
 router.use("/campaigns", require("./campaigns.routes"));
-router.use("/tags", require("./tags.routes"));
+router.use("/webhook-lead", require("./webhook-lead.routes"));
 
 module.exports = router;

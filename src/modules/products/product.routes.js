@@ -27,6 +27,8 @@ const productService = require("./product.service");
 const { authenticate, authorize } = require("../../middleware/auth.middleware");
 const { success, created, paginated } = require("../../utils/response");
 const uploadCloud = require("../../config/cloudinary.config");
+const prisma = require("../../config/prisma");
+const { exportToExcel } = require("../../utils/exporter");
 
 const productSchema = z.object({
   sku: z.string().min(1, "SKU không được để trống"),
@@ -41,7 +43,33 @@ const productSchema = z.object({
 
 router.use(authenticate);
 
-// Xuất Excel — chỉ ADMIN, MANAGER
+// Xuất Excel (new) — chỉ ADMIN, MANAGER
+router.get("/export", authorize("ADMIN", "MANAGER"), async (req, res, next) => {
+  try {
+    const { search, categoryId } = req.query;
+    const products = await prisma.product.findMany({
+      where: { isActive: true, ...(search ? { name: { contains: search } } : {}), ...(categoryId ? { categoryId } : {}) },
+      include: { category: { select: { name: true } } },
+      take: 10000,
+    });
+    const buf = await exportToExcel(
+      products.map(p => ({ name: p.name, sku: p.sku, price: Number(p.price), category: p.category?.name || "", costPrice: Number(p.costPrice || 0) })),
+      [
+        { header: "Tên sản phẩm", key: "name" },
+        { header: "SKU", key: "sku" },
+        { header: "Giá bán", key: "price" },
+        { header: "Danh mục", key: "category" },
+        { header: "Giá vốn", key: "costPrice" },
+      ],
+      "Sản phẩm"
+    );
+    res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet");
+    res.setHeader("Content-Disposition", `attachment; filename=products_${Date.now()}.xlsx`);
+    res.send(Buffer.from(buf));
+  } catch (e) { next(e); }
+});
+
+// Xuất Excel (legacy) — chỉ ADMIN, MANAGER
 router.get("/export-excel", authorize("ADMIN", "MANAGER"), async (req, res, next) => {
   try {
     const { products } = await productService.getAll({ page: 1, limit: 100000 });

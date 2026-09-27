@@ -3,7 +3,8 @@
  * 
  * Tổng quan:
  * - Xử lý chat với người dùng, phát hiện intent và gọi tool tương ứng
- * - Hỗ trợ các intent: tra tồn kho, nhân sự, đơn hàng, chi tiết đơn, khách hàng, dashboard, doanh thu
+ * - Hỗ trợ 15 intents (đặc tả §3.3): tồn kho, nhân sự, đơn hàng, chi tiết đơn, khách hàng,
+ *   dashboard, doanh thu, churn alerts, RFM/CLV, leads, GRN, hóa đơn NCC + 3 write intents
  * - Lưu session và feedback
  * - Thống kê analytics agent
  * 
@@ -14,17 +15,74 @@
  * - GET /analytics: Thống kê agent (số session, độ trễ, feedback)
  * 
  * Handlers:
- * - TOOL_HANDLERS: queryInventory, getEmployeeInfo, listOrders, getOrderDetail, customerLookup, viewDashboard, getRevenue
+ * - TOOL_HANDLERS: queryInventory, getEmployeeInfo, listOrders, getOrderDetail, customerLookup,
+ *   viewDashboard, getRevenue, queryChurnAlerts, queryRfmSegments, queryLeads, queryGrn, queryPurchaseInvoices
+ *   + write: createOrder, createPO, sendReminder
  * - detectIntent(text): Phân tích text để tìm intent phù hợp
  */
 const express = require('express');
-const { authenticate } = require('../../middleware/auth.middleware');
+const { authenticate, authorize } = require('../../middleware/auth.middleware');
 
 const router = express.Router();
 router.use(authenticate);
 
 const prisma = require('../../config/prisma');
 const { processQuery, generateResponse, HANDLERS } = require('./db-agent.service');
+const logger = require('../../utils/logger');
+
+// ─────────────────────────────────────────────────────────────
+// M3: Role matrix cho tool AI
+// - Tool nhạy cảm (PII: SĐT/email/địa chỉ KH, nhân viên, tài chính, nợ)
+//   chỉ chạy trực tiếp với ADMIN/MANAGER/ACCOUNTANT
+// - Role thấp (CASHIER/WAREHOUSE) → tạo DATA_REQUEST chờ ADMIN/MANAGER
+//   phê duyệt (nút request: GET /human-gates → POST /human-gates/:id/decide)
+// ─────────────────────────────────────────────────────────────
+const SENSITIVE_TOOLS = new Set([
+  'getEmployeeInfo',
+  'getOrderDetail',
+  'customerLookup',
+  // CRM/SRM — PII khách hàng (SĐT, hành vi, điểm churn/RFM)
+  'queryChurnAlerts',
+  'queryRfmSegments',
+  'queryLeads',
+]);
+
+const SENSITIVE_DB_TOOLS = new Set([
+  'search_customers',
+  'search_hr',
+  'search_debts',
+  'search_finance',
+  'search_vendors',
+  'search_churn_alerts',
+  'search_customer_rfm',
+  'search_leads',
+]);
+
+const SENSITIVE_ALLOWED_ROLES = [
+  'SUPER_OMEGA_ULTRA_ADMIN',
+  'SUPER_ADMIN',
+  'ADMIN',
+  'MANAGER',
+  'ACCOUNTANT',
+];
+
+const isSensitiveAllowed = (role) => SENSITIVE_ALLOWED_ROLES.includes(role);
+
+const createDataRequest = (sessionId, tool, params) => {
+  return prisma.agentHumanGate.create({
+    data: {
+      actionType: 'DATA_REQUEST',
+      sessionId,
+      actionPayload: { tool, params },
+      status: 'PENDING',
+      expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
+    },
+  }).catch(() => {});
+};
+
+const DATA_REQUEST_REPLY =
+  'Dữ liệu bạn yêu cầu thuộc loại nhạy cảm (thông tin khách hàng, nhân viên hoặc tài chính). ' +
+  'Yêu cầu đã được gửi tới ADMIN/MANAGER để phê duyệt. Kết quả sẽ được cập nhật sau khi được duyệt.';
 
 const TOOL_HANDLERS = {
   queryInventory: async ({ query }) => {
@@ -85,6 +143,28 @@ const TOOL_HANDLERS = {
     return `💰 Doanh thu ${label}:\n• Tổng: ${Number(agg._sum.total || 0).toLocaleString()}đ\n• Số đơn: ${agg._count.id}`;
   },
 
+  // ─── CRM/SRM fast-path (đặc tả §3.3: 15 intents) — wrap db-agent HANDLERS ───
+  queryChurnAlerts: async (params = {}) => {
+    const r = await HANDLERS.search_churn_alerts(params);
+    return r.message || r.summary;
+  },
+  queryRfmSegments: async (params = {}) => {
+    const r = await HANDLERS.search_customer_rfm(params);
+    return r.message || r.summary;
+  },
+  queryLeads: async (params = {}) => {
+    const r = await HANDLERS.search_leads(params);
+    return r.message || r.summary;
+  },
+  queryGrn: async (params = {}) => {
+    const r = await HANDLERS.search_grn(params);
+    return r.message || r.summary;
+  },
+  queryPurchaseInvoices: async (params = {}) => {
+    const r = await HANDLERS.search_purchase_invoices(params);
+    return r.message || r.summary;
+  },
+
   // ════════════════ WRITE TOOL HANDLERS ════════════════
 
   createOrder: async ({ customerName, productName, quantity }, userId, sessionId) => {
@@ -115,25 +195,7 @@ const TOOL_HANDLERS = {
 };
 
 const INTENTS = [
-  { keywords: ['tồn kho', 'hàng tồn', 'còn hàng', 'sản phẩm', 'inventory'], tool: 'queryInventory', extract: (msg) => ({ query: msg.replace(/tồn kho|sản phẩm|hàng tồn|còn hàng|còn không|có.*không/gi, '').trim() || msg.trim() }) },
-  { keywords: ['nhân sự', 'nhân viên', 'employee', 'hr'], tool: 'getEmployeeInfo', extract: (msg) => ({ employeeName: msg.replace(/nhân sự|nhân viên|thông tin|tra cứu/gi, '').trim() || msg.trim() }) },
-  { keywords: ['đơn hàng', 'order', 'danh sách đơn'], tool: 'listOrders', extract: (msg) => {
-    const s = msg.match(/(pending|confirmed|shipping|completed|cancelled)/i);
-    return { status: s ? s[1].toUpperCase() : undefined };
-  }},
-  { keywords: ['chi tiết đơn', 'xem đơn', 'mã đơn', 'order detail', 'ord-'], tool: 'getOrderDetail', extract: (msg) => {
-    const c = msg.match(/(ORD-\d{8}-\d{4})/i);
-    return { orderCode: c ? c[1].toUpperCase() : msg.trim() };
-  }},
-  { keywords: ['khách hàng', 'customer'], tool: 'customerLookup', extract: (msg) => ({ query: msg.replace(/khách hàng|thông tin|tra cứu/gi, '').trim() || msg.trim() }) },
-  { keywords: ['dashboard', 'tổng quan', 'tình hình kinh doanh', 'business'], tool: 'viewDashboard', extract: () => ({}) },
-  { keywords: ['doanh thu', 'revenue'], tool: 'getRevenue', extract: (msg) => {
-    if (/hôm nay|today/i.test(msg)) return { period: 'today' };
-    if (/tháng trước|last month/i.test(msg)) return { period: 'last_month' };
-    return { period: 'this_month' };
-  }},
-
-  // Write intents — HÀNH ĐỘNG gây mutate dữ liệu
+  // Write intents MUST come first — they conflict with read patterns (y hệt db-agent INTENT_MAP)
   { keywords: ['tạo đơn hàng', 'tạo order', 'đặt hàng', 'bán cho'], tool: 'createOrder', isWrite: true,
     extract: (msg) => {
       const customer = msg.match(/(cho|khách)\s+(.+?)(?:\s+\d+\s|$)/i);
@@ -166,6 +228,55 @@ const INTENTS = [
       return { customerName: customer ? customer[2].trim() : msg.replace(/nhắc nợ|gửi nhắc|nhắc khách|đòi nợ|remind/gi, '').trim() };
     }
   },
+
+  // CRM/SRM intents — 5 intents mới (đặc tả §3.3: tổng 15 intents)
+  { keywords: ['churn', 'khách sắp mất', 'khách có nguy cơ', 'giữ chân'], tool: 'queryChurnAlerts',
+    extract: (msg) => {
+      const m = msg.toLowerCase().match(/triggered|retained|lost|pending/);
+      return { status: m ? m[0].toUpperCase() : undefined };
+    }},
+  { keywords: ['rfm', 'clv', 'phân khúc khách', 'giá trị vòng đời'], tool: 'queryRfmSegments',
+    extract: (msg) => {
+      const map = { champions: 'Champions', loyal: 'Loyal', potential: 'Potential', 'at-risk': 'At-Risk', hibernating: 'Hibernating' };
+      const m = msg.toLowerCase().match(/champions|loyal|potential|at-risk|hibernating/);
+      return { segment: m ? map[m[0]] : undefined };
+    }},
+  { keywords: ['lead', 'khách tiềm năng', 'nguồn khách'], tool: 'queryLeads',
+    extract: (msg) => {
+      const m = msg.toLowerCase().match(/contacted|qualified|dead|new/);
+      return { leadStatus: m ? m[0].toUpperCase() : undefined };
+    }},
+  { keywords: ['phiếu nhập kho', 'grn', 'nhận hàng po', 'kiểm hàng'], tool: 'queryGrn',
+    extract: (msg) => {
+      if (/posted|đã ghi/i.test(msg)) return { status: 'POSTED' };
+      if (/\bqc\b|xong|hoàn tất kiểm/i.test(msg)) return { status: 'QC_DONE' };
+      return {};
+    }},
+  { keywords: ['hóa đơn mua', 'đối soát hóa đơn', '3-way', 'purchase invoice'], tool: 'queryPurchaseInvoices',
+    extract: (msg) => {
+      if (/variance|lệch|vượt dung sai/i.test(msg)) return { matchStatus: 'VARIANCE_HOLD' };
+      if (/matched|khớp|đã đối soát/i.test(msg)) return { matchStatus: 'MATCHED' };
+      if (/pending|chờ/i.test(msg)) return { matchStatus: 'PENDING' };
+      return {};
+    }},
+
+  { keywords: ['tồn kho', 'hàng tồn', 'còn hàng', 'sản phẩm', 'inventory'], tool: 'queryInventory', extract: (msg) => ({ query: msg.replace(/tồn kho|sản phẩm|hàng tồn|còn hàng|còn không|có.*không/gi, '').trim() || msg.trim() }) },
+  { keywords: ['nhân sự', 'nhân viên', 'employee', 'hr'], tool: 'getEmployeeInfo', extract: (msg) => ({ employeeName: msg.replace(/nhân sự|nhân viên|thông tin|tra cứu/gi, '').trim() || msg.trim() }) },
+  { keywords: ['đơn hàng', 'order', 'danh sách đơn'], tool: 'listOrders', extract: (msg) => {
+    const s = msg.match(/(pending|confirmed|shipping|completed|cancelled)/i);
+    return { status: s ? s[1].toUpperCase() : undefined };
+  }},
+  { keywords: ['chi tiết đơn', 'xem đơn', 'mã đơn', 'order detail', 'ord-'], tool: 'getOrderDetail', extract: (msg) => {
+    const c = msg.match(/(ORD-\d{8}-\d{4})/i);
+    return { orderCode: c ? c[1].toUpperCase() : msg.trim() };
+  }},
+  { keywords: ['khách hàng', 'customer'], tool: 'customerLookup', extract: (msg) => ({ query: msg.replace(/khách hàng|thông tin|tra cứu/gi, '').trim() || msg.trim() }) },
+  { keywords: ['dashboard', 'tổng quan', 'tình hình kinh doanh', 'business'], tool: 'viewDashboard', extract: () => ({}) },
+  { keywords: ['doanh thu', 'revenue'], tool: 'getRevenue', extract: (msg) => {
+    if (/hôm nay|today/i.test(msg)) return { period: 'today' };
+    if (/tháng trước|last month/i.test(msg)) return { period: 'last_month' };
+    return { period: 'this_month' };
+  }},
 ];
 
 function detectIntent(text) {
@@ -190,7 +301,7 @@ router.post('/chat', async (req, res, next) => {
 
     const userMsg = lastUserMsg.content || '';
     const intent = detectIntent(userMsg);
-    console.log('[Agent Chat] Intent:', intent?.tool, 'Msg:', userMsg);
+    logger.info('[Agent Chat] Intent:', intent?.tool, 'Msg:', logger.truncateLog(userMsg));
 
     // Tạo session
     const session = await prisma.agentSession.create({
@@ -228,6 +339,11 @@ router.post('/chat', async (req, res, next) => {
             },
           }).catch(() => {});
         }
+      } else if (SENSITIVE_TOOLS.has(intent.tool) && !isSensitiveAllowed(req.user.role)) {
+        // M3: role thấp hỏi tool nhạy cảm → tạo request chờ phê duyệt
+        stepType = 'TOOL_CALL';
+        await createDataRequest(session.id, intent.tool, intent.params);
+        reply = DATA_REQUEST_REPLY;
       } else {
         reply = await TOOL_HANDLERS[intent.tool](intent.params);
         reply = `📋 **${intent.tool}**\n\n${reply}`;
@@ -236,8 +352,15 @@ router.post('/chat', async (req, res, next) => {
       try {
         const dbResult = await processQuery(userMsg);
         if (dbResult.success && dbResult.data?.length > 0) {
-          stepType = 'LLM_CALL';
-          reply = await generateResponse(userMsg, dbResult);
+          if (SENSITIVE_DB_TOOLS.has(dbResult.tool) && !isSensitiveAllowed(req.user.role)) {
+            // M3: fallback tool nhạy cảm → request chờ phê duyệt
+            stepType = 'TOOL_CALL';
+            await createDataRequest(session.id, dbResult.tool, dbResult.params);
+            reply = DATA_REQUEST_REPLY;
+          } else {
+            stepType = 'LLM_CALL';
+            reply = await generateResponse(userMsg, dbResult);
+          }
         } else {
           reply = 'Xin chào! Tôi có thể giúp bạn:\n' +
             '• 📦 Tra cứu tồn kho (vd: "tồn kho sáp treo")\n' +
@@ -365,8 +488,9 @@ router.get('/analytics', async (req, res, next) => {
 });
 
 // ─── Human Gates ───
+// M2: chỉ ADMIN/MANAGER mới xem + phê duyệt yêu cầu (write + DATA_REQUEST)
 
-router.get('/human-gates', async (req, res, next) => {
+router.get('/human-gates', authorize('ADMIN', 'MANAGER'), async (req, res, next) => {
   try {
     const gates = await prisma.agentHumanGate.findMany({
       where: { status: 'PENDING' },
@@ -380,7 +504,7 @@ router.get('/human-gates', async (req, res, next) => {
   }
 });
 
-router.post('/human-gates/:id/decide', async (req, res, next) => {
+router.post('/human-gates/:id/decide', authorize('ADMIN', 'MANAGER'), async (req, res, next) => {
   try {
     const { id } = req.params;
     const { decision, note } = req.body;

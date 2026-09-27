@@ -16,6 +16,109 @@
  * - POST /:id/complete: Hoàn tất phiếu trả — gọi returnService.complete() (ADMIN, MANAGER)
  * - PATCH /:id/reject: Từ chối phiếu trả — gọi returnService.reject() (ADMIN, MANAGER)
  */
+
+/**
+ * @swagger
+ * /api/returns:
+ *   post:
+ *     summary: Tạo phiếu trả hàng (ADMIN, MANAGER, CASHIER)
+ *     security: [{ bearerAuth: [] }]
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               orderId: { type: string }
+ *               reason: { type: string, enum: [DEFECTIVE, WRONG_ITEM, CUSTOMER_CHANGE, EXPIRED, OTHER] }
+ *               refundMethod: { type: string, enum: [CASH, BANK_TRANSFER, STORE_CREDIT, EXCHANGE, NONE] }
+ *               lineItems:
+ *                 type: array
+ *                 items:
+ *                   type: object
+ *                   properties:
+ *                     type: { type: string, enum: [RETURN, EXCHANGE] }
+ *                     orderItemId: { type: string }
+ *                     productId: { type: string }
+ *                     quantity: { type: integer }
+ *                     unitPrice: { type: number }
+ *               note: { type: string }
+ *     responses:
+ *       201: { description: Tạo yêu cầu trả hàng thành công }
+ *   get:
+ *     summary: Danh sách phiếu trả phân trang (ADMIN, MANAGER)
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: query
+ *         name: page
+ *         schema: { type: integer }
+ *       - in: query
+ *         name: limit
+ *         schema: { type: integer }
+ *     responses:
+ *       200: { description: OK }
+ *
+ * /api/returns/order/{orderId}:
+ *   get:
+ *     summary: Phiếu trả theo đơn hàng (ADMIN, MANAGER, CASHIER)
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: orderId
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: OK }
+ *
+ * /api/returns/{id}:
+ *   get:
+ *     summary: Chi tiết phiếu trả (ADMIN, MANAGER, CASHIER)
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: OK }
+ *
+ * /api/returns/{id}/approve:
+ *   patch:
+ *     summary: Duyệt phiếu trả (ADMIN, MANAGER)
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: Duyệt trả hàng thành công }
+ *
+ * /api/returns/{id}/complete:
+ *   post:
+ *     summary: Hoàn tất phiếu trả (ADMIN, MANAGER)
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: Hoàn tất trả hàng thành công }
+ *
+ * /api/returns/{id}/reject:
+ *   patch:
+ *     summary: Từ chối phiếu trả (ADMIN, MANAGER)
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: id
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: Từ chối trả hàng thành công }
+ */
 const express = require("express");
 const { z } = require("zod");
 const returnService = require("./return.service");
@@ -30,15 +133,16 @@ const createReturnSchema = z.object({
   reason: z.enum(["DEFECTIVE", "WRONG_ITEM", "CUSTOMER_CHANGE", "EXPIRED", "OTHER"]),
   refundMethod: z.enum(["CASH", "BANK_TRANSFER", "STORE_CREDIT", "EXCHANGE", "NONE"]),
   restockable: z.boolean().optional(),
-  items: z.array(z.object({
-    orderItemId: z.string().uuid(),
+  lineItems: z.array(z.object({
+    type: z.enum(["RETURN", "EXCHANGE"]).default("RETURN"),
+    orderItemId: z.string().uuid().optional(),
+    productId: z.string().uuid().optional(),
     quantity: z.number().int().positive(),
-  })).min(1),
-  exchangeItems: z.array(z.object({
-    productId: z.string().uuid(),
-    quantity: z.number().int().positive(),
-    unitPrice: z.number().nonnegative(),
-  })).optional(),
+    unitPrice: z.number().nonnegative().optional(),
+  })).min(1).refine(
+    (items) => items.some((it) => it.type === "RETURN"),
+    { message: "Phải có ít nhất 1 item RETURN" },
+  ),
   note: z.string().optional(),
   overridePolicy: z.boolean().optional(),
 });

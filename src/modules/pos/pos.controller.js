@@ -1,6 +1,6 @@
 const service = require("./pos.service");
 const orderService = require("../orders/order.service");
-const { success, created } = require("../../utils/response");
+const { success, created, error } = require("../../utils/response");
 
 const listProducts = async (req, res, next) => {
   try {
@@ -12,7 +12,7 @@ const listProducts = async (req, res, next) => {
 const findBySku = async (req, res, next) => {
   try {
     const product = await service.findBySku(req.params.sku);
-    if (!product) return res.status(404).json({ success: false, message: "Không tìm thấy sản phẩm" });
+    if (!product) return error(res, "Không tìm thấy sản phẩm", 404);
     success(res, product);
   } catch (err) { next(err); }
 };

@@ -1,21 +1,9 @@
-/**
- * Frontend: pages/Onboarding.jsx — Onboarding wizard (5 bước)
- *
- * Tổng quan:
- * - Wizard 5 bước: CompanyInfo → Warehouse → Category → Staff → Payment
- * - Lưu tiến độ onboarding qua API PUT /settings/onboarding sau mỗi bước
- * - Khi kết thúc (finish): đánh dấu done = true, chuyển đến /dashboard
- * - State: current (step index), saving; navigate khi finish/skip
- *
- * Components/Hooks/Exports:
- * - Onboarding: Component chính (xuất mặc định)
- * - STEP_KEYS: Mảng cấu hình các bước (title, desc, component)
- */
 import { useState } from 'react';
-import { Steps, Button, Typography, Space, Card, message } from 'antd';
+import { Steps, Button, Typography, Space, Card, message, Progress } from 'antd';
 import { useNavigate } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import api from '../api/axios';
+import BusinessTypeStep from './onboarding/BusinessTypeStep';
 import CompanyInfoStep from './onboarding/CompanyInfoStep';
 import WarehouseStep from './onboarding/WarehouseStep';
 import CategoryStep from './onboarding/CategoryStep';
@@ -25,6 +13,7 @@ import PaymentStep from './onboarding/PaymentStep';
 const { Title, Text } = Typography;
 
 const STEP_KEYS = [
+  { titleKey: 'onboarding.steps.businessType', descKey: 'onboarding.steps.businessTypeDesc', component: null },
   { titleKey: 'onboarding.steps.companyInfo', descKey: 'onboarding.steps.companyInfoDesc', component: CompanyInfoStep },
   { titleKey: 'onboarding.steps.warehouse', descKey: 'onboarding.steps.warehouseDesc', component: WarehouseStep },
   { titleKey: 'onboarding.steps.category', descKey: 'onboarding.steps.categoryDesc', component: CategoryStep },
@@ -35,16 +24,40 @@ const STEP_KEYS = [
 export default function Onboarding() {
   const [current, setCurrent] = useState(0);
   const [saving, setSaving] = useState(false);
+  const [seeding, setSeeding] = useState(false);
+  const [seedingComplete, setSeedingComplete] = useState(false);
+  const [seedResult, setSeedResult] = useState(null);
+  const [businessTemplate, setBusinessTemplate] = useState(null);
   const navigate = useNavigate();
   const { t } = useTranslation();
 
-  const StepComponent = STEP_KEYS[current].component;
+  const isBusinessStep = current === 0;
+  const isLastStep = current === STEP_KEYS.length - 1;
+
+  const StepComponent = isBusinessStep ? null : STEP_KEYS[current].component;
 
   const saveStep = async (stepIndex, done = false) => {
     try {
       await api.put('/settings/onboarding', { step: stepIndex + 1, done });
     } catch {
       // non-blocking
+    }
+  };
+
+  const handleSeedTemplate = async () => {
+    if (!businessTemplate) return;
+    setSeeding(true);
+    try {
+      const res = await api.post('/settings/seed-template', { template: businessTemplate });
+      setSeedResult(res.data.data);
+      setSeedingComplete(true);
+      message.success(res.data.data.message);
+    } catch (err) {
+      if (err.response?.status !== 400) {
+        message.error('Không thể tạo dữ liệu mẫu, vui lòng thử lại');
+      }
+    } finally {
+      setSeeding(false);
     }
   };
 
@@ -59,48 +72,103 @@ export default function Onboarding() {
     setSaving(true);
     await saveStep(STEP_KEYS.length - 1, true);
     setSaving(false);
+    if (businessTemplate && !seedingComplete) {
+      await handleSeedTemplate();
+    }
     message.success(t('onboarding.finishMessage'));
     navigate('/dashboard');
   };
 
   return (
     <div style={{ minHeight: '100vh', background: 'var(--bg-primary)', display: 'flex', alignItems: 'center', justifyContent: 'center', padding: 24 }}>
-      <Card style={{ width: '100%', maxWidth: 720 }} styles={{ body: { padding: 32 } }}>
+      <Card style={{ width: '100%', maxWidth: 800 }} styles={{ body: { padding: 32 } }}>
         <Space direction="vertical" style={{ width: '100%' }} size="large">
           <div style={{ textAlign: 'center' }}>
             <Title level={3} style={{ margin: 0 }}>{t('onboarding.title')}</Title>
             <Text type="secondary">{t('onboarding.subtitle')}</Text>
           </div>
 
-          <Steps
-            current={current}
-            items={STEP_KEYS.map((s) => ({ title: t(s.titleKey), description: t(s.descKey) }))}
+          {/* Progress bar for visual feedback */}
+          <Progress
+            percent={Math.round(((current + 1) / STEP_KEYS.length) * 100)}
+            showInfo={false}
+            strokeColor="var(--primary)"
+            trailColor="var(--border-light)"
             size="small"
           />
 
-          <div style={{ minHeight: 300 }}>
-            <StepComponent />
-          </div>
+          {!seedingComplete && !seeding ? (
+            <>
+              <Steps
+                current={current}
+                items={STEP_KEYS.map((s) => ({ title: t(s.titleKey), description: t(s.descKey) }))}
+                size="small"
+                style={{ overflowX: 'auto' }}
+              />
 
-          <div style={{ display: 'flex', justifyContent: 'space-between' }}>
-            <Button disabled={current === 0} onClick={() => setCurrent((c) => c - 1)}>
-              {t('common.back')}
-            </Button>
-            <Space>
-              <Button type="link" onClick={() => navigate('/dashboard')}>
-                {t('onboarding.skip')}
-              </Button>
-              {current < STEP_KEYS.length - 1 ? (
-                <Button type="primary" loading={saving} onClick={handleNext}>
-                  {t('common.next')}
+              <div style={{ minHeight: 300 }}>
+                {isBusinessStep ? (
+                  <BusinessTypeStep onChange={setBusinessTemplate} />
+                ) : (
+                  <StepComponent />
+                )}
+              </div>
+
+              <div style={{ display: 'flex', justifyContent: 'space-between' }}>
+                <Button disabled={current === 0} onClick={() => setCurrent((c) => c - 1)}>
+                  {t('common.back')}
                 </Button>
-              ) : (
-                <Button type="primary" loading={saving} onClick={handleFinish}>
-                  {t('common.finish')}
+                <Space>
+                  <Button type="link" onClick={() => navigate('/dashboard')}>
+                    {t('onboarding.skip')}
+                  </Button>
+                  {isLastStep ? (
+                    <Button
+                      type="primary"
+                      loading={saving}
+                      onClick={handleFinish}
+                    >
+                      {t('common.finish')}
+                    </Button>
+                  ) : (
+                    <Button
+                      type="primary"
+                      loading={saving}
+                      onClick={handleNext}
+                      disabled={isBusinessStep && !businessTemplate}
+                    >
+                      {t('common.next')}
+                    </Button>
+                  )}
+                </Space>
+              </div>
+            </>
+          ) : seeding ? (
+            <div style={{ textAlign: 'center', padding: 40 }}>
+              <Space direction="vertical" size="large">
+                <Text strong style={{ fontSize: 16 }}>Đang tạo dữ liệu mẫu cho shop...</Text>
+                <Progress percent={50} status="active" />
+                <Text type="secondary">Chúng tôi đang thiết lập sản phẩm, danh mục và khách hàng mẫu.</Text>
+              </Space>
+            </div>
+          ) : seedingComplete ? (
+            <div style={{ textAlign: 'center', padding: 40 }}>
+              <Space direction="vertical" size="large">
+                <Title level={4} type="success" style={{ margin: 0 }}>
+                  Thiết lập hoàn tất!
+                </Title>
+                {seedResult && (
+                  <Text type="secondary">
+                    Đã tạo {seedResult.created?.products || 0} sản phẩm, {seedResult.created?.categories || 0} danh mục,
+                    {seedResult.created?.customers || 0} khách hàng, {seedResult.created?.warehouse || 0} kho hàng.
+                  </Text>
+                )}
+                <Button type="primary" size="large" onClick={() => navigate('/dashboard')}>
+                  Bắt đầu sử dụng
                 </Button>
-              )}
-            </Space>
-          </div>
+              </Space>
+            </div>
+          ) : null}
         </Space>
       </Card>
     </div>

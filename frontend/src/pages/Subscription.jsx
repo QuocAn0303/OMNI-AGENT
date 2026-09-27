@@ -55,6 +55,15 @@ export default function Subscription() {
       const { data } = await api.post("/subscriptions/my/upgrade-request", { planId: upgradeModal.id });
       const checkoutUrl = data?.data?.checkoutUrl;
       if (checkoutUrl) {
+        const allowedDomains = ['payos.vn', 'sandbox.payos.vn', 'pay.payos.vn'];
+        try {
+          const url = new URL(checkoutUrl);
+          const isAllowed = allowedDomains.some(d => url.hostname === d || url.hostname.endsWith('.' + d));
+          if (!isAllowed && import.meta.env.PROD) {
+            message.error('URL thanh toán không hợp lệ');
+            return;
+          }
+        } catch { /* invalid URL */ }
         window.location.href = checkoutUrl;
       } else {
         message.error("Không nhận được link thanh toán");

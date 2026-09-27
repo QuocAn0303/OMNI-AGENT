@@ -1,0 +1,333 @@
+/**
+ * modules/accounting/grn.service.js — Phiếu nhập kho từ PO (Goods Receipt Note) — Mục 6.1
+ *
+ * Tổng quan:
+ * - Luồng: DRAFT (nhận hàng) → recordQc (pass/reject) → QC_DONE → post (POSTED).
+ * - Khi POSTED: cập nhật Inventory theo giá vốn bình quân gia quyền + InventoryTransaction
+ *   IMPORT + InventoryLot — TÁI DÙNG helper `findInventory`/`getDefaultWarehouseId`
+ *   và pattern giống `purchase.service.receive` (không viết lại phép cộng tồn kho).
+ * - KHÔNG tạo Debt tại đây: công nợ phải trả sinh ở bước 3-Way Matching khi
+ *   PurchaseInvoiceRecord MATCHED (xem purchase-invoice.service.js). Hàm
+ *   `debtService.createPayableForPoInTx` là idempotent (poId unique) nên legacy
+ *   luồng `receive` tạo Debt trước không gây duplicate.
+ * - PO chuyển RECEIVED khi tổng receivedQty của các GRN POSTED >= tổng orderedQty.
+ *
+ * Hàm:
+ * - create(poId, {warehouseId, receivedAt, items}, userId): tạo GRN DRAFT (validate over-receipt)
+ * - recordQc(id, items, userId): ghi nhận passQty/rejectQty từng line → QC_DONE
+ * - post(id, userId): POSTED — nhập kho + tính onTime + cập nhật PO RECEIVED khi đủ hàng
+ * - list({poId, status, page, limit}) / getById(id)
+ */
+const prisma = require("../../config/prisma");
+const { getDefaultWarehouseId, findInventory } = require("../../utils/warehouse.helper");
+const { withCodeRetry } = require("./journal.service");
+const auditService = require("../audit/audit.service");
+const logger = require("../../utils/logger");
+
+const toNum = (v) => Number(v || 0);
+const round2 = (v) => Math.round(v * 100) / 100;
+
+// Mã GRN-YYYYMMDD-XXXX (tăng dần trong ngày, dùng withCodeRetry chống trùng)
+const generateGrnCode = async (tx) => {
+  const d = new Date();
+  const ymd = `${d.getFullYear()}${String(d.getMonth() + 1).padStart(2, "0")}${String(d.getDate()).padStart(2, "0")}`;
+  const count = await tx.goodsReceiptNote.count({
+    where: { grnCode: { startsWith: `GRN-${ymd}-` } },
+  });
+  return `GRN-${ymd}-${String(count + 1).padStart(4, "0")}`;
+};
+
+// Tạo GRN DRAFT cho 1 PO — validate: PO APPROVED/ORDERED, item thuộc PO, không nhận vượt
+const create = async (poId, { warehouseId = null, receivedAt = null, items = [] } = {}, userId, client = prisma) => {
+  if (!items.length) throw { status: 400, message: "GRN cần ít nhất 1 dòng hàng" };
+
+  const po = await client.purchaseOrder.findUnique({
+    where: { id: poId },
+    include: { items: true },
+  });
+  if (!po) throw { status: 404, message: "Không tìm thấy PO" };
+  if (!["APPROVED", "ORDERED"].includes(po.status)) {
+    throw { status: 400, message: "PO phải ở trạng thái APPROVED/ORDERED để nhận hàng" };
+  }
+
+  // Số lượng đã nhận (GRN POSTED) theo từng PurchaseItem
+  const postedItems = await client.goodsReceiptItem.findMany({
+    where: { grn: { purchaseOrderId: poId, status: "POSTED" } },
+    select: { purchaseItemId: true, receivedQty: true },
+  });
+  const receivedByItem = {};
+  for (const it of postedItems) {
+    receivedByItem[it.purchaseItemId] = (receivedByItem[it.purchaseItemId] || 0) + it.receivedQty;
+  }
+
+  for (const item of items) {
+    const pi = po.items.find((i) => i.id === item.purchaseItemId);
+    if (!pi) throw { status: 400, message: `purchaseItemId ${item.purchaseItemId} không thuộc PO này` };
+    const remaining = pi.quantity - (receivedByItem[pi.id] || 0);
+    if (item.receivedQty < 1) {
+      throw { status: 400, message: `receivedQty phải >= 1 (${pi.id})` };
+    }
+    if (item.receivedQty > remaining) {
+      throw {
+        status: 400,
+        message: `Nhận vượt số lượng đặt: đặt ${pi.quantity}, còn thiếu ${remaining}`,
+      };
+    }
+  }
+
+  const whId = warehouseId || (await getDefaultWarehouseId(client));
+  const code = await withCodeRetry(
+    () => generateGrnCode(client),
+    (grnCode) =>
+      client.goodsReceiptNote.create({
+        data: {
+          grnCode,
+          purchaseOrderId: poId,
+          warehouseId: whId,
+          status: "DRAFT",
+          receivedAt: receivedAt ? new Date(receivedAt) : new Date(),
+          createdById: userId,
+          items: {
+            create: items.map((item) => ({
+              productId: item.productId,
+              purchaseItemId: item.purchaseItemId,
+              receivedQty: item.receivedQty,
+              lotCode: item.lotCode || null,
+              expiryDate: item.expiryDate ? new Date(item.expiryDate) : null,
+            })),
+          },
+        },
+        include: { items: true },
+      }),
+  );
+
+  auditService.log({
+    userId,
+    action: "CREATE_GRN",
+    entity: "GoodsReceiptNote",
+    entityId: code.id,
+    before: null,
+    after: { grnCode: code.grnCode, purchaseOrderId: poId },
+  }).catch(() => {});
+
+  return code;
+};
+
+// Ghi nhận QC từng line: passQty + rejectQty <= receivedQty → QC_DONE
+// Nhận client (PrismaClient scoped) để đúng multi-tenant isolation.
+const recordQc = async (id, qcItems = [], userId, client = prisma) => {
+  if (!qcItems.length) throw { status: 400, message: "Cần ít nhất 1 dòng QC" };
+  const grn = await client.goodsReceiptNote.findUnique({
+    where: { id },
+    include: { items: true },
+  });
+  if (!grn) throw { status: 404, message: "Không tìm thấy GRN" };
+  if (!["DRAFT", "QC_PENDING"].includes(grn.status)) {
+    throw { status: 400, message: "Chỉ GRN DRAFT/QC_PENDING mới được ghi nhận QC" };
+  }
+
+  for (const qc of qcItems) {
+    const item = grn.items.find((i) => i.id === qc.itemId);
+    if (!item) throw { status: 400, message: `Item ${qc.itemId} không thuộc GRN này` };
+    if (qc.passQty < 0 || qc.rejectQty < 0 || qc.passQty + qc.rejectQty > item.receivedQty) {
+      throw {
+        status: 400,
+        message: `passQty + rejectQty phải <= receivedQty (${item.receivedQty})`,
+      };
+    }
+  }
+
+  const updated = await client.$transaction(async (tx) => {
+    for (const qc of qcItems) {
+      await tx.goodsReceiptItem.update({
+        where: { id: qc.itemId },
+        data: { passQty: qc.passQty, rejectQty: qc.rejectQty },
+      });
+    }
+    return tx.goodsReceiptNote.update({
+      where: { id },
+      data: { status: "QC_DONE" },
+      include: { items: true },
+    });
+  });
+
+  auditService.log({
+    userId,
+    action: "GRN_QC",
+    entity: "GoodsReceiptNote",
+    entityId: id,
+    before: { status: grn.status },
+    after: { status: "QC_DONE" },
+  }).catch(() => {});
+
+  return updated;
+};
+
+/**
+ * POSTED: nhập kho (bình quân gia quyền + lot), tính onTime vs expectedAt,
+ * chuyển PO sang RECEIVED khi tổng nhận đủ. KHÔNG tạo Debt (xem header).
+ */
+const post = async (id, userId, client = prisma) => {
+  const grn = await client.goodsReceiptNote.findUnique({
+    where: { id },
+    include: {
+      items: { include: { product: true, purchaseItem: true } },
+      purchaseOrder: { include: { vendor: true } },
+    },
+  });
+  if (!grn) throw { status: 404, message: "Không tìm thấy GRN" };
+  if (grn.status === "POSTED") throw { status: 400, message: "GRN đã POSTED" };
+  if (grn.status !== "QC_DONE") {
+    throw { status: 400, message: "GRN phải ở trạng thái QC_DONE trước khi POSTED" };
+  }
+
+  const updated = await client.$transaction(async (tx) => {
+    for (const item of grn.items) {
+      if (item.passQty <= 0) continue;
+      let inv = await findInventory(tx, item.productId, grn.warehouseId);
+      if (!inv) {
+        inv = await tx.inventory.create({
+          data: { productId: item.productId, warehouseId: grn.warehouseId, quantity: 0, minStock: 10 },
+        });
+      }
+      const oldQty = inv.quantity;
+      const oldCost = toNum(item.product.costPrice);
+      const addQty = item.passQty;
+      const unitCost = toNum(item.purchaseItem.unitCost);
+      const newQty = oldQty + addQty;
+      const newCost =
+        newQty > 0 ? round2((oldQty * oldCost + addQty * unitCost) / newQty) : unitCost;
+
+      await tx.inventory.update({
+        where: { id: inv.id },
+        data: { quantity: { increment: addQty } },
+      });
+      await tx.product.update({
+        where: { id: item.productId },
+        data: { costPrice: newCost },
+      });
+      await tx.inventoryTransaction.create({
+        data: {
+          inventoryId: inv.id,
+          type: "IMPORT",
+          quantity: addQty,
+          note: `Nhập kho - GRN ${grn.grnCode} (PO ${grn.purchaseOrder.poCode})`,
+          unitCost: round2(unitCost),
+          createdById: userId,
+        },
+      });
+
+      // Lot: GRN-<code>-<sku> hoặc lotCode nhập tay từ QC
+      const lotCode = item.lotCode || `${grn.grnCode}-${item.product.sku || item.productId.slice(0, 8)}`;
+      const existingLot = await tx.inventoryLot.findFirst({
+        where: { lotCode, productId: item.productId, warehouseId: grn.warehouseId },
+      });
+      if (existingLot) {
+        await tx.inventoryLot.update({
+          where: { id: existingLot.id },
+          data: { quantity: { increment: addQty } },
+        });
+      } else {
+        await tx.inventoryLot.create({
+          data: {
+            lotCode,
+            productId: item.productId,
+            warehouseId: grn.warehouseId,
+            quantity: addQty,
+            originalQty: addQty,
+            expiryDate: item.expiryDate || null,
+            poId: grn.purchaseOrder.id,
+          },
+        });
+      }
+    }
+
+    // onTime so với expectedAt của PO (null nếu PO không đặt ngày giao)
+    const onTime = grn.purchaseOrder.expectedAt
+      ? new Date(grn.receivedAt) <= new Date(grn.purchaseOrder.expectedAt)
+      : null;
+
+    const posted = await tx.goodsReceiptNote.update({
+      where: { id },
+      data: { status: "POSTED", onTime },
+    });
+
+    // Đủ hàng → PO RECEIVED (chỉ từ APPROVED/ORDERED)
+    const agg = await tx.goodsReceiptItem.aggregate({
+      where: { grn: { purchaseOrderId: grn.purchaseOrderId, status: "POSTED" } },
+      _sum: { receivedQty: true },
+    });
+    const ordered = grn.purchaseOrder.items.reduce((s, i) => s + i.quantity, 0);
+    if ((agg._sum?.receivedQty ?? 0) >= ordered && ["APPROVED", "ORDERED"].includes(grn.purchaseOrder.status)) {
+      await tx.purchaseOrder.update({
+        where: { id: grn.purchaseOrderId },
+        data: { status: "RECEIVED", receivedAt: new Date() },
+      });
+    }
+    return posted;
+  });
+
+  auditService.log({
+    userId,
+    action: "GRN_POST",
+    entity: "GoodsReceiptNote",
+    entityId: id,
+    before: { status: "QC_DONE" },
+    after: { status: "POSTED" },
+  }).catch(() => {});
+
+  return updated;
+};
+
+// Danh sách GRN (filter poId/status)
+const list = async ({ poId, status, page = 1, limit = 20 } = {}, client = prisma) => {
+  const where = {};
+  if (poId) where.purchaseOrderId = poId;
+  if (status) where.status = status;
+  const skip = (Number(page) - 1) * Number(limit);
+  const [items, total] = await Promise.all([
+    client.goodsReceiptNote.findMany({
+      where,
+      skip,
+      take: Number(limit),
+      orderBy: { createdAt: "desc" },
+      include: {
+        items: {
+          include: {
+            product: { select: { id: true, sku: true, name: true } },
+            purchaseItem: { select: { id: true, unitCost: true } },
+          },
+        },
+        purchaseOrder: {
+          select: { id: true, poCode: true, expectedAt: true, vendor: { select: { id: true, name: true } } },
+        },
+        warehouse: { select: { id: true, name: true } },
+      },
+    }),
+    client.goodsReceiptNote.count({ where }),
+  ]);
+  return {
+    grns: items,
+    pagination: { page: Number(page), limit: Number(limit), total, totalPages: Math.ceil(total / Number(limit)) },
+  };
+};
+
+const getById = async (id, client = prisma) => {
+  const grn = await client.goodsReceiptNote.findUnique({
+    where: { id },
+    include: {
+      items: { include: { product: { select: { id: true, sku: true, name: true } }, purchaseItem: true } },
+      purchaseOrder: {
+        select: {
+          id: true, poCode: true, expectedAt: true, status: true,
+          vendor: { select: { id: true, name: true } },
+        },
+      },
+      warehouse: { select: { id: true, name: true } },
+    },
+  });
+  if (!grn) throw { status: 404, message: "Không tìm thấy GRN" };
+  return grn;
+};
+
+module.exports = { create, recordQc, post, list, getById };

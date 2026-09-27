@@ -27,7 +27,7 @@ const {
 } = require("./report.service");
 
 // Báo cáo là dữ liệu nhạy cảm, chỉ ADMIN và MANAGER mới được xem
-router.use(authenticate, authorize("ADMIN", "MANAGER"), requireModule("reports"));
+router.use(authenticate, authorize("ADMIN", "MANAGER", "ACCOUNTANT"), requireModule("reports"));
 
 // GET /api/reports/revenue?from=2024-01-01&to=2024-01-31
 router.get("/revenue", async (req, res, next) => {
@@ -104,7 +104,7 @@ router.get("/inventory", async (req, res, next) => {
 // Specific export routes MUST come before the wildcard /:type route
 router.get(
   "/revenue/export",
-  authorize("ADMIN", "MANAGER"),
+  authorize("ADMIN", "MANAGER", "ACCOUNTANT"),
   async (req, res, next) => {
     try {
       const { from, to } = z
@@ -129,7 +129,7 @@ router.get(
 
 router.get(
   "/inventory/export",
-  authorize("ADMIN", "MANAGER"),
+  authorize("ADMIN", "MANAGER", "ACCOUNTANT"),
   async (req, res, next) => {
     try {
       const buf = await exportInventoryExcel();

@@ -1,6 +1,8 @@
 const prisma = require("../../config/prisma");
 const paymentService = require("../payments/payment.service");
 const { verifyWebhook } = require("../../config/payos");
+const { runWithTenant } = require("../../config/tenantContext");
+const logger = require('../../utils/logger');
 
 const LOG = "[vietqr]";
 
@@ -10,12 +12,23 @@ const matchTransaction = async ({ amount, description, txDate, reference }) => {
   // Match 1: By order code in description
   const orderMatch = description.match(/ORD-\d{8}-\d{4}/i);
   if (orderMatch) {
-    const order = await prisma.order.findFirst({
+    const orders = await prisma.order.findMany({
       where: { orderCode: orderMatch[0].toUpperCase() },
-      select: { id: true, orderCode: true, total: true, paymentStatus: true },
+      select: { id: true, orderCode: true, total: true, paymentStatus: true, tenantId: true },
     });
-    if (order) {
-      matches.push({ type: "ORDER", id: order.id, code: order.orderCode, source: "orderCode" });
+    for (const order of orders) {
+      if (order.paymentStatus === "COMPLETED") continue;
+      if (orders.length > 1) {
+        // Nhiều tenant cùng mã đơn (mã ORD tăng dần theo ngày, có thể trùng giữa tenant)
+        // → chỉ match khi số tiền khớp số còn lại của đúng đơn đó
+        const balance = await paymentService.getOrderBalance(order.id);
+        const remaining = balance.total - balance.paid;
+        if (remaining > 0 && Math.abs(remaining - amount) < 5000) {
+          matches.push({ type: "ORDER", id: order.id, code: order.orderCode, source: "orderCode", tenantId: order.tenantId });
+        }
+      } else {
+        matches.push({ type: "ORDER", id: order.id, code: order.orderCode, source: "orderCode", tenantId: order.tenantId });
+      }
     }
   }
 
@@ -24,10 +37,10 @@ const matchTransaction = async ({ amount, description, txDate, reference }) => {
   if (debtMatch) {
     const debt = await prisma.debt.findFirst({
       where: { id: { startsWith: debtMatch[1] } },
-      select: { id: true, customerId: true, amount: true, paidAmount: true },
+      select: { id: true, customerId: true, amount: true, paidAmount: true, tenantId: true },
     });
     if (debt) {
-      matches.push({ type: "DEBT", id: debt.id, code: `DEBT-${debt.id.slice(0, 8)}`, source: "debtCode" });
+      matches.push({ type: "DEBT", id: debt.id, code: `DEBT-${debt.id.slice(0, 8)}`, source: "debtCode", tenantId: debt.tenantId });
     }
   }
 
@@ -44,14 +57,14 @@ const matchTransaction = async ({ amount, description, txDate, reference }) => {
       },
       orderBy: { createdAt: "desc" },
       take: 5,
-      select: { id: true, orderCode: true, total: true, paymentStatus: true },
+      select: { id: true, orderCode: true, total: true, paymentStatus: true, tenantId: true },
     });
 
     for (const order of ordersByAmount) {
       const balance = await paymentService.getOrderBalance(order.id);
       const remaining = balance.total - balance.paid;
       if (Math.abs(remaining - amount) < 5000) {
-        matches.push({ type: "ORDER", id: order.id, code: order.orderCode, source: "amount" });
+        matches.push({ type: "ORDER", id: order.id, code: order.orderCode, source: "amount", tenantId: order.tenantId });
       }
     }
   }
@@ -59,14 +72,16 @@ const matchTransaction = async ({ amount, description, txDate, reference }) => {
   return matches;
 };
 
-const processWebhook = async (body, provider = "casso") => {
+const processWebhook = async (body, provider = "casso", verified = false) => {
   try {
     const transaction = provider === "payos"
       ? verifyWebhook(body)
-      : { success: true, data: body };
+      : verified
+        ? { success: true, data: body }
+        : { success: false, message: "unverified" };
 
     if (!transaction.success) {
-      console.error(`${LOG} webhook verification failed`);
+      logger.error(`${LOG} webhook verification failed`);
       return { success: false, message: "Verification failed" };
     }
 
@@ -78,7 +93,7 @@ const processWebhook = async (body, provider = "casso") => {
       return { success: false, message: "Invalid amount" };
     }
 
-    console.log(`${LOG} received: ${txn.amount.toLocaleString()} VND — "${txn.description}"`);
+    logger.info(`${LOG} received: ${txn.amount.toLocaleString()} VND — "${txn.description}"`);
 
     // Deduplicate: check if this reference was already processed
     if (txn.reference) {
@@ -92,66 +107,75 @@ const processWebhook = async (body, provider = "casso") => {
     const matches = await matchTransaction(txn);
 
     if (!matches.length) {
-      console.log(`${LOG} no match found for ${txn.amount.toLocaleString()} VND — "${txn.description}"`);
+      logger.info(`${LOG} no match found for ${txn.amount.toLocaleString()} VND — "${txn.description}"`);
       return { success: true, message: "No match found", unmatched: true };
     }
 
-    const systemUser = await prisma.user.findFirst({
-      where: { role: "ADMIN", isActive: true },
-      select: { id: true },
-    });
-    const userId = systemUser?.id;
-
     const results = [];
     for (const match of matches) {
-      if (match.type === "ORDER") {
-        const payment = await paymentService.recordPayment({
-          orderId: match.id,
-          amount: txn.amount,
-          method: "BANK_TRANSFER",
-          reference: txn.reference,
-          note: `[VietQR tự động] ${txn.description}`,
-        }, userId);
+      // Bắt buộc gắn tenant của entity được match — chống ghi nhầm tenant
+      const tenantId = match.tenantId;
+      if (!tenantId) {
+        logger.warn(`${LOG} bỏ qua match không có tenantId: ${match.code}`);
+        continue;
+      }
 
-        console.log(`${LOG} auto-paid order ${payment.order.orderCode}: ${txn.amount.toLocaleString()} VND`);
-        results.push({
-          type: "ORDER",
-          orderCode: payment.order.orderCode,
-          paymentId: payment.id,
-          amount: txn.amount,
-        });
-      } else if (match.type === "DEBT") {
-        // Record debt payment
-        await prisma.debtPayment.create({
-          data: {
-            debtId: match.id,
+      await runWithTenant(tenantId, async () => {
+        if (match.type === "ORDER") {
+          const systemUser = await prisma.user.findFirst({
+            where: { role: "ADMIN", isActive: true },
+            select: { id: true },
+          });
+          const userId = systemUser?.id;
+
+          const payment = await paymentService.recordPayment({
+            orderId: match.id,
             amount: txn.amount,
             method: "BANK_TRANSFER",
             reference: txn.reference,
-            paidAt: new Date(),
             note: `[VietQR tự động] ${txn.description}`,
-          },
-        }).catch((e) => console.error(`${LOG} debt payment error:`, e.message));
+          }, userId);
 
-        // Update debt status
-        const debt = await prisma.debt.findUnique({ where: { id: match.id } });
-        if (debt) {
-          const totalPaid = Number(debt.paidAmount) + txn.amount;
-          const newStatus = totalPaid >= Number(debt.amount) ? "CLOSED" : "PARTIAL";
-          await prisma.debt.update({
-            where: { id: debt.id },
-            data: { paidAmount: totalPaid, status: newStatus },
+          logger.info(`${LOG} auto-paid order ${payment.order.orderCode}: ${txn.amount.toLocaleString()} VND`);
+          results.push({
+            type: "ORDER",
+            orderCode: payment.order.orderCode,
+            paymentId: payment.id,
+            amount: txn.amount,
           });
-        }
+        } else if (match.type === "DEBT") {
+          // Record debt payment
+          await prisma.debtPayment.create({
+            data: {
+              debtId: match.id,
+              amount: txn.amount,
+              method: "BANK_TRANSFER",
+              reference: txn.reference,
+              paidAt: new Date(),
+              note: `[VietQR tự động] ${txn.description}`,
+            },
+          }).catch((e) => logger.error(`${LOG} debt payment error:`, e.message));
 
-        console.log(`${LOG} auto-paid debt ${match.code}: ${txn.amount.toLocaleString()} VND`);
-        results.push({ type: "DEBT", debtCode: match.code, amount: txn.amount });
-      }
+          // Update debt status
+          const debt = await prisma.debt.findUnique({ where: { id: match.id } });
+          if (debt) {
+            const totalPaid = Number(debt.paidAmount) + txn.amount;
+            const newStatus = totalPaid >= Number(debt.amount) ? "CLOSED" : "PARTIAL";
+            await prisma.debt.update({
+              where: { id: debt.id },
+              data: { paidAmount: totalPaid, status: newStatus },
+            });
+          }
+
+          logger.info(`${LOG} auto-paid debt ${match.code}: ${txn.amount.toLocaleString()} VND`);
+          results.push({ type: "DEBT", debtCode: match.code, amount: txn.amount });
+        }
+      });
     }
 
     return { success: true, message: "Processed", matched: true, results };
   } catch (err) {
-    console.error(`${LOG} process error:`, err.message);
+    logger.error(`${LOG} process error:`, err.message);
     return { success: false, message: err.message };
   }
 };

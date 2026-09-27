@@ -1,6 +1,7 @@
 const prisma = require("../../config/prisma");
 const workflowService = require("../workflow/workflow.service");
 const notifService = require("../notifications/notification.service");
+const logger = require('../../utils/logger');
 
 const LOG = "[leave]";
 
@@ -110,10 +111,10 @@ const approveLeave = async (runId, userId) => {
       }
     }
   } catch (e) {
-    console.error(`${LOG} shift update error:`, e.message);
+    logger.error(`${LOG} shift update error:`, e.message);
   }
 
-  console.log(`${LOG} approved: ${leaveData.employeeName}, ${leaveData.days} days`);
+  logger.info(`${LOG} approved: ${leaveData.employeeName}, ${leaveData.days} days`);
   return { success: true, message: "Da phê duyệt nghi phep" };
 };
 

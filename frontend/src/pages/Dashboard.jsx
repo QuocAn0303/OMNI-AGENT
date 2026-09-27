@@ -14,15 +14,17 @@
  * - Dashboard: React functional component (default export)
  */
 import { useEffect, useState } from 'react';
-import { Joyride } from 'react-joyride';
+import { Joyride, STATUS } from 'react-joyride';
 import { useTranslation } from 'react-i18next';
 import useTour from '../hooks/useTour';
-import { getDashboardTour } from '../config/tourSteps';
+import { getDashboardTour, getOnboardingTour } from '../config/tourSteps';
+import useAuthStore from '../stores/authStore';
 import {
   DollarCircleOutlined,
   ShoppingCartOutlined,
   TeamOutlined,
   WarningOutlined,
+  RiseOutlined,
 } from '@ant-design/icons';
 import {
   ResponsiveContainer,
@@ -30,13 +32,18 @@ import {
   PieChart, Pie, Cell,
   XAxis, YAxis, CartesianGrid, Tooltip,
 } from 'recharts';
-import { Table, Spin } from 'antd';
+import { Table, Spin, Alert, Space, Typography, Button } from 'antd';
 import axios from '../api/axios';
 import PageHeader from '../components/layout/PageHeader';
 import StatCard from '../components/shared/StatCard';
 import StatusTag from '../components/shared/StatusTag';
 import MoneyDisplay from '../components/shared/MoneyDisplay';
 import EmptyState from '../components/shared/EmptyState';
+import { useNavigate } from 'react-router-dom';
+import OfflineIndicator from '../components/OfflineIndicator';
+import TrialBanner from '../components/TrialBanner';
+
+const { Text } = Typography;
 /**
  * Dashboard — Tổng quan ERP
  * Giữ nguyên endpoint cũ: /dashboard/overview, /dashboard/revenue
@@ -50,20 +57,35 @@ const CHART_COLORS = {
 
 export default function Dashboard() {
   const { t } = useTranslation();
+  const navigate = useNavigate();
+  const beginnerMode = useAuthStore((s) => s.beginnerMode);
   const tour = useTour('dashboard');
+  const [onboardingTourRun, setOnboardingTourRun] = useState(() => !localStorage.getItem('tour_onboarding_done'));
   const [loading, setLoading] = useState(true);
   const [overview, setOverview] = useState(null);
   const [revenueSeries, setRevenueSeries] = useState([]);
   const [orderStatus, setOrderStatus] = useState([]);
   const [lowStock, setLowStock] = useState([]);
+  const [showWelcome, setShowWelcome] = useState(() => !localStorage.getItem('dashboard_welcome_dismissed'));
+
+  const isNewUser = !overview?.totalProducts && !overview?.todayOrders && !overview?.totalCustomers;
+
+  const handleOnboardingTourDone = (data) => {
+    const { status } = data;
+    if (status === STATUS.FINISHED || status === STATUS.SKIPPED) {
+      localStorage.setItem('tour_onboarding_done', 'true');
+      setOnboardingTourRun(false);
+    }
+  };
 
   useEffect(() => {
     let mounted = true;
     (async () => {
       try {
-        const [overviewRes, revenueRes] = await Promise.all([
+        const [overviewRes, revenueRes, settingsRes] = await Promise.all([
           axios.get('/dashboard/overview'),
           axios.get('/dashboard/revenue'),
+          axios.get('/settings').catch(() => ({ data: { data: {} } })),
         ]);
         if (!mounted) return;
 
@@ -79,6 +101,12 @@ export default function Dashboard() {
             categoryName: row.categoryName ?? row.product?.category?.name,
           })),
         );
+
+        // Sync beginner mode from server if available
+        const settingsBeginner = settingsRes.data?.data?.beginnerMode;
+        if (typeof settingsBeginner === 'boolean') {
+          useAuthStore.getState().setBeginnerMode(settingsBeginner);
+        }
       } catch (err) {
         console.error('Dashboard load error:', err);
       } finally {
@@ -88,22 +116,107 @@ export default function Dashboard() {
     return () => { mounted = false; };
   }, []);
 
-  // Compute trend (so sánh với kỳ trước nếu BE trả)
   const revenueTrend = overview?.revenueTrend;
   const ordersTrend = overview?.ordersTrend;
 
+  const dismissWelcome = () => {
+    localStorage.setItem('dashboard_welcome_dismissed', 'true');
+    setShowWelcome(false);
+  };
+
   return (
     <>
-      <PageHeader
-        title="Tổng quan"
-        subtitle="Tình hình kinh doanh hôm nay và 7 ngày gần nhất"
+      {/* Onboarding tour for first-time users */}
+      <Joyride
+        steps={getOnboardingTour()}
+        run={onboardingTourRun}
+        continuous
+        showSkipButton
+        showProgress
+        locale={{
+          back: t('tour.joyride.back'),
+          close: t('tour.joyride.close'),
+          last: t('tour.joyride.last'),
+          next: t('tour.joyride.next'),
+          skip: t('tour.joyride.skip'),
+        }}
+        styles={{
+          options: { zIndex: 10000, primaryColor: '#0d9488' },
+        }}
+        callback={handleOnboardingTourDone}
       />
+
+      {/* Dashboard tour (shows again on restart) */}
+      <Joyride
+        steps={getDashboardTour()}
+        run={tour.run}
+        continuous
+        showSkipButton
+        showProgress
+        locale={{
+          back: t('tour.joyride.back'),
+          close: t('tour.joyride.close'),
+          last: t('tour.joyride.last'),
+          next: t('tour.joyride.next'),
+          skip: t('tour.joyride.skip'),
+        }}
+        styles={{
+          options: { zIndex: 10000, primaryColor: '#0d9488' },
+        }}
+        callback={(data) => {
+          if (data.status === STATUS.FINISHED || data.status === STATUS.SKIPPED) {
+            tour.markDone();
+          }
+        }}
+      />
+
+      <PageHeader
+        title={beginnerMode ? t('dashboard.beginnerTitle') : t('dashboard.title')}
+        subtitle={beginnerMode
+          ? t('dashboard.beginnerSubtitle')
+          : t('dashboard.subtitle')
+        }
+      />
+
+      {/* Welcome banner for new users */}
+      {showWelcome && (
+        <Alert
+          type="info"
+          showIcon
+          icon={<RiseOutlined />}
+          message={t('dashboard.welcomeMessage')}
+          description={
+            <div>
+              <p>{t('dashboard.welcomeDesc')}</p>
+              <Space>
+                {isNewUser && (
+                  <Button type="primary" size="small" onClick={() => navigate('/products')}>
+                    {t('dashboard.addFirstProduct')}
+                  </Button>
+                )}
+                <Button size="small" onClick={() => navigate('/pos')}>
+                  {t('dashboard.createFirstOrder')}
+                </Button>
+                <Button size="small" type="link" onClick={dismissWelcome}>
+                  {t('dashboard.gotIt')}
+                </Button>
+              </Space>
+            </div>
+          }
+          style={{ marginBottom: 16 }}
+          closable
+          onClose={dismissWelcome}
+        />
+      )}
+
+      <TrialBanner />
+      <OfflineIndicator />
 
       {/* KPI Cards */}
       <div className="stat-grid">
         <StatCard
-          title="Doanh thu tháng"
-          value={<MoneyDisplay value={overview?.monthRevenue} short showCurrency={false} />}
+          title={beginnerMode ? t('dashboard.todayRevenue') : t('dashboard.monthRevenue')}
+          value={<MoneyDisplay value={beginnerMode ? overview?.todayRevenue : overview?.monthRevenue} short showCurrency={false} />}
           icon={<DollarCircleOutlined />}
           variant="primary"
           trend={revenueTrend?.direction}
@@ -111,8 +224,8 @@ export default function Dashboard() {
           loading={loading}
         />
         <StatCard
-          title="Đơn hàng tháng"
-          value={(overview?.monthOrders ?? 0).toLocaleString('vi-VN')}
+          title={beginnerMode ? t('dashboard.todayOrders') : t('dashboard.monthOrders')}
+          value={(beginnerMode ? (overview?.todayOrders ?? 0) : (overview?.monthOrders ?? 0)).toLocaleString('vi-VN')}
           icon={<ShoppingCartOutlined />}
           variant="info"
           trend={ordersTrend?.direction}
@@ -120,14 +233,14 @@ export default function Dashboard() {
           loading={loading}
         />
         <StatCard
-          title="Khách hàng"
+          title={t('dashboard.customers')}
           value={(overview?.totalCustomers ?? 0).toLocaleString('vi-VN')}
           icon={<TeamOutlined />}
           variant="success"
           loading={loading}
         />
         <StatCard
-          title="Sản phẩm sắp hết"
+          title={t('dashboard.lowStock')}
           value={(overview?.lowStockCount ?? 0).toLocaleString('vi-VN')}
           icon={<WarningOutlined />}
           variant="warning"
@@ -141,8 +254,8 @@ export default function Dashboard() {
         <div className="chart-card">
           <div className="chart-card__header">
             <div>
-              <div className="chart-card__title">Doanh thu 7 ngày</div>
-              <div className="chart-card__subtitle">Đơn vị: nghìn đồng</div>
+              <div className="chart-card__title">{t('dashboard.revenue7Days')}</div>
+              <div className="chart-card__subtitle">{t('dashboard.revenueUnit')}</div>
             </div>
           </div>
           <div style={{ height: 260 }}>
@@ -151,7 +264,7 @@ export default function Dashboard() {
                 <Spin />
               </div>
             ) : revenueSeries.length === 0 ? (
-              <EmptyState title="Chưa có dữ liệu" description="Dữ liệu sẽ xuất hiện sau đơn hàng đầu tiên." />
+              <EmptyState title={t('dashboard.noData')} description={t('dashboard.noDataDesc')} />
             ) : (
               <ResponsiveContainer width="100%" height="100%">
                 <AreaChart data={revenueSeries} margin={{ top: 8, right: 8, left: -16, bottom: 0 }}>
@@ -185,7 +298,7 @@ export default function Dashboard() {
                       boxShadow: 'var(--shadow-md)',
                     }}
                     labelStyle={{ color: 'var(--text-muted)', fontSize: 11 }}
-                    formatter={(v) => [new Intl.NumberFormat('vi-VN').format(v) + '₫', 'Doanh thu']}
+                    formatter={(v) => [new Intl.NumberFormat('vi-VN').format(v) + '₫', t('dashboard.revenue')]}
                   />
                   <Area
                     type="monotone"
@@ -204,8 +317,8 @@ export default function Dashboard() {
         <div className="chart-card">
           <div className="chart-card__header">
             <div>
-              <div className="chart-card__title">Trạng thái đơn</div>
-              <div className="chart-card__subtitle">Phân bổ tháng này</div>
+              <div className="chart-card__title">{t('dashboard.orderStatus')}</div>
+              <div className="chart-card__subtitle">{t('dashboard.monthDistribution')}</div>
             </div>
           </div>
           <div style={{ height: 260 }}>
@@ -214,7 +327,7 @@ export default function Dashboard() {
                 <Spin />
               </div>
             ) : orderStatus.length === 0 ? (
-              <EmptyState title="Chưa có đơn hàng" />
+              <EmptyState title={t('dashboard.noOrders')} />
             ) : (
               <ResponsiveContainer width="100%" height="100%">
                 <PieChart>
@@ -266,8 +379,8 @@ export default function Dashboard() {
       {/* Low stock alert table */}
       <div className="table-card">
         <div style={{ padding: '16px 24px', borderBottom: '1px solid var(--border-light)' }}>
-          <div className="chart-card__title">Sản phẩm sắp hết hàng</div>
-          <div className="chart-card__subtitle">Tồn kho dưới mức tối thiểu</div>
+          <div className="chart-card__title">{t('dashboard.lowStockTitle')}</div>
+          <div className="chart-card__subtitle">{t('dashboard.lowStockSubtitle')}</div>
         </div>
         <Table
           dataSource={lowStock}
@@ -275,16 +388,16 @@ export default function Dashboard() {
           pagination={false}
           loading={loading}
           locale={{
-            emptyText: (
+              emptyText: (
               <EmptyState
-                title="Tất cả sản phẩm đủ hàng"
-                description="Không có sản phẩm nào dưới mức tồn kho tối thiểu."
+                title={t('dashboard.allStocked')}
+                description={t('dashboard.allStockedDesc')}
               />
             ),
           }}
           columns={[
             {
-              title: 'Sản phẩm',
+              title: t('dashboard.product'),
               dataIndex: 'name',
               render: (name, row) => (
                 <div>
@@ -296,12 +409,12 @@ export default function Dashboard() {
               ),
             },
             {
-              title: 'Danh mục',
+              title: t('products.category'),
               dataIndex: 'categoryName',
               render: (v) => v || '—',
             },
             {
-              title: 'Tồn kho',
+              title: t('products.stock'),
               dataIndex: 'quantity',
               align: 'right',
               render: (q, row) => (
@@ -311,7 +424,7 @@ export default function Dashboard() {
               ),
             },
             {
-              title: 'Trạng thái',
+              title: t('common.status'),
               dataIndex: 'quantity',
               align: 'right',
               render: (q) => (

@@ -255,7 +255,7 @@ export default function Production() {
         })),
       };
       if (editingBom) {
-        const { productId, ...patch } = payload;
+        const { productId: _unused, ...patch } = payload;
         await axios.patch(`/production/boms/${editingBom.id}`, patch);
         message.success('Đã cập nhật BOM');
       } else {

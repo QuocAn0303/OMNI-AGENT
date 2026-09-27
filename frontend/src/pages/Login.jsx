@@ -14,6 +14,7 @@ import { useState } from "react";
 import { Form, Input, Button, Alert } from "antd";
 import { UserOutlined, LockOutlined, LoginOutlined } from "@ant-design/icons";
 import { useNavigate, Link } from "react-router-dom";
+import { useTranslation } from 'react-i18next';
 import useAuthStore from "../stores/authStore";
 import axiosInstance from "../api/axios";
 
@@ -22,6 +23,7 @@ import axiosInstance from "../api/axios";
  * Giữ nguyên logic auth cũ, chỉ thay UI.
  */
 export default function Login() {
+  const { t } = useTranslation();
   const navigate = useNavigate();
   const { login } = useAuthStore();
   const [loading, setLoading] = useState(false);
@@ -37,9 +39,9 @@ export default function Login() {
       });
       const data = resp.data?.data || {};
       const token = data.token;
-      const refreshToken = data.refreshToken;
       const user = data.user || null;
-      login(user, token, refreshToken);
+      // M7: refresh token được set vào httpOnly cookie bởi backend — không cần xử lý ở đây
+      login(user, token);
       if (token)
         axiosInstance.defaults.headers.common.Authorization = `Bearer ${token}`;
       if (user?.role === "SUPER_OMEGA_ULTRA_ADMIN") {
@@ -50,7 +52,7 @@ export default function Login() {
     } catch (err) {
       setError(
         err?.response?.data?.message ||
-          "Đăng nhập thất bại. Vui lòng kiểm tra lại thông tin.",
+          t('login.errorFallback'),
       );
     } finally {
       setLoading(false);
@@ -74,19 +76,17 @@ export default function Login() {
               Aduu ERP
             </div>
             <div style={{ fontSize: 12, color: "rgba(255,255,255,0.5)" }}>
-              Hệ thống hoạch định nguồn lực doanh nghiệp
+              {t('login.brandSubtitle')}
             </div>
           </div>
         </div>
 
         <div className="login-brand__body">
           <h1 className="login-brand__headline">
-            Vận hành bán lẻ{" "}
-            <span className="login-brand__headline-accent">thông minh.</span>
+            {t('login.brandHeadlinePre')}<span className="login-brand__headline-accent">{t('login.brandHeadlineAccent')}</span>
           </h1>
           <p className="login-brand__description">
-            Quản lý sản phẩm, kho hàng, đơn hàng, nhân sự và báo cáo — tất cả
-            trong một nền tảng duy nhất.
+            {t('login.brandDescription')}
           </p>
         </div>
 
@@ -98,9 +98,9 @@ export default function Login() {
       {/* RIGHT: Form */}
       <section className="login-form-wrapper">
         <div className="login-card">
-          <h2 className="login-card__title">Chào mừng trở lại</h2>
+          <h2 className="login-card__title">{t('login.welcome')}</h2>
           <p className="login-card__subtitle">
-            Đăng nhập để tiếp tục vào hệ thống
+            {t('login.subtitle')}
           </p>
 
           {error && (
@@ -122,23 +122,23 @@ export default function Login() {
             autoComplete="off"
           >
             <Form.Item
-              label="Tên đăng nhập"
+              label={t('login.username')}
               name="username"
               rules={[
-                { required: true, message: "Vui lòng nhập tên đăng nhập" },
+                { required: true, message: t('login.usernameRequired') },
               ]}
             >
               <Input
                 prefix={<UserOutlined style={{ color: "var(--text-muted)" }} />}
-                placeholder="admin"
+                placeholder={t('login.usernamePlaceholder')}
                 autoFocus
               />
             </Form.Item>
 
             <Form.Item
-              label="Mật khẩu"
+              label={t('auth.password')}
               name="password"
-              rules={[{ required: true, message: "Vui lòng nhập mật khẩu" }]}
+              rules={[{ required: true, message: t('login.passwordRequired') }]}
             >
               <Input.Password
                 prefix={<LockOutlined style={{ color: "var(--text-muted)" }} />}
@@ -154,7 +154,7 @@ export default function Login() {
               block
               style={{ height: 48, marginTop: 8, fontWeight: 500 }}
             >
-              Đăng nhập
+              {t('auth.loginButton')}
             </Button>
           </Form>
 
@@ -168,9 +168,9 @@ export default function Login() {
               textAlign: "center",
             }}
           >
-            Chưa có tài khoản?{" "}
+            {t('login.noAccount')}{" "}
             <Link to="/register" style={{ color: "var(--color-primary)", fontWeight: 500 }}>
-              Đăng ký miễn phí
+              {t('login.registerFree')}
             </Link>
           </div>
         </div>

@@ -33,7 +33,7 @@ const prisma = require("../../config/prisma");
 const createEmployee = async (req, res, next) => {
   try {
     const parsed = createEmployeeSchema.parse(req.body);
-    const employee = await hrService.createEmployee(parsed);
+    const employee = await hrService.createEmployee(parsed, req.user.id);
     res.status(201).json({ success: true, data: employee, message: "Đã thêm nhân viên" });
   } catch (err) {
     next(err);
@@ -337,8 +337,9 @@ const calculatePayroll = async (req, res, next) => {
 
 const listPayroll = async (req, res, next) => {
   try {
-    const out = await hrService.listPayroll(req.query.month);
-    res.json({ success: true, data: out });
+    const { month, page, limit } = req.query;
+    const out = await hrService.listPayroll(month, Number(page) || 1, Number(limit) || 50);
+    res.json({ success: true, data: out.data, pagination: out.pagination });
   } catch (err) {
     next(err);
   }
@@ -346,14 +347,15 @@ const listPayroll = async (req, res, next) => {
 
 const listAttendance = async (req, res, next) => {
   try {
-    const out = await hrService.listAttendance(req.query);
+    const { from, to, employeeId, page, limit } = req.query;
+    const out = await hrService.listAttendance({ from, to, employeeId, page: Number(page) || 1, limit: Number(limit) || 50 });
     const role = req.user?.role;
     if (role === "ADMIN" || role === "MANAGER") {
-      res.json({ success: true, data: out });
+      res.json({ success: true, data: out.data, pagination: out.pagination });
       return;
     }
 
-    const filtered = out.filter((r) => r.userId === req.user?.id);
+    const filtered = out.data.filter((r) => r.userId === req.user?.id);
     res.json({ success: true, data: filtered });
   } catch (err) {
     next(err);
@@ -391,6 +393,7 @@ const updateEmployee = async (req, res, next) => {
     if (parsed.hireDate !== undefined) empData.hireDate = parsed.hireDate ? new Date(parsed.hireDate) : null;
     if (parsed.address !== undefined) empData.address = parsed.address;
     if (parsed.isActive !== undefined) empData.isActive = parsed.isActive;
+    if (parsed.departmentId !== undefined) empData.departmentId = parsed.departmentId;
 
     const userData = {};
     if (parsed.fullName !== undefined) userData.fullName = parsed.fullName;
@@ -435,6 +438,64 @@ const lockPayroll = async (req, res, next) => {
   }
 };
 
+// ─── Department CRUD ───
+
+const listDepartments = async (req, res, next) => {
+  try {
+    const departments = await prisma.department.findMany({
+      where: { isActive: true },
+      orderBy: { name: "asc" },
+    });
+    res.json({ success: true, data: departments });
+  } catch (err) {
+    next(err);
+  }
+};
+
+const createDepartment = async (req, res, next) => {
+  try {
+    const { name, description } = req.body;
+    if (!name || !name.trim()) {
+      return res.status(400).json({ success: false, message: "Tên phòng ban không được để trống" });
+    }
+    const dept = await prisma.department.create({
+      data: { name: name.trim(), description: description || null },
+    });
+    res.status(201).json({ success: true, data: dept, message: "Đã thêm phòng ban" });
+  } catch (err) {
+    next(err);
+  }
+};
+
+const updateDepartment = async (req, res, next) => {
+  try {
+    const { name, description } = req.body;
+    const data = {};
+    if (name !== undefined) data.name = name.trim();
+    if (description !== undefined) data.description = description;
+
+    const dept = await prisma.department.update({
+      where: { id: req.params.id },
+      data,
+    });
+    res.json({ success: true, data: dept, message: "Đã cập nhật phòng ban" });
+  } catch (err) {
+    next(err);
+  }
+};
+
+const deleteDepartment = async (req, res, next) => {
+  try {
+    await prisma.department.update({
+      where: { id: req.params.id },
+      data: { isActive: false },
+    });
+    res.json({ success: true, message: "Đã xóa phòng ban" });
+  } catch (err) {
+    next(err);
+  }
+};
+
 module.exports = {
   createEmployee,
   createShift,
@@ -450,4 +511,8 @@ module.exports = {
   deleteEmployee,
   setEmployeeCounts,
   setBulkCounts,
+  listDepartments,
+  createDepartment,
+  updateDepartment,
+  deleteDepartment,
 };

@@ -10,6 +10,50 @@
  * - GET /: Lấy danh sách thanh toán + số dư của đơn hàng — gọi paymentService.getByOrderId() và getOrderBalance()
  * - POST /: Ghi nhận thanh toán mới — validate paymentSchema (amount, method, reference, note), gọi paymentService.recordPayment() (ADMIN, MANAGER, CASHIER)
  */
+
+/**
+ * @swagger
+ * /api/orders/{orderId}/payments:
+ *   get:
+ *     summary: Danh sách thanh toán + số dư của đơn hàng
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: orderId
+ *         required: true
+ *         schema: { type: string }
+ *     responses:
+ *       200:
+ *         description: OK
+ *         content:
+ *           application/json:
+ *             schema:
+ *               type: object
+ *               properties:
+ *                 payments: { type: array }
+ *                 balance: { type: number }
+ *   post:
+ *     summary: Ghi nhận thanh toán (ADMIN, MANAGER, CASHIER)
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: path
+ *         name: orderId
+ *         required: true
+ *         schema: { type: string }
+ *     requestBody:
+ *       required: true
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               amount: { type: number }
+ *               method: { type: string, enum: [CASH, BANK_TRANSFER, CARD, MOMO, VNPAY, ZALOPAY, PAYOS, VIETQR] }
+ *               reference: { type: string }
+ *               note: { type: string }
+ *     responses:
+ *       201: { description: Ghi nhận thanh toán thành công }
+ */
 const express = require("express");
 const { z } = require("zod");
 const paymentService = require("./payment.service");
@@ -20,7 +64,7 @@ const router = express.Router({ mergeParams: true });
 
 const paymentSchema = z.object({
   amount: z.number().positive(),
-  method: z.enum(["CASH", "BANK_TRANSFER", "CARD"]),
+  method: z.enum(["CASH", "BANK_TRANSFER", "CARD", "MOMO", "VNPAY", "ZALOPAY", "PAYOS", "VIETQR"]),
   reference: z.string().optional(),
   note: z.string().optional(),
 });
