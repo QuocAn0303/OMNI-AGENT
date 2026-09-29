@@ -198,12 +198,20 @@ CLOUDINARY_CLOUD_NAME=
 CLOUDINARY_API_KEY=
 CLOUDINARY_API_SECRET=
 
-# --- Tuỳ chọn: OpenAI (chỉ cần khi dùng AI Assistant) ---
+# --- Tuỳ chọn: AI Agent (Gemini) — xem mục "🔑 Thiết lập API key" ---
+# Bỏ trống GEMINI_API_KEY → AI agent dùng model local (cần Python, nặng và chậm)
+LLM_PROVIDER=gemini
+GEMINI_API_KEY=
+LLM_MODEL=gemini-3.8-flash
+
+# --- Tuỳ chọn: OpenAI (AI Assistant cũ, chỉ cần nếu không dùng Gemini) ---
 OPENAI_API_KEY=
 
 # --- Tuỳ chọn: Sentry (monitoring) ---
 SENTRY_DSN=
 ```
+
+> 🔑 **Thiết lập API key (Gemini/OpenAI/Cloudinary/…)** — hướng dẫn đầy đủ, cách lấy key, cách kiểm tra và quy trình thu hồi key khi bị lộ: xem mục [🔑 Thiết lập API key](#-thiết-lập-api-key).
 
 > 💡 Từ phiên bản này, các biến VNPT / Cloudinary / SMTP / SMS đã có **UI cấu hình tại `/integrations`** (cần role ADMIN). Giá trị nhập trong UI sẽ được lưu vào DB (mã hóa AES-256-GCM) và **ưu tiên hơn `.env`** — không cần redeploy khi đổi credentials.
 
@@ -337,6 +345,125 @@ npm test
 # Chạy 1 file test cụ thể
 npx jest tests/debt.service.test.js
 ```
+
+---
+
+## 🔑 Thiết lập API key
+
+Hệ thống dùng nhiều dịch vụ ngoài. Mỗi dịch vụ chỉ cần key khi bạn thực sự dùng tính năng đó — bỏ trống key không làm app chết, chỉ tắt đúng tính năng.
+
+### 1. Danh sách API key cần thiết
+
+| Dịch vụ | Biến môi trường | Dùng cho | Bắt buộc? |
+| --- | --- | --- | --- |
+| **Google Gemini** | `GEMINI_API_KEY` | AI Agent (chat, truy vấn NL, tạo PO/đơn) | Khuyến nghị — không có thì AI rơi về model local (nặng, chậm) |
+| **OpenAI** | `OPENAI_API_KEY` | AI Assistant cũ | Tuỳ chọn (nếu đã dùng Gemini thì không cần) |
+| **Cloudinary** | `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_API_KEY`, `CLOUDINARY_API_SECRET` | Upload ảnh sản phẩm | Tuỳ chọn |
+| **SMTP / Gmail** | `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS` | Gửi email xác minh tài khoản | Tuỳ chọn (không có thì link verify in ra console) |
+| **SMS** | `SMS_API_KEY`, `SMS_API_SECRET` | Gửi OTP / thông báo SMS | Tuỳ chọn |
+| **Zalo OA** | `ZALO_*` | Tin nhắn Zalo cho khách | Tuỳ chọn |
+| **VNPT** | `VNPT_*` | Hóa đơn điện tử | Tuỳ chọn |
+| **PayOS** | `PAYOS_CLIENT_ID`, `PAYOS_API_KEY`, `PAYOS_CHECKSUM_KEY` | Thanh toán online | Tuỳ chọn |
+| **Sentry** | `SENTRY_DSN` | Theo dõi lỗi production | Tuỳ chọn |
+
+> 💡 VNPT / Cloudinary / SMTP / SMS / Zalo còn có **UI cấu hình tại `/integrations`** (role ADMIN). Giá trị nhập ở UI được mã hóa AES-256-GCM lưu vào DB và **ưu tiên hơn `.env`** — đổi credentials không cần redeploy.
+
+### 2. Lấy Gemini API key
+
+1. Vào <https://aistudio.google.com/apikey> và đăng nhập bằng tài khoản Google.
+2. Bấm **Create API key** → chọn project (Google Cloud) hoặc để Google tạo project mới.
+3. Sao chép key, dán vào `.env`:
+
+   ```env
+   LLM_PROVIDER=gemini
+   GEMINI_API_KEY=dán_key_vào_đây
+   LLM_MODEL=gemini-3.8-flash
+   ```
+
+4. Khởi động lại backend (`npm run dev`) rồi kiểm tra:
+
+   ```bash
+   npm run check:llm
+   ```
+
+   Kết quả mong muốn:
+
+   ```
+   === CẤU HÌNH ===
+   provider   : gemini
+   model      : gemini-3.8-flash
+   baseUrl    : https://generativelanguage.googleapis.com/v1beta
+   configured : true
+
+   === DANH SÁCH MODEL (provider trả về) ===
+   tổng cộng: 87 model
+   một vài model 'flash': ...
+   ✓ LLM_MODEL=gemini-3.8-flash có trong danh sách
+
+   === GỌI THẬT 1 LẦN ===
+   ✓ Phản hồi: ...
+   ```
+
+   Nếu `configured : false` → thiếu `GEMINI_API_KEY`. Nếu `✗ KHÔNG có trong danh sách` → sửa `LLM_MODEL` cho đúng tên model.
+
+> ⚠️ **Lưu ý kỹ thuật**: client LLM ép IPv4 (`src/config/llm.js` dùng `https.request` với `family: 4`) vì `fetch()` của Node bị treo trên máy chỉ có IPv4 (DNS trả AAAA trước nhưng không có default route). Nếu bạn đổi sang `fetch`, triệu chứng sẽ là **request chết lặng, không báo lỗi**.
+
+> 💡 Free tier Gemini có thể trả `429` (hết quota) hoặc `503` (tạm thời). Code đã có retry + backoff, nhưng nếu gặp thường xuyên hãy kiểm tra quota tại <https://aistudio.google.com/app/promotion>.
+
+### 3. Đổi sang provider khác (gateway OpenAI-compatible)
+
+```env
+LLM_PROVIDER=openai-compatible
+GEMINI_API_KEY=key_cua_ban
+LLM_BASE_URL=https://may-chu-cua-ban/v1
+LLM_MODEL=ten-model
+```
+
+`LLM_BASE_URL` trỏ tới endpoint tương thích OpenAI (LM Studio, vLLM, OpenRouter, Together…). Biến môi trường đầy đủ xem `.env.example`.
+
+### 4. Kiểm tra key sau khi cấu hình
+
+```bash
+npm run check:llm     # gọi thật 1 request tới provider + in provider/model/configured
+npm run check:modules # load 184 module để chắc app boot được
+npm test              # toàn bộ test
+```
+
+`check:llm` in ra provider, model, `configured` và danh sách model — **không bao giờ in ra giá trị key**.
+
+### 5. 🔒 Bảo mật API key
+
+- `.env` đã nằm trong `.gitignore` — **không bao giờ** `git add -f .env`.
+- Chỉ commit `.env.example` (giá trị rỗng) — dùng làm mẫu cho người khác.
+- **Dán key vào `.env` bằng cách gõ tay, không paste vào chat/AI/ticket.** Lịch sử hội thoại, log CI và screenshot đều có thể lưu lại nội dung bạn dán.
+- Nếu nghi ngờ key đã lộ (commit nhầm, lộ trong chat, máy dùng chung): xem mục bên dưới.
+
+### 6. Thu hồi (revoke) key đã bị lộ
+
+Không thể thu hồi từ phía máy local — phải đăng nhập tài khoản chủ sở hữu:
+
+**Gemini**
+
+1. Vào <https://aistudio.google.com/apikey>.
+2. Tìm key bị lộ → bấm **⋮** → **Delete** (hoặc **Disable** để tạm khoá).
+3. Tạo key mới, cập nhật `.env`, chạy lại `npm run check:llm`.
+
+**OpenAI**
+
+1. Vào <https://platform.openai.com/api-keys>.
+2. Chọn key → **Delete**. Cũng nên kiểm tra **Usage** để phát hiện lạm dụng.
+3. Tạo key mới tại trang đó.
+
+**Sau khi thu hồi**
+
+```bash
+# 1. Xoá key cũ khỏi .env
+# 2. Dán key mới
+# 3. Khởi động lại backend và xác nhận
+npm run check:llm
+```
+
+> 🔁 Nếu key từng được commit lên git, xoá key ở dashboard là **chưa đủ** — key vẫn nằm trong lịch sử commit. Phải thu hồi key (vô hiệu hoá ngay) rồi mới dọn lịch sử; dùng BFG/`git filter-repo` để gỡ khỏi lịch sử, và coi key đó là **đã lộ** dù đã gỡ file.
 
 ---
 
