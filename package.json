@@ -15,6 +15,7 @@
     "test": "jest --runInBand",
     "check:modules": "node scripts/check-module-load.js",
     "check:llm": "node scripts/check-llm.js",
+    "check:humangate": "node scripts/check-humangate.js",
     "smoke:humangate": "node scripts/smoke-humangate.js"
   },
   "dependencies": {
