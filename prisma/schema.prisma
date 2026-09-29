@@ -435,6 +435,8 @@ model Product {
   orderItems         OrderItem[]
   stockTransferItems StockTransferItem[]
   cycleCountItems    CycleCountItem[]
+  // chiều ngược của RecipeIngredient.ingredientProduct (xem RecipeIngredient)
+  recipeIngredients  RecipeIngredient[]
   purchaseItems      PurchaseItem[]
   promotions         Promotion[]
   returnLineItems    ReturnLineItem[]
@@ -1112,6 +1114,8 @@ model OrderItem {
   product     Product           @relation(fields: [productId], references: [id])
   returnItems  ReturnLineItem[]
   modifiers   OrderItemModifier[]
+  // F&B: ticket bếp gắn với 1 order item (kds_tickets.orderItemId là @unique → quan hệ 1-1)
+  kdsTicket    KdsTicket?
 
   @@index([orderId])
   @@index([productId])
@@ -3411,6 +3415,9 @@ model KdsTicket {
   sortOrder    Int      @default(0)
   createdAt    DateTime @default(now())
   station      KdsStation @relation(fields: [stationId], references: [id])
+  // kds.service.js include({ orderItem: { include: { product, modifiers } } }) → cần relation này,
+  // nếu thiếu thì PrismaClientValidationError: Unknown field `orderItem` (GET /api/kds/tickets 500)
+  orderItem    OrderItem @relation(fields: [orderItemId], references: [id])
   @@index([stationId, status])
   @@index([orderId])
   @@map("kds_tickets")
@@ -3500,6 +3507,9 @@ model RecipeIngredient {
   unit                String   @default("g")
   wastePercent        Decimal  @default(0) @db.Decimal(5, 2)
   recipe              Recipe   @relation(fields: [recipeId], references: [id], onDelete: Cascade)
+  // recipe.service.js include({ ingredientProduct: { select: { name, costPrice } } }) → cần relation này,
+  // nếu thiếu thì PrismaClientValidationError: Unknown field `ingredientProduct` (GET /api/recipe 500)
+  ingredientProduct   Product  @relation(fields: [ingredientProductId], references: [id])
   @@index([recipeId])
   @@map("recipe_ingredients")
 @@index([tenantId])

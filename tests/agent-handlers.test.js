@@ -23,7 +23,9 @@ jest.mock("../src/config/prisma", () => {
     findMany: jest.fn(), findFirst: jest.fn(), count: jest.fn(), aggregate: jest.fn(), create: jest.fn(),
   };
   mockPrisma.vendor = {
-    findMany: jest.fn(), findUnique: jest.fn(), findFirst: jest.fn(), count: jest.fn(),
+    // findMany dùng cho gợi ý NCC khi create_po thiếu vendor — cần trả mảng
+    findMany: jest.fn().mockResolvedValue([]),
+    findUnique: jest.fn(), findFirst: jest.fn(), count: jest.fn(),
   };
   mockPrisma.expense = { findMany: jest.fn(), count: jest.fn(), aggregate: jest.fn() };
   mockPrisma.journalEntry = { findMany: jest.fn(), count: jest.fn() };
@@ -176,10 +178,12 @@ describe("db-agent.service — intent resolution", () => {
       expect(result.summary).toContain("Vui lòng");
     });
 
-    test("create_po validates items required", async () => {
+    test("create_po báo thiếu NCC (vendor là quan hệ bắt buộc)", async () => {
+      // create_po({}) không có cả NCC lẫn SP → phải hỏi NCC trước,
+      // nếu không sẽ gọi purchaseService.create với vendorId=undefined → Prisma 500.
       const result = await HANDLERS.create_po({});
       expect(result.data).toBeNull();
-      expect(result.summary).toContain("Vui lòng");
+      expect(result.summary).toMatch(/nhà cung cấp/i);
     });
 
     test("send_reminder validates params", async () => {

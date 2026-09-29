@@ -50,17 +50,46 @@ const MASKERS = {
   idNumber: maskIdNumber,
 };
 
+/**
+ * Đệ quy: mask key PII + chuẩn hoá giá trị về dạng JSON-safe.
+ *
+ * Prisma Decimal / BigInt / Date KHÔNG serialize được vào cột JSON
+ * (`Invalid prisma.auditLog.create()` — Decimal lộ {s,e,d}). Vì vậy mọi
+ * giá trị không phải JSON primitive đều được chuyển sang number/string.
+ */
+const normalizeValue = (value) => {
+  // Decimal (Prisma 7 trả Decimal.js): có toNumber/toString
+  if (value && typeof value === "object" && typeof value.toNumber === "function" && typeof value.toFixed === "function") {
+    return Number(value.toNumber());
+  }
+  if (typeof value === "bigint") return Number(value);
+  if (value instanceof Date) return value.toISOString();
+  if (value instanceof Map) return Object.fromEntries(value);
+  if (value instanceof Set) return [...value];
+  return undefined;
+};
+
 const maskObject = (obj) => {
   if (!obj || typeof obj !== "object") return obj;
   if (Array.isArray(obj)) return obj.map(maskObject);
-  const out = { ...obj };
-  for (const key of Object.keys(out)) {
-    const value = out[key];
+
+  const normalized = normalizeValue(obj);
+  if (normalized !== undefined) return normalized;
+
+  const out = {};
+  for (const key of Object.keys(obj)) {
+    const value = obj[key];
     if (typeof value === "string" && MASKERS[key]) {
       out[key] = MASKERS[key](value);
-    } else if (value && typeof value === "object") {
-      out[key] = maskObject(value);
+      continue;
     }
+    if (typeof value === "bigint") { out[key] = Number(value); continue; }
+    if (value instanceof Date) { out[key] = value.toISOString(); continue; }
+
+    const conv = value && typeof value === "object" ? normalizeValue(value) : undefined;
+    if (conv !== undefined) { out[key] = conv; continue; }
+
+    out[key] = value && typeof value === "object" ? maskObject(value) : value;
   }
   return out;
 };

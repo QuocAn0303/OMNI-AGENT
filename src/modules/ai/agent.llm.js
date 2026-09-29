@@ -22,6 +22,17 @@ const { authenticate } = require('../../middleware/auth.middleware');
 
 const INFERENCE_SCRIPT = path.join(__dirname, 'inference.py');
 const router = express.Router();
+const llm = require('../../config/llm');
+
+// System prompt cho nhánh tool-calling khi dùng LLM cloud.
+// Nhánh response đã có sẵn hướng dẫn tiếng Việt trong prompt của caller.
+const TOOL_SYSTEM = [
+  'Ban tro ly ERP Aduu chuyen mon.',
+  'Nhiem vu: chon dung cong cu (tool) phu hop nhat va trich xuat tham so tu cau hoi.',
+  'Tra ve DUY NHAT mot JSON duy nhat, khong giai thich them:',
+  '{"tool":"<ten tool>","params":{...}}',
+  'Neu khong co tool phu hop, tra {"tool":"unknown","params":{}}.',
+].join(' ');
 
 // M4: proxy LLM phải có session hợp lệ — trước đây public (dùng chùa LLM + DoS)
 router.use(authenticate);
@@ -71,7 +82,8 @@ function startPythonProcess() {
   }
 }
 
-function queryModel(payload) {
+/** Nhánh local: Python subprocess (Qwen 2.5 + LoRA). Chỉ dùng khi không có LLM cloud. */
+function queryModelPython(payload) {
   if (!pythonProcess) startPythonProcess();
   if (!pythonProcess) return Promise.reject(new Error('No Python process'));
 
@@ -87,6 +99,36 @@ function queryModel(payload) {
       if (idx >= 0) { requestQueue.splice(idx, 1); reject(new Error('Python process timeout after 120s')); }
     }, 120000);
   });
+}
+
+/** Tên model báo về client: model cloud nếu đang dùng cloud, ngược lại model local cũ. */
+const responseModel = () => (llm.isConfigured() ? llm.config().model : 'qwen-erp');
+
+/** Nhánh cloud (Gemini). Giữ đúng hợp đồng payload của queryModelPython. */
+async function queryModelCloud(payload) {
+  if (payload?.mode === 'response' || (payload?.prompt && !payload?.query)) {
+    const text = await llm.generateText({ prompt: payload.prompt });
+    return { response: String(text).trim() };
+  }
+  const text = await llm.generateText({ system: TOOL_SYSTEM, prompt: payload?.query || '', jsonMode: true });
+  const parsed = llm.parseJsonLoose(text) || {};
+  return {
+    toolCall: {
+      tool: parsed.tool || parsed.toolName || parsed.name || 'unknown',
+      params: parsed.params || parsed.arguments || {},
+    },
+  };
+}
+
+/** Dispatcher: ưu tiên LLM cloud, lỗi thì lùi về Python local. */
+function queryModel(payload) {
+  if (llm.isConfigured()) {
+    return queryModelCloud(payload).catch((e) => {
+      logger.error('[LLM] Cloud that bai, fallback Python local:', e.message);
+      return queryModelPython(payload);
+    });
+  }
+  return queryModelPython(payload);
 }
 
 // POST /api/llm/v1/chat/completions  — OpenAI-compatible streaming endpoint
@@ -123,7 +165,7 @@ async function generateToolCall(query, res, stream) {
 
   if (!stream) {
     return res.json({
-      id, object: 'chat.completion', created, model: 'qwen-erp',
+      id, object: 'chat.completion', created, model: responseModel(),
       choices: [{ index: 0, message: { role: 'assistant', content: null, tool_calls: [{ id: callId, type: 'function', function: { name: toolName, arguments: args } }] }, finish_reason: 'tool_calls' }],
     });
   }
@@ -165,7 +207,7 @@ async function generateResponse(messages, query, res, stream) {
 
   if (!stream) {
     return res.json({
-      id, object: 'chat.completion', created, model: 'qwen-erp',
+      id, object: 'chat.completion', created, model: responseModel(),
       choices: [{ index: 0, message: { role: 'assistant', content: text }, finish_reason: 'stop' }],
     });
   }
@@ -187,7 +229,7 @@ async function generateResponse(messages, query, res, stream) {
 
 function writeChunk(res, id, created, delta, finishReason) {
   res.write(`data: ${JSON.stringify({
-    id, object: 'chat.completion.chunk', created, model: 'qwen-erp',
+    id, object: 'chat.completion.chunk', created, model: responseModel(),
     choices: [{ index: 0, delta, finish_reason: finishReason || null }],
   })}\n\n`);
 }

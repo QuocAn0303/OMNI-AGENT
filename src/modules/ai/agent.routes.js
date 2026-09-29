@@ -29,6 +29,13 @@ router.use(authenticate);
 const prisma = require('../../config/prisma');
 const { processQuery, generateResponse, HANDLERS } = require('./db-agent.service');
 const logger = require('../../utils/logger');
+const { parseAmount } = require('../../utils/vietnameseAmount');
+const {
+  buildDataRequestGate,
+  buildWriteActionGate,
+  buildDecisionData,
+  createGate,
+} = require('./agent.humangate');
 
 // ─────────────────────────────────────────────────────────────
 // M3: Role matrix cho tool AI
@@ -68,21 +75,37 @@ const SENSITIVE_ALLOWED_ROLES = [
 
 const isSensitiveAllowed = (role) => SENSITIVE_ALLOWED_ROLES.includes(role);
 
-const createDataRequest = (sessionId, tool, params) => {
-  return prisma.agentHumanGate.create({
-    data: {
-      actionType: 'DATA_REQUEST',
-      sessionId,
-      actionPayload: { tool, params },
-      status: 'PENDING',
-      expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
-    },
-  }).catch(() => {});
-};
+const createDataRequest = (sessionId, tool, params, user = {}) =>
+  createGate(buildDataRequestGate({
+    sessionId,
+    tool,
+    params,
+    role: user.role || null,
+    requestedById: user.id || null,
+  }));
 
 const DATA_REQUEST_REPLY =
   'Dữ liệu bạn yêu cầu thuộc loại nhạy cảm (thông tin khách hàng, nhân viên hoặc tài chính). ' +
   'Yêu cầu đã được gửi tới ADMIN/MANAGER để phê duyệt. Kết quả sẽ được cập nhật sau khi được duyệt.';
+
+const DATA_REQUEST_FAILED_REPLY =
+  'Yêu cầu của bạn liên quan đến dữ liệu nhạy cảm và cần ADMIN/MANAGER phê duyệt, ' +
+  'nhưng hệ thống chưa ghi được yêu cầu. Vui lòng thử lại hoặc liên hệ quản trị viên.';
+
+/**
+ * Ghi audit gate cho một write action đã thực hiện xong.
+ * Không được làm hỏng response (hành động đã xảy ra rồi) nhưng lỗi PHẢI được log
+ * rõ ràng — trước đây lỗi bị nuốt khiến mất hoàn toàn dấu vết kiểm toán.
+ */
+const recordWriteAudit = async (sessionId, actionType, params, userId) => {
+  try {
+    await createGate(buildWriteActionGate({ sessionId, actionType, params, decidedById: userId }));
+    return true;
+  } catch (e) {
+    logger.error(`[Agent Gate] MẤT audit trail cho write action ${actionType} (session ${sessionId}): ${e.message}`);
+    return false;
+  }
+};
 
 const TOOL_HANDLERS = {
   queryInventory: async ({ query }) => {
@@ -140,7 +163,31 @@ const TOOL_HANDLERS = {
     else if (period === 'last_month') { start = new Date(now.getFullYear(), now.getMonth() - 1, 1); label = 'tháng trước'; }
     else { start = new Date(now.getFullYear(), now.getMonth(), 1); label = 'tháng này'; }
     const agg = await prisma.order.aggregate({ where: { createdAt: { gte: start }, status: { not: 'CANCELLED' } }, _sum: { total: true }, _count: { id: true } });
-    return `💰 Doanh thu ${label}:\n• Tổng: ${Number(agg._sum.total || 0).toLocaleString()}đ\n• Số đơn: ${agg._count.id}`;
+
+    const total = Number(agg._sum.total || 0);
+    const orderCount = agg._count.id;
+
+    // Kỳ không có đơn nào: nói rõ kỳ + chỉ ra kỳ gần nhất CÓ dữ liệu để
+    // người dùng không tưởng hệ thống bị lỗi (0đ rất dễ gây hiểu nhầm).
+    if (orderCount === 0) {
+      const latest = await prisma.order.findFirst({
+        where: { status: { not: 'CANCELLED' } },
+        orderBy: { createdAt: 'desc' },
+        select: { createdAt: true },
+      });
+      const lines = [
+        `💰 Doanh thu ${label}:`,
+        '• Tổng: 0đ',
+        '• Số đơn: 0',
+        `• Chưa có đơn nào trong kỳ này (${start.toLocaleDateString('vi-VN')} → nay).`,
+      ];
+      if (latest) {
+        lines.push(`• Đơn gần nhất: ${new Date(latest.createdAt).toLocaleDateString('vi-VN')}. Hãy thử "doanh thu tháng trước" hoặc "doanh thu năm nay".`);
+      }
+      return lines.join('\n');
+    }
+
+    return `💰 Doanh thu ${label}:\n• Tổng: ${total.toLocaleString('vi-VN')}đ\n• Số đơn: ${orderCount}\n• Trung bình: ${Math.round(total / orderCount).toLocaleString('vi-VN')}đ/đơn`;
   },
 
   // ─── CRM/SRM fast-path (đặc tả §3.3: 15 intents) — wrap db-agent HANDLERS ───
@@ -194,6 +241,59 @@ const TOOL_HANDLERS = {
   },
 };
 
+/**
+ * Bóc tham số tạo PO từ câu lệnh tự nhiên.
+ *
+ * Bối cảnh (bug): regex cũ chỉ nhận đơn vị "đ|vnđ|vnd|k|tr", thiếu "triệu".
+ * Với câu "tạo PO giá 5 triệu", số "5" bị bóc ra làm số lượng, còn chuỗi
+ * "giá triệu" thành tên sản phẩm → báo lỗi "Không tìm thấy sản phẩm giá triệu".
+ *
+ * Cách sửa: dùng parseAmount() (utils/vietnameseAmount) để nhận diện đủ
+ * đơn vị tiền tệ VN, bóc số tiền TRƯỚC rồi mới dựng tên sản phẩm.
+ *
+ * @param {string} msg
+ * @returns {{vendorName: string, productName: string, quantity: string|number, unitCost: number}}
+ */
+const QTY_PATTERN = /(\d+)\s*(cái|chiếc|hộp|chai|lon|bóc|thùng|túi|kg|gam|gram|sp|sản phẩm)\b/i;
+
+const extractPO = (msg) => {
+  const text = String(msg || '');
+  const vendor = text.match(/(từ|ncc|nhà cung cấp)\s+(.+?)(?:\s+\d+\s|$)/i);
+
+  // Số lượng phải CÓ đơn vị đếm — nếu không, "5 triệu" sẽ bị đọc thành qty=5.
+  const qtyMatch = text.match(QTY_PATTERN);
+  const amount = parseAmount(text);
+
+  // Xoá MỆNH ĐỀ TIỀN theo đúng span đã bóc ("5 triệu") trước khi dựng tên SP —
+  // nếu xoá số trước thì mệnh đề vỡ thành "triệu" rơi lại vào tên sản phẩm.
+  const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  let rest = text;
+  if (amount && amount.matched) {
+    rest = rest.replace(new RegExp(escapeRe(amount.matched), 'gi'), ' ');
+  }
+  if (qtyMatch) {
+    rest = rest.replace(new RegExp(escapeRe(qtyMatch[0]), 'gi'), ' ');
+  }
+
+  const product = rest
+    .replace(/tạo đơn nhập|tạo po|đặt hàng nhập|nhập thêm|cho|từ|ncc|nhà cung cấp/gi, '')
+    // Bỏ từ bám theo mệnh đề tiền còn sót ("giá" trong "… giá 5 triệu")
+    .replace(/(giá trị|tổng tiền|thành tiền|giá bán|giá|tiền)/gi, '')
+    // Người dùng có thể gõ "tạo PO giá triệu" (quên con số) — đơn vị tiền tệ
+    // đứng lẻ không phải tên sản phẩm, phải dọn để create_po báo thiếu thông tin
+    .replace(/(?<![\p{L}\p{N}])(nghìn|nghin|ngàn|triệu|trieu|ngàn|ng|đồng|tỷ|ty|tr|k)(?![\p{L}\p{N}])/giu, ' ')
+    .replace(/\s+/g, ' ')
+    .replace(/^[\s\-–—,.:;]+|[\s\-–—,.:;]+$/g, '')
+    .trim();
+
+  return {
+    vendorName: vendor ? vendor[2].trim() : '',
+    productName: product,
+    quantity: qtyMatch ? qtyMatch[1] : 1,
+    unitCost: amount ? amount.value : 0,
+  };
+};
+
 const INTENTS = [
   // Write intents MUST come first — they conflict with read patterns (y hệt db-agent INTENT_MAP)
   { keywords: ['tạo đơn hàng', 'tạo order', 'đặt hàng', 'bán cho'], tool: 'createOrder', isWrite: true,
@@ -209,19 +309,7 @@ const INTENTS = [
     }
   },
   { keywords: ['tạo đơn nhập', 'tạo po', 'đặt hàng nhập', 'nhập thêm', 'tạo purchase order'], tool: 'createPO', isWrite: true,
-    extract: (msg) => {
-      const vendor = msg.match(/(từ|ncc|nhà cung cấp)\s+(.+?)(?:\s+\d+\s|$)/i);
-      const qtyMatch = msg.match(/(\d+)\s*(cái|chiếc|hộp|kg|sp)?/i);
-      const product = msg.replace(/tạo đơn nhập|tạo po|đặt hàng nhập|nhập thêm|từ|ncc|nhà cung cấp/gi, '').replace(/\d+\s*(cái|chiếc|hộp|kg|sp)?/gi, '').trim();
-      const costMatch = msg.match(/(\d+[\d,.]*)\s*(đ|vnđ|vnd|k|tr)/i);
-      return {
-        vendorName: vendor ? vendor[2].trim() : '',
-        productName: product,
-        quantity: qtyMatch ? qtyMatch[1] : 1,
-        unitCost: costMatch ? parseFloat(costMatch[1].replace(/,/g, '')) : 0,
-      };
-    }
-  },
+    extract: extractPO },
   { keywords: ['nhắc nợ', 'gửi nhắc', 'nhắc khách', 'đòi nợ', 'remind'], tool: 'sendReminder', isWrite: true,
     extract: (msg) => {
       const customer = msg.match(/(nhắc|khách|cho)\s+(.+?)(?:\s|$)/i);
@@ -315,7 +403,9 @@ router.post('/chat', async (req, res, next) => {
     });
 
     const startTime = Date.now();
-    let reply, stepType = 'FAST_PATH', toolName = null;
+    // type là enum AgentStepType (LLM_CALL | TOOL_CALL | HUMAN_GATE | RENDER_UI).
+    // Giá trị mặc định 'FAST_PATH' không tồn tại trong enum → PrismaClientValidationError → 500.
+    let reply, stepType = 'TOOL_CALL', toolName = null;
 
     if (intent && TOOL_HANDLERS[intent.tool]) {
       toolName = intent.tool;
@@ -329,21 +419,21 @@ router.post('/chat', async (req, res, next) => {
           reply = await TOOL_HANDLERS[intent.tool](intent.params, req.user.id, session.id);
           stepType = 'TOOL_CALL';
 
-          await prisma.agentHumanGate.create({
-            data: {
-              actionType: toolName,
-              sessionId: session.id,
-              actionPayload: intent.params,
-              status: 'APPROVED',
-              expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
-            },
-          }).catch(() => {});
+          const audited = await recordWriteAudit(session.id, toolName, intent.params, req.user.id);
+          if (!audited) {
+            reply += '\n\n⚠️ Thao tác đã thực hiện nhưng KHÔNG ghi được bản ghi kiểm toán — vui lòng báo quản trị viên.';
+          }
         }
       } else if (SENSITIVE_TOOLS.has(intent.tool) && !isSensitiveAllowed(req.user.role)) {
         // M3: role thấp hỏi tool nhạy cảm → tạo request chờ phê duyệt
         stepType = 'TOOL_CALL';
-        await createDataRequest(session.id, intent.tool, intent.params);
-        reply = DATA_REQUEST_REPLY;
+        try {
+          await createDataRequest(session.id, intent.tool, intent.params, req.user);
+          reply = DATA_REQUEST_REPLY;
+        } catch (gateErr) {
+          logger.error(`[Agent Gate] Không tạo được DATA_REQUEST cho ${intent.tool}: ${gateErr.message}`);
+          reply = DATA_REQUEST_FAILED_REPLY;
+        }
       } else {
         reply = await TOOL_HANDLERS[intent.tool](intent.params);
         reply = `📋 **${intent.tool}**\n\n${reply}`;
@@ -355,8 +445,13 @@ router.post('/chat', async (req, res, next) => {
           if (SENSITIVE_DB_TOOLS.has(dbResult.tool) && !isSensitiveAllowed(req.user.role)) {
             // M3: fallback tool nhạy cảm → request chờ phê duyệt
             stepType = 'TOOL_CALL';
-            await createDataRequest(session.id, dbResult.tool, dbResult.params);
-            reply = DATA_REQUEST_REPLY;
+            try {
+              await createDataRequest(session.id, dbResult.tool, dbResult.params, req.user);
+              reply = DATA_REQUEST_REPLY;
+            } catch (gateErr) {
+              logger.error(`[Agent Gate] Không tạo được DATA_REQUEST cho ${dbResult.tool}: ${gateErr.message}`);
+              reply = DATA_REQUEST_FAILED_REPLY;
+            }
           } else {
             stepType = 'LLM_CALL';
             reply = await generateResponse(userMsg, dbResult);
@@ -520,19 +615,22 @@ router.post('/human-gates/:id/decide', authorize('ADMIN', 'MANAGER'), async (req
 
     const updated = await prisma.agentHumanGate.update({
       where: { id },
-      data: {
-        status: decision,
-        resolvedAt: new Date(),
-        resolvedBy: req.user.id,
-        resolvedNote: note || null,
-      },
+      data: buildDecisionData({ decision, note, userId: req.user.id }),
     });
 
     if (decision === 'APPROVED') {
-      await prisma.agentSession.update({
-        where: { id: gate.sessionId },
-        data: { status: 'COMPLETED', finalResult: { approved: true, actionType: gate.actionType, payload: gate.actionPayload } },
-      }).catch(() => {});
+      // Gate đã lưu quyết định thành công → không được fail response. Nhưng nếu không đánh
+      // dấu được session COMPLETED thì phiên chat kẹt PENDING vĩnh viễn → PHẢI log có id để trace.
+      try {
+        await prisma.agentSession.update({
+          where: { id: gate.sessionId },
+          data: { status: 'COMPLETED', finalResult: { approved: true, actionType: gate.actionType, payload: gate.actionPayload } },
+        });
+      } catch (e) {
+        logger.error(
+          `[Agent Gate] Gate ${id} đã APPROVED nhưng không đóng được AgentSession ${gate.sessionId}: ${e.message}`,
+        );
+      }
     }
 
     res.json({ success: true, data: updated, message: decision === 'APPROVED' ? 'Đã phê duyệt' : 'Đã từ chối' });
@@ -542,3 +640,7 @@ router.post('/human-gates/:id/decide', authorize('ADMIN', 'MANAGER'), async (req
 });
 
 module.exports = router;
+// Export phụ để test được parser (INTENTS/extract không nằm trên router).
+module.exports.extractPO = extractPO;
+module.exports.INTENTS = INTENTS;
+module.exports.TOOL_HANDLERS = TOOL_HANDLERS;

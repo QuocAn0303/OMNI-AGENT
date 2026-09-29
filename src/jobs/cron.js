@@ -8,6 +8,7 @@
  * 
  * Lịch chạy:
  * - Mỗi 5 phút: Quét phiên hỗ trợ hết hạn (support sessions)
+ * - Mỗi 5 phút: Quét human-gate AI agent PENDING quá hạn → EXPIRED (instance 0)
  * - Mỗi giờ: Đơn PENDING quá 24h → tự động hủy
  * - 09:00 hàng ngày: Nhắc công nợ quá hạn
  * - 09:00 ngày 25: Nhắc tính lương
@@ -39,6 +40,7 @@ const bankRecoService = require("../modules/bank-reco/bank-reco.service");
 const periodCloseService = require("../modules/accounting/period-close.service");
 const subscriptionService = require("../modules/subscriptions/subscription.service");
 const currencyService = require("../modules/currency/currency.service");
+const { sweepExpiredHumanGates } = require("../modules/ai/agent.humangate");
 const prisma = require("../config/prisma");
 const { runWithTenant } = require("../config/tenantContext");
 const logger = require("../utils/logger");
@@ -73,6 +75,22 @@ cron.schedule("*/5 * * * *", async () => {
     );
   }
 });
+
+// Quét human-gate (AI agent) PENDING đã quá hạn → EXPIRED, mỗi 5 phút.
+// Nếu không có job này thì status EXPIRED trong enum HumanGateStatus không bao giờ
+// được set: GET /human-gates trả về danh sách PENDING "ma", và POST /human-gates/:id/decide
+// từ chối bằng 400 "Gate has expired" trong khi gate vẫn hiển thị là PENDING trên UI.
+// updateMany chạy ngoài tenant context → Prisma extension không inject tenantId → quét mọi tenant.
+if (!process.env.NODE_APP_INSTANCE || process.env.NODE_APP_INSTANCE === "0") {
+  cron.schedule("*/5 * * * *", async () => {
+    try {
+      await sweepExpiredHumanGates();
+    } catch (error) {
+      logger.error("[Cron Human-Gate Error] Lỗi khi quét human-gate quá hạn:", error);
+    }
+  });
+  logger.info("[Cron Human-Gate] Đã đăng ký quét human-gate PENDING quá hạn → EXPIRED (mỗi 5 phút)");
+}
 
 // Cron: Subscription renewal reminder — 7 days before endDate
 const renewalReminder = async () => {
@@ -426,7 +444,7 @@ const startCrons = () => {
   }
 
   logger.info(
-    "[cron] scheduled: orders hourly, debt 09:00, payroll 25th, period 28th, promo daily, recurring 1st, CRM tasks 08:00, CRM campaigns every minute, depreciation 28th 01:00, lot expiry 07:00, exchange rates 08:30, auto-payroll 25th 06:00, debt-collection 09:00, bank-reco-auto-match 10:00, morning-briefing 07:00, anomaly-detection 08:00, renewal-reminder 08:00, prepaid-allocation 1st 02:00, monthly-depreciation 1st 03:00, weekly-pnl Mon 08:00, auto-close-dormant 1st 04:00, auto-archive 1st 05:00, daily-backup 02:00, webhook-retry every 5min, churn-automation daily 01:00, vendor-scorecard 1st 06:00",
+    "[cron] scheduled: human-gate-expiry every 5min, orders hourly, debt 09:00, payroll 25th, period 28th, promo daily, recurring 1st, CRM tasks 08:00, CRM campaigns every minute, depreciation 28th 01:00, lot expiry 07:00, exchange rates 08:30, auto-payroll 25th 06:00, debt-collection 09:00, bank-reco-auto-match 10:00, morning-briefing 07:00, anomaly-detection 08:00, renewal-reminder 08:00, prepaid-allocation 1st 02:00, monthly-depreciation 1st 03:00, weekly-pnl Mon 08:00, auto-close-dormant 1st 04:00, auto-archive 1st 05:00, daily-backup 02:00, webhook-retry every 5min, churn-automation daily 01:00, vendor-scorecard 1st 06:00",
   );
 };
 

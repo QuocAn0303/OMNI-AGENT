@@ -16,6 +16,7 @@
 
 const prisma = require('../../config/prisma');
 const logger = require('../../utils/logger');
+const { buildReminderGate, createGate } = require('./agent.humangate');
 
 // ─── HELPERS ───
 
@@ -658,13 +659,42 @@ const HANDLERS = {
       }
     }
 
-    const productItems = params.items || [];
+    // Bắt buộc có NCC — PurchaseOrder.vendorId là quan hệ bắt buộc.
+    // Trước đây thiếu NCC vẫn gọi purchaseService.create với vendorId=undefined
+    // → Prisma ném "Argument `vendor` is missing" (500) thay vì báo cho AI hỏi lại.
+    if (!vendorId) {
+      const suggestions = await prisma.vendor.findMany({
+        where: { isActive: true },
+        select: { name: true },
+        orderBy: { name: 'asc' },
+        take: 5,
+      });
+      const hint = suggestions.length
+        ? ` Ví dụ: "${suggestions.map((v) => v.name).join('", "')}".`
+        : ' Hãy tạo nhà cung cấp trước trong mục Nhà cung cấp.';
+      return {
+        data: null,
+        total: 0,
+        summary: 'Thiếu nhà cung cấp — vui lòng cho biết NCC của đơn nhập. '
+          + 'Cú pháp: "tạo PO cho <sản phẩm> <số lượng> từ <tên NCC> giá <số tiền>".' + hint,
+        message: '',
+      };
+    }
+
+    // Copy để không mutate params.items của caller
+    const productItems = [...(params.items || [])];
     if (!productItems.length && params.productName && params.quantity) {
-      productItems.push({ productName: params.productName, quantity: parseInt(params.quantity) || 1 });
+      productItems.push({
+        productName: params.productName,
+        quantity: parseInt(params.quantity) || 1,
+        // PHẢI truyền unitCost: nếu thiếu, resolvedItems rơi về product.costPrice
+        // và câu "giá 5 triệu" bị âm thầm ghi thành 27.000đ (product giá sẵn có).
+        ...(params.unitCost ? { unitCost: Number(params.unitCost) } : {}),
+      });
     }
 
     if (!productItems.length) {
-      return { data: null, total: 0, summary: 'Vui lòng cung cấp sản phẩm và số lượng cần nhập.', message: '' };
+      return { data: null, total: 0, summary: 'Vui lòng cung cấp tên sản phẩm cần nhập (ví dụ: "tạo PO nến thơm 3 cái giá 5 triệu").', message: '' };
     }
 
     const resolvedItems = [];
@@ -678,7 +708,13 @@ const HANDLERS = {
         product = await prisma.product.findFirst({ where: { name: { contains: name, mode: 'insensitive' }, isActive: true } });
       }
       if (!product) return { data: null, total: 0, summary: `Không tìm thấy sản phẩm "${name || pid}".`, message: '' };
-      resolvedItems.push({ productId: product.id, quantity: parseInt(item.quantity) || 1, unitCost: Number(item.unitCost || product.costPrice || 0) });
+      resolvedItems.push({
+        productId: product.id,
+        // Giữ tên để summary hiển thị "3x Nến thơm" thay vì UUID
+        productName: product.name || name || pid,
+        quantity: parseInt(item.quantity) || 1,
+        unitCost: Number(item.unitCost || product.costPrice || 0),
+      });
     }
 
     const po = await purchaseService.create({
@@ -691,7 +727,10 @@ const HANDLERS = {
     return {
       data: po,
       total: 1,
-      summary: `✅ Đã tạo đơn nhập hàng ${po.poCode} thành công!\nNCC: ${po.vendor?.name || vendorQuery}\nTổng: ${Number(po.total).toLocaleString()}đ\nSản phẩm: ${resolvedItems.map(i => `${i.quantity}x ${i.productId}`).join(', ')}`,
+      summary: `✅ Đã tạo đơn nhập hàng ${po.poCode} thành công!\nNCC: ${po.vendor?.name || vendorQuery}\nTổng: ${Number(po.total).toLocaleString('vi-VN')}đ`
+        + `\nSản phẩm: ${resolvedItems.map((i) => `${i.quantity}x ${i.productName || i.productId}`).join(', ')}`
+        // PO >= ngưỡng duyệt → nhắc người dùng đi duyệt, tránh tưởng đã xong
+        + (po.status === 'PENDING_APPROVAL' ? `\n⏳ Tổng >= ngưỡng duyệt → PO đang chờ DUYỆT tại mục Đơn nhập hàng.` : ''),
       message: '',
     };
   },
@@ -736,31 +775,34 @@ const HANDLERS = {
       meta: { debtId: debt.id, level: 'agent_reminder' },
     });
 
-    await prisma.customerNote.create({
-      data: {
-        customerId: debt.customerId,
-        content: `[AI Agent] Nhắc nợ: ${message}`,
-        type: 'NOTE',
-        createdById: userId,
-      },
-    }).catch(() => {});
+    // Note CRM chỉ là bản ghi phụ, không được chặn luồng nhắc nợ — nhưng mất note thì
+    // PHẢI còn dấu vết trong log (trước đây .catch(() => {}) xoá sạch triệu chứng).
+    try {
+      await prisma.customerNote.create({
+        data: {
+          customerId: debt.customerId,
+          content: `[AI Agent] Nhắc nợ: ${message}`,
+          type: 'NOTE',
+          createdById: userId,
+        },
+      });
+    } catch (noteErr) {
+      logger.error(`[DB Agent] Không ghi được note nhắc nợ cho debt ${debt.id}: ${noteErr.message}`);
+    }
 
     // Create a human gate if sessionId is provided
     if (sessionId) {
-      await prisma.agentHumanGate.create({
-        data: {
-          actionType: 'SEND_REMINDER',
+      try {
+        await createGate(buildReminderGate({
           sessionId,
-          actionPayload: {
-            debtId: debt.id,
-            customerName: debt.customer.name,
-            remaining,
-            message,
-          },
-          status: 'PENDING',
-          expiresAt: new Date(Date.now() + 24 * 60 * 60 * 1000),
-        },
-      }).catch(() => {});
+          debtId: debt.id,
+          customerName: debt.customer.name,
+          remaining,
+          message,
+        }));
+      } catch (gateErr) {
+        logger.error(`[DB Agent] Không tạo được human-gate nhắc nợ cho debt ${debt.id}: ${gateErr.message}`);
+      }
     }
 
     return {

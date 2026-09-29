@@ -13,7 +13,7 @@ jest.mock("../src/config/prisma", () => {
   mockPrisma.customer = { findMany: jest.fn() };
   mockPrisma.goodsReceiptNote = { findMany: jest.fn() };
   mockPrisma.purchaseInvoiceRecord = { findMany: jest.fn() };
-  mockPrisma.vendor = { findMany: jest.fn() };
+  mockPrisma.vendor = { findMany: jest.fn().mockResolvedValue([]), findFirst: jest.fn() };
   mockPrisma.order = { findMany: jest.fn(), findFirst: jest.fn(), count: jest.fn(), aggregate: jest.fn() };
   mockPrisma.product = { findMany: jest.fn(), findFirst: jest.fn(), findUnique: jest.fn(), count: jest.fn() };
   mockPrisma.inventory = { findMany: jest.fn(), count: jest.fn(), aggregate: jest.fn() };
@@ -53,7 +53,11 @@ jest.mock("../src/modules/orders/order.service", () => ({
 jest.mock("../src/modules/accounting/purchase.service", () => ({
   create: jest.fn().mockResolvedValue({ id: "po1", poCode: "PO-20260625-0001", total: 1000000, vendor: { name: "NCC" } }),
 }));
-jest.mock("../src/modules/accounting/vendor.service", () => ({ getById: jest.fn(), findFirst: jest.fn() }));
+jest.mock("../src/modules/accounting/vendor.service", () => ({
+  getById: jest.fn(),
+  findFirst: jest.fn(),
+  list: jest.fn(),
+}));
 
 const fs = require("fs");
 const path = require("path");
@@ -135,6 +139,127 @@ describe("db-agent — đặc tả §3.3: 15 intents / 17+ tools", () => {
     });
   });
 
+
+  describe("createPO extract — parse tiền Việt Nam (regression)", () => {
+    // Bối cảnh: "tạo PO giá 5 triệu" từng cho lỗi
+    // "Không tìm thấy sản phẩm 'giá triệu'" vì regex cũ thiếu đơn vị "triệu".
+    const { extractPO } = require("../src/modules/ai/agent.routes");
+
+    test("'tạo PO giá 5 triệu' → 5.000.000đ, KHÔNG còn tên SP 'giá triệu'", () => {
+      const r = extractPO("tạo PO giá 5 triệu");
+      expect(r.unitCost).toBe(5_000_000);
+      expect(r.productName.toLowerCase()).not.toContain("triệu");
+      expect(r.productName.trim()).toBe("");
+    });
+
+    test("'tạo PO nến thơm giá 5 triệu' → giữ đúng tên sản phẩm", () => {
+      const r = extractPO("tạo PO nến thơm giá 5 triệu");
+      expect(r.unitCost).toBe(5_000_000);
+      expect(r.productName.toLowerCase()).toContain("nến thơm");
+      expect(r.productName.toLowerCase()).not.toContain("triệu");
+    });
+
+    test("số lượng có đơn vị KHÔNG bị tính thành tiền", () => {
+      const r = extractPO("tạo PO cho nến thơm 3 cái");
+      expect(r.quantity).toBe("3");
+      expect(r.unitCost).toBe(0);
+      expect(r.productName.toLowerCase()).toBe("nến thơm");
+    });
+
+    test("số tiền KHÔNG bị tính thành số lượng", () => {
+      const r = extractPO("tạo PO giá 5 triệu");
+      expect(r.quantity).toBe(1);
+      expect(r.unitCost).toBe(5_000_000);
+    });
+
+    test("số lượng + tiền trong cùng câu", () => {
+      const r = extractPO("tạo PO cho nến thơm 3 cái giá 5 triệu");
+      expect(r.quantity).toBe("3");
+      expect(r.unitCost).toBe(5_000_000);
+      expect(r.productName.toLowerCase()).toBe("nến thơm");
+    });
+
+    test("vẫn bóc được NCC", () => {
+      const r = extractPO("tạo PO nến thơm từ Công ty ABC giá 5 triệu");
+      expect(r.vendorName).toContain("ABC");
+      expect(r.unitCost).toBe(5_000_000);
+    });
+
+    test("PO > 5 triệu vẫn tạo được (không vưỡng ngưỡng duyệt của purchase.service)", () => {
+      // Ngưỡng 5tr là quyết định của purchase.service.create, không phải parser.
+      const r = extractPO("tạo PO nến thơm giá 8 triệu");
+      expect(r.unitCost).toBe(8_000_000);
+      expect(r.unitCost).toBeGreaterThanOrEqual(5_000_000);
+    });
+  });
+
+
+  describe("create_po — vendor bắt buộc & unitCost không bị bỏ (regression)", () => {
+    // Bug gốc: "tạo PO nến thơm giá 5 triệu" (không nêu NCC) gọi
+    // purchaseService.create với vendorId=undefined → Prisma 500
+    // "Argument `vendor` is missing"; đồng thời unitCost 5.000.000 bị rơi
+    // về product.costPrice (27.000) vì productItems không gắn unitCost.
+    const purchaseService = require("../src/modules/accounting/purchase.service");
+    const vendorService = require("../src/modules/accounting/vendor.service");
+
+    beforeEach(() => {
+      prisma.vendor.findMany.mockResolvedValue([
+        { name: "Cơ sở Sáp nến Việt Hưng" },
+        { name: "Công ty TNHH Nguyên liệu Hương Liệu" },
+      ]);
+      prisma.product.findFirst.mockResolvedValue({
+        id: "prod1", name: "Nến thơm", costPrice: 27000,
+      });
+      vendorService.list.mockResolvedValue({ items: [{ id: "vendor1" }] });
+      purchaseService.create.mockClear();
+    });
+
+    test("thiếu NCC → báo hỏi lại, KHÔNG gọi purchaseService.create", async () => {
+      const r = await HANDLERS.create_po({ productName: "nến thơm", quantity: 1 }, "user1");
+      expect(purchaseService.create).not.toHaveBeenCalled();
+      expect(r.summary).toMatch(/nhà cung cấp/i);
+      expect(r.summary).toContain("Việt Hưng"); // gợi ý NCC có sẵn
+      expect(r.data).toBeNull();
+    });
+
+    test("có NCC → tạo PO thành công", async () => {
+      const r = await HANDLERS.create_po(
+        { vendorName: "Việt Hưng", productName: "nến thơm", quantity: 1, unitCost: 5_000_000 }, "user1",
+      );
+      expect(purchaseService.create).toHaveBeenCalledTimes(1);
+      expect(r.summary).toMatch(/Đã tạo đơn nhập hàng/);
+    });
+
+    test("unitCost 5.000.000 KHÔNG bị rơi về product.costPrice (27.000)", async () => {
+      await HANDLERS.create_po(
+        { vendorName: "Việt Hưng", productName: "nến thơm", quantity: 1, unitCost: 5_000_000 }, "user1",
+      );
+      const [payload] = purchaseService.create.mock.calls[0];
+      expect(payload.items[0].unitCost).toBe(5_000_000);
+      expect(payload.items[0].unitCost).not.toBe(27_000);
+    });
+
+    test("không nêu giá → vẫn dùng costPrice của sản phẩm", async () => {
+      await HANDLERS.create_po({ vendorName: "Việt Hưng", productName: "nến thơm", quantity: 1 }, "user1");
+      const [payload] = purchaseService.create.mock.calls[0];
+      expect(payload.items[0].unitCost).toBe(27_000);
+    });
+
+    test("không tìm thấy sản phẩm → báo tên SP, không gọi purchaseService.create", async () => {
+      prisma.product.findFirst.mockResolvedValue(null);
+      const r = await HANDLERS.create_po(
+        { vendorName: "Việt Hưng", productName: "xyz không có", quantity: 1 }, "user1",
+      );
+      expect(purchaseService.create).not.toHaveBeenCalled();
+      expect(r.summary).toContain("xyz không có");
+    });
+
+    test("không mutate params.items của caller", async () => {
+      const params = { vendorName: "Việt Hưng", productName: "nến thơm", quantity: 2, unitCost: 1000 };
+      await HANDLERS.create_po(params, "user1");
+      expect(params.items).toBeUndefined();
+    });
+  });
 
   describe("6 tools mới — format & filter", () => {
     test("search_churn_alerts trả message list", async () => {

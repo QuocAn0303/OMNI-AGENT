@@ -31,9 +31,9 @@ export default function CRMActionCard({ customerName, sentiment, description, pr
   const handleCreateTask = async () => {
     setLoading(true);
     try {
+      // POST /api/agent/chat nhận { messages: [{ role, content }] } — không phải { message, history }
       await api.post('/agent/chat', {
-        message: `Tạo task ưu tiên ${priority} cho khách ${customerName}: ${customDesc}`,
-        history: [],
+        messages: [{ role: 'user', content: `Tạo task ưu tiên ${priority} cho khách ${customerName}: ${customDesc}` }],
       });
       message.success('✅ Đã tạo task thành công!');
       setDone(true);

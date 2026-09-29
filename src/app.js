@@ -387,6 +387,10 @@ app.use("/api/payment-gateway", paymentGatewayRoutes);
 app.use("/api/food-delivery", foodDeliveryRoutes);
 app.use("/api/recipes", recipeRoutes);
 app.use("/api/stamp-cards", stampCardRoutes);
+// Alias: frontend + Swagger đang gọi dạng số ít (/api/recipe, /api/stamp-card) → thiếu alias
+// thì Recipes.jsx / StampCards.jsx gặp 404 dù route đã mount.
+app.use("/api/recipe", recipeRoutes);
+app.use("/api/stamp-card", stampCardRoutes);
 app.use("/api/ai-forecast", aiForecastRoutes);
 app.use("/api/petty-cash", pettyCashRoutes);
 app.use("/api/search", searchRoutes);

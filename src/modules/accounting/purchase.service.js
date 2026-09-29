@@ -111,6 +111,9 @@ const getById = async (id) => {
 const create = async (data, userId) => {
   const { vendorId, items = [], expectedAt, note, invoiceNumber } = data;
   if (!items.length) throw { status: 400, message: "Phải có ít nhất 1 mặt hàng" };
+  // vendorId là quan hệ bắt buộc — chặn ở đây để trả 400 rõ ràng
+  // thay vì để Prisma ném "Argument `vendor` is missing" (500).
+  if (!vendorId) throw { status: 400, message: "Thiếu nhà cung cấp (vendorId) cho đơn nhập" };
 
   const taxIds = [...new Set(items.filter((i) => i.taxRateId).map((i) => i.taxRateId))];
   const taxes = await prisma.taxRate.findMany({ where: { id: { in: taxIds } } });

@@ -19,10 +19,11 @@ import {
   CloseOutlined, SendOutlined,
   RobotOutlined, UserOutlined,
 } from '@ant-design/icons';
+import api from '../api/axios';
 
 /**
  * ERPAssistantWidget — Floating chatbot widget (RAG-powered)
- * Endpoint: POST /api/ai/chat { message, history }
+ * Endpoint: POST /api/agent/chat { messages: [{ role, content }] } (qua api/axios chung)
  */
 export default function ERPAssistantWidget() {
   const [open, setOpen] = useState(false);
@@ -44,21 +45,16 @@ export default function ERPAssistantWidget() {
     setLoading(true);
     setError(null);
     try {
-      const token = localStorage.getItem('token');
-      const res = await fetch('/api/agent/chat', {
-        method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          ...(token ? { Authorization: `Bearer ${token}` } : {}),
-        },
-        body: JSON.stringify({ messages: [...messages, userMsg].map(m => ({ role: m.role, content: m.content })) }),
+      // Dùng axios instance chung (src/api/axios): request interceptor tự gắn Bearer token
+      // lấy từ Zustand store. KHÔNG tự fetch + localStorage.getItem('token') — token nằm
+      // trong memory, không có trong localStorage → request không Authorization → 401.
+      const { data } = await api.post('/agent/chat', {
+        messages: [...messages, userMsg].map((m) => ({ role: m.role, content: m.content })),
       });
-      if (!res.ok) throw new Error(`HTTP ${res.status}`);
-      const json = await res.json();
-      if (!json.success) throw new Error(json.message || 'Lỗi server');
-      setMessages(prev => [...prev, { role: 'assistant', content: json.data.response, id: (Date.now() + 1).toString() }]);
+      if (!data?.success) throw new Error(data?.message || 'Lỗi server');
+      setMessages(prev => [...prev, { role: 'assistant', content: data.data.response, id: (Date.now() + 1).toString() }]);
     } catch (e) {
-      setError(e.message);
+      setError(e?.response?.data?.message || e.message);
     } finally {
       setLoading(false);
     }

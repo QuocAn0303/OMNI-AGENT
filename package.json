@@ -12,7 +12,10 @@
     "db:seed:accounting-demo": "node prisma/seed_accounting_demo.js",
     "db:seed:accounting": "node prisma/seed_accounting.js",
     "db:studio": "prisma studio",
-    "test": "jest --runInBand"
+    "test": "jest --runInBand",
+    "check:modules": "node scripts/check-module-load.js",
+    "check:llm": "node scripts/check-llm.js",
+    "smoke:humangate": "node scripts/smoke-humangate.js"
   },
   "dependencies": {
     "@ai-sdk/openai": "^3.0.67",

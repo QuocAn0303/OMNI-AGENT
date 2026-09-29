@@ -288,14 +288,6 @@ const sendEmail = async (invoiceId, userId) => {
   return updated;
 };
 
-module.exports = {
-  generateInvoice,
-  generateInvoicePDF,
-  getById,
-  sendEmail,
-  list,
-};
-
 const list = async ({ page = 1, limit = 20, search = "", status = "", from = "", to = "" } = {}) => {
   const skip = (Number(page) - 1) * Number(limit);
   const where = {};
@@ -333,4 +325,12 @@ const list = async ({ page = 1, limit = 20, search = "", status = "", from = "",
     invoices,
     pagination: { page: Number(page), limit: Number(limit), total, totalPages: Math.ceil(total / Number(limit)) },
   };
+};
+
+module.exports = {
+  generateInvoice,
+  generateInvoicePDF,
+  getById,
+  sendEmail,
+  list,
 };
