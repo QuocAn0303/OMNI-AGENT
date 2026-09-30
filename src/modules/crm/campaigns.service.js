@@ -292,6 +292,7 @@ const executeCampaign = async (campaignId) => {
           name: true,
           phone: true,
           email: true,
+          zaloUserId: true,
           tier: true,
           loyaltyPoints: true,
           totalSpent: true,
@@ -317,10 +318,10 @@ const executeCampaign = async (campaignId) => {
             if (!r.customer.email) throw new Error("Khách hàng không có email");
             await sendEmail({ to: r.customer.email, subject, text: body, html: body });
           } else if (campaign.channel === "ZALO") {
-            // Lưu ý: cần Zalo user_id của khách hàng - hiện chưa có field này
-            // trong Customer model. Để demo, dùng phone làm placeholder.
-            // Trong thực tế cần thêm field customer.zaloUserId.
-            const zaloUserId = r.customer.phone;
+            // Zalo OA cần zaloUserId (user_id của tài khoản Zalo) — đã có field
+            // `Customer.zaloUserId` (thêm ở CRM Pipeline Phase 1). Vẫn fallback về
+            // SĐT cho khách chưa nhập, vì nhiều khách dùng SĐT làm user_id.
+            const zaloUserId = r.customer.zaloUserId || r.customer.phone;
             if (!zaloUserId) throw new Error("Không có Zalo userId");
             await sendZaloMessage({ userId: zaloUserId, text: body });
           } else {

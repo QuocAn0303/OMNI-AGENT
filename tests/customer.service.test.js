@@ -26,7 +26,13 @@ jest.mock("../src/modules/audit/audit.service", () => ({
   log: jest.fn().mockResolvedValue(true),
 }));
 
+jest.mock("../src/modules/crm/segments.service", () => ({
+  buildWhereForSegment: jest.fn(),
+  evaluateSegment: jest.fn(),
+}));
+
 const prisma = require("../src/config/prisma");
+const segmentsService = require("../src/modules/crm/segments.service");
 
 describe("customer.service", () => {
   beforeEach(() => jest.clearAllMocks());
@@ -76,5 +82,104 @@ describe("customer.service", () => {
     prisma.customer.update.mockResolvedValue({ id: "c1", creditLimit: 5000000 });
     const result = await customerService.updateCreditLimit("c1", 5000000, "user1");
     expect(result.creditLimit).toBe(5000000);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Lọc theo phân khúc (?segment=<id>) — Phase 0
+// ---------------------------------------------------------------------------
+describe("customer.service — segmentId filter", () => {
+  beforeEach(() => jest.clearAllMocks());
+
+  const emptyPage = () => {
+    prisma.customer.findMany.mockResolvedValue([]);
+    prisma.customer.count.mockResolvedValue(0);
+  };
+
+  test("không truyền segmentId thì không gọi segmentsService", async () => {
+    emptyPage();
+    await customerService.getAll({ page: 1, limit: 20 });
+    expect(segmentsService.buildWhereForSegment).not.toHaveBeenCalled();
+    expect(prisma.customer.findMany.mock.calls[0][0].where).toEqual({ isActive: true });
+  });
+
+  test("gộp điều kiện segment bằng AND ở top-level", async () => {
+    emptyPage();
+    segmentsService.buildWhereForSegment.mockResolvedValue({
+      where: { isActive: true, AND: [{ tier: { in: ["GOLD"] } }] },
+      postFilter: null,
+      rules: {},
+    });
+
+    await customerService.getAll({ page: 1, limit: 20, segmentId: "seg1" });
+
+    expect(segmentsService.buildWhereForSegment).toHaveBeenCalledWith("seg1");
+    const where = prisma.customer.findMany.mock.calls[0][0].where;
+    expect(where.AND).toEqual([{ isActive: true, AND: [{ tier: { in: ["GOLD"] } }] }]);
+  });
+
+  test("AND segment + OR tìm kiếm không đụng nhau ở khoá gốc", async () => {
+    emptyPage();
+    segmentsService.buildWhereForSegment.mockResolvedValue({
+      where: { isActive: true, AND: [{ tier: { in: ["GOLD"] } }] },
+      postFilter: null,
+      rules: {},
+    });
+
+    await customerService.getAll({ page: 1, limit: 20, segmentId: "seg1", search: "An" });
+
+    const where = prisma.customer.findMany.mock.calls[0][0].where;
+    // khoá OR phải bị dời vào trong AND, không còn ở top-level
+    expect(where.OR).toBeUndefined();
+    expect(where.AND).toHaveLength(2);
+    expect(where.AND[1].OR).toEqual([
+      { name: { contains: "An", mode: "insensitive" } },
+      { phone: { contains: "An", mode: "insensitive" } },
+      { email: { contains: "An", mode: "insensitive" } },
+    ]);
+  });
+
+  test("có postFilter (rule orderCount) thì fallback sang evaluateSegment", async () => {
+    emptyPage();
+    const rules = { all: [{ field: "orderCount", op: "gte", value: 3 }] };
+    segmentsService.buildWhereForSegment.mockResolvedValue({
+      where: { isActive: true },
+      postFilter: { combinator: "AND", postFilters: [{ field: "orderCount" }] },
+      rules,
+    });
+    segmentsService.evaluateSegment.mockResolvedValue({
+      customers: [{ id: "c1" }, { id: "c2" }],
+      total: 2,
+    });
+
+    await customerService.getAll({ page: 1, limit: 20, segmentId: "seg1" });
+
+    expect(segmentsService.evaluateSegment).toHaveBeenCalledWith(rules);
+    expect(prisma.customer.findMany.mock.calls[0][0].where.id).toEqual({ in: ["c1", "c2"] });
+  });
+
+  test("segment vượt trần số id thì báo 400 thay vì query khổng lồ", async () => {
+    emptyPage();
+    segmentsService.buildWhereForSegment.mockResolvedValue({
+      where: { isActive: true },
+      postFilter: { combinator: "AND", postFilters: [{ field: "orderCount" }] },
+      rules: {},
+    });
+    segmentsService.evaluateSegment.mockResolvedValue({
+      customers: Array.from({ length: 20001 }, (_, i) => ({ id: `c${i}` })),
+      total: 20001,
+    });
+
+    await expect(customerService.getAll({ page: 1, limit: 20, segmentId: "seg1" }))
+      .rejects.toMatchObject({ status: 400 });
+    expect(prisma.customer.findMany).not.toHaveBeenCalled();
+  });
+
+  test("segment không tồn tại thì ném 404 (không nuốt lỗi)", async () => {
+    segmentsService.buildWhereForSegment.mockRejectedValue(
+      Object.assign(new Error("Segment không tồn tại"), { status: 404 }),
+    );
+    await expect(customerService.getAll({ page: 1, limit: 20, segmentId: "nope" }))
+      .rejects.toMatchObject({ status: 404 });
   });
 });

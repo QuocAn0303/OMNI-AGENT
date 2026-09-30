@@ -7,7 +7,7 @@
  * - Hỗ trợ truy vấn Customer 360° tổng hợp đơn hàng, công nợ, loyalty, ghi chú, tags, RFM
  *
  * Hàm:
- * - getAll({ page, limit, search }): Lấy danh sách khách hàng có phân trang, hỗ trợ tìm kiếm theo name/phone/email, flatten tags, chỉ lấy isActive: true
+ * - getAll({ page, limit, search, segmentId }): Lấy danh sách khách hàng có phân trang, hỗ trợ tìm kiếm theo name/phone/email, lọc theo phân khúc (segmentId), flatten tags, chỉ lấy isActive: true
  * - create(data, userId): Tạo khách hàng mới, clean phone/email rỗng thành null, ghi audit log
  * - update(id, data, userId): Cập nhật thông tin khách hàng, kiểm tra tồn tại & isActive, ghi audit log before/after
  * - remove(id, userId): Soft delete (isActive = false), kiểm tra ràng buộc đơn hàng đang xử lý hoặc còn nợ, ghi audit log
@@ -15,10 +15,14 @@
  */
 const prisma = require("../../config/prisma");
 const auditService = require("../audit/audit.service");
+const segmentsService = require("../crm/segments.service");
+
+//Trần số id khi phải liệt kê thành viên segment (fallback cho rule orderCount)
+const SEGMENT_ID_CAP = 20000;
 
 //Lấy danh sách khách hàng
 
-const getAll = async ({ page: rawPage = 1, limit: rawLimit = 10, search = "" }) => {
+const getAll = async ({ page: rawPage = 1, limit: rawLimit = 10, search = "", segmentId = "" }) => {
   const page = Math.max(1, Number(rawPage) || 1);
   const limit = Math.max(1, Number(rawLimit) || 10);
   const skip = (page - 1) * limit;
@@ -33,6 +37,30 @@ const getAll = async ({ page: rawPage = 1, limit: rawLimit = 10, search = "" }) 
       { phone: { contains: search, mode: "insensitive" } },
       { email: { contains: search, mode: "insensitive" } },
     ];
+  }
+
+  // Lọc theo phân khúc (deep-link từ Segments.jsx: /customers?segment=<id>)
+  if (segmentId) {
+    const { where: segWhere, postFilter, rules } = await segmentsService.buildWhereForSegment(segmentId);
+
+    if (postFilter) {
+      // Rule orderCount không biểu diễn được bằng Prisma where → phải liệt kê id
+      const { customers, total } = await segmentsService.evaluateSegment(rules);
+      if (total > SEGMENT_ID_CAP) {
+        const err = new Error(
+          `Phân khúc có ${total} khách hàng — vượt giới hạn ${SEGMENT_ID_CAP}. Hãy thu hẹp điều kiện lọc.`,
+        );
+        err.status = 400;
+        throw err;
+      }
+      where.id = { in: customers.map((c) => c.id) };
+    } else {
+      // Gộp điều kiện segment với điều kiện tìm kiếm bằng AND ở top-level
+      // (tránh đụng nhau ở khoá AND/OR cấp gốc)
+      const searchPart = where.OR ? { OR: where.OR } : null;
+      delete where.OR;
+      where.AND = searchPart ? [segWhere, searchPart] : [segWhere];
+    }
   }
 
   const [customers, total] = await Promise.all([

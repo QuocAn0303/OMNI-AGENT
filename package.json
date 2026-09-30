@@ -16,7 +16,10 @@
     "check:modules": "node scripts/check-module-load.js",
     "check:llm": "node scripts/check-llm.js",
     "check:humangate": "node scripts/check-humangate.js",
-    "smoke:humangate": "node scripts/smoke-humangate.js"
+    "smoke:humangate": "node scripts/smoke-humangate.js",
+    "db:shadow": "node scripts/ensure-shadow-db.js",
+    "smoke:crm-pipeline": "node scripts/smoke-crm-pipeline.js",
+    "smoke:crm-phase2": "node scripts/smoke-crm-phase2.js"
   },
   "dependencies": {
     "@ai-sdk/openai": "^3.0.67",

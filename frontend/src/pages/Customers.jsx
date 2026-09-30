@@ -5,7 +5,7 @@
  * - Hiển thị danh sách khách hàng dạng table với avatar, thông tin liên hệ, tags
  * - Gọi API: GET/POST/PUT/DELETE /customers
  * - Chức năng: thêm, sửa, xóa khách hàng qua Modal form
- * - Bộ lọc: tìm kiếm theo tên, SĐT, email (debounce 300ms)
+ * - Bộ lọc: tìm kiếm theo tên, SĐT, email (debounce 300ms); lọc theo phân khúc qua ?segment=<id>
  * - Click vào hàng để xem chi tiết khách hàng
  * - Sử dụng EmptyState khi chưa có khách hàng
  *
@@ -13,7 +13,7 @@
  * - Customers: React functional component (default export)
  */
 import { useEffect, useState } from 'react';
-import { useNavigate } from 'react-router-dom';
+import { useNavigate, useSearchParams } from 'react-router-dom';
 import { useTranslation } from 'react-i18next';
 import useDebounce from '../hooks/useDebounce';
 import { Table, Input, Button, Avatar, Modal, Form, Tag } from 'antd';
@@ -38,6 +38,8 @@ export default function Customers() {
   const navigate = useNavigate();
   const toast = useToast();
   const confirm = useConfirm();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const segmentId = searchParams.get('segment') || '';
   const [data, setData] = useState([]);
   const [loading, setLoading] = useState(true);
   const [search, setSearch] = useState('');
@@ -51,7 +53,14 @@ export default function Customers() {
   const load = async () => {
     setLoading(true);
     try {
-      const res = await axios.get('/customers', { params: { page, limit: 20, ...(debouncedSearch && { search: debouncedSearch }) } });
+      const res = await axios.get('/customers', {
+        params: {
+          page,
+          limit: 20,
+          ...(debouncedSearch && { search: debouncedSearch }),
+          ...(segmentId && { segmentId }),
+        },
+      });
       setData(res.data?.data || []);
       setTotal(res.data?.pagination?.total || 0);
     } catch {
@@ -61,8 +70,16 @@ export default function Customers() {
     }
   };
 
-  useEffect(() => { load(); }, [page, debouncedSearch]);
-  useEffect(() => { setPage(1); }, [debouncedSearch]);
+  useEffect(() => { load(); }, [page, debouncedSearch, segmentId]);
+  useEffect(() => { setPage(1); }, [debouncedSearch, segmentId]);
+
+  const clearSegmentFilter = () => {
+    setSearchParams((prev) => {
+      const next = new URLSearchParams(prev);
+      next.delete('segment');
+      return next;
+    });
+  };
 
   const openModal = (customer = null) => {
     setEditing(customer);
@@ -256,6 +273,16 @@ export default function Customers() {
           onChange={(e) => setSearch(e.target.value)}
           allowClear
         />
+        {segmentId && (
+          <Tag
+            color="blue"
+            closable
+            onClose={clearSegmentFilter}
+            style={{ marginRight: 0, padding: '4px 10px' }}
+          >
+            {t('customers.filteredBySegment')}
+          </Tag>
+        )}
       </div>
 
       <div className="table-card">

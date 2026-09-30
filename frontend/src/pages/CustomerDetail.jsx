@@ -968,7 +968,7 @@ function StoreCreditTab({ customerId }) {
       render: (v) => <MoneyDisplay value={v} />,
     },
     { title: "Ghi chú", dataIndex: "note", render: (v) => v || "—" },
-    { title: "NV", dataIndex: ["createdBy", "name"], width: 120 },
+    { title: "NV", dataIndex: ["createdBy", "fullName"], width: 120 },
   ];
 
   return (

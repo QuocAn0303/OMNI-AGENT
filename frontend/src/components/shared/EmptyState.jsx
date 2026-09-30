@@ -1,7 +1,14 @@
 import { Empty, Button } from 'antd';
 import { useTranslation } from 'react-i18next';
 
-const EmptyState = ({ title, description, actionText, onAction, icon }) => {
+/**
+ * EmptyState — trạng thái rỗng dùng chung
+ *
+ * Hỗ trợ 2 cách truyền nút hành động:
+ * - `action`: ReactNode (khớp children của antd <Empty>) — dùng khi cần icon/custom
+ * - `actionText` + `onAction`: dạng rút gọn
+ */
+const EmptyState = ({ title, description, action, actionText, onAction, icon }) => {
   const { t } = useTranslation();
   return (
     <Empty
@@ -14,7 +21,10 @@ const EmptyState = ({ title, description, actionText, onAction, icon }) => {
       }
       style={{ padding: '40px 0' }}
     >
-      {actionText && onAction && <Button type="primary" onClick={onAction}>{actionText}</Button>}
+      {action}
+      {!action && actionText && onAction && (
+        <Button type="primary" onClick={onAction}>{actionText}</Button>
+      )}
     </Empty>
   );
 };

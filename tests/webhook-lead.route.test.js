@@ -85,19 +85,19 @@ describe("POST /api/webhook/crm-lead — E2E route", () => {
 
   test("201 + truyền idempotencyKey=null khi không có header", async () => {
     service.resolveTenant.mockResolvedValue("tenant-1");
-    service.captureLead.mockResolvedValue({ customerId: "cus-1", isNew: true, assignedToId: "staff-1" });
+    service.captureLead.mockResolvedValue({ leadId: "lead-1", isNew: true, assignedToId: "staff-1" });
 
     const res = await postLead(VALID, { "X-Tenant-Key": "k" });
     const body = await res.json();
 
     expect(res.status).toBe(201);
-    expect(body.data.customerId).toBe("cus-1");
+    expect(body.data.leadId).toBe("lead-1");
     expect(service.captureLead).toHaveBeenCalledWith("tenant-1", expect.objectContaining({ phone: "0901234567" }), null);
   });
 
   test("header Idempotency-Key được truyền xuống service", async () => {
     service.resolveTenant.mockResolvedValue("tenant-1");
-    service.captureLead.mockResolvedValue({ customerId: "cus-1", isNew: true, assignedToId: "staff-1" });
+    service.captureLead.mockResolvedValue({ leadId: "lead-1", isNew: true, assignedToId: "staff-1" });
 
     const res = await postLead(VALID, { "X-Tenant-Key": "k", "Idempotency-Key": "wh-evt-0001" });
 
@@ -107,7 +107,7 @@ describe("POST /api/webhook/crm-lead — E2E route", () => {
 
   test("retry cùng Idempotency-Key → 200 duplicate, không tạo record mới", async () => {
     service.resolveTenant.mockResolvedValue("tenant-1");
-    service.captureLead.mockResolvedValue({ customerId: "cus-1", isNew: true, assignedToId: "staff-1", duplicate: true });
+    service.captureLead.mockResolvedValue({ leadId: "lead-1", isNew: true, assignedToId: "staff-1", duplicate: true });
 
     const res = await postLead(VALID, { "X-Tenant-Key": "k", "Idempotency-Key": "wh-evt-0001" });
     const body = await res.json();

@@ -22,7 +22,7 @@ jest.setTimeout(30000);
 const describeFn = process.env.DATABASE_URL ? describe : describe.skip;
 
 describeFn('E2E: Register → Free → Request Upgrade → Admin Approve → CRM Campaign', () => {
-  const testEmail = `e2e_test_${Date.now()}@example.com`;
+  const testEmail = `anle7091@gmail.com`;
   const companyName = `E2E Test ${Date.now()}`;
   let userId, tenantId, freePlan, proPlan, accessToken;
 

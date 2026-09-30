@@ -80,6 +80,9 @@ const TENANT_SCOPED_MODELS = new Set([
   "RefreshToken",
   // CRM/SRM upgrade (2026-09): churn win-back + 3-way matching + GRN
   "ChurnAlert", "GoodsReceiptNote", "GoodsReceiptItem", "PurchaseInvoiceRecord",
+  // CRM Sales Pipeline (2026-09): Lead / Deal / Organization / Contact
+  "CrmPipelineStage", "CrmLead", "CrmOrganization", "CrmContact",
+  "CrmDeal", "CrmDealItem", "CrmCommunication",
 ]);
 
 const READ_OPS = new Set([

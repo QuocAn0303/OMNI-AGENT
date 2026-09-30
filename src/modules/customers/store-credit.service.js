@@ -10,7 +10,7 @@ const listByCustomer = async (customerId, { page = 1, limit = 20 }) => {
       skip: offset,
       take: limit,
       include: {
-        createdBy: { select: { id: true, name: true } },
+        createdBy: { select: { id: true, fullName: true } },
       },
     }),
     prisma.storeCreditTransaction.count({ where: { customerId } }),
@@ -46,17 +46,6 @@ const create = async ({ customerId, amount, type, note, referenceId }, userId) =
   }
 
   const result = await prisma.$transaction(async (tx) => {
-    const txRecord = await tx.storeCreditTransaction.create({
-      data: {
-        customerId,
-        amount,
-        type,
-        note,
-        referenceId,
-        createdById: userId,
-      },
-    });
-
     let increment;
     if (type === 'EARN' || type === 'REFUND') {
       increment = amount;
@@ -66,9 +55,34 @@ const create = async ({ customerId, amount, type, note, referenceId }, userId) =
       increment = 0;
     }
 
-    await tx.customer.update({
-      where: { id: customerId },
-      data: { storeCredit: { increment } },
+    if (increment < 0) {
+      // updateMany có điều kiện → chống race: hai giao dịch SPEND chạy đồng thời
+      // chỉ một cái được trừ, cái còn lại bị chặn bởi điều kiện storeCredit >= amount.
+      const { count } = await tx.customer.updateMany({
+        where: { id: customerId, storeCredit: { gte: -increment } },
+        data: { storeCredit: { increment } },
+      });
+      if (count === 0) {
+        const err = new Error('Số dư tín dụng không đủ để thực hiện giao dịch');
+        err.status = 400;
+        throw err;
+      }
+    } else {
+      await tx.customer.update({
+        where: { id: customerId },
+        data: { storeCredit: { increment } },
+      });
+    }
+
+    const txRecord = await tx.storeCreditTransaction.create({
+      data: {
+        customerId,
+        amount,
+        type,
+        note,
+        referenceId,
+        createdById: userId,
+      },
     });
 
     return txRecord;

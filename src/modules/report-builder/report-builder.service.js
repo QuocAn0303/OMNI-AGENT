@@ -81,6 +81,29 @@ const ALLOWED_TABLES = {
     fields: ["id", "purchaseOrderId", "invoiceNumber", "invoiceAmount", "invoiceTax", "matchStatus", "varianceAmount", "variancePct", "createdAt"],
     label: "Hoá đơn NCC (3-way matching)",
   },
+  // ==================== CRM Sales Pipeline (Lead / Deal / Organization) ====================
+  crm_leads: {
+    fields: ["id", "leadName", "email", "mobileNo", "jobTitle", "source", "status", "leadOwnerId",
+      "organizationId", "expectedValue", "convertedAt", "lastContactedAt", "createdAt"],
+    label: "Lead (CRM Pipeline)",
+  },
+  crm_deals: {
+    fields: ["id", "dealName", "organizationId", "contactId", "leadId", "customerId", "stageId", "kind",
+      "value", "currency", "probability", "expectedCloseDate", "dealOwnerId", "closedAt", "lostReason", "orderId", "createdAt"],
+    label: "Deal (CRM Pipeline)",
+  },
+  crm_organizations: {
+    fields: ["id", "name", "website", "industry", "annualRevenue", "taxCode", "phone", "isActive", "createdAt"],
+    label: "Tổ chức (CRM Pipeline)",
+  },
+  crm_contacts: {
+    fields: ["id", "fullName", "email", "phone", "jobTitle", "isPrimary", "organizationId", "customerId", "isActive", "createdAt"],
+    label: "Liên hệ (CRM Pipeline)",
+  },
+  crm_communications: {
+    fields: ["id", "type", "direction", "subject", "leadId", "dealId", "contactId", "createdById", "createdAt"],
+    label: "Trao đổi với khách (Timeline CRM)",
+  },
 };
 
 const ALLOWED_AGGREGATES = ["SUM", "COUNT", "AVG", "MIN", "MAX"];

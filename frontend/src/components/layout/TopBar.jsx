@@ -62,6 +62,19 @@ const ROUTE_LABELS = {
   "/debts": "Công nợ",
   "/profile": "Hồ sơ cá nhân",
   "/settings": "Cài đặt",
+  // CRM — khớp nhãn với MENU_GROUPS trong Sidebar.jsx
+  "/crm/tasks": "Nhiệm vụ CSKH",
+  "/crm/segments": "Phân khúc KH",
+  "/crm/campaigns": "Chiến dịch",
+  "/tags": "Quản lý Tag",
+  "/store-credits": "Tín dụng KH",
+  "/churn-alerts": "Cảnh báo rời bỏ",
+  "/loyalty-rules": "Điểm thưởng",
+  "/stamp-cards": "Thẻ tích điểm",
+  "/portal-settings": "Cổng khách hàng",
+  "/smart-guide": "Trợ lý KD",
+  "/agent-analytics": "AI Phân tích",
+  "/workflows": "Quy trình",
 };
 
 export default function TopBar({ onMenuClick }) {

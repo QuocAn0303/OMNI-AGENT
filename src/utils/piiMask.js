@@ -3,6 +3,7 @@
  *
  * Áp dụng cho role không cần xem full PII (CASHIER, WAREHOUSE):
  * - phone: 0912345678 → 09***5678
+ * - mobileNo: 0912345678 → 09***5678 (CrmLead — CRM Sales Pipeline)
  * - email: nguyen@email.com → n***@email.com
  * - taxCode: 0123456789 → 0123***789
  * - address: 123 Nguyen Trai... → 123 Nguy*** (giữ 8 ký tự đầu)
@@ -43,6 +44,9 @@ const maskIdNumber = (id) => {
 
 const MASKERS = {
   phone: maskPhone,
+  // CRM Sales Pipeline: CrmLead.mobileNo là cùng dạng PII với phone (chỉ model này
+  // dùng tên field mobileNo → thêm vào không ảnh hưởng model nào khác).
+  mobileNo: maskPhone,
   email: maskEmail,
   taxCode: maskTaxCode,
   address: maskAddress,

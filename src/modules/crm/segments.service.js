@@ -22,6 +22,8 @@
  * - remove(id, userId): Xóa segment.
  * - preview(id, limit): Xem trước khách hàng matching segment đã lưu.
  * - previewByRules(rules, limit): Xem trước khách hàng matching rules chưa lưu.
+ * - buildWhereForSegment(segmentId): Trả về { where, postFilter } của segment đã lưu
+ *   để module khác gộp vào query chính (không liệt kê id).
  */
 // src/modules/crm/segments.service.js
 const prisma = require("../../config/prisma");
@@ -335,6 +337,15 @@ const previewByRules = async (rules, limit = 20) => {
   return { customers, total };
 };
 
+// Trả về { where, postFilter } của một segment ĐÃ LƯU, để module khác tái dùng
+// (ví dụ customers/customer.service.getAll lọc danh sách khách hàng theo phân khúc).
+// Ưu tiên gộp `where` vào query chính thay vì liệt kê id — tránh IN clause khổng lồ.
+// Khi có postFilter (rule orderCount) thì caller phải fallback sang evaluateSegment.
+const buildWhereForSegment = async (segmentId) => {
+  const segment = await getById(segmentId);
+  return { ...compileRules(segment.rules), rules: segment.rules };
+};
+
 module.exports = {
   SUPPORTED_FIELDS,
   list,
@@ -346,4 +357,5 @@ module.exports = {
   previewByRules,
   evaluateSegment,
   countMatching,
+  buildWhereForSegment,
 };

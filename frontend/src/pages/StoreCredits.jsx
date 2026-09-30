@@ -92,7 +92,7 @@ export default function StoreCredits() {
     { title: "Tham chiếu", dataIndex: "referenceId", width: 200,
       render: (v) => v ? v.slice(0, 8) + "..." : "—",
     },
-    { title: "Nhân viên", dataIndex: ["createdBy", "name"], width: 140 },
+    { title: "Nhân viên", dataIndex: ["createdBy", "fullName"], width: 140 },
   ];
 
   return (

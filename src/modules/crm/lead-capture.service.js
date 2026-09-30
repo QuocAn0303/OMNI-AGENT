@@ -10,8 +10,10 @@
  *   nằm trên chính row đó → multi-tenant isolation vẫn được đảm bảo.
  * - Round-robin gán nhân viên phụ trách (role CASHIER/MANAGER, isActive) — con trỏ
  *   lưu trong CompanySettings.leadRoundRobinCursor (Mục 2.2 điểm 4).
- * - Idempotent theo (phone, tenantId): KH đã có → tạo CustomerNote ghi nguồn lead;
- *   KH mới → tạo Customer với leadStatus=NEW, referralSource=source.
+ * - Idempotent theo (mobileNo, tenantId): KH đã có → ghi thêm timeline entry ghi nguồn
+ *   lead; KH mới → tạo `CrmLead` (Sales Pipeline Phase 2) với status=NEW, source=source.
+ *   Trước Phase 2 webhook ghi vào bảng `Customer`; nay ghi vào `CrmLead` đúng mô hình
+ *   Frappe CRM (Customer chỉ sinh ra khi Deal thắng).
  * - Idempotent theo (Idempotency-Key, tenantId) trong 24h: webhook retry không tạo trùng.
  *
  * Hàm:
@@ -19,7 +21,7 @@
  * - listApiKey(tenantId): trả về key (đã mask) đang hoạt động
  * - resolveTenant(apiKey): X-Tenant-Key → tenantId (null nếu sai)
  * - captureLead(tenantId, payload, idempotencyKey?): xử lý lead, trả
- *   { customerId, isNew, assignedToId } — nếu idempotencyKey trùng trong TTL 24h
+ *   { leadId, isNew, assignedToId } — nếu idempotencyKey trùng trong TTL 24h
  *   thì trả về kết quả đã ghi nhận kèm duplicate: true (không tạo record mới)
  */
 const crypto = require("crypto");
@@ -115,9 +117,10 @@ const buildLeadNote = ({ source, campaignId, productInterest }) => {
  * - Retry trong TTL → trả kết quả cũ kèm duplicate: true, KHÔNG tạo thêm record.
  * - Quá TTL → xử lý lại và upsert (reset TTL).
  *
+/**
  * QUAN TRỌNG: đây là PUBLIC webhook (không JWT) nên KHÔNG có tenant context sẵn.
  * Toàn bộ thao tác DB phải chạy trong runWithTenant(tenantId, ...) để Prisma
- * extension tự inject tenantId cho Customer/CustomerNote/Notification và để
+ * extension tự inject tenantId cho CrmLead/CrmCommunication/Notification và để
  * pickAssignee() chỉ đọc User/CompanySettings của ĐÚNG tenant nhận lead.
  */
 const captureLead = async (tenantId, payload, idempotencyKey = null) => {
@@ -175,38 +178,51 @@ const captureLeadInTenant = async ({ source, fullName, phone, email, productInte
   const assignee = await pickAssignee();
   const noteContent = buildLeadNote({ source, campaignId, productInterest });
 
+  // Lead webhook phải nằm sẵn 1 stage ONGOING để kanban không dồn hết vào
+  // "Chưa phân giai đoạn". ensureDefaultStages idempotent, lỗi ở đây KHÔNG được
+  // làm hỏng việc nhận lead → bỏ qua, deal vẫn tạo với stageId = null.
+  let stageId = null;
+  try {
+    const stagesService = require("./stages.service");
+    await stagesService.ensureDefaultStages();
+    const firstStage = await stagesService.firstOngoingStage("LEAD");
+    stageId = firstStage?.id || null;
+  } catch (e) {
+    logger.warn("[lead-capture] không lấy được stage mặc định:", e.message);
+  }
+
   // Trong tenant context, Prisma extension đã auto-inject tenantId cho mọi query
   // tương ứng — không truyền tenantId thủ công vào where (tránh lỗi field không tồn tại).
-  const existing = await prisma.customer.findFirst({
-    where: { phone },
-    select: { id: true, name: true },
+  const existing = await prisma.crmLead.findFirst({
+    where: { mobileNo: phone },
+    select: { id: true, leadName: true },
   });
 
-  let customer;
+  let lead;
   let isNew = false;
   if (existing) {
-    customer = existing;
-    await prisma.customerNote.create({
+    lead = existing;
+    // Lead trùng SĐT → ghi nguồn mới vào timeline thay vì tạo bản ghi trùng
+    await prisma.crmCommunication.create({
       data: {
-        customerId: customer.id,
+        type: "SYSTEM",
         content: noteContent,
-        type: "NOTE",
+        leadId: lead.id,
         createdById: assignee.id,
       },
     });
   } else {
-    customer = await prisma.customer.create({
+    lead = await prisma.crmLead.create({
       data: {
-        name: fullName,
-        phone,
+        leadName: fullName,
+        mobileNo: phone,
         email: email || null,
-        leadStatus: "NEW",
-        referralSource: source,
-        notes: {
-          create: { content: noteContent, type: "NOTE", createdById: assignee.id },
-        },
+        source,
+        status: "NEW",
+        stageId,
+        leadOwnerId: assignee.id,
       },
-      select: { id: true, name: true },
+      select: { id: true, leadName: true },
     });
     isNew = true;
   }
@@ -214,15 +230,15 @@ const captureLeadInTenant = async ({ source, fullName, phone, email, productInte
   await notificationService
     .createOne({
       type: "SYSTEM",
-      title: isNew ? "Lead mới từ webhook" : "Lead trùng khách hàng hiện có",
+      title: isNew ? "Lead mới từ webhook" : "Lead trùng lead hiện có",
       message: `${fullName} (${phone}) — ${noteContent}`,
-      link: `/customers?phone=${encodeURIComponent(phone)}`,
-      meta: { customerId: customer.id, source, campaignId: campaignId || null },
+      link: `/crm/leads/${lead.id}`,
+      meta: { leadId: lead.id, source, campaignId: campaignId || null },
       userId: assignee.id,
     })
     .catch((e) => logger.error("[lead-capture] notification failed:", e.message));
 
-  return { customerId: customer.id, isNew, assignedToId: assignee.id };
+  return { leadId: lead.id, isNew, assignedToId: assignee.id };
 };
 
 module.exports = { generateApiKey, listApiKey, resolveTenant, captureLead, KEY_PREFIX, maskKey };

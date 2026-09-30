@@ -34,6 +34,10 @@
  *       - in: query
  *         name: search
  *         schema: { type: string }
+ *       - in: query
+ *         name: segmentId
+ *         description: Lọc theo phân khúc đã lưu (CustomerSegment.id)
+ *         schema: { type: string }
  *     responses:
  *       200: { description: OK }
  *   post:

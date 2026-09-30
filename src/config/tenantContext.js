@@ -21,8 +21,19 @@ const getTenantContext = () => tenantStorage.getStore() || null;
 const getTenantId = () => tenantStorage.getStore()?.tenantId || null;
 const isBypassTenant = () => tenantStorage.getStore()?.bypassTenant === true;
 
+/**
+ * Chạy `fn` trong tenant context.
+ *
+ * QUAN TRỌNG: wrapper phải là `async` + `await fn()`. Nếu chỉ `tenantStorage.run(ctx, fn)`
+ * thì khi caller viết `runWithTenant(t, () => service())` (arrow đồng bộ trả về promise),
+ * Prisma extension đọc `getTenantId()` ở nhánh async được tạo NGOÀI AsyncLocalStorage
+ * frame → trả `null` → KHÔNG inject tenantId → đọc/cross-tenant dữ liệu.
+ * `await fn()` tạo promise frame bên trong frame nên context luân chuyển đúng.
+ *
+ * Caller KHÔNG cần tự viết `async` ở callback nữa — cả hai kiểu đều an toàn.
+ */
 const runWithTenant = (tenantId, fn, bypass = false) =>
-  tenantStorage.run({ tenantId, bypassTenant: bypass }, fn);
+  tenantStorage.run({ tenantId, bypassTenant: bypass }, async () => await fn());
 
 module.exports = {
   tenantStorage,

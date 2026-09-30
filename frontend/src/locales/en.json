@@ -167,7 +167,8 @@
     "searchPlaceholder": "Search by name, phone, email...",
     "empty": "No customers yet",
     "tags": "Tags",
-    "count": "{{count}} customers"
+    "count": "{{count}} customers",
+    "filteredBySegment": "Filtered by segment"
   },
   "products": {
     "title": "Products",

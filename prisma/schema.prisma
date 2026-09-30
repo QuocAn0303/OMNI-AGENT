@@ -317,6 +317,9 @@ model User {
   adminBackups            AdminBackup[]
   internalDocuments       InternalDocument[] @relation("DocumentAuthor")
   grnsCreated             GoodsReceiptNote[] @relation("GrnCreatedBy")
+  crmLeadsOwned           CrmLead[]        @relation("CrmLeadOwner")
+  crmDealsOwned           CrmDeal[]        @relation("CrmDealOwner")
+  crmCommunications       CrmCommunication[]
 
   @@index([tenantId])
   @@map("users")
@@ -464,6 +467,7 @@ model Product {
   routings                  Routing[]
   serialNumbers             SerialNumber[]
   goodsReceiptItems         GoodsReceiptItem[]
+  crmDealItems              CrmDealItem[]
 
   @@index([name])
   @@index([sku])
@@ -630,6 +634,42 @@ enum LeadStatus {
   DEAD
 }
 
+// ===== CRM SALES PIPELINE (Lead / Deal / Organization / Contact) =====
+
+enum CrmEntityType {
+  LEAD
+  DEAL
+}
+
+enum CrmStageKind {
+  ONGOING
+  WON
+  LOST
+}
+
+enum CrmLeadStatus {
+  NEW
+  CONTACTED
+  QUALIFIED
+  CONVERTED
+  DEAD
+}
+
+enum CrmCommType {
+  NOTE
+  CALL
+  EMAIL
+  MEETING
+  ZALO
+  WHATSAPP
+  SYSTEM
+}
+
+enum CrmCommDirection {
+  INBOUND
+  OUTBOUND
+}
+
 model Customer {
   id            String       @id @default(uuid())
   tenantId    String?
@@ -647,6 +687,7 @@ model Customer {
   // CRM: lead capture (Mục 2)
   leadStatus         LeadStatus? @default(NEW)
   referralSource     String?
+  zaloUserId         String?
 
   // CRM: RFM động — tính lại bởi hook/cron sau mỗi đơn COMPLETED (Mục 3)
   rfmRecencyDays     Int?
@@ -678,6 +719,8 @@ model Customer {
   campaignTrackings  CampaignTracking[]
   storeCreditTxs     StoreCreditTransaction[]
   churnAlerts        ChurnAlert[]
+  crmContacts        CrmContact[]
+  crmDeals           CrmDeal[]
 
   @@index([name])
   @@index([phone])
@@ -775,6 +818,208 @@ model CustomerSegment {
 
   @@unique([name, tenantId])
   @@map("customer_segments")
+@@index([tenantId])
+}
+
+// ===== CRM SALES PIPELINE (Lead / Deal / Organization / Contact) =====
+// Thêm mới, không thay đổi Customer hiện có. Customer vẫn là khách hàng giao dịch
+// (đơn/công nợ/loyalty); CrmDeal.customerId chỉ được set khi deal thắng.
+
+model CrmPipelineStage {
+  id          String       @id @default(uuid())
+  tenantId    String?
+  entityType  CrmEntityType
+  label       String
+  color       String       @default("#0f766e")
+  sortOrder   Int          @default(0)
+  kind        CrmStageKind @default(ONGOING)
+  probability Int          @default(0)
+  isActive    Boolean      @default(true)
+  createdAt   DateTime     @default(now())
+  updatedAt   DateTime     @updatedAt
+
+  leads CrmLead[]
+  deals CrmDeal[]
+
+  @@unique([tenantId, entityType, label])
+  @@index([tenantId, entityType, sortOrder])
+  @@map("crm_pipeline_stages")
+@@index([tenantId])
+}
+
+model CrmLead {
+  id              String        @id @default(uuid())
+  tenantId        String?
+  leadName        String
+  email           String?
+  mobileNo        String?
+  jobTitle        String?
+  source          String?
+  status          CrmLeadStatus @default(NEW)
+  stageId         String?
+  stage           CrmPipelineStage? @relation(fields: [stageId], references: [id])
+  leadOwnerId     String?
+  leadOwner       User?         @relation("CrmLeadOwner", fields: [leadOwnerId], references: [id])
+  organizationId  String?
+  organization    CrmOrganization? @relation(fields: [organizationId], references: [id])
+  contactId       String?
+  contact         CrmContact?   @relation(fields: [contactId], references: [id])
+  expectedValue   Decimal?      @db.Decimal(15, 2)
+  convertedAt     DateTime?
+  // Con trỏ denormalize để hiển thị nhanh; quan hệ thật là CrmDeal.leadId
+  convertedDealId String?
+  lastContactedAt DateTime?
+  notes           String?       @db.Text
+  createdAt       DateTime      @default(now())
+  updatedAt       DateTime      @updatedAt
+
+  deals CrmDeal[]
+
+  communications CrmCommunication[]
+
+  @@index([tenantId, status, stageId])
+  @@index([tenantId, mobileNo])
+  @@index([tenantId, leadOwnerId])
+  @@map("crm_leads")
+@@index([tenantId])
+}
+
+model CrmOrganization {
+  id            String   @id @default(uuid())
+  tenantId      String?
+  name          String
+  website       String?
+  industry      String?
+  annualRevenue Decimal? @db.Decimal(18, 2)
+  taxCode       String?
+  phone         String?
+  address       String?
+  notes         String?  @db.Text
+  isActive      Boolean  @default(true)
+  createdAt     DateTime @default(now())
+  updatedAt     DateTime @updatedAt
+
+  contacts CrmContact[]
+  leads    CrmLead[]
+  deals    CrmDeal[]
+
+  @@unique([name, tenantId])
+  @@map("crm_organizations")
+@@index([tenantId])
+}
+
+model CrmContact {
+  id             String   @id @default(uuid())
+  tenantId       String?
+  fullName       String
+  email          String?
+  phone          String?
+  jobTitle       String?
+  isPrimary      Boolean  @default(false)
+  organizationId String?
+  organization   CrmOrganization? @relation(fields: [organizationId], references: [id])
+  customerId     String?
+  customer       Customer? @relation(fields: [customerId], references: [id])
+  notes          String?  @db.Text
+  isActive       Boolean  @default(true)
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  leads    CrmLead[]
+  deals    CrmDeal[]
+
+  communications CrmCommunication[]
+
+  @@index([tenantId, organizationId])
+  @@index([tenantId, phone])
+  @@index([tenantId, email])
+  @@map("crm_contacts")
+@@index([tenantId])
+}
+
+model CrmDeal {
+  id                String   @id @default(uuid())
+  tenantId          String?
+  dealName          String
+  organizationId    String?
+  organization      CrmOrganization? @relation(fields: [organizationId], references: [id])
+  contactId         String?
+  contact           CrmContact? @relation(fields: [contactId], references: [id])
+  leadId            String?
+  lead              CrmLead?  @relation(fields: [leadId], references: [id])
+  customerId        String?
+  customer          Customer? @relation(fields: [customerId], references: [id])
+  stageId           String?
+  stage             CrmPipelineStage? @relation(fields: [stageId], references: [id])
+  kind              CrmStageKind @default(ONGOING)
+  value             Decimal  @default(0) @db.Decimal(15, 2)
+  currency          String   @default("VND")
+  probability       Int      @default(0)
+  expectedCloseDate DateTime?
+  nextStep          String?
+  dealOwnerId       String?
+  dealOwner         User?    @relation("CrmDealOwner", fields: [dealOwnerId], references: [id])
+  closedAt          DateTime?
+  lostReason        String?
+  // @unique: 1 deal chỉ sinh tối đa 1 đơn hàng — ràng buộc cứng ở tầng DB
+  orderId           String?   @unique
+  order             Order?    @relation(fields: [orderId], references: [id])
+  createdAt         DateTime @default(now())
+  updatedAt         DateTime @updatedAt
+
+  items CrmDealItem[]
+
+  communications CrmCommunication[]
+
+  @@index([tenantId, stageId, kind])
+  @@index([tenantId, dealOwnerId])
+  @@index([tenantId, expectedCloseDate])
+  @@map("crm_deals")
+@@index([tenantId])
+}
+
+model CrmDealItem {
+  id          String   @id @default(uuid())
+  tenantId    String?
+  dealId      String
+  deal        CrmDeal  @relation(fields: [dealId], references: [id], onDelete: Cascade)
+  productId   String?
+  product     Product? @relation(fields: [productId], references: [id])
+  description String?
+  quantity    Decimal  @default(1) @db.Decimal(12, 2)
+  unitPrice   Decimal  @default(0) @db.Decimal(15, 2)
+  discount    Decimal  @default(0) @db.Decimal(15, 2)
+  amount      Decimal  @default(0) @db.Decimal(15, 2)
+  createdAt   DateTime @default(now())
+
+  @@index([dealId])
+  @@map("crm_deal_items")
+@@index([tenantId])
+}
+
+model CrmCommunication {
+  id          String   @id @default(uuid())
+  tenantId    String?
+  type        CrmCommType
+  direction   CrmCommDirection?
+  subject     String?
+  content     String   @db.Text
+  durationSec Int?
+  // Cột đã tồn tại từ migration Phase 1; khai báo relation ở đây để Prisma select
+  // được lead/deal/contact (hiển thị tên trên timeline) — cột KHÔNG đổi tên.
+  leadId        String?
+  lead          CrmLead?   @relation(fields: [leadId], references: [id])
+  dealId        String?
+  deal          CrmDeal?   @relation(fields: [dealId], references: [id])
+  contactId     String?
+  contact       CrmContact? @relation(fields: [contactId], references: [id])
+  createdById String?
+  createdBy   User?    @relation(fields: [createdById], references: [id])
+  createdAt   DateTime @default(now())
+
+  @@index([tenantId, leadId, createdAt])
+  @@index([tenantId, dealId, createdAt])
+  @@map("crm_communications")
 @@index([tenantId])
 }
 
@@ -977,6 +1222,7 @@ model Order {
   delivery          Delivery?
   electronicInvoice ElectronicInvoice?
   serialNumbers     SerialNumber[]
+  crmDeal           CrmDeal?
 
   @@index([status])
   @@index([customerId])

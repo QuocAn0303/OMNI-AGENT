@@ -4,7 +4,8 @@
  * Trọng tâm:
  * - X-Tenant-Key → resolveTenant → tenantId.
  * - Round-robin chọn assignee và cập nhật cursor.
- * - Idempotent: KH mới → tạo Customer; KH cũ → tạo CustomerNote.
+ * - Idempotent: lead mới → tạo `CrmLead`; lead đã có → ghi thêm SYSTEM entry vào
+ *   timeline (Sales Pipeline Phase 2: webhook ghi vào `CrmLead`, không ghi `Customer`).
  * - Notification cho assignee.
  * - generateApiKey: rotate (xoá key cũ) + tạo key mới.
  */
@@ -17,8 +18,8 @@ const mockClient = {
     create: jest.fn(),
     upsert: jest.fn(),
   },
-  customer: { findFirst: jest.fn(), create: jest.fn() },
-  customerNote: { create: jest.fn() },
+  crmLead: { findFirst: jest.fn(), create: jest.fn() },
+  crmCommunication: { create: jest.fn() },
   user: { findMany: jest.fn() },
   companySettings: { findFirst: jest.fn(), update: jest.fn() },
 };
@@ -28,8 +29,14 @@ jest.mock("../src/utils/logger", () => ({ info: jest.fn(), warn: jest.fn(), erro
 jest.mock("../src/modules/notifications/notification.service", () => ({
   createOne: jest.fn().mockResolvedValue({}),
 }));
+// ensureDefaultStages chạm DB thật (crmPipelineStage) — không assert ở test này
+jest.mock("../src/modules/crm/stages.service", () => ({
+  ensureDefaultStages: jest.fn().mockResolvedValue([]),
+  firstOngoingStage: jest.fn().mockResolvedValue({ id: "stage-lead-1", label: "Mới" }),
+}));
 
 const service = require("../src/modules/crm/lead-capture.service");
+const stagesService = require("../src/modules/crm/stages.service");
 
 describe("lead-capture.service — Webhook Lead (Mục 2)", () => {
   beforeEach(() => jest.clearAllMocks());
@@ -74,55 +81,75 @@ describe("lead-capture.service — Webhook Lead (Mục 2)", () => {
     });
   });
 
-  describe("captureLead — idempotent theo (phone, tenantId)", () => {
+  describe("captureLead — idempotent theo (mobileNo, tenantId)", () => {
     const payload = { source: "Facebook_form", fullName: "Nguyễn Văn A", phone: "0901234567" };
 
-    test("KH chưa có → tạo Customer + note + notification", async () => {
+    test("lead chưa có → tạo CrmLead + notification", async () => {
       mockClient.user.findMany.mockResolvedValue([{ id: "staff-1" }, { id: "staff-2" }]);
       mockClient.companySettings.findFirst.mockResolvedValue({ id: "cs-1", leadRoundRobinCursor: 0 });
       mockClient.companySettings.update.mockResolvedValue({});
-      mockClient.customer.findFirst.mockResolvedValue(null);
-      mockClient.customer.create.mockResolvedValue({ id: "cus-new" });
-      mockClient.customerNote.create.mockResolvedValue({});
+      mockClient.crmLead.findFirst.mockResolvedValue(null);
+      mockClient.crmLead.create.mockResolvedValue({ id: "lead-new" });
 
       const res = await service.captureLead("tenant-1", payload);
 
-      expect(res.customerId).toBe("cus-new");
+      expect(res.leadId).toBe("lead-new");
       expect(res.isNew).toBe(true);
       expect(res.assignedToId).toBe("staff-1");
-      // KH mới: note được nhúng trong customer.create (nested notes.create)
-      expect(mockClient.customer.create).toHaveBeenCalled();
-      const createArg = mockClient.customer.create.mock.calls[0][0];
-      expect(createArg.data.leadStatus).toBe("NEW");
-      expect(createArg.data.referralSource).toBe("Facebook_form");
-      expect(createArg.data.notes.create.type).toBe("NOTE");
-      expect(mockClient.customerNote.create).not.toHaveBeenCalled();
+      const createArg = mockClient.crmLead.create.mock.calls[0][0];
+      expect(createArg.data.leadName).toBe("Nguyễn Văn A");
+      expect(createArg.data.mobileNo).toBe("0901234567");
+      expect(createArg.data.source).toBe("Facebook_form");
+      expect(createArg.data.status).toBe("NEW");
+      expect(createArg.data.leadOwnerId).toBe("staff-1");
+      // Lead phải nằm sẵn 1 stage ONGOING để kanban không dồn vào "Chưa phân giai đoạn"
+      expect(createArg.data.stageId).toBe("stage-lead-1");
+      // Phase 2: KHÔNG ghi vào bảng Customer nữa
+      expect(mockClient.customer).toBeUndefined();
     });
 
-    test("KH đã có → KHÔNG tạo customer mới, chỉ tạo note ghi nguồn", async () => {
+    test("lead đã có → KHÔNG tạo lead mới, ghi thêm entry SYSTEM vào timeline", async () => {
       mockClient.user.findMany.mockResolvedValue([{ id: "staff-1" }]);
       mockClient.companySettings.findFirst.mockResolvedValue({ id: "cs-1", leadRoundRobinCursor: 0 });
-      mockClient.customer.findFirst.mockResolvedValue({ id: "cus-existing", name: "Nguyễn Văn A" });
-      mockClient.customer.create.mockResolvedValue({ id: "cus-new" });
+      mockClient.crmLead.findFirst.mockResolvedValue({ id: "lead-existing", leadName: "Nguyễn Văn A" });
+      mockClient.crmLead.create.mockResolvedValue({ id: "lead-new" });
+      mockClient.crmCommunication.create.mockResolvedValue({});
 
       const res = await service.captureLead("tenant-1", payload);
 
       expect(res.isNew).toBe(false);
-      expect(res.customerId).toBe("cus-existing");
-      expect(mockClient.customer.create).not.toHaveBeenCalled();
-      expect(mockClient.customerNote.create).toHaveBeenCalled();
+      expect(res.leadId).toBe("lead-existing");
+      expect(mockClient.crmLead.create).not.toHaveBeenCalled();
+      expect(mockClient.crmCommunication.create).toHaveBeenCalled();
+      const commArg = mockClient.crmCommunication.create.mock.calls[0][0];
+      expect(commArg.data.type).toBe("SYSTEM");
+      expect(commArg.data.leadId).toBe("lead-existing");
+      expect(commArg.data.content).toContain("Facebook_form");
     });
 
     test("cursor round-robin tăng dần", async () => {
       mockClient.user.findMany.mockResolvedValue([{ id: "s1" }, { id: "s2" }, { id: "s3" }]);
       mockClient.companySettings.findFirst.mockResolvedValue({ id: "cs-1", leadRoundRobinCursor: 2 });
-      mockClient.customer.findFirst.mockResolvedValue(null);
-      mockClient.customer.create.mockResolvedValue({ id: "cus" });
+      mockClient.crmLead.findFirst.mockResolvedValue(null);
+      mockClient.crmLead.create.mockResolvedValue({ id: "lead" });
 
       await service.captureLead("tenant-1", payload);
 
       const updateArg = mockClient.companySettings.update.mock.calls[0][0];
       expect(updateArg.data.leadRoundRobinCursor).toBe(0);
+    });
+
+    test("lỗi lấy stage mặc định → vẫn tạo lead (stageId=null)", async () => {
+      stagesService.firstOngoingStage.mockRejectedValueOnce(new Error("DB down"));
+      mockClient.user.findMany.mockResolvedValue([{ id: "staff-1" }]);
+      mockClient.companySettings.findFirst.mockResolvedValue(null);
+      mockClient.crmLead.findFirst.mockResolvedValue(null);
+      mockClient.crmLead.create.mockResolvedValue({ id: "lead-nostage" });
+
+      const res = await service.captureLead("tenant-1", payload);
+
+      expect(res.leadId).toBe("lead-nostage");
+      expect(mockClient.crmLead.create.mock.calls[0][0].data.stageId).toBeNull();
     });
   });
 
@@ -184,51 +211,51 @@ describe("lead-capture.service — Webhook Lead (Mục 2)", () => {
       mockIdemStore(null);
       mockClient.user.findMany.mockResolvedValue([{ id: "staff-1" }]);
       mockClient.companySettings.findFirst.mockResolvedValue({ id: "cs-1", leadRoundRobinCursor: 0 });
-      mockClient.customer.findFirst.mockResolvedValue(null);
-      mockClient.customer.create.mockResolvedValue({ id: "cus-idem" });
+      mockClient.crmLead.findFirst.mockResolvedValue(null);
+      mockClient.crmLead.create.mockResolvedValue({ id: "lead-idem" });
       mockClient.integrationConfig.upsert.mockResolvedValue({});
 
       const res = await service.captureLead("tenant-1", payload, IDEM_KEY);
 
-      expect(res.customerId).toBe("cus-idem");
+      expect(res.leadId).toBe("lead-idem");
       expect(res.duplicate).toBeUndefined();
       expect(mockClient.integrationConfig.upsert).toHaveBeenCalledTimes(1);
       const arg = mockClient.integrationConfig.upsert.mock.calls[0][0];
       expect(arg.where.key).toMatch(/^LEAD_IDEMP:[a-f0-9]{64}$/);
       expect(arg.create.category).toBe("LEAD_IDEMPOTENCY");
       expect(arg.create.tenantId).toBe("tenant-1");
-      expect(JSON.parse(arg.create.valueEnc).customerId).toBe("cus-idem");
+      expect(JSON.parse(arg.create.valueEnc).leadId).toBe("lead-idem");
     });
 
-    test("key trùng trong TTL (24h) → trả kết quả cũ, KHÔNG tạo customer", async () => {
+    test("key trùng trong TTL (24h) → trả kết quả cũ, KHÔNG tạo lead", async () => {
       mockIdemStore({
-        valueEnc: JSON.stringify({ customerId: "cus-old", isNew: true, assignedToId: "staff-1" }),
+        valueEnc: JSON.stringify({ leadId: "lead-old", isNew: true, assignedToId: "staff-1" }),
         createdAt: new Date(),
       });
 
       const res = await service.captureLead("tenant-1", payload, IDEM_KEY);
 
       expect(res.duplicate).toBe(true);
-      expect(res.customerId).toBe("cus-old");
-      expect(mockClient.customer.create).not.toHaveBeenCalled();
+      expect(res.leadId).toBe("lead-old");
+      expect(mockClient.crmLead.create).not.toHaveBeenCalled();
       expect(mockClient.integrationConfig.upsert).not.toHaveBeenCalled();
     });
 
     test("key quá TTL (25h) → xử lý lại + upsert reset TTL", async () => {
       mockIdemStore({
-        valueEnc: JSON.stringify({ customerId: "cus-old" }),
+        valueEnc: JSON.stringify({ leadId: "lead-old" }),
         createdAt: new Date(Date.now() - 25 * 60 * 60 * 1000),
       });
       mockClient.user.findMany.mockResolvedValue([{ id: "staff-1" }]);
       mockClient.companySettings.findFirst.mockResolvedValue(null);
-      mockClient.customer.findFirst.mockResolvedValue({ id: "cus-existing", name: "Lê Văn C" });
-      mockClient.customerNote.create.mockResolvedValue({});
+      mockClient.crmLead.findFirst.mockResolvedValue({ id: "lead-existing", leadName: "Lê Văn C" });
+      mockClient.crmCommunication.create.mockResolvedValue({});
       mockClient.integrationConfig.upsert.mockResolvedValue({});
 
       const res = await service.captureLead("tenant-1", payload, IDEM_KEY);
 
       expect(res.duplicate).toBeUndefined();
-      expect(mockClient.customerNote.create).toHaveBeenCalled();
+      expect(mockClient.crmCommunication.create).toHaveBeenCalled();
       const arg = mockClient.integrationConfig.upsert.mock.calls[0][0];
       expect(arg.update.createdAt).toBeInstanceOf(Date);
     });
@@ -236,12 +263,12 @@ describe("lead-capture.service — Webhook Lead (Mục 2)", () => {
     test("key quá ngắn (<8 ký tự) → bỏ qua idempotency, xử lý bình thường", async () => {
       mockClient.user.findMany.mockResolvedValue([{ id: "staff-1" }]);
       mockClient.companySettings.findFirst.mockResolvedValue(null);
-      mockClient.customer.findFirst.mockResolvedValue(null);
-      mockClient.customer.create.mockResolvedValue({ id: "cus-x" });
+      mockClient.crmLead.findFirst.mockResolvedValue(null);
+      mockClient.crmLead.create.mockResolvedValue({ id: "lead-x" });
 
       const res = await service.captureLead("tenant-1", payload, "short");
 
-      expect(res.customerId).toBe("cus-x");
+      expect(res.leadId).toBe("lead-x");
       expect(mockClient.integrationConfig.upsert).not.toHaveBeenCalled();
       // không có lần findUnique nào cho LEAD_IDEMP:
       const idemCalls = mockClient.integrationConfig.findUnique.mock.calls
@@ -253,12 +280,12 @@ describe("lead-capture.service — Webhook Lead (Mục 2)", () => {
       mockIdemStore(null);
       mockClient.user.findMany.mockResolvedValue([{ id: "staff-1" }]);
       mockClient.companySettings.findFirst.mockResolvedValue(null);
-      mockClient.customer.findFirst.mockResolvedValue(null);
-      mockClient.customer.create.mockResolvedValue({ id: "cus-ok" });
+      mockClient.crmLead.findFirst.mockResolvedValue(null);
+      mockClient.crmLead.create.mockResolvedValue({ id: "lead-ok" });
       mockClient.integrationConfig.upsert.mockRejectedValue(new Error("DB down"));
 
       const res = await service.captureLead("tenant-1", payload, IDEM_KEY);
-      expect(res.customerId).toBe("cus-ok");
+      expect(res.leadId).toBe("lead-ok");
     });
   });
 });
