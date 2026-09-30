@@ -346,6 +346,26 @@ npm test
 npx jest tests/debt.service.test.js
 ```
 
+Ngoài Jest, có 3 script kiểm tra nhanh tình trạng hệ thống:
+
+| Lệnh | Kiểm tra | Cần gì |
+| --- | --- | --- |
+| `npm run check:modules` | Load 184 module để chắc app boot được (bắt lỗi "export trước khai báo", circular require) | Không |
+| `npm run check:humangate` | Vòng đời **human-in-the-loop gate** qua HTTP thật: CASHIER hỏi dữ liệu nhạy cảm → bị chặn → tạo gate PENDING → ADMIN duyệt/từ chối | Backend đang chạy + DB đã seed |
+| `npm run check:llm` | Gọi thật 1 request tới LLM provider, in provider/model/`configured` | `GEMINI_API_KEY` (xem mục [🔑 Thiết lập API key](#-thiết-lập-api-key)) |
+
+```bash
+npm run check:humangate            # 11 assertion, tự dọn dữ liệu test
+npm run check:humangate -- --keep  # giữ gate/session để xem trên UI
+```
+
+> 💡 `check:humangate` và `smoke:humangate` khác nhau: `smoke` test tầng DB (gọi builder trực tiếp, không cần server), `check` test tầng HTTP (bắt được lỗi route / middleware `authorize` / tên field decide sai mà smoke không thấy).
+
+> ⚠️ Nếu backend chạy ở port khác 4000 (`src/app.js` tự tăng port khi bị chiếm và ghi đè `frontend/.env`), chạy:
+> ```bash
+> PORT=4001 npm run check:humangate
+> ```
+
 ---
 
 ## 🔑 Thiết lập API key
@@ -479,6 +499,9 @@ npm run check:llm
 | Frontend báo `Network Error` / CORS | Kiểm tra `CORS_ORIGIN` trong `.env` backend và `VITE_API_URL` trong `frontend/.env`. Đảm bảo backend đang chạy trước khi mở frontend. |
 | Port 4000 / 5173 đã bị chiếm | Đổi `PORT` trong `.env` (mặc định 4000, tự tăng tối đa 10 lần nếu bị chiếm). Tìm tiến trình chiếm port: `netstat -ano &#124; findstr :4000` (Windows) hoặc `lsof -i :4000` (macOS/Linux). |
 | Prisma Studio cảnh báo Node 25 | Hạ Node về 20 LTS hoặc 22 LTS (dùng `nvm` để chuyển nhanh). |
+| `npm run check:humangate` báo `fetch failed` | Backend chưa chạy, hoặc đang ở port khác 4000 (xem dòng "Port 4000 bị chiếm" ở trên). Chạy `PORT=<port thật> npm run check:humangate`. |
+| AI agent trả "Xin chào! Tôi có thể giúp bạn…" thay vì trả lời | Câu chat không khớp intent nào — AI agent chỉ hiểu lệnh mẫu, không phải hội thoại tự do. Xem danh sách intent trong `src/modules/ai/agent.routes.js` (`INTENTS`), hoặc dùng câu trong `scripts/train_erp.py`. |
+| AI agent không phản hồi / request chết lặng | Nếu dùng provider cloud, kiểm tra `npm run check:llm`. Máy chỉ có IPv4 sẽ bị treo với `fetch()` — client đã ép IPv4, đừng đổi lại. Xem mục [🔑 Thiết lập API key](#-thiết-lập-api-key). |
 
 ---
 
@@ -493,7 +516,13 @@ npm run db:migrate:deploy   # áp migrations (an toàn cho DB sạch lẫn DB c�
 npm run db:migrate          # DEV: tạo migration mới khi đổi schema.prisma
 npm run db:seed             # nạp dữ liệu mẫu (TRUNCATE dữ liệu seed trước đó)
 npm run db:studio           # mở Prisma Studio (GUI cho DB, port 5555)
-npm test                    # chạy Jest (42 file, --runInBand)
+npm test                    # chạy Jest (--runInBand)
+
+# Script kiểm tra nhanh
+npm run check:modules       # load 184 module, chắc app boot được
+npm run check:humangate     # human-in-the-loop gate qua HTTP (cần backend chạy)
+npm run smoke:humangate     # vòng đời gate tầng DB (tự dọn)
+npm run check:llm           # gọi thật LLM provider (cần GEMINI_API_KEY)
 
 # Frontend (chạy trong thư mục frontend/)
 npm install

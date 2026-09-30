@@ -456,7 +456,9 @@ npm run db:seed:accounting-demo# Chỉ seed accounting demo data
 npm run db:studio              # Prisma Studio GUI
 npm test                       # Jest (--runInBand)
 npm run check:modules          # Load 184 module bằng Node thật — bắt lỗi "app không boot được" (export trước khai báo, circular require)
-npm run smoke:humangate        # Smoke test human-gate trên DB thật (tự dọn dẹp)
+npm run check:humangate        # Human-gate qua HTTP THẬT (login → chat → gate → duyệt). Cần backend đang chạy + DB seed. -- --keep để giữ dữ liệu test
+npm run smoke:humangate        # Smoke test human-gate trên DB thật (tự dọn dẹp, KHÔNG cần server)
+npm run check:llm              # Gọi thật 1 request LLM provider + in provider/model/configured
 
 # Frontend
 cd frontend
