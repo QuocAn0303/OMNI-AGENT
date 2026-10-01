@@ -17,6 +17,8 @@
 const prisma = require("../../config/prisma");
 const auditService = require("../audit/audit.service");
 const ApiError = require("../../utils/apiError");
+const { ownerScopeForTeam } = require("./scope");
+const { getTeamUserIds } = require("./hierarchy.service");
 
 const ORG_SELECT = {
   id: true,
@@ -65,7 +67,23 @@ const list = async ({ page = 1, limit = 20, search, industry, includeInactive } 
   return { organizations: rows, pagination: { page: p, limit: l, total, totalPages: Math.ceil(total / l) } };
 };
 
-const getById = async (id) => {
+/**
+ * Chi tiết tổ chức + contact & deal gắn với.
+ *
+ * CRM audit H2: `CrmOrganization` không có trường owner nên không scope được bản
+ * ghi tổ chức, NHƯNG các relation lồng (`deals`, `_count.leads`) kéo theo deal của
+ * cả công ty. Trả về không lọc ⇒ CASHIER (theo thiết kế chỉ được xem lead/deal của
+ * mình) đọc được tên + giá trị + giai đoạn của MỌI deal trong tổ chức đó.
+ * `maskPII` không mask `dealName`/`value` nên lọt hoàn toàn.
+ *
+ * Sửa: lọc `deals`/`_count.leads` theo đúng `ownerScopeForTeam` mà các endpoint
+ * lead/deal dùng — cùng một quy tắc, không tạo lớp phân quyền thứ hai.
+ */
+const getById = async (id, user) => {
+  const team = await getTeamUserIds(user);
+  const dealScope = ownerScopeForTeam(user, "dealOwnerId", team);
+  const leadScope = ownerScopeForTeam(user, "leadOwnerId", team);
+
   const org = await prisma.crmOrganization.findUnique({
     where: { id },
     select: {
@@ -75,11 +93,12 @@ const getById = async (id) => {
         orderBy: [{ isPrimary: "desc" }, { fullName: "asc" }],
       },
       deals: {
+        where: dealScope,
         select: { id: true, dealName: true, value: true, currency: true, kind: true, expectedCloseDate: true },
         orderBy: { createdAt: "desc" },
         take: 50,
       },
-      _count: { select: { leads: true } },
+      _count: { select: { leads: { where: leadScope } } },
     },
   });
   if (!org) throw new ApiError(404, "Tổ chức không tồn tại");
@@ -108,7 +127,7 @@ const create = async (data, userId) => {
     throw e;
   }
 
-  auditService.log({
+  await auditService.log({
     userId,
     action: "CREATE_CRM_ORGANIZATION",
     entity: "CrmOrganization",
@@ -141,7 +160,7 @@ const update = async (id, data, userId) => {
     throw e;
   }
 
-  auditService.log({
+  await auditService.log({
     userId,
     action: "UPDATE_CRM_ORGANIZATION",
     entity: "CrmOrganization",
@@ -172,7 +191,7 @@ const remove = async (id, userId) => {
 
   await prisma.crmOrganization.update({ where: { id }, data: { isActive: false } });
 
-  auditService.log({
+  await auditService.log({
     userId,
     action: "DELETE_CRM_ORGANIZATION",
     entity: "CrmOrganization",

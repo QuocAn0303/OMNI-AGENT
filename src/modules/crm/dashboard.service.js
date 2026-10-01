@@ -15,7 +15,8 @@
  * - getLeadStats(user): lead theo status, theo nguồn, theo tháng
  */
 const prisma = require("../../config/prisma");
-const { ownerScope, isManager } = require("./scope");
+const { ownerScopeForTeam, isManager } = require("./scope");
+const { getTeamUserIds } = require("./hierarchy.service");
 
 const round2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
 
@@ -46,7 +47,7 @@ const getFunnel = async (user) => {
     }),
     prisma.crmLead.groupBy({
       by: ["stageId"],
-      where: { ...ownerScope(user, "leadOwnerId") },
+      where: { ...ownerScopeForTeam(user, "leadOwnerId", await getTeamUserIds(user)) },
       _count: { _all: true },
     }),
   ]);
@@ -78,7 +79,7 @@ const getFunnel = async (user) => {
 /** Lead theo status / nguồn / tháng + giá trị kỳ vọng */
 const getLeadStats = async (user, months = 6) => {
   const from = startOfMonthBack(months);
-  const where = { ...ownerScope(user, "leadOwnerId") };
+  const where = { ...ownerScopeForTeam(user, "leadOwnerId", await getTeamUserIds(user)) };
 
   const [byStatus, bySource, recent, totals, convertedTotals] = await Promise.all([
     prisma.crmLead.groupBy({ by: ["status"], where, _count: { _all: true } }),
@@ -131,7 +132,7 @@ const getLeadStats = async (user, months = 6) => {
 /** Gộp tất cả số liệu dashboard */
 const getSummary = async (user, { months = 6 } = {}) => {
   const m = Math.max(1, Math.min(24, Number(months) || 6));
-  const where = { ...ownerScope(user, "dealOwnerId") };
+  const where = { ...ownerScopeForTeam(user, "dealOwnerId", await getTeamUserIds(user)) };
   const from = startOfMonthBack(m);
 
   const [funnel, leadStats, dealGroups, openDeals, closed, recentDeals] = await Promise.all([

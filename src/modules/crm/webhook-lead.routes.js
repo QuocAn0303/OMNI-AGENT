@@ -4,8 +4,12 @@
  * Routes:
  * - POST /api/webhook/crm-lead        : PUBLIC — nhận lead đa kênh (header X-Tenant-Key)
  *                                        + Idempotency-Key tùy chọn (chống ghi trùng webhook)
- * - POST /api/webhook/crm-lead-key    : ADMIN — sinh/rotate API key của tenant
- * - GET  /api/webhook/crm-lead-key    : ADMIN — xem key (đã mask)
+ * - POST /api/webhook/crm-lead-key    : ADMIN+ — sinh/rotate API key của tenant
+ * - GET  /api/webhook/crm-lead-key    : ADMIN+ — xem key (đã mask)
+ *
+ * CRM audit M1: 2 route quản lý API key trước đây thiếu `requireModule` ⇒ gói không
+ * mua CRM vẫn tạo được API key webhook. Và chỉ cho `ADMIN` ⇒ không role nào cao hơn
+ * ADMIN xoay được key khi ADMIN đi nghỉ/vô hiệu hoá. Nay dùng `CRM_ADMIN_ROLES`.
  */
 const router = require("express").Router();
 const { z } = require("zod");
@@ -13,6 +17,8 @@ const { authenticate, authorize } = require("../../middleware/auth.middleware");
 const { success, created, error } = require("../../utils/response");
 const { getTenantId } = require("../../config/tenantContext");
 const service = require("./lead-capture.service");
+const { requireModule } = require("../../middleware/plan.middleware");
+const { CRM_ADMIN_ROLES } = require("./roles");
 
 // Payload chuẩn theo đặc tả Mục 2.1
 const leadSchema = z.object({
@@ -88,7 +94,8 @@ router.post("/crm-lead", async (req, res, next) => {
 router.post(
   "/crm-lead-key",
   authenticate,
-  authorize("ADMIN"),
+  authorize(...CRM_ADMIN_ROLES),
+  requireModule("crm"),
   async (req, res, next) => {
     try {
       success(res, await service.generateApiKey(getTenantId(), req.user.id), "Đã phát hành API key mới");
@@ -101,7 +108,8 @@ router.post(
 router.get(
   "/crm-lead-key",
   authenticate,
-  authorize("ADMIN"),
+  authorize(...CRM_ADMIN_ROLES),
+  requireModule("crm"),
   async (req, res, next) => {
     try {
       success(res, await service.listApiKey(getTenantId()));

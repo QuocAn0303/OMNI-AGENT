@@ -108,6 +108,43 @@ const ALLOWED_TABLES = {
 
 const ALLOWED_AGGREGATES = ["SUM", "COUNT", "AVG", "MIN", "MAX"];
 
+/**
+ * CRM audit M2 — bảng CRM trong report builder PHẢI áp record-level permission.
+ *
+ * Trước đây `runQuery` ép `tenantId` thủ công (đúng, không rò tenant) nhưng KHÔNG áp
+ * `ownerScopeForTeam`. Route cho phép MANAGER chạy ⇒ MANAGER đọc được toàn bộ
+ * lead/deal của tenant qua report builder — lách đúng cơ chế "CASHIER chỉ thấy của
+ * mình" mà các endpoint CRM khác áp dụng.
+ *
+ * Đây là đường bypass DUY NHẤT đọc bảng CRM ngoài Prisma extension, và nó an toàn
+ * hoàn toàn nhờ code thủ công — ai thêm bảng mới vào `ALLOWED_TABLES` mà quên
+ * khai báo ở `CRM_OWNER_COLUMN` thì rò ngay. Vì vậy map bắt buộc phải nằm cạnh
+ * `ALLOWED_TABLES` và có test bên cạnh.
+ */
+const CRM_OWNER_COLUMN = {
+  crm_leads: "leadOwnerId",
+  crm_deals: "dealOwnerId",
+};
+
+/**
+ * @returns {string[]|null} danh sách owner id được phép xem, hoặc null = không áp
+ *   (bảng không phải CRM, hoặc không xác định được cây báo cáo → hành vi Phase 2/3).
+ */
+const resolveCrmOwnerIds = async (table, user) => {
+  const column = CRM_OWNER_COLUMN[table];
+  if (!column || !user) return null;
+  // Require động: report-builder không phụ thuộc crm/* ở top-level.
+  const { getTeamUserIds } = require("../crm/hierarchy.service");
+  const { isManager } = require("../crm/scope");
+  const team = await getTeamUserIds(user);
+  if (!Array.isArray(team)) {
+    // Cây chưa cấu hình: MANAGER+ vẫn toàn tenant (khớp scope.js), role khác
+    // vẫn bị giới hạn về chính mình.
+    return isManager(user) ? null : [user.id].filter(Boolean);
+  }
+  return team.length ? team : [user.id].filter(Boolean);
+};
+
 const getTables = () => Object.entries(ALLOWED_TABLES).map(([key, v]) => ({ key, label: v.label, fields: v.fields }));
 
 const validateConfig = ({ table, fields, filters = [], groupBy, orderBy, aggregate }) => {
@@ -125,7 +162,7 @@ const validateConfig = ({ table, fields, filters = [], groupBy, orderBy, aggrega
 };
 
 // Execute a safe query via prisma.$queryRawUnsafe with parameterized values
-const runQuery = async (config, { limit = 100 } = {}) => {
+const runQuery = async (config, { limit = 100, user = null } = {}) => {
   const { table, fields, filters = [], groupBy, orderBy, aggregate } = config;
   validateConfig(config);
 
@@ -156,6 +193,25 @@ const runQuery = async (config, { limit = 100 } = {}) => {
     whereParts.push(`"${f.field}" ${op} $${paramIdx}`);
     params.push(f.value);
     paramIdx++;
+  }
+
+  // CRM audit M2 — record-level permission cho bảng lead/deal (xem CRM_OWNER_COLUMN)
+  const ownerIds = await resolveCrmOwnerIds(table, user);
+  if (ownerIds) {
+    const column = CRM_OWNER_COLUMN[table];
+    if (ownerIds.length === 1) {
+      whereParts.push(`"${column}" = $${paramIdx}`);
+      params.push(ownerIds[0]);
+      paramIdx += 1;
+    } else {
+      const placeholders = ownerIds.map((id) => {
+        const slot = `$${paramIdx}`;
+        params.push(id);
+        paramIdx += 1;
+        return slot;
+      });
+      whereParts.push(`"${column}" IN (${placeholders.join(", ")})`);
+    }
   }
 
   const whereClause = whereParts.length ? `WHERE ${whereParts.join(" AND ")}` : "";
@@ -196,11 +252,14 @@ const deleteReport = async (id, userId) => {
   return prisma.savedReport.delete({ where: { id } });
 };
 
-const executeReport = async (id, userId = null, params = {}) => {
+const executeReport = async (id, userId = null, params = {}, user = null) => {
   const report = await prisma.savedReport.findUnique({ where: { id } });
   if (!report) throw { status: 404, message: 'Không tìm thấy báo cáo' };
   if (!report.isPublic && report.createdById !== userId) throw { status: 403, message: 'Không có quyền chạy báo cáo này' };
-  return runQuery(report.config, params);
+  // `user` truyền xuống `runQuery` để áp owner scope (CRM audit M2). Nếu caller
+  // cũ không truyền thì bảng CRM sẽ KHÔNG bị giới hạn — đó là hành vi không an toàn,
+  // nên route phải luôn truyền `req.user` (đã cập nhật).
+  return runQuery(report.config, { ...params, user: user || { id: userId } });
 };
 
-module.exports = { getTables, runQuery, listReports, createReport, updateReport, deleteReport, executeReport };
+module.exports = { getTables, runQuery, listReports, createReport, updateReport, deleteReport, executeReport, CRM_OWNER_COLUMN };

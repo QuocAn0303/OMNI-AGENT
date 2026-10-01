@@ -74,7 +74,7 @@ const create = async (data, userId) => {
     select: TAG_SELECT,
   });
 
-  auditService.log({
+  await auditService.log({
     userId,
     action: "CREATE_CUSTOMER_TAG",
     entity: "CustomerTag",
@@ -120,7 +120,7 @@ const update = async (id, data, userId) => {
     select: TAG_SELECT,
   });
 
-  auditService.log({
+  await auditService.log({
     userId,
     action: "UPDATE_CUSTOMER_TAG",
     entity: "CustomerTag",
@@ -155,7 +155,7 @@ const remove = async (id, userId) => {
 
   await prisma.customerTag.delete({ where: { id } });
 
-  auditService.log({
+  await auditService.log({
     userId,
     action: "DELETE_CUSTOMER_TAG",
     entity: "CustomerTag",
@@ -199,7 +199,7 @@ const assign = async (customerId, tagId, userId) => {
     update: {},
   });
 
-  auditService.log({
+  await auditService.log({
     userId,
     action: "ASSIGN_CUSTOMER_TAG",
     entity: "Customer",
@@ -215,7 +215,7 @@ const unassign = async (customerId, tagId, userId) => {
     .delete({ where: { customerId_tagId: { customerId, tagId } } })
     .catch(() => null);
 
-  auditService.log({
+  await auditService.log({
     userId,
     action: "UNASSIGN_CUSTOMER_TAG",
     entity: "Customer",

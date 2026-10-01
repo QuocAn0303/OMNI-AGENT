@@ -15,6 +15,25 @@
  *
  * Chạy: npm run smoke:crm-phase2
  * Giữ dữ liệu: npm run smoke:crm-phase2 -- --keep
+ *
+ * ------------------------------------------------------------------
+ * GHI CHÚ 0c — BUG CÓ SẴN phát hiện khi viết script này (KHÔNG do Phase 2 gây ra,
+ * nằm ngoài phạm vi và CỐ Ý không sửa ở đây):
+ *
+ *   `orderService.create` tạo dòng đơn hàng bằng NESTED CREATE:
+ *     tx.order.create({ ..., items: { create: orderItems } })   // order.service.js
+ *   Prisma extension `$allOperations` chỉ thấy operation cấp cao nhất (`order.create`)
+ *   nên KHÔNG inject `tenantId` cho các dòng `order_items` con.
+ *   Hệ quả: mọi `order_items` tạo mới đều có `tenantId = NULL`, trong khi
+ *   `OrderItem` CÓ nằm trong TENANT_SCOPED_MODELS → query `prisma.orderItem.*`
+ *   (report-builder bảng `order_items`, ...) tự thêm `tenantId = <tid>` và trả 0 dòng.
+ *   158 dòng seed có tenantId vì đã chạy `scripts/backfill-tenant-id.js`.
+ *
+ *   Triệu chứng: report "Chi tiết đơn hàng" trống với đơn tạo sau khi backfill.
+ *   Cần fix riêng (thêm `tenantId` vào nested create, hoặc để extension xử lý
+ *   nested writes) — xem mục 6 mục 4 trong docs/CRM_SALES_PIPELINE_PLAN.md.
+ *   Script này dùng raw SQL khi xoá order_items để né đúng lỗi trên.
+ * ------------------------------------------------------------------
  */
 require("dotenv").config();
 const prisma = require("../src/config/prisma");
@@ -130,9 +149,10 @@ async function main() {
 
   // Dọn dẹp tàn dư của lần chạy trước bị abort (script vừa throw là dừng) —
   // nếu không, tổ chức/lead cùng tên sẽ đụng unique constraint.
-  if (!KEEP) await cleanup(tenant.id);
+  if (!KEEP) await cleanup(tenant.id, { includeLeftovers: true });
 
-  await runWithTenant(tenant.id, async () => {
+  try {
+    await runWithTenant(tenant.id, async () => {
     // ---------- 1. Stage mặc định (lazy-seed idempotent) ----------
     console.log("1. Stage mặc định (lazy-seed)");
     await stagesService.ensureDefaultStages();
@@ -248,7 +268,19 @@ async function main() {
       ownerUser,
     );
     check("thêm dòng sản phẩm", withItems.items.length === 1, `amount=${withItems.items[0].amount}`);
-    check("deal value tính lại từ items", Number(withItems.value) === dealUnitPrice * qty, `${withItems.value}`);
+    // Deal đã gán value tay (expectedValue 5.000.000 ở bước convert) → upsertItems
+    // KHÔNG được ghi đè giá trị đó.
+    check("upsertItems không ghi đè value đã gán tay", Number(withItems.value) === 5000000, `${withItems.value}`);
+
+    // Deal value = 0 (chưa gán tay) → phải tự tính lại từ tổng dòng
+    const freshDeal = await dealsService.create({ dealName: `${TAG} Deal trống giá` }, owner.id, ownerUser);
+    const recomputed = await dealsService.upsertItems(
+      freshDeal.id,
+      [{ productId: fixture.product.id, quantity: qty, unitPrice: dealUnitPrice, discount: 0 }],
+      owner.id,
+      ownerUser,
+    );
+    check("deal value=0 → tính lại từ items", Number(recomputed.value) === dealUnitPrice * qty, `${recomputed.value}`);
 
     const { order } = await dealsService.convertToOrder(
       deal.id,
@@ -272,20 +304,44 @@ async function main() {
     // Ghi nhận thêm để dọn dẹp
     created.auditLogs.push(deal.id, lead.id, org.id, contact.id);
     created.customerIds = [dealWithOrder.customerId].filter(Boolean);
-  });
+    });
+  } finally {
+    // Luôn dọn dẹp, kể cả khi throw giữa chừng — nếu không sẽ đụng unique
+    // constraint ở lần chạy sau.
+    if (!KEEP) {
+      console.log("\nĐang dọn dẹp dữ liệu smoke test...");
+      await cleanup(tenant.id);
+      console.log("Đã dọn dẹp xong.");
+    } else {
+      console.log(`\nGiữ dữ liệu (--keep). Tenant=${tenant.id} · lead=${TAG}*`);
+    }
+  }
 
   console.log(`\n--- Kết quả: ${pass} pass / ${fail} fail ---`);
-  if (!KEEP) await cleanup(fixture.tenant.id);
-  else console.log(`\nGiữ dữ liệu (--keep). Tenant=${fixture.tenant.id} · lead=${TAG}*`);
-
   console.log("\n" + (fail === 0 ? "PASS" : "FAIL"));
   process.exit(fail === 0 ? 0 : 1);
 }
 
-async function cleanup(tenantId) {
+/**
+ * Dọn dẹp toàn bộ dữ liệu smoke test.
+ * @param {string} tenantId
+ * @param {{includeLeftovers?: boolean}} opts - includeLeftovers: quét thêm đơn
+ *   `channel='CRM'` có note chứa TAG (đơn sót của lần chạy bị abort trước đó —
+ *   lúc đó `created.orders` chưa kịp ghi nên không nằm trong danh sách).
+ */
+async function cleanup(tenantId, { includeLeftovers = false } = {}) {
   await runWithTenant(tenantId, async () => {
     // 1. Đơn hàng PENDING: trả `reserved` về kho rồi xoá đơn
-    for (const orderId of created.orders) {
+    const orderIds = new Set(created.orders);
+    if (includeLeftovers) {
+      const leftovers = await prisma.order.findMany({
+        where: { channel: "CRM", note: { contains: TAG } },
+        select: { id: true },
+      });
+      leftovers.forEach((o) => orderIds.add(o.id));
+    }
+
+    for (const orderId of orderIds) {
       const order = await prisma.order.findUnique({
         where: { id: orderId },
         select: { id: true, orderCode: true, items: { select: { productId: true, quantity: true } } },
@@ -302,6 +358,11 @@ async function cleanup(tenantId) {
       }
       await prisma.inventoryTransaction.deleteMany({ where: { id: { in: txs.map((t) => t.id) } } });
       await prisma.auditLog.deleteMany({ where: { action: "CREATE_ORDER", entityId: orderId } });
+      // order_items có onDelete: Restrict → phải xoá tay trước.
+      // Dùng raw SQL vì order_items tạo qua nested create của orderService.create
+      // KHÔNG có tenantId (extension không can thiệp nested create) → deleteMany
+      // có thêm `tenantId = <tid>` sẽ không match dòng nào. Xem ghi chú mục 0c.
+      await prisma.$executeRawUnsafe('DELETE FROM order_items WHERE "orderId" = $1', orderId);
       await prisma.order.delete({ where: { id: orderId } });
     }
     // 2. Pipeline
@@ -316,7 +377,15 @@ async function cleanup(tenantId) {
     await prisma.auditLog.deleteMany({ where: { entityId: { in: created.auditLogs } } });
     // 4. Khách hàng tự sinh từ deal (referralSource = CRM_DEAL). Deal đã xoá ở
     //    bước 2 nên không còn FK giữ. Chỉ xoá khách mà script này tự tạo.
-    for (const cid of created.customerIds || []) {
+    const customerIds = new Set(created.customerIds || []);
+    // Khách của deal CRM còn sót cũng dọn (chỉ khi không còn đơn nào trỏ tới)
+    const orphanCustomers = await prisma.crmDeal.findMany({
+      where: { customerId: { not: null } },
+      select: { customerId: true },
+    });
+    orphanCustomers.forEach((d) => customerIds.add(d.customerId));
+
+    for (const cid of customerIds) {
       const used = await prisma.order.count({ where: { customerId: cid } });
       if (used > 0) {
         console.log(`  BỎ QUA khách ${cid}: còn ${used} đơn hàng tham chiếu`);

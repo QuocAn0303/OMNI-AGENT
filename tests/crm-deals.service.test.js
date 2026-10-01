@@ -120,9 +120,17 @@ describe("crm/deals.service", () => {
   });
 
   describe("create", () => {
+    beforeEach(() => {
+      // create() giờ đọc lại deal bằng findUnique trong transaction (C3)
+      mockClient.crmDeal.findUnique.mockResolvedValue(baseDeal());
+      mockClient.crmDeal.create.mockResolvedValue({ id: "deal-1" });
+      mockClient.crmDealItem.createMany.mockResolvedValue({ count: 0 });
+    });
+
     test("chưa chọn stage → kind ONGOING, probability 0, không có closedAt", async () => {
       mockClient.crmPipelineStage.findUnique.mockResolvedValue(null);
-      mockClient.crmDeal.create.mockResolvedValue(baseDeal({ stageId: null }));
+      mockClient.crmDeal.create.mockResolvedValue({ id: "deal-1" });
+      mockClient.crmDeal.findUnique.mockResolvedValue(baseDeal({ stageId: null }));
 
       await dealsService.create({ dealName: "Deal mới" }, "u-manager", MANAGER);
 
@@ -135,7 +143,8 @@ describe("crm/deals.service", () => {
     test("chọn stage WON → kind=WON + closedAt, value tính từ items khi không truyền", async () => {
       mockClient.crmPipelineStage.findUnique.mockResolvedValue(STAGE_DEAL({ id: "stage-w", kind: "WON", probability: 100, label: "Thắng" }));
       mockClient.product.findMany.mockResolvedValue([{ id: "p1", name: "SP", isActive: true }]);
-      mockClient.crmDeal.create.mockResolvedValue(baseDeal({ kind: "WON" }));
+      mockClient.crmDeal.create.mockResolvedValue({ id: "deal-1" });
+      mockClient.crmDeal.findUnique.mockResolvedValue(baseDeal({ kind: "WON", value: 200000 }));
 
       await dealsService.create(
         { dealName: "Deal thắng", stageId: "stage-w", items: [{ productId: "p1", quantity: 2, unitPrice: 100000 }] },
@@ -147,6 +156,28 @@ describe("crm/deals.service", () => {
       expect(data.kind).toBe("WON");
       expect(data.closedAt).toBeInstanceOf(Date);
       expect(data.value).toBe(200000);
+    });
+
+    // C3: nested write làm dòng crm_deal_items có tenantId = NULL → upsertItems
+    // deleteMany (bị tenant-scope) không xoá được → danh sách nhân đôi.
+    test("C3: KHÔNG dùng nested write cho items, phải createMany top-level", async () => {
+      mockClient.crmPipelineStage.findUnique.mockResolvedValue(STAGE_DEAL());
+      mockClient.product.findMany.mockResolvedValue([{ id: "p1", name: "SP", isActive: true }]);
+
+      await dealsService.create(
+        { dealName: "Deal có SP", stageId: "stage-d1", items: [{ productId: "p1", quantity: 2, unitPrice: 100000 }] },
+        "u1",
+        MANAGER,
+      );
+
+      // Nested write = deal.items.create trong payload của crmDeal.create
+      expect(mockClient.crmDeal.create.mock.calls[0][0].data.items).toBeUndefined();
+      expect(mockClient.crmDealItem.createMany).toHaveBeenCalledTimes(1);
+      const row = mockClient.crmDealItem.createMany.mock.calls[0][0].data[0];
+      expect(row.dealId).toBe("deal-1");
+      expect(row.amount).toBe(200000);
+      // tenantId do Prisma extension inject khi createMany top-level — không set tay
+      expect(row.tenantId).toBeUndefined();
     });
 
     test("item trỏ sản phẩm không tồn tại → 400", async () => {

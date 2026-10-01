@@ -7,10 +7,17 @@
  * - Time series theo ngày/tuần/tháng
  * - Top sản phẩm và top khách hàng
  * 
+ * - CRM Phase 4 (mục 1): thêm `getCustomerInsights()` — RFM / CLV / churn / tier.
+ *   Trước đó các cột này đã có sẵn trên `Customer` (do `rfm.service.js` +
+ *   `clv-forecast.service.js` ghi) nhưng **không API nào đọc** → dữ liệu có,
+ *   không ai vẽ. Hàm này chỉ đọc lại, KHÔNG tự tính RFM/CLV (tránh 2 nguồn sự
+ *   thật với `rfm.service.js`).
+ *
  * Hàm:
  * - buildPeriods(from, to, groupBy): Xây dựng mảng period keys (day/week/month) giữa from..to
  * - dateToPeriod(date, groupBy): Map một ngày vào period key tương ứng
  * - getAnalytics(from, to, groupBy): Tổng hợp analytics: summary KPIs, time series, topProducts, topCustomers
+ * - getCustomerInsights(): RFM/CLV/churn/tier + danh sách khách rủi ro
  * - salesInsights(): Legacy — gọi getAnalytics với 30 ngày gần nhất
  */
 const prisma = require("../../config/prisma");
@@ -204,6 +211,149 @@ const getAnalytics = async (from, to, groupBy = "day") => {
   return { summary, timeSeries, topProducts, topCustomers };
 };
 
+// ── CRM Phase 4: RFM / CLV / churn / tier ─────────────────────────────────────
+
+// Ngưỡng phân rã sẵn có ở `rfm.service.js` — giữ nguyên nhãn để FE map 1:1,
+// không tự đặt tên mới (tránh 2 hệ thống tên cho cùng 1 phân khúc).
+const RFM_ORDER = ["Champions", "Loyal", "Potential", "At-Risk", "Hibernating"];
+
+// Khách bị coi là rủi ro khi churnProbability ≥ ngưỡng này.
+const CHURN_RISK_THRESHOLD = 0.5;
+
+/**
+ * Tổng hợp chỉ số CRM khách hàng từ dữ liệu ĐÃ TÍNH SẴN trên `Customer`.
+ *
+ * Cố ý KHÔNG tính lại RFM/CLV ở đây:
+ * - `rfm.service.js` (cron sau mỗi đơn) và `clv-forecast.service.js` là nguồn
+ *   duy nhất. Nếu `getCustomerInsights` tự tính bằng công thức khác thì dashboard
+ *   hiện số khác số CRM báo cáo → mất niềm tin, khó truy nguyên.
+ * - Khách chưa được chấm điểm (`rfmSegment = NULL`) không đếm vào phân khúc
+ *   nhưng VẪN vào mẫu số tổng số khách — hiển thị `unscored` để người dùng thấy
+ *   "còn N khách chưa chấm", thay vì âm thầm loại khỏi tổng.
+ *
+ * @param {Object} opts
+ * @param {number} opts.riskLimit  số khách rủi ro trả về (mặc định 20)
+ * @param {number} opts.clvLimit   số khách CLV cao nhất (mặc định 20)
+ */
+const getCustomerInsights = async ({ riskLimit = 20, clvLimit = 20 } = {}) => {
+  const [totalActive, scoredSegments, tierRows, clvAgg, churnAgg, atRisk, topClv] = await Promise.all([
+    prisma.customer.count({ where: { isActive: true } }),
+    prisma.customer.groupBy({
+      by: ["rfmSegment"],
+      where: { rfmSegment: { not: null } },
+      _count: { _all: true },
+      _avg: { rfmMonetary: true, rfmFrequency: true },
+    }),
+    prisma.customer.groupBy({
+      by: ["tier"],
+      where: { isActive: true },
+      _count: { _all: true },
+      _sum: { totalSpent: true },
+    }),
+    prisma.customer.aggregate({
+      where: { clvPredicted: { not: null } },
+      _sum: { clvPredicted: true },
+      _avg: { clvPredicted: true },
+      _count: { clvPredicted: true },
+    }),
+    prisma.customer.aggregate({
+      where: { churnProbability: { not: null } },
+      _avg: { churnProbability: true },
+      _max: { churnProbability: true },
+      _count: { churnProbability: true },
+    }),
+    prisma.customer.findMany({
+      where: { isActive: true, churnProbability: { gte: CHURN_RISK_THRESHOLD } },
+      select: {
+        id: true, name: true, phone: true, email: true, tier: true,
+        rfmSegment: true, churnProbability: true, clvPredicted: true, totalSpent: true,
+      },
+      orderBy: { churnProbability: "desc" },
+      take: riskLimit,
+    }),
+    prisma.customer.findMany({
+      where: { isActive: true, clvPredicted: { not: null } },
+      select: { id: true, name: true, tier: true, clvPredicted: true, totalSpent: true, rfmSegment: true },
+      orderBy: { clvPredicted: "desc" },
+      take: clvLimit,
+    }),
+  ]);
+
+  // Chuẩn hoá phân khúc: luôn trả đủ 5 nhóm (kể cả 0 khách) để biểu đồ không
+  // nhảy layout giữa 2 lần tải; nhóm lạ (do cũ) gom vào `other`.
+  const known = new Map(
+    scoredSegments
+      .filter((r) => RFM_ORDER.includes(r.rfmSegment))
+      .map((r) => [r.rfmSegment, r]),
+  );
+  const otherCount = scoredSegments
+    .filter((r) => !RFM_ORDER.includes(r.rfmSegment))
+    .reduce((s, r) => s + r._count._all, 0);
+
+  const scoredTotal = scoredSegments.reduce((s, r) => s + r._count._all, 0);
+  const rfmSegments = RFM_ORDER.map((name) => {
+    const row = known.get(name);
+    return {
+      segment: name,
+      count: row?._count._all ?? 0,
+      avgMonetary: row?._avg?.rfmMonetary != null ? Number(row._avg.rfmMonetary) : null,
+      avgFrequency: row?._avg?.rfmFrequency != null ? Number(row._avg.rfmFrequency) : null,
+    };
+  });
+  if (otherCount > 0) {
+    rfmSegments.push({ segment: "Other", count: otherCount, avgMonetary: null, avgFrequency: null });
+  }
+
+  const tiers = tierRows.map((r) => ({
+    tier: r.tier,
+    count: r._count._all,
+    totalSpent: Number(r._sum?.totalSpent ?? 0),
+  }));
+
+  const churnScored = churnAgg._count?.churnProbability ?? 0;
+  const atRiskTotal = await prisma.customer.count({
+    where: { isActive: true, churnProbability: { gte: CHURN_RISK_THRESHOLD } },
+  });
+
+  return {
+    totals: {
+      activeCustomers: totalActive,
+      scoredCustomers: scoredTotal,
+      unscoredCustomers: Math.max(0, totalActive - scoredTotal),
+      clvScored: clvAgg._count?.clvPredicted ?? 0,
+      churnScored,
+    },
+    rfmSegments,
+    tiers,
+    clv: {
+      total: clvAgg._sum?.clvPredicted != null ? Number(clvAgg._sum.clvPredicted) : 0,
+      average: clvAgg._avg?.clvPredicted != null ? Number(clvAgg._avg.clvPredicted) : 0,
+    },
+    churn: {
+      threshold: CHURN_RISK_THRESHOLD,
+      average: churnAgg._avg?.churnProbability != null ? Number(churnAgg._avg.churnProbability) : null,
+      max: churnAgg._max?.churnProbability != null ? Number(churnAgg._max.churnProbability) : null,
+      atRiskTotal,
+    },
+    atRisk: atRisk.map((c) => ({
+      ...c,
+      // Cột Decimal của Prisma serialize ra JSON thành STRING ("5192000").
+      // Để nguyên sẽ khiến FE so sánh/sắp xếp sai và MoneyDisplay phải tự parse.
+      // Chuyển hết về number ở biên service — 1 nguồn, không rải Number() ở FE.
+      churnProbability: Number(c.churnProbability),
+      clvPredicted: c.clvPredicted != null ? Number(c.clvPredicted) : null,
+      totalSpent: Number(c.totalSpent),
+    })),
+    topClv: topClv.map((c) => ({
+      ...c,
+      // Giữ null thay vì Number(null) = 0 — "chưa đủ dữ liệu" và "CLV bằng 0" là 2
+      // thông tin khác nhau, FE cần phân biệt để không vẽ 0₫ cho khách chưa có dữ liệu.
+      clvPredicted: c.clvPredicted != null ? Number(c.clvPredicted) : null,
+      totalSpent: Number(c.totalSpent),
+    })),
+  };
+};
+
 // ── legacy sales-insights (kept for backward compat) ─────────────────────────
 const salesInsights = async () => {
   const now = new Date();
@@ -212,4 +362,4 @@ const salesInsights = async () => {
   return getAnalytics(from, now, "day");
 };
 
-module.exports = { getAnalytics, salesInsights };
+module.exports = { getAnalytics, getCustomerInsights, salesInsights };

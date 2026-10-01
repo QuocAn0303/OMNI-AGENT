@@ -679,3 +679,393 @@
   justify-content: space-between;
   margin-bottom: 24px;
 }
+
+/* ============================================================
+   CRM SALES PIPELINE (Phase 3) — kanban board, timeline, funnel
+   Chỉ dùng token --space-* / --radius-* / --bg-* / --text-* /
+   --border-* / --chart-* để tự chạy dark mode.
+   ============================================================ */
+
+/* === KANBAN BOARD === */
+/* Reset bắt buộc của @hello-pangea/dnd (react-beautiful-dnd): thẻ kéo-thả trên
+   touch device cần `touch-action: none`, nếu không sẽ cuộn trang thay vì kéo. */
+[data-rbd-drag-handle-context-id],
+[data-rbd-drag-handle-id] {
+  touch-action: none;
+}
+
+.kanban-board {
+  display: flex;
+  gap: var(--space-4);
+  align-items: flex-start;
+  overflow-x: auto;
+  padding-bottom: var(--space-4);
+  min-height: 320px;
+}
+
+.kanban-col {
+  flex: 1 0 280px;
+  min-width: 280px;
+  max-width: 360px;
+  background: var(--bg-tertiary);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-lg);
+  display: flex;
+  flex-direction: column;
+  max-height: calc(100vh - 260px);
+}
+
+.kanban-col--dragging-over {
+  border-color: var(--primary);
+  box-shadow: var(--shadow-focus);
+}
+
+.kanban-col__header {
+  padding: var(--space-3) var(--space-4);
+  border-bottom: 1px solid var(--border-light);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+}
+
+.kanban-col__dot {
+  width: 10px;
+  height: 10px;
+  border-radius: var(--radius-full);
+  flex-shrink: 0;
+}
+
+.kanban-col__label {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.kanban-col__count {
+  font-size: 11px;
+  font-weight: 600;
+  color: var(--text-muted);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-full);
+  padding: 1px 8px;
+  flex-shrink: 0;
+}
+
+.kanban-col__total {
+  margin-left: auto;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-secondary);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+
+.kanban-col__body {
+  flex: 1;
+  overflow-y: auto;
+  padding: var(--space-3);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+  min-height: 80px;
+}
+
+.kanban-col__empty {
+  font-size: 12px;
+  color: var(--text-muted);
+  text-align: center;
+  padding: var(--space-6) var(--space-2);
+  border: 1px dashed var(--border);
+  border-radius: var(--radius-md);
+}
+
+.kanban-card {
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-light);
+  border-left: 3px solid var(--primary);
+  border-radius: var(--radius-md);
+  padding: var(--space-3);
+  text-align: left;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  box-shadow: var(--shadow-xs);
+}
+
+/* Thân thẻ: bấm để mở chi tiết (KHÔNG phải drag handle) */
+.kanban-card__body {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-1);
+  cursor: pointer;
+}
+
+/* global.css có blanket `transition` trên `:root *`, nhưng thư viện dnd gán
+   `transition` INLINE (shorthand) nên thắng được → transform của thẻ đang kéo
+   không bị "đuổi" khỏi con trỏ (vẫn đúng như chú ý tại Floor.jsx:457). */
+.kanban-card--dragging {
+  cursor: grabbing;
+  box-shadow: var(--shadow-lg);
+  transform: rotate(1.5deg);
+  border-color: var(--primary);
+}
+
+.kanban-card:hover {
+  border-color: var(--border-strong);
+}
+
+.kanban-card__title {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+  line-height: 1.35;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.kanban-card__meta {
+  font-size: 11px;
+  color: var(--text-muted);
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+}
+
+.kanban-card__value {
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text-primary);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Chân thẻ = drag handle (tay nắm) */
+.kanban-card__foot {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  margin-top: var(--space-1);
+  flex-wrap: wrap;
+  cursor: grab;
+}
+
+/* === CRM FUNNEL (dashboard) === */
+.crm-funnel {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.crm-funnel__step {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+}
+
+.crm-funnel__label {
+  width: 130px;
+  flex-shrink: 0;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.crm-funnel__track {
+  flex: 1;
+  height: 26px;
+  background: var(--bg-tertiary);
+  border-radius: var(--radius-sm);
+  overflow: hidden;
+  min-width: 60px;
+}
+
+.crm-funnel__bar {
+  height: 100%;
+  border-radius: var(--radius-sm);
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  padding-right: var(--space-2);
+  font-size: 12px;
+  font-weight: 600;
+  color: #fff;
+  transition: width var(--transition-slow);
+  min-width: 28px;
+}
+
+.crm-funnel__rate {
+  width: 62px;
+  flex-shrink: 0;
+  text-align: right;
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
+
+/* === CRM TIMELINE (unified timeline) === */
+.crm-timeline {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  position: relative;
+}
+
+.crm-timeline__item {
+  display: flex;
+  gap: var(--space-3);
+  align-items: flex-start;
+}
+
+.crm-timeline__icon {
+  width: 30px;
+  height: 30px;
+  border-radius: var(--radius-full);
+  display: grid;
+  place-items: center;
+  font-size: 13px;
+  flex-shrink: 0;
+  margin-top: 2px;
+}
+
+.crm-timeline__body {
+  flex: 1;
+  min-width: 0;
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-md);
+  background: var(--bg-secondary);
+  padding: var(--space-3);
+}
+
+.crm-timeline__body--system {
+  background: var(--bg-tertiary);
+  border-style: dashed;
+}
+
+.crm-timeline__head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  flex-wrap: wrap;
+  margin-bottom: 2px;
+}
+
+.crm-timeline__author {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.crm-timeline__time {
+  font-size: 11px;
+  color: var(--text-muted);
+}
+
+.crm-timeline__subject {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-primary);
+}
+
+.crm-timeline__content {
+  font-size: 13px;
+  color: var(--text-secondary);
+  line-height: 1.5;
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* === CRM STAGE BADGE (dùng trong table/list ngoài kanban) === */
+.crm-stage {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--text-secondary);
+  white-space: nowrap;
+}
+
+.crm-stage__dot {
+  width: 8px;
+  height: 8px;
+  border-radius: var(--radius-full);
+  flex-shrink: 0;
+}
+
+/* === CRM DEAL ITEMS EDITOR === */
+.crm-items__total {
+  display: flex;
+  align-items: baseline;
+  justify-content: flex-end;
+  gap: var(--space-3);
+  padding: var(--space-3) var(--space-4);
+  border-top: 1px solid var(--border-light);
+  background: var(--bg-tertiary);
+  font-size: 13px;
+}
+
+.crm-items__total-value {
+  font-size: 18px;
+  font-weight: 700;
+  color: var(--primary);
+  font-variant-numeric: tabular-nums;
+}
+
+/* === CRM DETAIL HEADER (dùng chung LeadDetail/DealDetail) === */
+.crm-detail__info {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+  gap: var(--space-4);
+  margin-bottom: var(--space-6);
+}
+
+.crm-detail__info-label {
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: var(--text-muted);
+  margin-bottom: 2px;
+}
+
+.crm-detail__info-value {
+  font-size: 14px;
+  color: var(--text-primary);
+  word-break: break-word;
+}
+
+.crm-detail__bar {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex-wrap: wrap;
+  margin-bottom: var(--space-5);
+  padding: var(--space-3) var(--space-4);
+  background: var(--bg-secondary);
+  border: 1px solid var(--border-light);
+  border-radius: var(--radius-lg);
+}
+
+.crm-detail__stage-select {
+  min-width: 200px;
+}
+
+@media (max-width: 1024px) {
+  .kanban-col {
+    max-height: none;
+  }
+  .crm-funnel__label {
+    width: 90px;
+  }
+}

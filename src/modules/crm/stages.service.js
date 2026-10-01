@@ -133,7 +133,7 @@ const create = async (data, userId) => {
     throw e;
   }
 
-  auditService.log({
+  await auditService.log({
     userId,
     action: "CREATE_CRM_STAGE",
     entity: "CrmPipelineStage",
@@ -143,6 +143,22 @@ const create = async (data, userId) => {
   return stage;
 };
 
+/**
+ * Sửa stage + đồng bộ deal trong 1 transaction.
+ *
+ * CRM audit H5 — 2 vấn đề trước đây:
+ *  1. `crmPipelineStage.update` và `crmDeal.updateMany` là 2 statement tuần tự không
+ *     transaction. Lỗi giữa chừng ⇒ `stage.kind = "WON"` nhưng deal vẫn ONGOING vĩnh
+ *     viễn, không có đường đồng bộ lại.
+ *  2. `updateMany` chỉ set `kind` + `probability`, KHÔNG set `closedAt`. Deal được
+ *     đẩy sang WON/LOST có `closedAt = null` ⇒ `getForecast` và `dashboard` lọc
+ *     `closedAt: { gte: from }` ⇒ doanh thu thắng BIẾN MẤT khỏi winRate/wonValue/
+ *     byMonth dù kanban vẫn hiện ở cột "Thắng". Đây là lỗi báo cáo tài chính
+ *     nặng hơn lỗi hiển thị.
+ *
+ * Ghi đè `probability` của deal đã đóng: `probability` là snapshot tại thời điểm deal
+ * vào stage, nên chỉ đồng bộ cho deal ONGOING (giữ hành vi cũ).
+ */
 const update = async (id, data, userId) => {
   const before = await prisma.crmPipelineStage.findUnique({
     where: { id },
@@ -158,12 +174,39 @@ const update = async (id, data, userId) => {
   if (data.probability !== undefined) patch.probability = data.probability;
   if (data.isActive !== undefined) patch.isActive = data.isActive;
 
+  const kindChanged = patch.kind !== undefined && patch.kind !== before.kind;
+
   let stage;
   try {
-    stage = await prisma.crmPipelineStage.update({
-      where: { id },
-      data: patch,
-      select: STAGE_SELECT,
+    stage = await prisma.$transaction(async (tx) => {
+      const updated = await tx.crmPipelineStage.update({
+        where: { id },
+        data: patch,
+        select: STAGE_SELECT,
+      });
+
+      // Đổi kind/probability của stage → deal đang dùng stage đó phải đồng bộ theo
+      // (CrmDeal.kind/probability là bản denormalize để query nhanh).
+      // Đổi riêng probability thì chỉ áp cho deal ONGOING — deal đã đóng giữ nguyên snapshot.
+      if (before.entityType === "DEAL" && (kindChanged || patch.probability !== undefined)) {
+        const dealPatch = {
+          ...(kindChanged ? { kind: patch.kind } : {}),
+          ...(patch.probability !== undefined ? { probability: patch.probability } : {}),
+        };
+        if (kindChanged) {
+          // Sang WON/LOST → đóng deal (closedAt) để forecast/dashboard tính được.
+          // Ngược lại về ONGOING → gỡ closedAt (deal mở lại, không còn "đã đóng").
+          dealPatch.closedAt = patch.kind === "ONGOING" ? null : new Date();
+          // Deal thắng mà có lý do thua cũ thì không còn hợp lý.
+          if (patch.kind !== "LOST") dealPatch.lostReason = null;
+        }
+        await tx.crmDeal.updateMany({
+          where: kindChanged ? { stageId: id } : { stageId: id, kind: "ONGOING" },
+          data: dealPatch,
+        });
+      }
+
+      return updated;
     });
   } catch (e) {
     if (e?.code === "P2002") {
@@ -172,26 +215,14 @@ const update = async (id, data, userId) => {
     throw e;
   }
 
-  // Đổi kind/probability của stage → deal đang dùng stage đó phải đồng bộ theo
-  // (CrmDeal.kind/probability là bản denormalize để query nhanh).
-  // Đổi riêng probability thì chỉ áp cho deal ONGOING — deal đã đóng giữ nguyên snapshot.
-  if (before.entityType === "DEAL" && (patch.kind !== undefined || patch.probability !== undefined)) {
-    await prisma.crmDeal.updateMany({
-      where: patch.kind !== undefined ? { stageId: id } : { stageId: id, kind: "ONGOING" },
-      data: {
-        ...(patch.kind !== undefined ? { kind: patch.kind } : {}),
-        ...(patch.probability !== undefined ? { probability: patch.probability } : {}),
-      },
-    });
-  }
-
-  auditService.log({
+  await auditService.log({
     userId,
     action: "UPDATE_CRM_STAGE",
     entity: "CrmPipelineStage",
     entityId: id,
     before,
     after: stage,
+    meta: kindChanged ? { syncedDealKind: patch.kind, closedAtSet: patch.kind !== "ONGOING" } : undefined,
   });
   return stage;
 };
@@ -216,7 +247,7 @@ const remove = async (id, userId) => {
 
   await prisma.crmPipelineStage.delete({ where: { id } });
 
-  auditService.log({
+  await auditService.log({
     userId,
     action: "DELETE_CRM_STAGE",
     entity: "CrmPipelineStage",
@@ -239,7 +270,7 @@ const reorder = async (items, userId) => {
     ),
   );
 
-  auditService.log({
+  await auditService.log({
     userId,
     action: "REORDER_CRM_STAGES",
     entity: "CrmPipelineStage",

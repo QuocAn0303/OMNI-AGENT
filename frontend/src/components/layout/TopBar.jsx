@@ -66,6 +66,18 @@ const ROUTE_LABELS = {
   "/crm/tasks": "Nhiệm vụ CSKH",
   "/crm/segments": "Phân khúc KH",
   "/crm/campaigns": "Chiến dịch",
+  // CRM Sales Pipeline — thứ tự quan trọng: key dài hơn phải khai trước
+  // (currentLabel dùng startsWith + sort giảm dần độ dài nên thứ tự không
+  //  bắt buộc, nhưng đặt cạnh nhau cho dễ đọc)
+  "/crm/leads": "Lead tiềm năng",
+  "/crm/deals/board": "Kanban deal",
+  "/crm/deals": "Deal",
+  "/crm/organizations": "Tổ chức",
+  "/crm/contacts": "Liên hệ",
+  "/crm/dashboard": "Dashboard pipeline",
+  "/crm/pipeline-settings": "Cấu hình pipeline",
+  "/crm/hierarchy": "Cây báo cáo",
+  "/crm/insights": "Phân khúc & CLV",
   "/tags": "Quản lý Tag",
   "/store-credits": "Tín dụng KH",
   "/churn-alerts": "Cảnh báo rời bỏ",

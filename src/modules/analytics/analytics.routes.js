@@ -7,6 +7,8 @@
  * 
  * Routes:
  * - GET /: Dữ liệu analytics theo khoảng thời gian (from, to, groupBy) (ADMIN/MANAGER)
+ * - GET /customer-insights: RFM/CLV/churn/tier — dữ liệu đã chấm sẵn trên Customer
+ *   (CRM Phase 4 mục 1; trước đó có dữ liệu nhưng không endpoint nào đọc)
  * - GET /sales-insights: Legacy — analytics 30 ngày (ADMIN/MANAGER)
  */
 const express = require("express");
@@ -35,6 +37,43 @@ router.get("/", authenticate, authorize("ADMIN", "MANAGER"), async (req, res, ne
       : "day";
 
     const data = await analyticsService.getAnalytics(from, to, groupBy);
+    res.json({ success: true, data });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * @swagger
+ * /api/analytics/customer-insights:
+ *   get:
+ *     summary: Chỉ số CRM khách hàng — RFM, CLV, churn, tier (CRM Phase 4 mục 1)
+ *     description: >
+ *       Đọc dữ liệu ĐÃ TÍNH SẵN trên Customer (rfm.service.js + clv-forecast.service.js).
+ *       Không tự tính lại để tránh 2 nguồn sự thật. Khách chưa chấm điểm được
+ *       báo riêng ở totals.unscoredCustomers.
+ *     tags: [Analytics]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: query
+ *         name: riskLimit
+ *         schema: { type: integer, default: 20 }
+ *       - in: query
+ *         name: clvLimit
+ *         schema: { type: integer, default: 20 }
+ *     responses:
+ *       200: { description: totals, rfmSegments[], tiers[], clv{}, churn{}, atRisk[], topClv[] }
+ */
+router.get("/customer-insights", authenticate, authorize("ADMIN", "MANAGER"), async (req, res, next) => {
+  try {
+    const clamp = (v, dflt) => {
+      const n = Number(v);
+      return Number.isFinite(n) && n > 0 ? Math.min(100, Math.floor(n)) : dflt;
+    };
+    const data = await analyticsService.getCustomerInsights({
+      riskLimit: clamp(req.query.riskLimit, 20),
+      clvLimit: clamp(req.query.clvLimit, 20),
+    });
     res.json({ success: true, data });
   } catch (err) {
     next(err);

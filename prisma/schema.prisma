@@ -267,6 +267,14 @@ model User {
   tenantId String?
   tenant   Tenant? @relation(fields: [tenantId], references: [id])
 
+  // CRM Phase 4 — Sales hierarchy (cây báo cáo).
+  // Self-relation: user này báo cáo cho user nào. NULL = trưởng cao nhất.
+  // KHÔNG có ON DELETE CASCADE: xoá user phải gỡ quan hệ trước (setReportsTo tự
+  // chăm sóc) — nếu cascade, xoá nhầm 1 manager sẽ xoá luôn cả cây bên dưới.
+  reportsToId String?
+  reportsTo   User?   @relation("UserReportsTo", fields: [reportsToId], references: [id], onDelete: SetNull)
+  directReports User[] @relation("UserReportsTo")
+
   supportSessionsAsAdmin   SupportAccessSession[] @relation("SupportAdmin")
   supportSessionsAsRevoker SupportAccessSession[] @relation("SupportRevoker")
 
@@ -322,6 +330,7 @@ model User {
   crmCommunications       CrmCommunication[]
 
   @@index([tenantId])
+  @@index([tenantId, reportsToId])
   @@map("users")
 }
 
@@ -716,7 +725,6 @@ model Customer {
   campaignRecipients CampaignRecipient[]
   projectInvoices    ProjectInvoice[]
   portalSessions     PortalSession[]
-  campaignTrackings  CampaignTracking[]
   storeCreditTxs     StoreCreditTransaction[]
   churnAlerts        ChurnAlert[]
   crmContacts        CrmContact[]
@@ -880,6 +888,11 @@ model CrmLead {
   @@index([tenantId, status, stageId])
   @@index([tenantId, mobileNo])
   @@index([tenantId, leadOwnerId])
+  // CRM audit H10: chống lead trùng ở TẦNG DB, không chỉ bằng logic JS.
+  // `importList` dùng `skipDuplicates: true` — vốn là no-op khi không có @@unique.
+  // Postgres coi NULL khác nhau ⇒ lead không có SĐT/email vẫn tạo được vô hạn.
+  @@unique([mobileNo, tenantId])
+  @@unique([email, tenantId])
   @@map("crm_leads")
 @@index([tenantId])
 }
@@ -1043,6 +1056,15 @@ enum RecipientStatus {
   BOUNCED
 }
 
+// Sự kiện theo dõi chiến dịch (CRM Phase 4 — mở/click/bounce/hủy đăng ký)
+enum CampaignTrackingEvent {
+  SENT
+  OPEN
+  CLICK
+  BOUNCE
+  UNSUBSCRIBE
+}
+
 model CustomerCampaign {
   id           String          @id @default(uuid())
   tenantId    String?
@@ -1062,6 +1084,7 @@ model CustomerCampaign {
   updatedAt    DateTime        @updatedAt
 
   recipients CampaignRecipient[]
+  trackings  CampaignTracking[]
 
   @@index([status, scheduledAt])
   @@map("customer_campaigns")
@@ -1079,7 +1102,27 @@ model CampaignRecipient {
   error      String?
   sentAt     DateTime?
 
+  // CRM Phase 4 — tuân thủ Nghị định 13/2023 (marketing bắt buộc có đường từ chối)
+  // consentedAt: thời điểm khách đồng ý nhận tin. NULL = chưa ghi nhận consent.
+  consentedAt       DateTime?
+  // unsubscribedAt: khách đã bấm "từ chối". NOT NULL ⇒ executeCampaign bỏ qua vĩnh viễn.
+  unsubscribedAt    DateTime?
+  unsubscribeReason String?
+  // 2 token ngẫu nhiên (không đoán được, không chứa PII) sinh lúc gửi:
+  //  - unsubscribeToken → link từ chối + header List-Unsubscribe
+  //  - trackingToken    → pixel mở mail + link bấm
+  // Tách riêng để link tracking không vô tình là link từ chối (và ngược lại).
+  unsubscribeToken  String?   @unique
+  trackingToken     String?   @unique
+
+  trackings CampaignTracking[]
+
   @@index([campaignId, status])
+  // CRM audit H11: index này ĐÃ có trong DB (migration 20261001120000) nhưng schema
+  // không khai báo ⇒ `prisma migrate dev` đề xuất DROP index trên bảng campaign.
+  // Truy vấn `executeCampaign` lọc `unsubscribedAt IS NULL` theo campaignId nên nó
+  // là index chạy thật, không phải index thừa.
+  @@index([campaignId, unsubscribedAt])
   @@map("campaign_recipients")
 @@index([tenantId])
 }
@@ -3263,17 +3306,27 @@ model WebhookDelivery {
 
 // ==================== PHASE 4: CAMPAIGN TRACKING ====================
 
+// Sự kiện mở/click/bounce/hủy đăng ký của 1 recipient trong 1 chiến dịch.
+//
+// Ghi chú (CRM Phase 4): trước đây model này có `campaignId String` TRẦN (không FK)
+// và `recipientId` trỏ nhầm sang `Customer` thay vì `CampaignRecipient` — nên
+// 0 dòng nào ghi được mà vẫn "đúng schema". Phase 4 sửa cả 2 quan hệ + thay
+// `event String` (tự do) bằng enum `CampaignTrackingEvent`.
 model CampaignTracking {
-  id          String    @id @default(uuid())
+  id          String                 @id @default(uuid())
   tenantId    String?
   campaignId  String
+  campaign    CustomerCampaign       @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+  // recipientId NULL = sự kiện ở cấp chiến dịch (vd gửi hàng loạt thất bại toàn bộ).
   recipientId String?
-  recipient   Customer? @relation(fields: [recipientId], references: [id])
-  event       String
+  recipient   CampaignRecipient?     @relation(fields: [recipientId], references: [id], onDelete: Cascade)
+  event       CampaignTrackingEvent
+  // userAgent / ip / url đích — chỉ ghi khi cần, không chứa PII
   metadata    Json?
-  createdAt   DateTime  @default(now())
+  createdAt   DateTime               @default(now())
 
-  @@index([campaignId])
+  @@index([campaignId, event])
+  @@index([recipientId, event])
   @@map("campaign_trackings")
 @@index([tenantId])
 }

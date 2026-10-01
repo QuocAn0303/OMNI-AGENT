@@ -73,7 +73,7 @@ const create = async (customerId, data, userId) => {
     select: NOTE_SELECT,
   });
 
-  auditService.log({
+  await auditService.log({
     userId,
     action: "CREATE_CUSTOMER_NOTE",
     entity: "CustomerNote",
@@ -103,7 +103,7 @@ const update = async (noteId, data, userId) => {
     select: NOTE_SELECT,
   });
 
-  auditService.log({
+  await auditService.log({
     userId,
     action: "UPDATE_CUSTOMER_NOTE",
     entity: "CustomerNote",
@@ -128,7 +128,7 @@ const remove = async (noteId, userId) => {
 
   await prisma.customerNote.delete({ where: { id: noteId } });
 
-  auditService.log({
+  await auditService.log({
     userId,
     action: "DELETE_CUSTOMER_NOTE",
     entity: "CustomerNote",

@@ -16,8 +16,9 @@ const dashboardService = require("./dashboard.service");
 const { authenticate, authorize } = require("../../middleware/auth.middleware");
 const { requireModule } = require("../../middleware/plan.middleware");
 const { success } = require("../../utils/response");
+const { CRM_PIPELINE_ROLES } = require("./roles");
 
-router.use(authenticate, authorize("SUPER_ADMIN", "ADMIN", "MANAGER", "CASHIER"), requireModule("crm"));
+router.use(authenticate, authorize(...CRM_PIPELINE_ROLES), requireModule("crm"));
 
 /**
  * @swagger

@@ -263,6 +263,8 @@ const createSchema = z.object({
   phone: z.string().optional(),
   email: z.string().email('Email không đúng định dạng').optional().or(z.literal('')), 
   address: z.string().optional(),
+  // CRM Phase 4 — mục 5: mở form nhập Zalo user_id (campaigns.service.js:324 fallback về phone)
+  zaloUserId: z.string().max(64).optional().or(z.literal('')),
 });
 
 // API: POST /api/customers
@@ -281,6 +283,8 @@ const updateSchema = z.object({
   phone: z.string().optional().or(z.literal('')),
   email: z.string().email('Email không đúng định dạng').optional().or(z.literal('')),
   address: z.string().optional(),
+  // CRM Phase 4 — mục 5
+  zaloUserId: z.string().max(64).optional().or(z.literal('')),
 });
 
 // API: PUT /api/customers/:id

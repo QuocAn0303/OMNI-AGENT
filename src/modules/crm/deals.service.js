@@ -24,15 +24,35 @@
  * - convertToOrder(id, payload, userId, user): deal thắng → Order (delegate orderService)
  */
 const prisma = require("../../config/prisma");
+const { randomUUID } = require("crypto");
+const { getTenantId } = require("../../config/tenantContext");
 const auditService = require("../audit/audit.service");
 const notif = require("../notifications/notification.service");
 const logger = require("../../utils/logger");
 const ApiError = require("../../utils/apiError");
 const stagesService = require("./stages.service");
 const communicationService = require("./communication.service");
-const { ownerScope, assertAccess, isManager } = require("./scope");
+const { ownerScopeForTeam, assertAccess, isManager, assertRefsInTenant, resolveOwnerId } = require("./scope");
+const { getTeamUserIds } = require("./hierarchy.service");
 
 const round2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
+
+/**
+ * C3 — phạm vi xoá dòng sản phẩm của 1 deal.
+ *
+ * `deleteMany` bị Prisma extension ép `tenantId = <tid>` nên **bỏ sót** dòng có
+ * `tenantId = NULL` — chính là dòng do nested write tạo ra trước khi sửa (đã có
+ * migration backfill, nhưng code phải tự chịu được nếu dữ liệu cũ quay lại từ
+ * backup hoặc import tay). Ghép thêm `OR` để quét cả hai trạng thái.
+ *
+ * `getTenantId()` trả null khi không có tenant context (SUPER_OMEGA bypass) →
+ * extension không scope → `deleteMany({ dealId })` đã là phạm vi đúng.
+ */
+const dealItemDeleteScope = (dealId) => {
+  const tenantId = getTenantId();
+  if (!tenantId) return { dealId };
+  return { dealId, OR: [{ tenantId }, { tenantId: null }] };
+};
 
 const DEAL_SELECT = {
   id: true,
@@ -81,11 +101,18 @@ const toDate = (v) => {
   return Number.isNaN(d.getTime()) ? null : d;
 };
 
+/**
+ * CRM Phase 4 — assertAccess theo cây báo cáo (manager thấy record của bậc dưới).
+ * Bọc 1 chỗ cho toàn bộ call site trong file này.
+ */
+const assertDealAccess = async (user, record) =>
+  assertAccess(user, record, "dealOwnerId", "Deal", await getTeamUserIds(user));
+
 const list = async (query = {}, user) => {
   const p = Math.max(1, Number(query.page) || 1);
   const l = Math.max(1, Math.min(200, Number(query.limit) || 20));
 
-  const where = { ...ownerScope(user, "dealOwnerId") };
+  const where = { ...ownerScopeForTeam(user, "dealOwnerId", await getTeamUserIds(user)) };
   if (query.kind) where.kind = query.kind;
   if (query.stageId) where.stageId = query.stageId;
   // QUAN TRỌNG: chỉ role quản lý mới được lọc theo owner khác. Gán SAU ownerScope
@@ -131,7 +158,7 @@ const getById = async (id, user) => {
     where: { id },
     select: { ...DEAL_SELECT, items: { select: ITEM_SELECT, orderBy: { createdAt: "asc" } } },
   });
-  assertAccess(user, deal, "dealOwnerId", "Deal");
+  await assertDealAccess(user, deal);
   return deal;
 };
 
@@ -194,33 +221,61 @@ const normalizeItems = async (items) => {
 const create = async (data, userId, user) => {
   const stage = await assertDealStage(data.stageId);
   const items = await normalizeItems(data.items);
-  const ownerId = data.dealOwnerId ?? (!isManager(user) && user ? user.id : null);
+  // H7: non-manager không tự gán deal cho người khác được
+  const ownerId = resolveOwnerId(data.dealOwnerId, user);
   const kind = stage?.kind === "WON" || stage?.kind === "LOST" ? stage.kind : "ONGOING";
+
+  await assertRefsInTenant([
+    { model: "crmOrganization", id: data.organizationId, label: "Tổ chức" },
+    { model: "crmContact", id: data.contactId, label: "Liên hệ" },
+    { model: "crmLead", id: data.leadId, label: "Lead" },
+    { model: "customer", id: data.customerId, label: "Khách hàng" },
+    { model: "user", id: ownerId, label: "Người phụ trách" },
+  ]);
 
   const value = data.value ?? round2(items.reduce((s, i) => s + i.amount, 0));
 
-  const deal = await prisma.crmDeal.create({
-    data: {
-      dealName: data.dealName.trim(),
-      organizationId: data.organizationId ?? null,
-      contactId: data.contactId ?? null,
-      leadId: data.leadId ?? null,
-      stageId: stage?.id ?? null,
-      kind,
-      value,
-      currency: data.currency || "VND",
-      probability: data.probability ?? stage?.probability ?? 0,
-      expectedCloseDate: toDate(data.expectedCloseDate) ?? null,
-      nextStep: data.nextStep ?? null,
-      dealOwnerId: ownerId,
-      lostReason: data.lostReason ?? null,
-      closedAt: kind === "WON" || kind === "LOST" ? new Date() : null,
-      ...(items.length ? { items: { create: items } } : {}),
-    },
-    select: { ...DEAL_SELECT, items: { select: ITEM_SELECT, orderBy: { createdAt: "asc" } } },
+  // C3: KHÔNG dùng nested write `items: { create: items }`.
+  // Prisma extension (`config/prisma.js`) chỉ bọc operation cấp cao nhất
+  // (`crmDeal.create`) nên dòng `crm_deal_items` con sẽ có `tenantId = NULL`
+  // → `upsertItems` (`deleteMany` bị scope theo tenant) không xoá được chúng
+  // → mỗi lần "Lưu danh sách sản phẩm" là danh sách nhân đôi.
+  // Ghi bằng `createMany` top-level trong transaction ⇒ được inject `tenantId`
+  // giống hệt `upsertItems`.
+  const deal = await prisma.$transaction(async (tx) => {
+    const created = await tx.crmDeal.create({
+      data: {
+        dealName: data.dealName.trim(),
+        organizationId: data.organizationId ?? null,
+        contactId: data.contactId ?? null,
+        leadId: data.leadId ?? null,
+        stageId: stage?.id ?? null,
+        kind,
+        value,
+        currency: data.currency || "VND",
+        probability: data.probability ?? stage?.probability ?? 0,
+        expectedCloseDate: toDate(data.expectedCloseDate) ?? null,
+        nextStep: data.nextStep ?? null,
+        dealOwnerId: ownerId,
+        lostReason: data.lostReason ?? null,
+        closedAt: kind === "WON" || kind === "LOST" ? new Date() : null,
+      },
+      select: { id: true },
+    });
+
+    if (items.length) {
+      await tx.crmDealItem.createMany({
+        data: items.map((row) => ({ ...row, dealId: created.id })),
+      });
+    }
+
+    return tx.crmDeal.findUnique({
+      where: { id: created.id },
+      select: { ...DEAL_SELECT, items: { select: ITEM_SELECT, orderBy: { createdAt: "asc" } } },
+    });
   });
 
-  auditService.log({
+  await auditService.log({
     userId,
     action: "CREATE_CRM_DEAL",
     entity: "CrmDeal",
@@ -255,7 +310,12 @@ const create = async (data, userId, user) => {
 
 const update = async (id, data, userId, user) => {
   const before = await prisma.crmDeal.findUnique({ where: { id }, select: DEAL_SELECT });
-  assertAccess(user, before, "dealOwnerId", "Deal");
+  await assertDealAccess(user, before);
+  // H6: PATCH phải chạy cùng guard với `changeStage` — deal đã sinh đơn thì trạng
+  // thái deal và đơn đã phát sinh sẽ mâu thuẫn nếu vẫn đổi stage được.
+  if (before.orderId && data.stageId !== undefined) {
+    throw new ApiError(409, "Deal đã tạo đơn hàng — không đổi giai đoạn được");
+  }
   if (before.orderId && data.customerId === undefined) {
     // Deal đã sinh đơn → vẫn cho sửa mô tả, nhưng cảnh báo qua audit
     logger.warn(`[crm] update deal đã có order: dealId=${id}, orderId=${before.orderId}`);
@@ -272,7 +332,8 @@ const update = async (id, data, userId, user) => {
   if (data.probability !== undefined) patch.probability = data.probability;
   if (data.expectedCloseDate !== undefined) patch.expectedCloseDate = toDate(data.expectedCloseDate);
   if (data.nextStep !== undefined) patch.nextStep = data.nextStep;
-  if (data.dealOwnerId !== undefined) patch.dealOwnerId = data.dealOwnerId;
+  // H7: non-manager không tự chuyển deal cho người khác được
+  if (data.dealOwnerId !== undefined) patch.dealOwnerId = resolveOwnerId(data.dealOwnerId, user);
   if (data.lostReason !== undefined) patch.lostReason = data.lostReason;
   if (data.stageId !== undefined) {
     patch.stageId = data.stageId;
@@ -285,10 +346,23 @@ const update = async (id, data, userId, user) => {
       patch.closedAt = null;
     }
   }
+  // H6: đổi stage sang LOST qua PATCH cũng bắt buộc có lý do thua — không có bước
+  // này thì báo cáo "Lý do thua" mất dữ liệu chỉ vì user dùng modal Sửa thay vì
+  // kéo-thả trên kanban.
+  if (patch.kind === "LOST" && data.lostReason === undefined && !before.lostReason) {
+    throw new ApiError(400, "Cần nhập lý do thua khi chuyển deal sang giai đoạn Thua");
+  }
+
+  await assertRefsInTenant([
+    { model: "crmOrganization", id: patch.organizationId, label: "Tổ chức" },
+    { model: "crmContact", id: patch.contactId, label: "Liên hệ" },
+    { model: "customer", id: patch.customerId, label: "Khách hàng" },
+    { model: "user", id: patch.dealOwnerId, label: "Người phụ trách" },
+  ]);
 
   const deal = await prisma.crmDeal.update({ where: { id }, data: patch, select: DEAL_SELECT });
 
-  auditService.log({
+  await auditService.log({
     userId,
     action: "UPDATE_CRM_DEAL",
     entity: "CrmDeal",
@@ -318,6 +392,13 @@ const update = async (id, data, userId, user) => {
     }
   }
 
+  // H6: deal chuyển sang WON qua modal Sửa cũng phải báo người phụ trách — trước đây
+  // chỉ `changeStage` (kéo-thả kanban) gọi `notificationWon`, nên thắng deal từ form
+  // Sửa im lặng không ai được biết.
+  if (patch.kind === "WON" && before.kind !== "WON") {
+    await notificationWon(deal, before, userId);
+  }
+
   return deal;
 };
 
@@ -327,7 +408,7 @@ const remove = async (id, userId, user) => {
     where: { id },
     select: { id: true, dealName: true, orderId: true, dealOwnerId: true, kind: true },
   });
-  assertAccess(user, deal, "dealOwnerId", "Deal");
+  await assertDealAccess(user, deal);
   if (deal.orderId) {
     throw new ApiError(409, "Deal đã tạo đơn hàng — không xóa được để giữ dấu vết doanh thu");
   }
@@ -338,7 +419,7 @@ const remove = async (id, userId, user) => {
     prisma.crmDeal.delete({ where: { id } }),
   ]);
 
-  auditService.log({
+  await auditService.log({
     userId,
     action: "DELETE_CRM_DEAL",
     entity: "CrmDeal",
@@ -355,7 +436,7 @@ const remove = async (id, userId, user) => {
  */
 const changeStage = async (id, data, userId, user) => {
   const before = await prisma.crmDeal.findUnique({ where: { id }, select: DEAL_SELECT });
-  assertAccess(user, before, "dealOwnerId", "Deal");
+  await assertDealAccess(user, before);
   if (before.orderId) {
     throw new ApiError(409, "Deal đã tạo đơn hàng — không đổi giai đoạn được");
   }
@@ -378,7 +459,7 @@ const changeStage = async (id, data, userId, user) => {
 
   const deal = await prisma.crmDeal.update({ where: { id }, data: patch, select: DEAL_SELECT });
 
-  auditService.log({
+  await auditService.log({
     userId,
     action: "CHANGE_CRM_DEAL_STAGE",
     entity: "CrmDeal",
@@ -426,17 +507,21 @@ const upsertItems = async (id, items, userId, user) => {
     where: { id },
     select: { id: true, dealName: true, value: true, kind: true, dealOwnerId: true, orderId: true },
   });
-  assertAccess(user, deal, "dealOwnerId", "Deal");
+  await assertDealAccess(user, deal);
   if (deal.orderId) throw new ApiError(409, "Deal đã tạo đơn hàng — không sửa được danh sách sản phẩm");
 
   const rows = await normalizeItems(items);
   const itemsTotal = round2(rows.reduce((s, i) => s + i.amount, 0));
 
   const updated = await prisma.$transaction(async (tx) => {
-    await tx.crmDealItem.deleteMany({ where: { dealId: id } });
+    await tx.crmDealItem.deleteMany({ where: dealItemDeleteScope(id) });
     if (rows.length) await tx.crmDealItem.createMany({ data: rows.map((r) => ({ ...r, dealId: id })) });
-    // value = 0 nghĩa là deal chưa được gán giá thủ công → lấy theo tổng dòng
-    const shouldRecompute = Number(deal.value) === 0 && itemsTotal > 0;
+    // value = 0 nghĩa là deal chưa được gán giá thủ công → lấy theo tổng dòng.
+    // CRM audit M8: `PUT {"items": []}` là "xóa sạch danh sách" — trước đây dòng bị
+    // xoá nhưng `value` giữ giá trị cũ ⇒ forecast/dashboard sai và `convertToOrder`
+    // trả 400 "Deal chưa có sản phẩm" dù deal vẫn còn giá trị. Xóa sạch ⇒ value = 0.
+    const shouldRecompute =
+      rows.length === 0 ? Number(deal.value) !== 0 : Number(deal.value) === 0 && itemsTotal > 0;
     return tx.crmDeal.update({
       where: { id },
       data: shouldRecompute ? { value: itemsTotal } : {},
@@ -444,7 +529,7 @@ const upsertItems = async (id, items, userId, user) => {
     });
   });
 
-  auditService.log({
+  await auditService.log({
     userId,
     action: "UPDATE_CRM_DEAL_ITEMS",
     entity: "CrmDeal",
@@ -459,31 +544,48 @@ const upsertItems = async (id, items, userId, user) => {
 /**
  * Dữ liệu kanban: mỗi stage 1 cột, kèm count + tổng value + deal đã convert.
  * Deal chưa gán stage gom vào cột cuối `stageId: null` để không bị "biến mất".
+ *
+ * CRM audit M3 — `take` cắt ngang dữ liệu mà không báo:
+ *   1. `getForecast` nạp TOÀN BỘ deal ONGOING/đã-đóng của tenant vào heap. Tenant
+ *      200k deal ONGOING ⇒ mỗi lần gọi `/forecast` nạp 200k row.
+ *   2. `getBoard` có `take: 500`/`take: 200` nhưng không phân trang và FE không
+ *      cảnh báo ⇒ KPI báo thấp hơn thực tế trong khi người dùng tưởng đã xem hết.
+ * Sửa: `take` có trần cho forecast + `truncated` flag trả về cho FE hiển thị.
  */
+const BOARD_MAX_DEALS = 500;
+const BOARD_MAX_UNASSIGNED = 200;
+const FORECAST_MAX_ONGOING = 5000;
+const FORECAST_MAX_CLOSED = 5000;
+
 const getBoard = async (user, { includeClosed = false } = {}) => {
   await stagesService.ensureDefaultStages();
   const stages = await stagesService.list("DEAL", { includeInactive: false });
 
-  const where = { ...ownerScope(user, "dealOwnerId") };
+  const where = { ...ownerScopeForTeam(user, "dealOwnerId", await getTeamUserIds(user)) };
   if (!includeClosed) where.kind = "ONGOING";
 
+  // `take + 1` để biết đã cắt ngang mà không cần query COUNT thứ hai (đắt hơn).
   const [deals, unassigned] = await Promise.all([
     prisma.crmDeal.findMany({
       where: { ...where, stageId: { in: stages.map((s) => s.id) } },
       select: DEAL_SELECT,
       orderBy: [{ value: "desc" }, { updatedAt: "desc" }],
-      take: 500,
+      take: BOARD_MAX_DEALS + 1,
     }),
     prisma.crmDeal.findMany({
       where: { ...where, stageId: null },
       select: DEAL_SELECT,
       orderBy: [{ value: "desc" }, { updatedAt: "desc" }],
-      take: 200,
+      take: BOARD_MAX_UNASSIGNED + 1,
     }),
   ]);
 
+  const truncated = deals.length > BOARD_MAX_DEALS || unassigned.length > BOARD_MAX_UNASSIGNED;
+  const visibleDeals = deals.slice(0, BOARD_MAX_DEALS);
+  const visibleUnassigned = unassigned.slice(0, BOARD_MAX_UNASSIGNED);
+
   const columns = stages.map((stage) => {
-    const cards = deals.filter((d) => d.stageId === stage.id);
+    const cards = visibleDeals.filter((d) => d.stageId === stage.id);
     return {
       stage: { id: stage.id, label: stage.label, color: stage.color, kind: stage.kind, probability: stage.probability },
       count: cards.length,
@@ -495,18 +597,21 @@ const getBoard = async (user, { includeClosed = false } = {}) => {
     };
   });
 
-  if (unassigned.length) {
+  if (visibleUnassigned.length) {
     columns.push({
       stage: { id: null, label: "Chưa phân giai đoạn", color: "#64748b", kind: "ONGOING", probability: 0 },
-      count: unassigned.length,
-      totalValue: round2(unassigned.reduce((s, d) => s + Number(d.value || 0), 0)),
+      count: visibleUnassigned.length,
+      totalValue: round2(visibleUnassigned.reduce((s, d) => s + Number(d.value || 0), 0)),
       weightedValue: 0,
-      deals: unassigned,
+      deals: visibleUnassigned,
     });
   }
 
   return {
     columns,
+    // FE hiển thị "còn N bản ghi" để người dùng không tưởng đã xem hết pipeline.
+    truncated,
+    limits: { maxDeals: BOARD_MAX_DEALS, maxUnassigned: BOARD_MAX_UNASSIGNED },
     summary: {
       totalDeals: columns.reduce((s, c) => s + c.count, 0),
       totalValue: round2(columns.reduce((s, c) => s + c.totalValue, 0)),
@@ -527,21 +632,32 @@ const getForecast = async (user, { months = 6 } = {}) => {
   from.setHours(0, 0, 0, 0);
   from.setMonth(from.getMonth() - (m - 1));
 
-  const where = { ...ownerScope(user, "dealOwnerId") };
+  const where = { ...ownerScopeForTeam(user, "dealOwnerId", await getTeamUserIds(user)) };
 
   const [ongoing, closed] = await Promise.all([
     prisma.crmDeal.findMany({
       where: { ...where, kind: "ONGOING" },
       select: { id: true, value: true, probability: true, expectedCloseDate: true, stage: { select: { id: true, label: true, color: true, probability: true } } },
+      // Trần + cờ cắt ngang: tenant có 200k deal ONGOING sẽ không nạp hết vào heap.
+      orderBy: [{ value: "desc" }, { updatedAt: "desc" }],
+      take: FORECAST_MAX_ONGOING + 1,
     }),
     prisma.crmDeal.findMany({
       where: { ...where, kind: { in: ["WON", "LOST"] }, closedAt: { gte: from } },
       select: { id: true, value: true, kind: true, closedAt: true, lostReason: true },
+      orderBy: { closedAt: "desc" },
+      take: FORECAST_MAX_CLOSED + 1,
     }),
   ]);
 
+  // M3: `orderBy` + `take` cũng tránh kiểu `take: 5000` không sort (trước đây
+  // dashboard cắt ngang 5000 bản ghi CŨ NHẤT và biến `byMonth` sai mà không báo).
+  const forecastTruncated = ongoing.length > FORECAST_MAX_ONGOING || closed.length > FORECAST_MAX_CLOSED;
+  const ongoingVisible = ongoing.slice(0, FORECAST_MAX_ONGOING);
+  const closedVisible = closed.slice(0, FORECAST_MAX_CLOSED);
+
   const byStage = new Map();
-  for (const d of ongoing) {
+  for (const d of ongoingVisible) {
     const key = d.stage?.id || "none";
     const cur = byStage.get(key) || {
       stageId: d.stage?.id || null,
@@ -563,7 +679,7 @@ const getForecast = async (user, { months = 6 } = {}) => {
     const dt = new Date(d.closedAt);
     return `${dt.getFullYear()}-${String(dt.getMonth() + 1).padStart(2, "0")}`;
   };
-  for (const d of closed) {
+  for (const d of closedVisible) {
     const k = monthKey(d);
     const cur = byMonth.get(k) || { month: k, wonCount: 0, wonValue: 0, lostCount: 0, lostValue: 0 };
     if (d.kind === "WON") {
@@ -576,19 +692,21 @@ const getForecast = async (user, { months = 6 } = {}) => {
     byMonth.set(k, cur);
   }
 
-  const totalValue = ongoing.reduce((s, d) => s + Number(d.value || 0), 0);
-  const weightedValue = ongoing.reduce(
+  const totalValue = ongoingVisible.reduce((s, d) => s + Number(d.value || 0), 0);
+  const weightedValue = ongoingVisible.reduce(
     (s, d) => s + (Number(d.value || 0) * Number(d.probability || 0)) / 100,
     0,
   );
-  const won = closed.filter((d) => d.kind === "WON");
-  const lost = closed.filter((d) => d.kind === "LOST");
+  const won = closedVisible.filter((d) => d.kind === "WON");
+  const lost = closedVisible.filter((d) => d.kind === "LOST");
   const decided = won.length + lost.length;
   const wonValue = won.reduce((s, d) => s + Number(d.value || 0), 0);
 
   return {
+    truncated: forecastTruncated,
+    limits: { maxOngoing: FORECAST_MAX_ONGOING, maxClosed: FORECAST_MAX_CLOSED },
     summary: {
-      openDeals: ongoing.length,
+      openDeals: ongoingVisible.length,
       totalValue: round2(totalValue),
       weightedValue: round2(weightedValue),
       wonCount: won.length,
@@ -598,7 +716,7 @@ const getForecast = async (user, { months = 6 } = {}) => {
       winRate: decided > 0 ? round2((won.length / decided) * 100) : 0,
       avgDealSize: won.length > 0 ? round2(wonValue / won.length) : 0,
       // Giá trị deal đang mở dự kiến đóng trong mốc tháng tới
-      dueSoon: ongoing
+      dueSoon: ongoingVisible
         .filter((d) => d.expectedCloseDate && new Date(d.expectedCloseDate) <= from30())
         .reduce((s, d) => s + Number(d.value || 0), 0),
     },
@@ -630,6 +748,30 @@ const countBy = (arr) => {
 };
 
 /**
+ * CRM audit M4 — chặn số lượng phân số khi sinh đơn.
+ *
+ * `CrmDealItem.quantity` là `Decimal(12,2)` nên 1.5 kg là hợp lệ, nhưng
+ * `OrderItem.quantity` là **Int**. `Number(1.5)` trước đây bị Postgres/Prisma cắt
+ * còn 1 trong khi `subtotal` vẫn tính trên 1.5 ⇒ đơn ghi sai số lượng và `order.service`
+ * trừ tồn kho theo số đã cắt. Sửa `OrderItem.quantity` sang Decimal là thay đổi
+ * lan sang Inventory/Returns/POS — ra ngoài phạm vi này và tốn kém.
+ *
+ * Chọn: báo lỗi rõ ràng thay vì ghi sai. Người dùng sửa dòng về số nguyên (hoặc tách
+ * dòng) rồi convert. Đây là chọn lựa có chủ ý — im lặng sửa dữ liệu tài chính tệ hơn
+ * là báo người dùng biết.
+ */
+const assertWholeQuantity = (sellable, dealName) => {
+  const fractional = sellable.filter((it) => !Number.isInteger(Number(it.quantity || 0)));
+  if (fractional.length === 0) return;
+  throw new ApiError(
+    400,
+    `Deal "${dealName}" có ${fractional.length} dòng với số lượng phân số ` +
+      `(${fractional.map((i) => i.description || i.productId).join(", ")}). ` +
+      "Đơn hàng chỉ nhận số lượng nguyên — hãy làm tròn hoặc tách dòng trước khi tạo đơn.",
+  );
+};
+
+/**
  * Convert deal thắng → đơn hàng.
  *
  * Cố ý KHÔNG viết lại logic đơn hàng: delegate `orderService.create` để tái dùng
@@ -641,6 +783,17 @@ const countBy = (arr) => {
  * bằng chiết khấu cấp đơn (FIXED) để tổng đơn khớp giá trị deal. Trường hợp
  * deal cao hơn giá sản phẩm (giá thương lượng tăng) thì không biểu diễn được bằng
  * chiết khấu âm → ghi log cảnh báo, giữ nguyên giá sản phẩm.
+ *
+ * CHỐNG RACE (CRM audit C2): `orderService.create` trừ tồn kho, ghi bút toán và
+ * cộng `totalSpent` cho khách — không thể đặt trong transaction của CRM mà vẫn
+ * giữ được (nó dùng client Prisma riêng). Vì vậy "giành quyền" phải được quyết
+ * định TRƯỚC khi gọi nó, bằng conditional update:
+ *
+ *   updateMany({ where: { id, orderId: null }, data: { orderId: PENDING } })
+ *
+ * Chỉ 1 request trong N request song song nhận `count === 1` → đó là người duy
+ * nhất được tạo đơn. `@@unique([orderId])` trên CrmDeal không cứu được trường hợp
+ * này vì 2 đơn khác nhau đều ghi vào CÙNG 1 deal.
  */
 const convertToOrder = async (id, payload = {}, userId, user) => {
   const deal = await prisma.crmDeal.findUnique({
@@ -651,7 +804,7 @@ const convertToOrder = async (id, payload = {}, userId, user) => {
       contact: { select: { id: true, fullName: true, email: true, phone: true, customerId: true } },
     },
   });
-  assertAccess(user, deal, "dealOwnerId", "Deal");
+  await assertDealAccess(user, deal);
 
   if (deal.orderId) {
     throw new ApiError(409, "Deal này đã tạo đơn hàng trước đó", { orderId: deal.orderId });
@@ -664,8 +817,7 @@ const convertToOrder = async (id, payload = {}, userId, user) => {
   if (sellable.length === 0) {
     throw new ApiError(400, "Deal chưa có sản phẩm nào — thêm dòng sản phẩm trước khi tạo đơn");
   }
-
-  const customerId = await resolveCustomer(deal, payload, userId);
+  assertWholeQuantity(sellable, deal.dealName);
 
   // Ước lượng tiền đơn theo product.price để bù chênh lệch với giá deal
   const products = await prisma.product.findMany({
@@ -686,34 +838,97 @@ const convertToOrder = async (id, payload = {}, userId, user) => {
     );
   }
 
+  // ============================================================
+  // Bước 1 — GIÀNH QUYỀN tạo đơn (atomic, chặn double-click)
+  // ============================================================
+  // Dùng marker tạm thay vì orderId thật: nếu `orderService.create` ném lỗi, bước 2
+  // gỡ marker lại để deal trở về trạng thái có thể thử lại. Marker PHẢI là chuỗi
+  // duy nhất vì `CrmDeal.orderId` có `@unique` — dùng lại cùng 1 hằng (vd theo
+  // userId) sẽ tự nổ unique khi user convert 2 deal cùng lúc.
+  //
+  // Claim đặt TRƯỚC `resolveCustomer` để 2 request song song không cùng tạo 2 khách
+  // hàng "ma" (cũng là read-then-write không an toàn).
+  const CLAIM = `PENDING_CRM_${randomUUID()}`;
+  const claim = await prisma.crmDeal.updateMany({
+    where: { id, orderId: null },
+    data: { orderId: CLAIM },
+  });
+  if (claim.count !== 1) {
+    const current = await prisma.crmDeal.findUnique({
+      where: { id },
+      select: { orderId: true },
+    });
+    throw new ApiError(409, "Deal này đang được tạo đơn hàng — vui lòng không thao tác lại", {
+      orderId: current?.orderId ?? null,
+    });
+  }
+
+  // ============================================================
+  // Bước 2 — chốt khách hàng + tạo đơn; lỗi thì trả deal về nguyên trạng
+  // ============================================================
   // Require động: chỉ load orderService khi thực sự cần (tránh circular require lúc boot)
   const orderService = require("../orders/order.service");
 
-  const order = await orderService.create(
-    {
-      customerId,
-      items: sellable.map((it) => ({
-        productId: it.productId,
-        quantity: Number(it.quantity || 0),
-        discountType: "NONE",
-        discountValue: 0,
-      })),
-      discount: orderDiscountValue,
-      discountType: orderDiscountValue > 0 ? "FIXED" : "NONE",
-      discountValue: orderDiscountValue,
-      status: payload.orderStatus || "PENDING",
-      paymentMethod: payload.paymentMethod || "BANK_TRANSFER",
-      warehouseId: payload.warehouseId || undefined,
-      note: payload.note || `Tạo từ CRM Deal: ${deal.dealName}`,
-      channel: "CRM",
-    },
-    userId,
-    { userRole: user?.role },
-  );
+  let customerId;
+  let order;
+  try {
+    customerId = await resolveCustomer(deal, payload, userId);
+    order = await orderService.create(
+      {
+        customerId,
+        items: sellable.map((it) => ({
+          productId: it.productId,
+          quantity: Number(it.quantity || 0),
+          discountType: "NONE",
+          discountValue: 0,
+        })),
+        discount: orderDiscountValue,
+        discountType: orderDiscountValue > 0 ? "FIXED" : "NONE",
+        discountValue: orderDiscountValue,
+        status: payload.orderStatus || "PENDING",
+        paymentMethod: payload.paymentMethod || "BANK_TRANSFER",
+        warehouseId: payload.warehouseId || undefined,
+        note: payload.note || `Tạo từ CRM Deal: ${deal.dealName}`,
+        channel: "CRM",
+        currency: deal.currency || "VND",
+      },
+      userId,
+      { userRole: user?.role },
+    );
+  } catch (e) {
+    // Gỡ marker. `updateMany` + điều kiện `orderId = CLAIM` ⇒ không bao giờ gỡ nhầm
+    // marker của request khác (trường hợp client retry trong lúc request đầu chạy).
+    await prisma.crmDeal
+      .updateMany({ where: { id, orderId: CLAIM }, data: { orderId: null } })
+      .catch((rollbackError) =>
+        logger.error(`[crm] rollback claim deal ${id} thất bại:`, rollbackError.message),
+      );
+    throw e;
+  }
 
-  const updated = await prisma.crmDeal.update({
+  // ============================================================
+  // Bước 3 — chốt đơn thật vào deal
+  // ============================================================
+  const updated = await prisma.crmDeal.updateMany({
+    where: { id, orderId: CLAIM },
+    data: {
+      orderId: order.id,
+      customerId,
+      closedAt: deal.closedAt ?? new Date(),
+      kind: "WON",
+      lostReason: null,
+    },
+  });
+  if (updated.count !== 1) {
+    // Marker đã bị ai đó đổi (rất hiếm: chỉ admin sửa tay). Không rollback đơn —
+    // đơn đã tồn tại và trừ kho rồi; ghi log + audit để đối soát được.
+    logger.error(
+      `[crm] deal ${id}: không chốt được orderId sau khi tạo đơn ${order.id} — kiểm tra đơn ${order.orderCode} để tránh đơn ma.`,
+    );
+  }
+
+  const finalDeal = await prisma.crmDeal.findUnique({
     where: { id },
-    data: { orderId: order.id, customerId, closedAt: deal.closedAt ?? new Date() },
     select: { ...DEAL_SELECT, items: { select: ITEM_SELECT, orderBy: { createdAt: "asc" } } },
   });
 
@@ -724,7 +939,7 @@ const convertToOrder = async (id, payload = {}, userId, user) => {
     createdById: userId,
   });
 
-  auditService.log({
+  await auditService.log({
     userId,
     action: "CONVERT_CRM_DEAL_TO_ORDER",
     entity: "CrmDeal",
@@ -733,7 +948,7 @@ const convertToOrder = async (id, payload = {}, userId, user) => {
     after: { orderId: order.id, orderCode: order.orderCode, total: order.total, customerId },
   });
 
-  return { deal: updated, order };
+  return { deal: finalDeal, order };
 };
 
 /** Chốt khách hàng cho đơn: ưu tiên payload → deal → contact → tìm/tạo mới */
@@ -776,7 +991,7 @@ const resolveCustomer = async (deal, payload, userId) => {
     await prisma.crmContact.update({ where: { id: deal.contact.id }, data: { customerId: customer.id } });
   }
 
-  auditService.log({
+  await auditService.log({
     userId,
     action: "CREATE_CUSTOMER_FROM_CRM_DEAL",
     entity: "Customer",

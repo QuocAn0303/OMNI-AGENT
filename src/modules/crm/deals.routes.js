@@ -34,12 +34,16 @@ const {
   dealConvertOrderSchema,
   dealItemSchema,
   communicationCreateSchema,
+  dealListQuerySchema,
+  boardQuerySchema,
+  forecastQuerySchema,
 } = require("./crm.pipeline.validation");
 const { authenticate, authorize } = require("../../middleware/auth.middleware");
 const { requireModule } = require("../../middleware/plan.middleware");
 const { success, created, paginated } = require("../../utils/response");
+const { CRM_PIPELINE_ROLES } = require("./roles");
 
-router.use(authenticate, authorize("SUPER_ADMIN", "ADMIN", "MANAGER", "CASHIER"), requireModule("crm"));
+router.use(authenticate, authorize(...CRM_PIPELINE_ROLES), requireModule("crm"));
 
 const itemsSchema = z.object({ items: z.array(dealItemSchema).max(200, "tối đa 200 dòng") });
 
@@ -77,7 +81,9 @@ const itemsSchema = z.object({ items: z.array(dealItemSchema).max(200, "tối đ
  */
 router.get("/", async (req, res, next) => {
   try {
-    const { deals, pagination } = await dealsService.list(req.query, req.user);
+    // CRM audit M9: parse query để chặn `search` quá dài và `kind` ngoài enum
+    const query = dealListQuerySchema.parse(req.query);
+    const { deals, pagination } = await dealsService.list(query, req.user);
     paginated(res, deals, pagination);
   } catch (err) {
     next(err);
@@ -101,8 +107,8 @@ router.get("/", async (req, res, next) => {
  */
 router.get("/board", async (req, res, next) => {
   try {
-    const includeClosed = ["1", "true", "yes"].includes(String(req.query.includeClosed || "").toLowerCase());
-    success(res, await dealsService.getBoard(req.user, { includeClosed }));
+    const { includeClosed } = boardQuerySchema.parse(req.query);
+    success(res, await dealsService.getBoard(req.user, { includeClosed: Boolean(includeClosed) }));
   } catch (err) {
     next(err);
   }
@@ -124,7 +130,8 @@ router.get("/board", async (req, res, next) => {
  */
 router.get("/forecast", async (req, res, next) => {
   try {
-    success(res, await dealsService.getForecast(req.user, { months: req.query.months }));
+    const { months } = forecastQuerySchema.parse(req.query);
+    success(res, await dealsService.getForecast(req.user, { months }));
   } catch (err) {
     next(err);
   }

@@ -16,6 +16,7 @@ import { useMemo } from "react";
 import { Menu } from "antd";
 import aduduLogo from "../../assets/Adudu.png";
 import { useLocation, useNavigate } from "react-router-dom";
+import { CRM_PIPELINE_ROLES, CRM_MANAGER_ROLES } from "../crm/roles";
 import {
   DashboardOutlined,
   LineChartOutlined,
@@ -61,6 +62,13 @@ import {
   WarningOutlined,
   ThunderboltOutlined,
   FolderOpenOutlined,
+  AppstoreOutlined,
+  ApartmentOutlined,
+  ContactsOutlined,
+  RiseOutlined,
+  FunnelPlotOutlined,
+  PartitionOutlined,
+  HeartOutlined,
 } from "@ant-design/icons";
 import useAuthStore from "../../stores/authStore";
 import PermissionGate from "../shared/PermissionGate";
@@ -370,6 +378,57 @@ const MENU_GROUPS = [
         icon: <TagOutlined />,
         label: "Quản lý Tag",
         roles: ["ADMIN", "MANAGER"],
+      },
+    ],
+  },
+  {
+    // CRM Sales Pipeline (Frappe-style): lead → deal → đơn hàng.
+    // KHÔNG thêm key vào MENU_PERMISSION_MAP: bảng đó chỉ có `customers.view`,
+    // thêm key mới sẽ phải sửa cả 5 mảng role trong ROLE_PERMS_FALLBACK.
+    key: "crmPipeline",
+    label: "PIPELINE BÁN HÀNG",
+    roles: ALL_ROLES,
+    items: [
+      { key: "/crm/leads", icon: <FunnelPlotOutlined />, label: "Lead tiềm năng", roles: CRM_PIPELINE_ROLES },
+      { key: "/crm/deals", icon: <RiseOutlined />, label: "Deal", roles: CRM_PIPELINE_ROLES },
+      { key: "/crm/deals/board", icon: <AppstoreOutlined />, label: "Kanban deal", roles: CRM_PIPELINE_ROLES },
+      {
+        key: "/crm/organizations",
+        icon: <ApartmentOutlined />,
+        label: "Tổ chức",
+        roles: CRM_MANAGER_ROLES,
+      },
+      {
+        key: "/crm/contacts",
+        icon: <ContactsOutlined />,
+        label: "Liên hệ",
+        roles: CRM_MANAGER_ROLES,
+      },
+      {
+        key: "/crm/dashboard",
+        icon: <PieChartOutlined />,
+        label: "Dashboard pipeline",
+        roles: CRM_MANAGER_ROLES,
+      },
+      {
+        key: "/crm/pipeline-settings",
+        icon: <SettingOutlined />,
+        label: "Cấu hình pipeline",
+        roles: CRM_MANAGER_ROLES,
+      },
+      {
+        // CRM Phase 4 — Sales hierarchy (cây báo cáo)
+        key: "/crm/hierarchy",
+        icon: <PartitionOutlined />,
+        label: "Cây báo cáo",
+        roles: CRM_MANAGER_ROLES,
+      },
+      {
+        // CRM Phase 4 — RFM/CLV/churn (mục 1)
+        key: "/crm/insights",
+        icon: <HeartOutlined />,
+        label: "Phân khúc & CLV",
+        roles: CRM_MANAGER_ROLES,
       },
     ],
   },
@@ -717,9 +776,12 @@ export default function Sidebar({
 
   const selectedKey = useMemo(() => {
     const allKeys = activeMenuGroups.flatMap((g) => g.items.map((i) => i.key));
-    const matched = allKeys.find(
-      (k) => location.pathname === k || location.pathname.startsWith(k + "/"),
-    );
+    // Sắp key dài trước để trang con luôn thắng key cha:
+    // /crm/deals/board phải highlight "Kanban deal" chứ không phải "Deal",
+    // /vendors/kraljic phải highlight "Phân loại NCC" chứ không phải "Nhà cung cấp".
+    const matched = allKeys
+      .filter((k) => location.pathname === k || location.pathname.startsWith(k + "/"))
+      .sort((a, b) => b.length - a.length)[0];
     return matched || location.pathname;
   }, [location.pathname, activeMenuGroups]);
 

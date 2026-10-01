@@ -41,11 +41,12 @@ router.delete("/:id", authenticate, requireRole(["ADMIN"]), async (req, res, nex
 });
 
 router.post("/run", authenticate, requireRole(mgr), async (req, res, next) => {
-  try { res.json({ success: true, data: await svc.runQuery(req.body, { limit: req.query.limit }) }); } catch (e) { next(e); }
+  // CRM audit M2: truyền `req.user` để runQuery áp owner scope cho bảng lead/deal.
+  try { res.json({ success: true, data: await svc.runQuery(req.body, { limit: req.query.limit, user: req.user }) }); } catch (e) { next(e); }
 });
 
 router.post("/:id/run", authenticate, requireRole(mgr), async (req, res, next) => {
-  try { res.json({ success: true, data: await svc.executeReport(req.params.id, req.user.id, req.query) }); } catch (e) { next(e); }
+  try { res.json({ success: true, data: await svc.executeReport(req.params.id, req.user.id, req.query, req.user) }); } catch (e) { next(e); }
 });
 
 // Mục 8: seed 10 báo cáo phân tích mặc định (R-01 → R-10) cho tenant — ADMIN

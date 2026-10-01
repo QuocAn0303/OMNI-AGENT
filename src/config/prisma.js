@@ -83,6 +83,12 @@ const TENANT_SCOPED_MODELS = new Set([
   // CRM Sales Pipeline (2026-09): Lead / Deal / Organization / Contact
   "CrmPipelineStage", "CrmLead", "CrmOrganization", "CrmContact",
   "CrmDeal", "CrmDealItem", "CrmCommunication",
+  // CRM audit C5: AiDocument là model DUY NHẤT có cột `tenantId` mà chưa khai báo ở
+  // đây (đã đối chiếu toàn bộ schema). Model hiện `@@ignore` nên extension chưa có tác
+  // dụng gì — nhưng đăng ký sẵn để khi ai gỡ `@@ignore` thì đã được scope, không phải
+  // phát hiện lúc rò dữ liệu. `AiEmbedding` không có `tenantId` nên không cần.
+  // `tests/tenant-scoped-models.contract.test.js` chặn tái phát.
+  "AiDocument",
 ]);
 
 const READ_OPS = new Set([

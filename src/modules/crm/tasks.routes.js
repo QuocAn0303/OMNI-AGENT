@@ -24,15 +24,16 @@ const tasksService = require("./tasks.service");
 const { authenticate, authorize } = require("../../middleware/auth.middleware");
 const { requireModule } = require("../../middleware/plan.middleware");
 const { paginated, created, success } = require("../../utils/response");
+const { CRM_PIPELINE_ROLES, CRM_MANAGER_ROLES } = require("./roles");
 
 router.use(
   authenticate,
-  authorize("SUPER_ADMIN", "ADMIN", "MANAGER", "CASHIER"),
+  authorize(...CRM_PIPELINE_ROLES),
   requireModule("crm"),
 );
 
 // CASHIER chỉ được phép xem; tạo/sửa/xóa dành cho SUPER_ADMIN/ADMIN/MANAGER
-const requireManager = authorize("SUPER_ADMIN", "ADMIN", "MANAGER");
+const requireManager = authorize(...CRM_MANAGER_ROLES);
 
 const STATUS = ["PENDING", "IN_PROGRESS", "DONE", "CANCELLED"];
 const PRIORITY = ["LOW", "NORMAL", "HIGH"];
@@ -122,7 +123,7 @@ router.post("/", requireManager, async (req, res, next) => {
 // PATCH /api/crm/tasks/:id  (SUPER_ADMIN/ADMIN/MANAGER/CASHIER)
 router.patch(
   "/:id",
-  authorize("SUPER_ADMIN", "ADMIN", "MANAGER", "CASHIER"),
+  authorize(...CRM_PIPELINE_ROLES),
   async (req, res, next) => {
     try {
       const data = updateSchema.parse(req.body);

@@ -6,9 +6,12 @@
  * - Cache transporter theo config (chỉ tạo lại khi config thay đổi)
  * - Nếu chưa cấu hình SMTP → log ra console (mock mode), không crash
  * - Hỗ trợ gửi text và HTML
+ * - Hỗ trợ header tùy chỉnh (`headers`) — dùng cho `List-Unsubscribe` của
+ *   chiến dịch marketing (Nghị định 13/2023 yêu cầu cơ chế hủy 1 cú bấm
+ *   ngay trên header email, không chỉ link trong nội dung)
  * 
  * Hàm:
- * - sendEmail({ to, subject, text, html }): Gửi email, trả { messageId, mock? }
+ * - sendEmail({ to, subject, text, html, headers }): Gửi email, trả { messageId, mock? }
  * - verifyEmail(): Kiểm tra kết nối SMTP (dùng cho Test Connection trong UI Integration)
  * - resetTransporter(): Reset cache transporter (gọi khi config thay đổi)
  * - getTransporter(): Lấy transporter hiện tại (internal)
@@ -38,7 +41,7 @@ const _getTransporter = async () => {
   return _transporter;
 };
 
-const sendEmail = async ({ to, subject, text, html }) => {
+const sendEmail = async ({ to, subject, text, html, headers }) => {
   if (!to) throw new Error("Thiếu địa chỉ email người nhận");
   const transporter = await _getTransporter();
   const cfg = await _getCfg();
@@ -48,7 +51,15 @@ const sendEmail = async ({ to, subject, text, html }) => {
     logger.info(`[email:LOG] -> ${to} | ${subject}\n${text || html || ""}`);
     return { messageId: null, mock: true };
   }
-  const info = await transporter.sendMail({ from, to, subject: subject || "(Không tiêu đề)", text, html });
+  const info = await transporter.sendMail({
+    from,
+    to,
+    subject: subject || "(Không tiêu đề)",
+    text,
+    html,
+    // Bỏ qua nếu undefined — không ép thêm header rỗng vào mọi email
+    ...(headers && Object.keys(headers).length ? { headers } : {}),
+  });
   return { messageId: info.messageId };
 };
 

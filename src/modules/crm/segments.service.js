@@ -268,7 +268,7 @@ const create = async (data, userId) => {
     },
     select: SEGMENT_SELECT,
   });
-  auditService.log({
+  await auditService.log({
     userId,
     action: "CREATE_SEGMENT",
     entity: "CustomerSegment",
@@ -297,7 +297,7 @@ const update = async (id, data, userId) => {
     data: patch,
     select: SEGMENT_SELECT,
   });
-  auditService.log({
+  await auditService.log({
     userId,
     action: "UPDATE_SEGMENT",
     entity: "CustomerSegment",
@@ -316,7 +316,7 @@ const remove = async (id, userId) => {
     throw err;
   }
   await prisma.customerSegment.delete({ where: { id } });
-  auditService.log({
+  await auditService.log({
     userId,
     action: "DELETE_SEGMENT",
     entity: "CustomerSegment",

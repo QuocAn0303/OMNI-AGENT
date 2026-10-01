@@ -23,6 +23,8 @@
 const prisma = require("../../config/prisma");
 const auditService = require("../audit/audit.service");
 const ApiError = require("../../utils/apiError");
+const { ownerScopeForTeam } = require("./scope");
+const { getTeamUserIds } = require("./hierarchy.service");
 
 const CONTACT_SELECT = {
   id: true,
@@ -70,13 +72,32 @@ const list = async ({ page = 1, limit = 20, search, organizationId, includeInact
   return { contacts: rows, pagination: { page: p, limit: l, total, totalPages: Math.ceil(total / l) } };
 };
 
-const getById = async (id) => {
+/**
+ * Chi tiết contact + lead/deal liên quan.
+ *
+ * CRM audit H2: không lọc relation lồng ⇒ CASHIER đọc được tên + trạng thái + giá
+ * trị của lead/deal của ĐỒNG NGHIỆP trong cùng tổ chức. Lọc bằng đúng
+ * `ownerScopeForTeam` như các endpoint lead/deal — một quy tắc duy nhất.
+ */
+const getById = async (id, user) => {
+  const team = await getTeamUserIds(user);
+
   const contact = await prisma.crmContact.findUnique({
     where: { id },
     select: {
       ...CONTACT_SELECT,
-      leads: { select: { id: true, leadName: true, status: true, expectedValue: true }, orderBy: { createdAt: "desc" }, take: 20 },
-      deals: { select: { id: true, dealName: true, value: true, kind: true }, orderBy: { createdAt: "desc" }, take: 20 },
+      leads: {
+        where: ownerScopeForTeam(user, "leadOwnerId", team),
+        select: { id: true, leadName: true, status: true, expectedValue: true },
+        orderBy: { createdAt: "desc" },
+        take: 20,
+      },
+      deals: {
+        where: ownerScopeForTeam(user, "dealOwnerId", team),
+        select: { id: true, dealName: true, value: true, kind: true },
+        orderBy: { createdAt: "desc" },
+        take: 20,
+      },
     },
   });
   if (!contact) throw new ApiError(404, "Liên hệ không tồn tại");
@@ -123,7 +144,7 @@ const create = async (data, userId) => {
     });
   });
 
-  auditService.log({
+  await auditService.log({
     userId,
     action: "CREATE_CRM_CONTACT",
     entity: "CrmContact",
@@ -157,7 +178,7 @@ const update = async (id, data, userId) => {
     return tx.crmContact.update({ where: { id }, data: patch, select: CONTACT_SELECT });
   });
 
-  auditService.log({
+  await auditService.log({
     userId,
     action: "UPDATE_CRM_CONTACT",
     entity: "CrmContact",
@@ -179,7 +200,7 @@ const setPrimary = async (id, userId) => {
     await tx.crmContact.update({ where: { id }, data: { isPrimary: true } });
   });
 
-  auditService.log({
+  await auditService.log({
     userId,
     action: "SET_PRIMARY_CRM_CONTACT",
     entity: "CrmContact",
@@ -209,7 +230,7 @@ const remove = async (id, userId) => {
 
   await prisma.crmContact.update({ where: { id }, data: { isActive: false } });
 
-  auditService.log({
+  await auditService.log({
     userId,
     action: "DELETE_CRM_CONTACT",
     entity: "CrmContact",

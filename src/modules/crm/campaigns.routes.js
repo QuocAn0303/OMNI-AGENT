@@ -14,7 +14,11 @@
  * - POST /: Tạo campaign mới (campaignsService.create hoặc adminCampaignService.createCampaign)
  * - PUT /:id: Cập nhật campaign (campaignsService.update hoặc adminCampaignService.updateCampaign)
  * - DELETE /:id: Xóa campaign (campaignsService.remove hoặc adminCampaignService.deleteCampaign)
+ * - GET /:id/stats: Số liệu funnel mở/click/hủy đăng ký (campaignsService.getStats)
  * - POST /:id/send-now: Gửi campaign ngay lập tức (campaignsService.sendNow hoặc adminCampaignService.sendCampaign)
+ *
+ * Ghi chú: endpoint đo lượt mở/click và từ chối nhận tin KHÔNG nằm ở đây — chúng là
+ * public (token-based) và nằm ở `campaign-tracking.routes.js`, mount tại /api/crm/track.
  */
 // src/modules/crm/campaigns.routes.js
 const router = require("express").Router();
@@ -24,8 +28,9 @@ const adminCampaignService = require("../admin/admin-campaign.service");
 const { authenticate, authorize } = require("../../middleware/auth.middleware");
 const { requireModule } = require("../../middleware/plan.middleware");
 const { paginated, created, success } = require("../../utils/response");
+const { CRM_MARKETING_ROLES } = require("./roles");
 
-router.use(authenticate, authorize("ADMIN", "MANAGER", "SUPER_OMEGA_ULTRA_ADMIN"), requireModule("marketing"));
+router.use(authenticate, authorize(...CRM_MARKETING_ROLES), requireModule("marketing"));
 
 const CHANNELS = ["EMAIL", "ZALO"];
 const STATUS = ["DRAFT", "SCHEDULED", "SENDING", "SENT", "FAILED"];
@@ -134,6 +139,18 @@ router.delete("/:id", async (req, res, next) => {
     } else {
       success(res, await campaignsService.remove(req.params.id, req.user.id), "Đã xóa");
     }
+  } catch (err) {
+    next(err);
+  }
+});
+
+// GET /api/crm/campaigns/:id/stats
+router.get("/:id/stats", async (req, res, next) => {
+  try {
+    if (isSystemAdmin(req)) {
+      return success(res, await adminCampaignService.getStats(req.params.id));
+    }
+    success(res, await campaignsService.getStats(req.params.id));
   } catch (err) {
     next(err);
   }

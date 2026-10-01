@@ -27,7 +27,8 @@ const ApiError = require("../../utils/apiError");
 const stagesService = require("./stages.service");
 const contactsService = require("./contacts.service");
 const communicationService = require("./communication.service");
-const { ownerScope, assertAccess, isManager } = require("./scope");
+const { ownerScopeForTeam, assertAccess, isManager, assertRefsInTenant, resolveOwnerId } = require("./scope");
+const { getTeamUserIds } = require("./hierarchy.service");
 
 // Lead chưa liên hệ quá 7 ngày được coi là "quá hạn" (sắp quên mất)
 const OVERDUE_DAYS = 7;
@@ -66,6 +67,20 @@ const toDate = (v) => {
 };
 
 /**
+ * CRM audit H10 — dịch lỗi unique của Postgres (P2002) thành 409 nói rõ trường.
+ *
+ * `CrmLead` giờ có `@@unique([mobileNo, tenantId])` + `@@unique([email, tenantId])`
+ * nên tạo lead trùng bị DB chặn. Không bắt thì người dùng thấy 500 "Internal Error".
+ */
+const translateDuplicateLead = (e) => {
+  if (e?.code !== "P2002") return null;
+  const target = Array.isArray(e?.meta?.target) ? e.meta.target.join(", ") : String(e?.meta?.target || "");
+  if (/mobileNo/i.test(target)) return new ApiError(409, "Số điện thoại này đã tồn tại trong danh sách lead");
+  if (/email/i.test(target)) return new ApiError(409, "Email này đã tồn tại trong danh sách lead");
+  return new ApiError(409, "Lead đã tồn tại (trùng số điện thoại hoặc email)");
+};
+
+/**
  * Danh sách lead — record-level permission theo owner.
  * @param {Object} query - {page, limit, status, stageId, leadOwnerId, source, search, overdue}
  * @param {Object} user - req.user
@@ -74,7 +89,8 @@ const list = async (query = {}, user) => {
   const p = Math.max(1, Number(query.page) || 1);
   const l = Math.max(1, Math.min(200, Number(query.limit) || 20));
 
-  const where = { ...ownerScope(user, "leadOwnerId") };
+  // CRM Phase 4: manager xem theo cây báo cáo (mình + bậc dưới) thay vì toàn tenant.
+  const where = { ...ownerScopeForTeam(user, "leadOwnerId", await getTeamUserIds(user)) };
   if (query.status) where.status = query.status;
   if (query.stageId) where.stageId = query.stageId;
   if (query.source) where.source = query.source;
@@ -111,6 +127,16 @@ const list = async (query = {}, user) => {
   return { leads: rows, pagination: { page: p, limit: l, total, totalPages: Math.ceil(total / l) } };
 };
 
+/**
+ * CRM Phase 4 — assertAccess theo cây báo cáo.
+ * Manager được xem record của mình + bậc dưới (không phải toàn tenant).
+ * Bọc 1 chỗ để các call site chỉ cần `assertLeadAccess(user, record)`.
+ */
+const assertLeadAccess = async (user, record, entityName = "Lead") => {
+  const team = await getTeamUserIds(user);
+  return assertAccess(user, record, "leadOwnerId", entityName, team);
+};
+
 const getById = async (id, user) => {
   const lead = await prisma.crmLead.findUnique({
     where: { id },
@@ -122,7 +148,7 @@ const getById = async (id, user) => {
       },
     },
   });
-  assertAccess(user, lead, "leadOwnerId", "Lead");
+  await assertLeadAccess(user, lead);
   return lead;
 };
 
@@ -138,31 +164,46 @@ const assertLeadStage = async (stageId) => {
   return stage;
 };
 
+/** Kiểm tra mọi FK trỏ sang bảng khác phải nằm trong tenant (CRM audit H3) */
+const assertLeadRefs = (data) =>
+  assertRefsInTenant([
+    { model: "crmOrganization", id: data.organizationId, label: "Tổ chức" },
+    { model: "crmContact", id: data.contactId, label: "Liên hệ" },
+    { model: "user", id: data.leadOwnerId, label: "Người phụ trách" },
+  ]);
+
 const create = async (data, userId, user) => {
   await assertLeadStage(data.stageId);
-  // Không chỉ định owner → CASHIER tự nhận lead mình tạo, MANAGER/ADMIN để trống (giao sau)
-  const ownerId = data.leadOwnerId ?? (!isManager(user) && user ? user.id : null);
+  // H7: không phải quản lý thì KHÔNG tự gán owner cho người khác được.
+  // Không chỉ đăng nhập owner → CASHIER tự nhận lead mình tạo, MANAGER/ADMIN để trống (giao sau)
+  const ownerId = resolveOwnerId(data.leadOwnerId, user);
+  await assertLeadRefs({ ...data, leadOwnerId: ownerId });
 
-  const lead = await prisma.crmLead.create({
-    data: {
-      leadName: data.leadName.trim(),
-      email: data.email ?? null,
-      mobileNo: data.mobileNo ?? null,
-      jobTitle: data.jobTitle ?? null,
-      source: data.source ?? null,
-      status: data.status ?? "NEW",
-      stageId: data.stageId ?? null,
-      leadOwnerId: ownerId,
-      organizationId: data.organizationId ?? null,
-      contactId: data.contactId ?? null,
-      expectedValue: data.expectedValue ?? null,
-      lastContactedAt: toDate(data.lastContactedAt) ?? null,
-      notes: data.notes ?? null,
-    },
-    select: LEAD_SELECT,
-  });
+  let lead;
+  try {
+    lead = await prisma.crmLead.create({
+      data: {
+        leadName: data.leadName.trim(),
+        email: data.email ?? null,
+        mobileNo: data.mobileNo ?? null,
+        jobTitle: data.jobTitle ?? null,
+        source: data.source ?? null,
+        status: data.status ?? "NEW",
+        stageId: data.stageId ?? null,
+        leadOwnerId: ownerId,
+        organizationId: data.organizationId ?? null,
+        contactId: data.contactId ?? null,
+        expectedValue: data.expectedValue ?? null,
+        lastContactedAt: toDate(data.lastContactedAt) ?? null,
+        notes: data.notes ?? null,
+      },
+      select: LEAD_SELECT,
+    });
+  } catch (e) {
+    throw translateDuplicateLead(e) || e;
+  }
 
-  auditService.log({
+  await auditService.log({
     userId,
     action: "CREATE_CRM_LEAD",
     entity: "CrmLead",
@@ -195,7 +236,7 @@ const create = async (data, userId, user) => {
 
 const update = async (id, data, userId, user) => {
   const before = await prisma.crmLead.findUnique({ where: { id }, select: LEAD_SELECT });
-  assertAccess(user, before, "leadOwnerId", "Lead");
+  await assertLeadAccess(user, before);
   if (data.stageId !== undefined) await assertLeadStage(data.stageId);
 
   const patch = {};
@@ -210,12 +251,21 @@ const update = async (id, data, userId, user) => {
   if (data.contactId !== undefined) patch.contactId = data.contactId;
   if (data.expectedValue !== undefined) patch.expectedValue = data.expectedValue;
   if (data.notes !== undefined) patch.notes = data.notes;
-  if (data.leadOwnerId !== undefined) patch.leadOwnerId = data.leadOwnerId;
+  // H7: CASHIER sửa lead của chính mình mà gửi `leadOwnerId` của đồng nghiệp sẽ bị
+  // ép về `user.id` (giữ nguyên) thay vì đẩy việc + bắn notification cho người khác.
+  if (data.leadOwnerId !== undefined) patch.leadOwnerId = resolveOwnerId(data.leadOwnerId, user);
   if (data.lastContactedAt !== undefined) patch.lastContactedAt = toDate(data.lastContactedAt);
 
-  const lead = await prisma.crmLead.update({ where: { id }, data: patch, select: LEAD_SELECT });
+  await assertLeadRefs({ ...data, leadOwnerId: patch.leadOwnerId ?? before.leadOwnerId });
 
-  auditService.log({
+  let lead;
+  try {
+    lead = await prisma.crmLead.update({ where: { id }, data: patch, select: LEAD_SELECT });
+  } catch (e) {
+    throw translateDuplicateLead(e) || e;
+  }
+
+  await auditService.log({
     userId,
     action: "UPDATE_CRM_LEAD",
     entity: "CrmLead",
@@ -252,7 +302,7 @@ const remove = async (id, userId, user) => {
     where: { id },
     select: { id: true, leadName: true, status: true, convertedDealId: true, leadOwnerId: true, _count: { select: { deals: true } } },
   });
-  assertAccess(user, lead, "leadOwnerId", "Lead");
+  await assertLeadAccess(user, lead);
   if (lead.status === "CONVERTED" || lead._count.deals > 0) {
     throw new ApiError(409, "Lead đã chuyển thành Deal — không xóa được, hãy đặt trạng thái DEAD thay vì xóa");
   }
@@ -263,7 +313,7 @@ const remove = async (id, userId, user) => {
     prisma.crmLead.delete({ where: { id } }),
   ]);
 
-  auditService.log({
+  await auditService.log({
     userId,
     action: "DELETE_CRM_LEAD",
     entity: "CrmLead",
@@ -279,7 +329,7 @@ const remove = async (id, userId, user) => {
  */
 const changeStage = async (id, data, userId, user) => {
   const before = await prisma.crmLead.findUnique({ where: { id }, select: LEAD_SELECT });
-  assertAccess(user, before, "leadOwnerId", "Lead");
+  await assertLeadAccess(user, before);
   if (before.status === "CONVERTED") {
     throw new ApiError(409, "Lead đã chuyển thành Deal, không đổi stage được");
   }
@@ -298,7 +348,7 @@ const changeStage = async (id, data, userId, user) => {
 
   const lead = await prisma.crmLead.update({ where: { id }, data: patch, select: LEAD_SELECT });
 
-  auditService.log({
+  await auditService.log({
     userId,
     action: "CHANGE_CRM_LEAD_STAGE",
     entity: "CrmLead",
@@ -333,7 +383,7 @@ const changeStage = async (id, data, userId, user) => {
  */
 const convertToDeal = async (id, payload = {}, userId, user) => {
   const lead = await prisma.crmLead.findUnique({ where: { id }, select: LEAD_SELECT });
-  assertAccess(user, lead, "leadOwnerId", "Lead");
+  await assertLeadAccess(user, lead);
 
   if (lead.status === "CONVERTED") {
     throw new ApiError(409, "Lead này đã được chuyển thành Deal trước đó", {
@@ -344,25 +394,14 @@ const convertToDeal = async (id, payload = {}, userId, user) => {
   const organizationId = payload.organizationId ?? lead.organizationId ?? null;
   const createContact = payload.createContact !== false;
   let contactId = payload.contactId ?? lead.contactId ?? null;
-  if (!contactId && createContact) {
-    const existing = await contactsService.findByPhone(lead.mobileNo, lead.email);
-    if (existing) {
-      contactId = existing.id;
-    } else {
-      const contact = await contactsService.create(
-        {
-          fullName: lead.leadName,
-          email: lead.email,
-          phone: lead.mobileNo,
-          jobTitle: lead.jobTitle,
-          organizationId,
-          isPrimary: true,
-        },
-        userId,
-      );
-      contactId = contact.id;
-    }
-  }
+
+  // CRM audit H3: FK trong Postgres không kiểm tenantId → org/contact của tenant khác
+  // lọt vào. Kiểm trước khi ghi bất cứ thứ gì.
+  await assertRefsInTenant([
+    { model: "crmOrganization", id: organizationId, label: "Tổ chức" },
+    { model: "crmContact", id: contactId, label: "Liên hệ" },
+    { model: "user", id: payload.dealOwnerId, label: "Người phụ trách deal" },
+  ]);
 
   const stageId = payload.stageId ?? null;
   let stage = null;
@@ -378,15 +417,70 @@ const convertToDeal = async (id, payload = {}, userId, user) => {
   }
 
   const kind = stage?.kind === "WON" || stage?.kind === "LOST" ? stage.kind : "ONGOING";
-  const dealOwnerId = payload.dealOwnerId ?? lead.leadOwnerId ?? null;
+  // H7: non-manager không tự gán deal cho người khác được
+  const dealOwnerId = resolveOwnerId(payload.dealOwnerId ?? lead.leadOwnerId, user);
   const expectedValue = payload.expectedValue ?? lead.expectedValue ?? 0;
 
+  /**
+   * H4 — 2 phần sửa so với bản cũ:
+   *  1. Contact tạo MỚI nằm trong cùng transaction với deal. Trước đây
+   *     `contactsService.create` chạy trước transaction ⇒ deal create lỗi thì
+   *     để lại contact mồ côi nhưng audit log vẫn ghi "đã chuyển thành Deal".
+   *  2. Guard 409 chuyển từ check-then-act (đọc `lead` ở dòng trên) sang
+   *     conditional update TRONG transaction:
+   *       `updateMany({ where: { id, status: { not: "CONVERTED" } } })`
+   *     2 request `/convert` song song trước đây cùng đọc `status = "QUALIFIED"` và
+   *     cùng tạo 1 deal (2 deal thừa cùng `leadId`, `convertedDealId` chỉ giữ 1,
+   *     deal thừa vẫn được tính vào forecast).
+   */
   const result = await prisma.$transaction(async (tx) => {
+    // Chiếm lead TRƯỚC khi tạo contact: nếu thua race thì dừng ngay, không sinh
+    // thêm contact/deal mồ côi.
+    const claim = await tx.crmLead.updateMany({
+      where: { id: lead.id, status: { not: "CONVERTED" } },
+      data: { status: "CONVERTED", convertedAt: new Date() },
+      select: { id: true },
+    });
+    if (claim.count !== 1) {
+      throw new ApiError(409, "Lead này vừa được chuyển thành Deal bởi người khác", {
+        convertedDealId: lead.convertedDealId,
+      });
+    }
+
+    let resolvedContactId = contactId;
+    if (!resolvedContactId && createContact) {
+      const existing = await tx.crmContact.findFirst({
+        where: {
+          isActive: true,
+          ...(lead.mobileNo ? { phone: lead.mobileNo } : { email: lead.email }),
+        },
+        select: { id: true },
+      });
+      if (existing) {
+        resolvedContactId = existing.id;
+      } else {
+        // Tạo contact trong transaction. Không dùng `contactsService.create` (nó
+        // mở transaction riêng + ghi audit) — tự tạo ở đây, audit gộp 1 lần.
+        const contact = await tx.crmContact.create({
+          data: {
+            fullName: lead.leadName,
+            email: lead.email,
+            phone: lead.mobileNo,
+            jobTitle: lead.jobTitle,
+            organizationId,
+            isPrimary: true,
+          },
+          select: { id: true },
+        });
+        resolvedContactId = contact.id;
+      }
+    }
+
     const deal = await tx.crmDeal.create({
       data: {
         dealName: (payload.dealName || lead.leadName).trim(),
         organizationId,
-        contactId,
+        contactId: resolvedContactId,
         leadId: lead.id,
         stageId: stage?.id ?? null,
         kind,
@@ -416,14 +510,9 @@ const convertToDeal = async (id, payload = {}, userId, user) => {
       },
     });
 
-    // Contact mới tạo → trỏ ngược về lead để mở được tab "Liên hệ"
-    if (contactId && !lead.contactId) {
-      await tx.crmLead.update({ where: { id: lead.id }, data: { contactId } });
-    }
-
     const updatedLead = await tx.crmLead.update({
       where: { id: lead.id },
-      data: { status: "CONVERTED", convertedAt: new Date(), convertedDealId: deal.id, contactId },
+      data: { status: "CONVERTED", convertedAt: new Date(), convertedDealId: deal.id, contactId: resolvedContactId },
       select: { id: true, leadName: true, status: true, convertedAt: true, convertedDealId: true, contactId: true },
     });
 
@@ -434,7 +523,7 @@ const convertToDeal = async (id, payload = {}, userId, user) => {
           content: payload.note,
           leadId: lead.id,
           dealId: deal.id,
-          contactId,
+          contactId: resolvedContactId,
           createdById: userId,
         },
       });
@@ -451,7 +540,7 @@ const convertToDeal = async (id, payload = {}, userId, user) => {
     createdById: userId,
   });
 
-  auditService.log({
+  await auditService.log({
     userId,
     action: "CONVERT_CRM_LEAD",
     entity: "CrmLead",
@@ -521,11 +610,14 @@ const importList = async (rows, userId) => {
       skipped.push({ index, reason: "Thiếu cả SĐT và email" });
       return;
     }
+    // Kiểm SĐT và email ĐỘC LẬP. Trước đây chỉ check email khi thiếu SĐT, nhưng
+    // unique index (`@@unique([email, tenantId])`) chặn email trùng ở MỌI dòng →
+    // dòng có cả SĐT lẫn email trùng sẽ nổ P2002 và làm hỏng cả đợt import.
     if (phone && (seenPhones.has(phone) || localPhones.has(phone))) {
       skipped.push({ index, reason: `SĐT ${phone} đã tồn tại` });
       return;
     }
-    if (!phone && email && (seenEmails.has(email) || localEmails.has(email))) {
+    if (email && (seenEmails.has(email) || localEmails.has(email))) {
       skipped.push({ index, reason: `Email ${email} đã tồn tại` });
       return;
     }
@@ -551,9 +643,17 @@ const importList = async (rows, userId) => {
     return { createdCount: 0, skipped, total: rows.length };
   }
 
-  const created = await prisma.crmLead.createMany({ data: toCreate, skipDuplicates: true });
+  // `skipDuplicates` GIỜ CÓ TÁC DỤNG: schema có `@@unique([mobileNo, tenantId])` +
+  // `@@unique([email, tenantId])` (CRM audit H10). Trước đó không có @@unique nên
+  // Postgres không có gì để conflict → mọi import song song đều tạo lead trùng.
+  let created;
+  try {
+    created = await prisma.crmLead.createMany({ data: toCreate, skipDuplicates: true });
+  } catch (e) {
+    throw translateDuplicateLead(e) || e;
+  }
 
-  auditService.log({
+  await auditService.log({
     userId,
     action: "IMPORT_CRM_LEADS",
     entity: "CrmLead",

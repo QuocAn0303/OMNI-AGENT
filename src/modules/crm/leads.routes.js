@@ -32,12 +32,14 @@ const {
   leadConvertSchema,
   leadImportSchema,
   communicationCreateSchema,
+  leadListQuerySchema,
 } = require("./crm.pipeline.validation");
 const { authenticate, authorize } = require("../../middleware/auth.middleware");
 const { requireModule } = require("../../middleware/plan.middleware");
 const { success, created, paginated } = require("../../utils/response");
+const { CRM_PIPELINE_ROLES } = require("./roles");
 
-router.use(authenticate, authorize("SUPER_ADMIN", "ADMIN", "MANAGER", "CASHIER"), requireModule("crm"));
+router.use(authenticate, authorize(...CRM_PIPELINE_ROLES), requireModule("crm"));
 
 /**
  * @swagger
@@ -77,7 +79,10 @@ router.use(authenticate, authorize("SUPER_ADMIN", "ADMIN", "MANAGER", "CASHIER")
  */
 router.get("/", async (req, res, next) => {
   try {
-    const { leads, pagination } = await leadsService.list(req.query, req.user);
+    // CRM audit M9: parse query để chặn `search` quá dài và `status` ngoài enum
+    // (trước đây 2 trường này đẩy thẳng xuống Prisma ⇒ 500 / seq scan toàn bảng).
+    const query = leadListQuerySchema.parse(req.query);
+    const { leads, pagination } = await leadsService.list(query, req.user);
     paginated(res, leads, pagination);
   } catch (err) {
     next(err);

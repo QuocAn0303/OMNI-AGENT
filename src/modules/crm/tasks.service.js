@@ -113,7 +113,7 @@ const create = async (data, userId) => {
     select: TASK_SELECT,
   });
 
-  auditService.log({
+  await auditService.log({
     userId,
     action: "CREATE_CUSTOMER_TASK",
     entity: "CustomerTask",
@@ -177,7 +177,7 @@ const update = async (id, data, userId) => {
     select: TASK_SELECT,
   });
 
-  auditService.log({
+  await auditService.log({
     userId,
     action: "UPDATE_CUSTOMER_TASK",
     entity: "CustomerTask",
@@ -226,7 +226,7 @@ const remove = async (id, userId) => {
   }
   await prisma.customerTask.delete({ where: { id } });
 
-  auditService.log({
+  await auditService.log({
     userId,
     action: "DELETE_CUSTOMER_TASK",
     entity: "CustomerTask",

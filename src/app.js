@@ -145,6 +145,10 @@ const apiLimiter = rateLimit({
   max: 100,
   standardHeaders: true,
   legacyHeaders: false,
+  // CRM audit L24: `/api/crm/track/*` dùng limiter riêng (`trackingLimiter`).
+  // Phải `skip` ở đây — nếu không, apiLimiter chạy trước và chặn ở 100/phút dù
+  // trackingLimiter có hạn mức cao hơn, khiến trackingLimiter chết không.
+  skip: (req) => req.path === '/crm/track' || req.path.startsWith('/crm/track/'),
   message: { success: false, message: 'Quá nhiều request, vui lòng thử lại sau' }
 })
 
@@ -154,6 +158,22 @@ const loginLimiter = rateLimit({
   standardHeaders: true,
   legacyHeaders: false,
   message: { success: false, message: 'Quá nhiều lần đăng nhập, vui lòng thử lại sau 1 phút' }
+})
+
+// CRM audit L24 — limiter riêng cho endpoint tracking.
+// `apiLimiter` tính theo IP với `max: 100/phút`. Pixel mở mail + link click của
+// CHIẾN DỊCH LỚN đều đến từ cùng IP của mail client / gateway doanh nghiệp, nên
+// 100 request là hạn mức rất thấp: chiến dịch gửi 50k mail sẽ làm hàng loạt
+// người nhận mất số liệu OPEN/CLICK (mất bằng chứng marketing). Ngược lại, đây là
+// endpoint public không cần đăng nhập nên hạn mức vẫn phải cao hơn API thường —
+// chặn brute-force token mà không giết số liệu.
+const trackingLimiter = rateLimit({
+  windowMs: 60 * 1000,
+  max: Number(process.env.TRACKING_RATE_LIMIT) || 2000,
+  standardHeaders: true,
+  legacyHeaders: false,
+  // Endpoint trả ảnh/HTML, không phải JSON → đừng gắn JSON vào response.
+  message: { success: false, message: 'Quá nhiều request, vui lòng thử lại sau' }
 })
 
 app.use(
@@ -239,6 +259,8 @@ if (process.env.NODE_ENV !== "production") {
 // ==================== Routes ====================
 app.use('/api', apiLimiter)
 app.use('/api/auth/login', loginLimiter)
+// `apiLimiter` đã `skip` prefix này (xem khai báo), nên chỉ còn trackingLimiter.
+app.use('/api/crm/track', trackingLimiter)
 
 app.get("/", (req, res) => {
   res.json({ message: "Aduu - Hệ thống hoạch định nguồn lực doanh nghiệp", version: "2.0.0" });
@@ -479,6 +501,27 @@ const startServer = async (port, retries = 10) => {
     console.log(`  POST   /api/hr/payrolls/generate`);
     console.log(`  GET    /api/analytics/sales-insights`);
     console.log(`  GET    /api-docs`);
+    // Cảnh báo link tracking khi deploy production — CRM Phase 4.
+    // Chỉ báo ở production: ở dev thì localhost là đúng, không phải lỗi.
+    if (process.env.NODE_ENV === "production") {
+      const trackingBase = String(
+        process.env.TRACKING_BASE_URL || process.env.CLIENT_URL || "",
+      ).trim();
+      if (!trackingBase) {
+        console.warn(
+          "\n[CRM] CẢNH BÁO: chưa đặt TRACKING_BASE_URL / CLIENT_URL.\n" +
+            "     Link từ chối nhận tin và link đo lượt mở trong email sẽ trỏ sai,\n" +
+            "     khách bấm không được ⇒ vi phạm Nghị định 13/2023.\n" +
+            "     Sửa: đặt TRACKING_BASE_URL=https://<domain> trong .env",
+        );
+      } else if (/^https?:\/\/(localhost|127\.0\.0\.1|0\.0\.0\.0)/i.test(trackingBase)) {
+        console.warn(
+          `\n[CRM] CẢNH BÁO: TRACKING_BASE_URL/CLIENT_URL đang trỏ về ${trackingBase}\n` +
+            "     Môi trường production mà trỏ localhost ⇒ mọi link trong email gửi đi\n" +
+            "     đều không mở được. Sửa .env rồi khởi động lại server.",
+        );
+      }
+    }
     // Cập nhật frontend/.env để frontend dev biết API URL (chỉ cho môi trường dev)
     try {
       updateFrontendEnv(p);

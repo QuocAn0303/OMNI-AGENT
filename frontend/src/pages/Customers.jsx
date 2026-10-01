@@ -19,7 +19,7 @@ import useDebounce from '../hooks/useDebounce';
 import { Table, Input, Button, Avatar, Modal, Form, Tag } from 'antd';
 import {
   SearchOutlined, PlusOutlined, EditOutlined, DeleteOutlined,
-  PhoneOutlined, MailOutlined, EnvironmentOutlined,
+  PhoneOutlined, MailOutlined, EnvironmentOutlined, CommentOutlined,
 } from '@ant-design/icons';
 import dayjs from 'dayjs';
 import axios from '../api/axios';
@@ -83,7 +83,12 @@ export default function Customers() {
 
   const openModal = (customer = null) => {
     setEditing(customer);
-    form.setFieldsValue(customer || { name: '', phone: '', email: '', address: '' });
+    // CRM Phase 4 — mục 5: khai báo field ở đây, không chỉ ở <Form.Item>.
+    // `form.setFieldsValue` chỉ set được key có sẵn trong Form, nên thiếu ở đây là
+    // field bị rơi mất khi mở modal sửa.
+    form.setFieldsValue(
+      customer || { name: '', phone: '', email: '', address: '', zaloUserId: '' },
+    );
     setModalOpen(true);
   };
 
@@ -348,6 +353,15 @@ export default function Customers() {
               rows={2}
               placeholder={t('customers.addressPlaceholder')}
             />
+          </Form.Item>
+          {/* CRM Phase 4 — mục 5. campaigns.service.js dùng zaloUserId || phone;
+              nhập tay ở đây giúp tin Zalo tới đúng người thay vì gọi nhầm SĐT. */}
+          <Form.Item
+            label={t('customers.zaloUserId')}
+            name="zaloUserId"
+            extra={t('customers.zaloUserIdHelp')}
+          >
+            <Input prefix={<CommentOutlined style={{ color: 'var(--text-muted)' }} />} placeholder={t('customers.zaloUserIdPlaceholder')} />
           </Form.Item>
         </Form>
       </Modal>

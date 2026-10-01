@@ -134,9 +134,15 @@ const captureLead = async (tenantId, payload, idempotencyKey = null) => {
     : null;
 
   if (idemRowKey) {
+    // Best-effort: lỗi DB ở đây KHÔNG được làm hỏng việc nhận lead. Nhưng phải
+    // log — nuốt im lặng khiến sự cố idempotency (webhook retry sau sự cố DB tạo
+    // lead trùng) không ai truy vết được. CRM audit M7.
     const existing = await prisma.integrationConfig
       .findUnique({ where: { key: idemRowKey }, select: { valueEnc: true, createdAt: true } })
-      .catch(() => null);
+      .catch((e) => {
+        logger.error("[lead-capture] idempotency lookup failed (bỏ qua dedupe):", e.message);
+        return null;
+      });
     const isFresh =
       existing &&
       Date.now() - new Date(existing.createdAt).getTime() < IDEM_TTL_MS;
@@ -202,6 +208,40 @@ const captureLeadInTenant = async ({ source, fullName, phone, email, productInte
   let isNew = false;
   if (existing) {
     lead = existing;
+  } else {
+    try {
+      lead = await prisma.crmLead.create({
+        data: {
+          leadName: fullName,
+          mobileNo: phone,
+          email: email || null,
+          source,
+          status: "NEW",
+          stageId,
+          leadOwnerId: assignee.id,
+        },
+        select: { id: true, leadName: true },
+      });
+      isNew = true;
+    } catch (e) {
+      // CRM audit H10: TOCTOU ở findFirst→create. `CrmLead` giờ có
+      // `@@unique([mobileNo, tenantId])` nên 2 webhook song song chỉ 1 thắng —
+      // thua thì đọc lại bản ghi vừa được tạo, rơi vào nhánh "lead trùng".
+      // Không có unique index thì bước này không tồn tại và cả 2 đều tạo lead.
+      const isMobileConflict =
+        e?.code === "P2002" && /mobileNo/i.test(String(e?.meta?.target ?? ""));
+      if (!isMobileConflict) throw e;
+      const winner = await prisma.crmLead.findFirst({
+        where: { mobileNo: phone },
+        select: { id: true, leadName: true },
+      });
+      if (!winner) throw e;
+      lead = winner;
+      logger.warn("[lead-capture] lead trùng SĐT do race, dùng bản ghi đã có:", phone);
+    }
+  }
+
+  if (!isNew) {
     // Lead trùng SĐT → ghi nguồn mới vào timeline thay vì tạo bản ghi trùng
     await prisma.crmCommunication.create({
       data: {
@@ -211,20 +251,6 @@ const captureLeadInTenant = async ({ source, fullName, phone, email, productInte
         createdById: assignee.id,
       },
     });
-  } else {
-    lead = await prisma.crmLead.create({
-      data: {
-        leadName: fullName,
-        mobileNo: phone,
-        email: email || null,
-        source,
-        status: "NEW",
-        stageId,
-        leadOwnerId: assignee.id,
-      },
-      select: { id: true, leadName: true },
-    });
-    isNew = true;
   }
 
   await notificationService

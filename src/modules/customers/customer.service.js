@@ -107,6 +107,7 @@ const create = async (data, userId = null) => {
   const cleanData = { ...data };
   if (cleanData.phone === "") cleanData.phone = null;
   if (cleanData.email === "") cleanData.email = null;
+  if (cleanData.zaloUserId === "") cleanData.zaloUserId = null;
 
   const customer = await prisma.customer.create({ data: cleanData });
 
@@ -127,6 +128,7 @@ const update = async (id, data, userId = null) => {
   const { totalSpent, totalDebt, creditLimit, ...cleanData } = data;
   if (cleanData.phone === "") cleanData.phone = null;
   if (cleanData.email === "") cleanData.email = null;
+  if (cleanData.zaloUserId === "") cleanData.zaloUserId = null;
 
   const before = await prisma.customer.findUnique({ where: { id }, select: { name: true, phone: true, email: true, isActive: true } });
   if (!before) throw { status: 404, message: "Khách hàng không tồn tại" };
@@ -196,12 +198,22 @@ const getCustomer360 = async (id) => {
       phone: true,
       email: true,
       address: true,
+      // CRM Phase 4 — mục 5: hiển thị Zalo user_id ở CustomerDetail (không sửa được
+      // từ trang chi tiết vì form edit nằm ở Customers.jsx).
+      zaloUserId: true,
       totalSpent: true,
       totalDebt: true,
       creditLimit: true,
       storeCredit: true,
       tier: true,
       loyaltyPoints: true,
+      // RFM/CLV/churn đã có sẵn trên Customer — Phase 4 mục 1 đưa vào dashboard
+      rfmSegment: true,
+      rfmRecencyDays: true,
+      rfmFrequency: true,
+      rfmMonetary: true,
+      clvPredicted: true,
+      churnProbability: true,
       isActive: true,
       createdAt: true,
       updatedAt: true,

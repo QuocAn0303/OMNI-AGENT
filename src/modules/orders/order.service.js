@@ -154,6 +154,9 @@ const create = async (orderData, userId, options = {}) => {
     tipAmount = 0,
     channel = "POS",
     channelOrderId,
+    // CRM audit H9: deal có thể ghi USD/EUR… Nếu không truyền xuống, `Order.currency`
+    // luôn = "VND" mặc định schema ⇒ deal 500 USD sinh đơn ghi 500 VND (sai sổ sách).
+    currency = "VND",
   } = orderData;
 
   let customer = null;
@@ -339,6 +342,15 @@ const create = async (orderData, userId, options = {}) => {
     logger.warn(`[order] credit limit override by userId=${userId}, customerId=${customerId}`);
   }
 
+  // CRM audit H9: ngoài VND thì `subotal`/`total` vẫn là SỐ NGUYÊN của deal, chưa
+  // quy đổi — `exchangeRate` để mặc định 1. Ghi log rõ để không ai đọc sổ sách tưởng
+  // đã quy đổi. Quy đổi thật thuộc module `currency` (bảng tỷ giá), không tự bịa ở đây.
+  if (currency && currency !== "VND") {
+    logger.warn(
+      `[order] currency=${currency} nhưng chưa quy đổi (exchangeRate=1) — tổng tiền ghi nguyên giá trị deal.`,
+    );
+  }
+
   //2. toàn bộ DB trong 1 lần
   const txResult = await journalService.withUniqueRetry(
     () =>
@@ -360,6 +372,7 @@ const create = async (orderData, userId, options = {}) => {
         loyaltyDiscount,
         loyaltyPointsUsed: pointsToRedeem,
         warehouseId: whId,
+        currency,
         subtotal,
         total,
         note,

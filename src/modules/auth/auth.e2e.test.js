@@ -16,10 +16,35 @@ const prisma = require('../../config/prisma');
 const authService = require('./auth.service');
 const subscriptionService = require('../subscriptions/subscription.service');
 const campaignService = require('../admin/admin-campaign.service');
+const payosConfig = require('../../config/payos');
 
 jest.setTimeout(30000);
 
-const describeFn = process.env.DATABASE_URL ? describe : describe.skip;
+/**
+ * Skip khi thiếu DB **hoặc** thiếu cấu hình PayOS.
+ *
+ * Lý do thêm điều kiện PayOS: Step 2 gọi `subscriptionService.requestUpgrade`, và
+ * service này ném lỗi "Cổng thanh toán chưa được cấu hình" nếu chưa có client
+ * PayOS. Trước đây chỉ check DATABASE_URL nên trên máy có DB nhưng chưa cấu hình
+ * PayOS thì **3 test fail đỏ mỗi lần chạy `npm test`** dù code hoàn toàn ổn —
+ * đúng loại "lỗi vặt" gây mất niềm tin vào test suite.
+ *
+ * Test bị skip KHÔNG phải test yếu: khi PayOS có config thì suite chạy đầy đủ.
+ * Để ép chạy: PAYOS_FORCE_E2E=1 npx jest src/modules/auth/auth.e2e.test.js
+ */
+const hasDb = Boolean(process.env.DATABASE_URL);
+const hasPayos = payosConfig.isConfigured?.() ?? false;
+const forceRun = process.env.PAYOS_FORCE_E2E === "1";
+
+const describeFn = hasDb && (hasPayos || forceRun) ? describe : describe.skip;
+
+if (hasDb && !hasPayos && !forceRun) {
+  // eslint-disable-next-line no-console
+  console.warn(
+    "[auth.e2e] BỎ QUA: chưa cấu hình PayOS (PAYOS_CLIENT_ID / PAYOS_API_KEY / " +
+      "PAYOS_CHECKSUM_KEY). Không phải lỗi code. Đặt PAYOS_FORCE_E2E=1 để ép chạy.",
+  );
+}
 
 describeFn('E2E: Register → Free → Request Upgrade → Admin Approve → CRM Campaign', () => {
   const testEmail = `anle7091@gmail.com`;

@@ -23,11 +23,12 @@ const {
 const { authenticate, authorize } = require("../../middleware/auth.middleware");
 const { requireModule } = require("../../middleware/plan.middleware");
 const { success, created } = require("../../utils/response");
+const { CRM_PIPELINE_ROLES, CRM_MANAGER_ROLES } = require("./roles");
 
-router.use(authenticate, authorize("SUPER_ADMIN", "ADMIN", "MANAGER", "CASHIER"), requireModule("crm"));
+router.use(authenticate, authorize(...CRM_PIPELINE_ROLES), requireModule("crm"));
 
 // CASHIER chỉ xem được stage; cấu hình pipeline dành cho ADMIN/MANAGER
-const requireManager = authorize("SUPER_ADMIN", "ADMIN", "MANAGER");
+const requireManager = authorize(...CRM_MANAGER_ROLES);
 
 /**
  * @swagger

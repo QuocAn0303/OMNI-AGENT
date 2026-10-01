@@ -7,6 +7,8 @@
  * 
  * Hàm:
  * - getPayOS(): Trả về PayOS instance (hoặc null nếu chưa config)
+ * - isConfigured(): Đủ 3 biến môi trường chưa — dùng để gate cảnh báo/skip test
+ *   thay vì phải copy lại điều kiện ở nhiều nơi (trước đây chỉ có getPayOS()).
  * - createPaymentLink({ orderCode, amount, description, returnUrl, cancelUrl }): Tạo link thanh toán PayOS
  * - verifyWebhook(webhookBody): Xác thực webhook từ PayOS
  */
@@ -15,10 +17,20 @@ const PayOS = require("@payos/node");
 
 let payos = null;
 
+const readConfig = () => ({
+  clientId: process.env.PAYOS_CLIENT_ID,
+  apiKey: process.env.PAYOS_API_KEY,
+  checksumKey: process.env.PAYOS_CHECKSUM_KEY,
+});
+
+/** Đủ 3 biến PAYOS_* chưa? Nguồn sự thật duy nhất cho kiểm tra này. */
+const isConfigured = () => {
+  const { clientId, apiKey, checksumKey } = readConfig();
+  return Boolean(clientId && apiKey && checksumKey);
+};
+
 const getPayOS = () => {
-  const clientId = process.env.PAYOS_CLIENT_ID;
-  const apiKey = process.env.PAYOS_API_KEY;
-  const checksumKey = process.env.PAYOS_CHECKSUM_KEY;
+  const { clientId, apiKey, checksumKey } = readConfig();
 
   if (!clientId || !apiKey || !checksumKey) {
     return null;
@@ -55,4 +67,4 @@ const verifyWebhook = (webhookBody) => {
   return client.verifyPaymentWebhook(webhookBody);
 };
 
-module.exports = { getPayOS, createPaymentLink, verifyWebhook };
+module.exports = { getPayOS, isConfigured, createPaymentLink, verifyWebhook };

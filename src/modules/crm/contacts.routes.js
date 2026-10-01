@@ -20,10 +20,11 @@ const { contactCreateSchema, contactUpdateSchema } = require("./crm.pipeline.val
 const { authenticate, authorize } = require("../../middleware/auth.middleware");
 const { requireModule } = require("../../middleware/plan.middleware");
 const { success, created, paginated } = require("../../utils/response");
+const { CRM_PIPELINE_ROLES, CRM_MANAGER_ROLES } = require("./roles");
 
-router.use(authenticate, authorize("SUPER_ADMIN", "ADMIN", "MANAGER", "CASHIER"), requireModule("crm"));
+router.use(authenticate, authorize(...CRM_PIPELINE_ROLES), requireModule("crm"));
 
-const requireManager = authorize("SUPER_ADMIN", "ADMIN", "MANAGER");
+const requireManager = authorize(...CRM_MANAGER_ROLES);
 
 /**
  * @swagger
@@ -78,7 +79,7 @@ router.get("/", async (req, res, next) => {
  */
 router.get("/:id", async (req, res, next) => {
   try {
-    success(res, await contactsService.getById(req.params.id));
+    success(res, await contactsService.getById(req.params.id, req.user));
   } catch (err) {
     next(err);
   }

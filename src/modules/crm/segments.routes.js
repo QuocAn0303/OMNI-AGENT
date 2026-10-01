@@ -23,8 +23,9 @@ const segmentsService = require("./segments.service");
 const { authenticate, authorize } = require("../../middleware/auth.middleware");
 const { requireModule } = require("../../middleware/plan.middleware");
 const { success, created } = require("../../utils/response");
+const { CRM_MARKETING_ROLES } = require("./roles");
 
-router.use(authenticate, authorize("ADMIN", "MANAGER"), requireModule("segments"));
+router.use(authenticate, authorize(...CRM_MARKETING_ROLES), requireModule("segments"));
 
 const ruleSchema = z.object({
   field: z.string(),

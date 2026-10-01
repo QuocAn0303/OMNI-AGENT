@@ -17,6 +17,8 @@ const mockClient = {
     delete: jest.fn(),
   },
   crmDeal: { updateMany: jest.fn() },
+  // H5: update() chạy stage.update + deal.updateMany trong 1 transaction
+  $transaction: jest.fn(),
 };
 
 jest.mock("../src/config/prisma", () => mockClient);
@@ -28,7 +30,12 @@ const stagesService = require("../src/modules/crm/stages.service");
 const p2002 = () => Object.assign(new Error("Unique constraint failed"), { code: "P2002" });
 
 describe("crm/stages.service", () => {
-  beforeEach(() => jest.clearAllMocks());
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockClient.$transaction.mockImplementation(async (arg) =>
+      typeof arg === "function" ? arg(mockClient) : arg,
+    );
+  });
 
   describe("ensureDefaultStages — lazy-seed idempotent", () => {
     test("gọi createMany với skipDuplicates + đủ 8 stage mặc định", async () => {
@@ -146,7 +153,58 @@ describe("crm/stages.service", () => {
 
       const arg = mockClient.crmDeal.updateMany.mock.calls[0][0];
       expect(arg.where).toEqual({ stageId: "s1" });
-      expect(arg.data).toEqual({ kind: "WON" });
+      expect(arg.data.kind).toBe("WON");
+    });
+
+    // H5: trước đây `updateMany` KHÔNG set `closedAt` ⇒ deal bị đẩy sang WON có
+    // `closedAt = null` ⇒ `getForecast`/`dashboard` lọc `closedAt >= from` làm
+    // doanh thu thắng biến mất khỏi winRate/wonValue/byMonth.
+    test("đổi kind sang WON → set closedAt cho deal (forecast không bỏ sót)", async () => {
+      mockClient.crmPipelineStage.findUnique.mockResolvedValue({
+        id: "s1", label: "Thắng", entityType: "DEAL", kind: "ONGOING", probability: 10,
+      });
+      mockClient.crmPipelineStage.update.mockResolvedValue({ id: "s1", kind: "WON" });
+      mockClient.crmDeal.updateMany.mockResolvedValue({ count: 4 });
+
+      await stagesService.update("s1", { kind: "WON" }, "u1");
+
+      const { closedAt } = mockClient.crmDeal.updateMany.mock.calls[0][0].data;
+      expect(closedAt).toBeInstanceOf(Date);
+    });
+
+    test("đổi kind về ONGOING → gỡ closedAt + xoá lostReason", async () => {
+      mockClient.crmPipelineStage.findUnique.mockResolvedValue({
+        id: "s1", label: "Mới", entityType: "DEAL", kind: "LOST", probability: 0,
+      });
+      mockClient.crmPipelineStage.update.mockResolvedValue({ id: "s1", kind: "ONGOING" });
+      mockClient.crmDeal.updateMany.mockResolvedValue({ count: 2 });
+
+      await stagesService.update("s1", { kind: "ONGOING" }, "u1");
+
+      expect(mockClient.crmDeal.updateMany.mock.calls[0][0].data.closedAt).toBeNull();
+      expect(mockClient.crmDeal.updateMany.mock.calls[0][0].data.lostReason).toBeNull();
+    });
+
+    test("đổi kind sang LOST → giữ lostReason (không xoá lý do thua)", async () => {
+      mockClient.crmPipelineStage.findUnique.mockResolvedValue({
+        id: "s1", label: "Thua", entityType: "DEAL", kind: "ONGOING", probability: 10,
+      });
+      mockClient.crmPipelineStage.update.mockResolvedValue({ id: "s1", kind: "LOST" });
+      mockClient.crmDeal.updateMany.mockResolvedValue({ count: 1 });
+
+      await stagesService.update("s1", { kind: "LOST" }, "u1");
+
+      expect(mockClient.crmDeal.updateMany.mock.calls[0][0].data.lostReason).toBeUndefined();
+    });
+
+    test("kind không đổi (gửi lại cùng giá trị) → không mass-update deal", async () => {
+      mockClient.crmPipelineStage.findUnique.mockResolvedValue({
+        id: "s1", label: "Thắng", entityType: "DEAL", kind: "WON", probability: 100,
+      });
+      mockClient.crmPipelineStage.update.mockResolvedValue({ id: "s1", kind: "WON" });
+
+      await stagesService.update("s1", { kind: "WON" }, "u1");
+      expect(mockClient.crmDeal.updateMany).not.toHaveBeenCalled();
     });
 
     test("đổi label của stage LEAD → không đụng deal", async () => {

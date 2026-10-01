@@ -14,15 +14,19 @@
  * - create(data, userId): Tạo campaign mới (DRAFT hoặc SCHEDULED nếu có scheduledAt).
  * - update(id, data, userId): Cập nhật campaign; không cho sửa khi đang SENDING hoặc SENT.
  * - remove(id, userId): Xóa campaign; không xóa được khi đang SENDING.
- * - executeCampaign(campaignId): Lõi thực thi gửi: đánh dấu SENDING, lấy danh sách KH từ segment,
- *   tạo recipient rows, gửi theo batch (50 part/s, 1s delay), cập nhật trạng thái.
- * - sendNow(id, userId): Gửi campaign ngay lập tức (wrapper executeCampaign + audit).
- * - cronProcessScheduled(): Cron quét campaign SCHEDULED đến hạn, gọi executeCampaign.
+* - executeCampaign(campaignId): Lõi thực thi gửi: đánh dấu SENDING, lấy danh sách KH từ segment,
+*   tạo recipient rows, gửi theo batch (50 part/s, 1s delay), cập nhật trạng thái.
+*   Phase 4: bỏ qua recipient đã từ chối (`unsubscribedAt`), sinh 2 token mỗi recipient,
+*   bọc link đo click + gắn pixel mở mail + link từ chối + header List-Unsubscribe.
+* - getStats(campaignId): Số liệu funnel (SENT/OPEN/CLICK/UNSUBSCRIBE + tỉ lệ).
+* - sendNow(id, userId): Gửi campaign ngay lập tức (wrapper executeCampaign + audit).
+* - cronProcessScheduled(): Cron quét campaign SCHEDULED đến hạn, gọi executeCampaign.
  */
 // src/modules/crm/campaigns.service.js
 const prisma = require("../../config/prisma");
 const auditService = require("../audit/audit.service");
 const segmentsService = require("./segments.service");
+const trackingService = require("./campaign-tracking.service");
 const { render, customerVars } = require("../../utils/template");
 const { sendEmail } = require("../../utils/email");
 const { sendZaloMessage } = require("../../utils/zalo");
@@ -49,6 +53,62 @@ const CAMPAIGN_SELECT = {
 };
 
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+
+// Bọc link để đo lượt bấm. Chỉ bám thẻ <a href="..."> và bỏ qua:
+//  - thẻ neo nội bộ (#...) hoặc mailto:/tel:
+//  - link đã trỏ về chính endpoint tracking (tránh bọc lặp khi re-run)
+// `text` của mail là bản rút gọn, KHÔNG bọc — nếu không, text hiện link tracking
+// dài ngoằng cho người đọc bằng client thường.
+const ANCHOR_RE = /<a\s+[^>]*href\s*=\s*(["'])(.*?)\1/gi;
+const UNTRACKED_SCHEME_RE = /^(?:#|mailto:|tel:|javascript:|data:)/i;
+const SELF_TRACKING_RE = /\/api\/crm\/track\//i;
+
+const isTrackableHref = (href) => {
+  const value = String(href || "").trim();
+  if (!value) return false;
+  if (UNTRACKED_SCHEME_RE.test(value)) return false;
+  if (SELF_TRACKING_RE.test(value)) return false;
+  return Boolean(trackingService.safeRedirectUrl(value));
+};
+
+const rewriteLinksForTracking = (htmlBody, token) =>
+  String(htmlBody).replace(ANCHOR_RE, (match, quote, href) => {
+    if (!isTrackableHref(href)) return match;
+    const wrapped = trackingService.clickUrl(token, String(href).trim());
+    // Giữ nguyên dấu quote gốc để không phá attribute đã escape
+    return match.replace(`${quote}${href}${quote}`, `${quote}${wrapped}${quote}`);
+  });
+
+// Pixel 1x1 cuối body + link từ chối (chỉ kênh EMAIL mới có pixel)
+const buildEmailHtml = (bodyHtml, token) => {
+  const unsubscribe = trackingService.unsubscribeUrl(token);
+  const footer = `
+  <hr style="border:none;border-top:1px solid #e5e7eb;margin:24px 0 12px">
+  <p style="font-size:12px;color:#6b7280;line-height:1.6;margin:0">
+    Bạn nhận email này vì đã đăng ký nhận tin từ chúng tôi.<br>
+    <a href="${unsubscribe}" style="color:#6b7280">Ngừng nhận tin</a>
+  </p>
+  <img src="${trackingService.openPixelUrl(token)}" width="1" height="1" alt=""
+       style="display:block;width:1px;height:1px;border:0" referrerpolicy="no-referrer">`;
+  return rewriteLinksForTracking(bodyHtml, token) + footer;
+};
+
+// Link từ chối dạng chữ cho kênh ZALO (Zalo OA không render HTML/pixel)
+const withUnsubscribeLink = (textBody, token) => {
+  const unsubscribe = trackingService.unsubscribeUrl(token);
+  return `${textBody}\n\n---\nNgừng nhận tin: ${unsubscribe}`;
+};
+
+// Header List-Unsubscribe (RFC 8058) — cho phép mail client hiện nút "Unsubscribe"
+// ngay trên header, không cần mở nội dung. Bắt buộc về mặt thực tiễn cho
+// uy tín gửi (Gmail/Yahoo chặn nhà gửi không có cơ chế hủy).
+const listUnsubscribeHeaders = (token) => {
+  const url = trackingService.unsubscribeUrl(token);
+  return {
+    "List-Unsubscribe": `<${url}>`,
+    "List-Unsubscribe-Post": "List-Unsubscribe=One-Click",
+  };
+};
 
 const list = async (filters = {}, user) => {
   if (user?.role === "SUPER_OMEGA_ULTRA_ADMIN") {
@@ -176,7 +236,7 @@ const create = async (data, userId) => {
     select: CAMPAIGN_SELECT,
   });
 
-  auditService.log({
+  await auditService.log({
     userId,
     action: "CREATE_CAMPAIGN",
     entity: "CustomerCampaign",
@@ -217,7 +277,7 @@ const update = async (id, data, userId) => {
     select: CAMPAIGN_SELECT,
   });
 
-  auditService.log({
+  await auditService.log({
     userId,
     action: "UPDATE_CAMPAIGN",
     entity: "CustomerCampaign",
@@ -241,7 +301,7 @@ const remove = async (id, userId) => {
     throw err;
   }
   await prisma.customerCampaign.delete({ where: { id } });
-  auditService.log({
+  await auditService.log({
     userId,
     action: "DELETE_CAMPAIGN",
     entity: "CustomerCampaign",
@@ -278,13 +338,46 @@ const executeCampaign = async (campaignId) => {
   const existingIds = new Set(existing.map((r) => r.customerId));
   const toCreate = customers.filter((c) => !existingIds.has(c.id));
   if (toCreate.length) {
+    // Nghị định 13/2023 — chặn THEO KÊNH, không theo chiến dịch.
+    // Khách đã bấm "từ chối" ở một chiến dịch trước vẫn phải bị chặn ở chiến dịch
+    // NÀY. Recipient mới tạo có `unsubscribedAt = NULL` nên chỉ lọc theo bản ghi
+    // recipient là không đủ — phải hỏi thẳng lịch sử từ chối của khách trên
+    // cùng kênh. Thiếu bước này thì khách đã opt-out vẫn nhận email (đã bị smoke
+    // test `smoke-crm-phase4-send.js` bắt được, không phải unit test).
+    const optedOutIds = new Set(
+      (
+        await prisma.campaignRecipient.findMany({
+          where: {
+            customerId: { in: toCreate.map((c) => c.id) },
+            unsubscribedAt: { not: null },
+            campaign: { channel: campaign.channel },
+          },
+          select: { customerId: true },
+        })
+      ).map((r) => r.customerId),
+    );
+
     await prisma.campaignRecipient.createMany({
-      data: toCreate.map((c) => ({ campaignId, customerId: c.id, status: "PENDING" })),
+      data: toCreate.map((c) => ({
+        campaignId,
+        customerId: c.id,
+        status: "PENDING",
+        ...(optedOutIds.has(c.id) ? { unsubscribedAt: new Date() } : {}),
+      })),
     });
   }
 
+  const allRecipients = await prisma.campaignRecipient.findMany({
+    where: { campaignId },
+    select: { id: true, unsubscribedAt: true },
+  });
+  // Đã từ chối thì không được gửi tiếp. Lọc ở đây thay vì trong vòng lặp để số
+  // liệu trả về phản ánh "còn lại bao nhiêu người nhận hợp lệ".
+  const skippedUnsubscribed = allRecipients.filter((r) => r.unsubscribedAt).length;
+  const allowedIds = allRecipients.filter((r) => !r.unsubscribedAt).map((r) => r.id);
+
   const pending = await prisma.campaignRecipient.findMany({
-    where: { campaignId, status: "PENDING" },
+    where: { campaignId, status: "PENDING", id: { in: allowedIds } },
     include: {
       customer: {
         select: {
@@ -310,20 +403,48 @@ const executeCampaign = async (campaignId) => {
     await Promise.all(
       batch.map(async (r) => {
         try {
+          // Chốt trạng thái từ chối NGAY TRƯỚC lúc gửi. Lọc ở query phía trên không
+          // đủ: campaign chạy batch 50/lần với 1s delay, người nhận có thể bấm
+          // "từ chối" giữa chừng. `ensureTokens` vốn đã đọc dòng recipient nên tái
+          // dùng chính lần đọc đó — không tốn query thêm.
+          const fresh = await trackingService.ensureTokens(r.id, {
+            tracking: campaign.channel === "EMAIL",
+          });
+          if (fresh?.unsubscribedAt) {
+            throw Object.assign(new Error("Người nhận đã từ chối nhận tin"), {
+              code: "UNSUBSCRIBED",
+            });
+          }
+          if (!fresh?.unsubscribeToken) throw new Error("Không tạo được token từ chối");
+
           const vars = customerVars(r.customer);
           const body = render(campaign.bodyTemplate, vars);
           const subject = campaign.subject ? render(campaign.subject, vars) : null;
 
           if (campaign.channel === "EMAIL") {
             if (!r.customer.email) throw new Error("Khách hàng không có email");
-            await sendEmail({ to: r.customer.email, subject, text: body, html: body });
+            const tok = fresh;
+            const htmlBody = buildEmailHtml(body, tok.unsubscribeToken);
+            await sendEmail({
+              to: r.customer.email,
+              subject,
+              // `text` giữ bản gốc (chưa bọc link + chưa gắn footer tracking)
+              text: withUnsubscribeLink(body, tok.unsubscribeToken),
+              html: htmlBody,
+              headers: listUnsubscribeHeaders(tok.unsubscribeToken),
+            });
+            await trackingService.recordSent(r.id);
           } else if (campaign.channel === "ZALO") {
             // Zalo OA cần zaloUserId (user_id của tài khoản Zalo) — đã có field
             // `Customer.zaloUserId` (thêm ở CRM Pipeline Phase 1). Vẫn fallback về
             // SĐT cho khách chưa nhập, vì nhiều khách dùng SĐT làm user_id.
             const zaloUserId = r.customer.zaloUserId || r.customer.phone;
             if (!zaloUserId) throw new Error("Không có Zalo userId");
-            await sendZaloMessage({ userId: zaloUserId, text: body });
+            await sendZaloMessage({
+              userId: zaloUserId,
+              text: withUnsubscribeLink(body, fresh.unsubscribeToken),
+            });
+            await trackingService.recordSent(r.id);
           } else {
             throw new Error(`Channel không hỗ trợ: ${campaign.channel}`);
           }
@@ -362,15 +483,33 @@ const executeCampaign = async (campaignId) => {
     data: {
       status: finalStatus,
       sentAt: new Date(),
-      stats: { total: totalRecipients, sent: totalSent, failed: totalFailed },
+      stats: {
+        total: totalRecipients,
+        sent: totalSent,
+        failed: totalFailed,
+        skippedUnsubscribed,
+      },
     },
   });
 
-  return { total: totalRecipients, sent: totalSent, failed: totalFailed };
+  return { total: totalRecipients, sent: totalSent, failed: totalFailed, skippedUnsubscribed };
+};
+
+const getStats = async (campaignId) => {
+  const exists = await prisma.customerCampaign.findUnique({
+    where: { id: campaignId },
+    select: { id: true },
+  });
+  if (!exists) {
+    const err = new Error("Chiến dịch không tồn tại");
+    err.status = 404;
+    throw err;
+  }
+  return trackingService.getStats(campaignId);
 };
 
 const sendNow = async (id, userId) => {
-  auditService.log({
+  await auditService.log({
     userId,
     action: "SEND_CAMPAIGN_NOW",
     entity: "CustomerCampaign",
@@ -415,6 +554,9 @@ module.exports = {
   update,
   remove,
   sendNow,
+  getStats,
   executeCampaign,
   cronProcessScheduled,
+  // Nội bộ — test dùng để kiểm chứng việc bọc link/footer không cần gửi mail thật
+  __internals: { rewriteLinksForTracking, buildEmailHtml, withUnsubscribeLink, listUnsubscribeHeaders, isTrackableHref },
 };

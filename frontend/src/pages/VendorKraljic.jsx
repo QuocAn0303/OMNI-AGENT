@@ -31,7 +31,9 @@ import useAuthStore from "../stores/authStore";
 
 const { Text, Paragraph } = Typography;
 
-export const KRALJIC_LABEL = {
+// KHÔNG export: file này chỉ export component, để react-refresh (Vite HMR) hoạt
+// động đúng. Cả 3 hằng/hàm dưới đây chỉ dùng nội bộ file.
+const KRALJIC_LABEL = {
   STRATEGIC: "Chiến lược",
   LEVERAGE: "Đòn bẩy",
   BOTTLENECK: "Nút thắt",
@@ -46,7 +48,8 @@ const KRALJIC_HINT = {
 };
 const GRADE_COLOR = { A: "green", B: "blue", C: "red" };
 // Suy loại Kraljic giống server (>= 6 = Cao) để vẽ ma trận phía FE
-export const classify = (profitImpactScore, supplyRiskScore) => {
+// KHÔNG export — xem giải thích ở KRALJIC_LABEL.
+const classify = (profitImpactScore, supplyRiskScore) => {
   const hi = (v) => Number(v) >= 6;
   if (hi(profitImpactScore) && hi(supplyRiskScore)) return "STRATEGIC";
   if (hi(profitImpactScore)) return "LEVERAGE";

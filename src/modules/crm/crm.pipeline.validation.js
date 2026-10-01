@@ -15,7 +15,8 @@
  * - contactCreateSchema, contactUpdateSchema
  * - dealCreateSchema, dealUpdateSchema, dealStageSchema, dealConvertOrderSchema, dealItemSchema
  * - communicationCreateSchema
- * - listQuerySchema — parse query string list (page/limit/search/...)
+ * - listQuerySchema, leadListQuerySchema, dealListQuerySchema, boardQuerySchema,
+ *   forecastQuerySchema — parse query string (page/limit/search/enum filter)
  */
 const { z } = require("zod");
 
@@ -31,7 +32,48 @@ const hexColor = z
   .string()
   .regex(/^#[0-9a-fA-F]{6}$/, "màu phải ở dạng hex #RRGGBB");
 const probability = z.coerce.number().int().min(0).max(100);
-const positiveMoney = z.coerce.number().min(0, "tiền không được âm");
+
+/**
+ * CRM audit M5 — chặn TRÊN cùng với độ chính xác của cột Decimal.
+ *
+ * `positiveMoney` cũ chỉ chặn số âm. Giá trị vượt độ chính xác cột (`Decimal(15,2)`
+ * = tối đa 9 999 999 999 999.99) làm Prisma ném "value out of range" ⇒ `error.middleware`
+ * trả **500** thay vì 400 kèm message rõ ràng. Chặn ở Zod ⇒ client nhận 400 ngay.
+ *
+ * @param {number} intDigits - số chữ số phần nguyên của cột DB
+ */
+const money = (intDigits = 13) =>
+  z.coerce
+    .number()
+    .min(0, "tiền không được âm")
+    .refine((n) => Number.isFinite(n) && Math.abs(n) < 10 ** intDigits, {
+      message: `giá trị vượt quá giới hạn lưu trữ (tối đa ${intDigits} chữ số phần nguyên)`,
+    });
+
+const positiveMoney = money();
+
+/**
+ * Số lượng của dòng deal: khớp `CrmDealItem.quantity Decimal(12,2)`.
+ *
+ * CRM audit M4 — 2 lỗi do thiếu ràng buộc này:
+ *  1. `quantity: 0.001` lọt → Postgres làm tròn `numeric(12,2)` thành **0.00** còn
+ *     `amount` giữ giá trị tính từ 0.001 ⇒ `order.service.js` tính
+ *     `totalCost / item.quantity` = **Infinity/NaN** ghi vào giá vốn.
+ *  2. `quantity: 1.5` lọt (ĐH12,2 cho phép) nhưng `OrderItem.quantity` là **Int** ⇒
+ *     `convertToOrder` cắt thành 1 trong khi `subtotal` vẫn tính trên 1.5 ⇒ đơn hàng
+ *     sai số lượng và sai tồn kho. Không thể sửa `OrderItem.quantity` (Int) mà không
+ *     đụng cả module Inventory/Returns/POS — nên chặn ngay tại đây, và `convertToOrder`
+ *     trả 400 nếu gặp số lượng phân số (xem `deals.service.js:assertWholeQuantity`).
+ */
+const quantity = z.coerce
+  .number()
+  .positive("số lượng phải > 0")
+  .refine((n) => Number.isFinite(n) && n >= 0.01, {
+    message: "số lượng tối thiểu 0.01 (nhỏ hơn sẽ bị làm tròn về 0 khi lưu)",
+  })
+  .refine((n) => Math.round(n * 100) === n * 100, {
+    message: "số lượng chỉ nhận tối đa 2 chữ số thập phân",
+  });
 const dateStr = z
   .string()
   .datetime({ offset: true })
@@ -143,7 +185,7 @@ const contactUpdateSchema = contactCreateSchema.partial();
 const dealItemSchema = z.object({
   productId: uuidOrNull,
   description: z.string().max(500).nullish(),
-  quantity: z.coerce.number().positive("số lượng phải > 0"),
+  quantity,
   unitPrice: positiveMoney,
   discount: positiveMoney.optional(),
 });
@@ -161,6 +203,9 @@ const dealCreateSchema = z.object({
   nextStep: z.string().max(500).nullish(),
   dealOwnerId: uuidOrNull,
   lostReason: z.string().max(500).nullish(),
+  // `.min(0)` cố ý: `PUT {"items": []}` là thao tác "xóa sạch danh sách" hợp lệ.
+  // Trước đây nó xoá dòng nhưng GIỮ `value` cũ ⇒ forecast sai (CRM audit M8).
+  // `deals.service.upsertItems` nay set `value = 0` khi danh sách rỗng.
   items: z.array(dealItemSchema).max(200, "tối đa 200 dòng").optional(),
 });
 
@@ -198,10 +243,50 @@ const communicationCreateSchema = z.object({
 
 // ==================== Query string ====================
 
+/**
+ * CRM audit M9 — schema này trước đây export nhưng KHÔNG route nào dùng:
+ *   - `search` đọc thẳng từ `req.query` không giới hạn ⇒ `?search=<~16KB>` tạo 4
+ *     điều kiện `contains` + `mode:"insensitive"` (ILIKE `%…%`, không dùng index)
+ *     quét toàn bảng `crm_leads` / `crm_deals`.
+ *   - `?status=<không thuộc enum>` đẩy thẳng xuống `where.status` ⇒ Prisma ném
+ *     ⇒ **500** thay vì 400.
+ * Nay các route list parse bằng `leadListQuerySchema` / `dealListQuerySchema`.
+ */
 const listQuerySchema = z.object({
   page: z.coerce.number().int().min(1).optional(),
   limit: z.coerce.number().int().min(1).max(200).optional(),
-  search: z.string().max(200).optional(),
+  search: z.string().trim().max(200, "từ khoá tìm kiếm tối đa 200 ký tự").optional(),
+});
+
+const leadListQuerySchema = listQuerySchema.extend({
+  status: z.enum(LEAD_STATUSES).optional(),
+  stageId: uuid.optional(),
+  source: z.string().max(100).optional(),
+  organizationId: uuid.optional(),
+  leadOwnerId: uuid.optional(),
+  overdue: boolish.optional(),
+  converted: boolish.optional(),
+});
+
+const dealListQuerySchema = listQuerySchema.extend({
+  kind: z.enum(STAGE_KINDS).optional(),
+  stageId: uuid.optional(),
+  organizationId: uuid.optional(),
+  contactId: uuid.optional(),
+  leadId: uuid.optional(),
+  customerId: uuid.optional(),
+  dealOwnerId: uuid.optional(),
+  converted: boolish.optional(),
+  fromDate: dateStr,
+  toDate: dateStr,
+});
+
+const boardQuerySchema = z.object({
+  includeClosed: boolish.optional(),
+});
+
+const forecastQuerySchema = z.object({
+  months: z.coerce.number().int().min(1).max(24).optional(),
 });
 
 module.exports = {
@@ -229,4 +314,8 @@ module.exports = {
   dealItemSchema,
   communicationCreateSchema,
   listQuerySchema,
+  leadListQuerySchema,
+  dealListQuerySchema,
+  boardQuerySchema,
+  forecastQuerySchema,
 };

@@ -22,6 +22,7 @@ import useAuthStore from "./stores/authStore";
 import { subscribeToPush, isPushSupported, isSubscribed } from "./utils/pushSubscribe";
 import ProtectedRoute from "./components/ProtectedRoute";
 import RequireRole from "./components/RequireRole";
+import { CRM_MANAGER_ROLES, CRM_MARKETING_ROLES } from "./components/crm/roles";
 import AppShell from "./components/layout/AppShell";
 import Profile from "./pages/Profile";
 import ProfileSecurity from "./pages/ProfileSecurity";
@@ -127,6 +128,21 @@ const QrOrderingSetup = lazy(() => import("./pages/QrOrderingSetup"));
 const QrOrderingPage = lazy(() => import("./pages/QrOrderingPage"));
 const PortalSettings = lazy(() => import("./pages/PortalSettings"));
 const Permissions = lazy(() => import("./pages/Permissions"));
+
+// --- CRM Sales Pipeline (Phase 3) ---
+const CrmLeads = lazy(() => import("./pages/crm/Leads"));
+const CrmLeadDetail = lazy(() => import("./pages/crm/LeadDetail"));
+const CrmDeals = lazy(() => import("./pages/crm/Deals"));
+const CrmDealsBoard = lazy(() => import("./pages/crm/DealsBoard"));
+const CrmDealDetail = lazy(() => import("./pages/crm/DealDetail"));
+const CrmOrganizations = lazy(() => import("./pages/crm/Organizations"));
+const CrmContacts = lazy(() => import("./pages/crm/Contacts"));
+const CrmPipelineSettings = lazy(() => import("./pages/crm/PipelineSettings"));
+const CrmDashboard = lazy(() => import("./pages/crm/CrmDashboard"));
+// CRM Phase 4 — cây báo cáo
+const CrmSalesHierarchy = lazy(() => import("./pages/crm/SalesHierarchy"));
+// CRM Phase 4 — RFM/CLV/churn (mục 1)
+const CrmCustomerInsights = lazy(() => import("./pages/crm/CustomerInsights"));
 
 /** Catch-all redirect: SUPER_OMEGA_ULTRA_ADMIN → /admin, others → /dashboard */
 function RoleRedirect() {
@@ -335,11 +351,32 @@ function App() {
               <Route path="/customers" element={<Customers />} />
               <Route path="/customers/:id" element={<CustomerDetail />} />
               <Route path="/crm/tasks" element={<Tasks />} />
-              {/* ADMIN  và MANAGER */}
-              <Route element={<RequireRole roles={["ADMIN", "MANAGER"]} />}>
+              {/* CRM Sales Pipeline — open route: backend tự scope theo người phụ trách
+                  (CASHIER chỉ thấy lead/deal của mình, xem src/modules/crm/scope.js) */}
+              <Route path="/crm/leads" element={<CrmLeads />} />
+              <Route path="/crm/leads/:id" element={<CrmLeadDetail />} />
+              <Route path="/crm/deals" element={<CrmDeals />} />
+              <Route path="/crm/deals/board" element={<CrmDealsBoard />} />
+              <Route path="/crm/deals/:id" element={<CrmDealDetail />} />
+              <Route element={<RequireRole roles={CRM_MARKETING_ROLES} />}>
                 <Route path="/crm/segments" element={<Segments />} />
                 <Route path="/crm/campaigns" element={<Campaigns />} />
                 <Route path="/crm/campaigns/:id" element={<CampaignDetail />} />
+              </Route>
+              {/* CRM audit H8: roles={["ADMIN","MANAGER"]} chặn nhầm SUPER_ADMIN +
+                  SUPER_OMEGA_ULTRA_ADMIN (đều có trong seed) ở 6 trang CRM, trong
+                  khi backend cho phép và các page đã tự viết isManager bao gồm
+                  SUPER_ADMIN ⇒ nhánh SUPER_ADMIN là code chết. Dùng CRM_MANAGER_ROLES
+                  để khớp `src/modules/crm/roles.js` của backend. */}
+              <Route element={<RequireRole roles={CRM_MANAGER_ROLES} />}>
+                <Route path="/crm/organizations" element={<CrmOrganizations />} />
+                <Route path="/crm/contacts" element={<CrmContacts />} />
+                <Route path="/crm/pipeline-settings" element={<CrmPipelineSettings />} />
+                {/* CRM Phase 4 — Sales hierarchy. H1: XEM cây = MANAGER+ nhưng GÁN
+                    cây (PUT reports-to) chỉ ADMIN+ — xem SalesHierarchy.jsx. */}
+                <Route path="/crm/hierarchy" element={<CrmSalesHierarchy />} />
+                <Route path="/crm/insights" element={<CrmCustomerInsights />} />
+                <Route path="/crm/dashboard" element={<CrmDashboard />} />
                 <Route path="/tags" element={<TagManagement />} />
                 <Route path="/store-credits" element={<StoreCredits />} />
               </Route>

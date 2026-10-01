@@ -21,8 +21,9 @@ const tagsService = require("./tags.service");
 const { authenticate, authorize } = require("../../middleware/auth.middleware");
 const { requireModule } = require("../../middleware/plan.middleware");
 const { created, success } = require("../../utils/response");
+const { CRM_NOTE_ROLES, CRM_MANAGER_ROLES } = require("./roles");
 
-router.use(authenticate, authorize("ADMIN", "MANAGER", "CASHIER"), requireModule("crm"));
+router.use(authenticate, authorize(...CRM_NOTE_ROLES), requireModule("crm"));
 
 const COLOR_REGEX = /^#([0-9a-fA-F]{6})$/;
 
@@ -46,7 +47,7 @@ router.get("/", async (req, res, next) => {
 });
 
 // POST /api/crm/tags  (ADMIN/MANAGER only)
-router.post("/", authorize("ADMIN", "MANAGER"), async (req, res, next) => {
+router.post("/", authorize(...CRM_MANAGER_ROLES), async (req, res, next) => {
   try {
     const data = createSchema.parse(req.body);
     created(res, await tagsService.create(data, req.user.id), "Đã tạo tag");
@@ -56,7 +57,7 @@ router.post("/", authorize("ADMIN", "MANAGER"), async (req, res, next) => {
 });
 
 // PUT /api/crm/tags/:id  (ADMIN/MANAGER only)
-router.put("/:id", authorize("ADMIN", "MANAGER"), async (req, res, next) => {
+router.put("/:id", authorize(...CRM_MANAGER_ROLES), async (req, res, next) => {
   try {
     const data = updateSchema.parse(req.body);
     success(
@@ -70,7 +71,7 @@ router.put("/:id", authorize("ADMIN", "MANAGER"), async (req, res, next) => {
 });
 
 // DELETE /api/crm/tags/:id  (ADMIN/MANAGER only)
-router.delete("/:id", authorize("ADMIN", "MANAGER"), async (req, res, next) => {
+router.delete("/:id", authorize(...CRM_MANAGER_ROLES), async (req, res, next) => {
   try {
     success(
       res,

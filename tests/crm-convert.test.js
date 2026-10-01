@@ -11,8 +11,8 @@
  * - Ràng buộc 409/400 ở mỗi bước là hàng rào chống tạo dữ liệu sai.
  */
 const mockClient = {
-  crmLead: { findUnique: jest.fn(), update: jest.fn() },
-  crmDeal: { create: jest.fn(), findUnique: jest.fn(), update: jest.fn() },
+  crmLead: { findUnique: jest.fn(), update: jest.fn(), updateMany: jest.fn() },
+  crmDeal: { create: jest.fn(), findUnique: jest.fn(), update: jest.fn(), updateMany: jest.fn() },
   crmContact: { findFirst: jest.fn(), create: jest.fn(), update: jest.fn() },
   crmCommunication: { create: jest.fn() },
   crmPipelineStage: { findUnique: jest.fn(), findMany: jest.fn() },
@@ -51,6 +51,11 @@ beforeEach(() => {
   // Mặc định: đã có khách hàng theo SĐT → không tạo trùng. Test nào muốn tạo mới
   // thì mockResolvedValue(null) lại.
   mockClient.customer.findFirst.mockResolvedValue({ id: "cus-existing" });
+  // C2: convertToOrder giành quyền bằng conditional update rồi mới chốt đơn thật.
+  // count = 1 ⇒ "tôi là request duy nhất được tạo đơn".
+  mockClient.crmDeal.updateMany.mockResolvedValue({ count: 1 });
+  // H4: convertToDeal chiếm lead bằng conditional update trong transaction
+  mockClient.crmLead.updateMany.mockResolvedValue({ count: 1, id: "lead-1" });
 });
 
 describe("crm/convert — Lead → Deal", () => {
@@ -141,6 +146,56 @@ describe("crm/convert — Lead → Deal", () => {
     expect(comm.leadId).toBe("lead-1");
     expect(comm.dealId).toBe("deal-1");
   });
+
+  // ============================================================
+  // H4 — chống race convertToDeal + contact trong transaction
+  // ============================================================
+  describe("H4 — chống race + contact nằm trong transaction", () => {
+    test("claim dùng conditional update (không phải check-then-act)", async () => {
+      mockClient.crmLead.findUnique.mockResolvedValue(lead());
+      mockClient.crmDeal.create.mockResolvedValue({ id: "deal-1", dealName: "X", contactId: "contact-1" });
+      mockClient.crmLead.update.mockResolvedValue({ id: "lead-1", status: "CONVERTED" });
+
+      await leadsService.convertToDeal("lead-1", {}, "u1", MANAGER);
+
+      const [claim] = mockClient.crmLead.updateMany.mock.calls;
+      expect(claim[0].where).toEqual({ id: "lead-1", status: { not: "CONVERTED" } });
+    });
+
+    test("2 request song song → chỉ 1 deal được tạo, request kia 409", async () => {
+      mockClient.crmLead.findUnique.mockResolvedValue(lead());
+      mockClient.crmDeal.create.mockResolvedValue({ id: "deal-1", dealName: "X", contactId: "contact-1" });
+      mockClient.crmLead.update.mockResolvedValue({ id: "lead-1", status: "CONVERTED" });
+      // Request thua giành quyền
+      mockClient.crmLead.updateMany
+        .mockResolvedValueOnce({ count: 1 })
+        .mockResolvedValueOnce({ count: 0 });
+
+      const [a, b] = await Promise.allSettled([
+        leadsService.convertToDeal("lead-1", {}, "u1", MANAGER),
+        leadsService.convertToDeal("lead-1", {}, "u2", MANAGER),
+      ]);
+
+      expect(a.status).toBe("fulfilled");
+      expect(b.status).toBe("rejected");
+      expect(b.reason).toMatchObject({ status: 409 });
+      expect(mockClient.crmDeal.create).toHaveBeenCalledTimes(1);
+    });
+
+    test("contact tạo mới nằm trong transaction (deal lỗi ⇒ không có contact mồ côi)", async () => {
+      mockClient.crmLead.findUnique.mockResolvedValue(lead());
+      mockClient.crmContact.findFirst.mockResolvedValue(null);
+      mockClient.crmContact.create.mockResolvedValue({ id: "contact-new" });
+      mockClient.crmDeal.create.mockRejectedValue(new Error("stage invalid"));
+
+      await expect(leadsService.convertToDeal("lead-1", {}, "u1", MANAGER)).rejects.toThrow("stage invalid");
+      // Đã gọi create nhưng nằm trong tx bị rollback — điểm cần khẳng định là nó
+      // dùng `tx.crmContact` (mô phỏng bằng chính mockClient là tx) chứ không
+      // phải client Prisma riêng như bản cũ.
+      expect(mockClient.crmContact.create).toHaveBeenCalledTimes(1);
+      expect(mockClient.crmContact.update).not.toHaveBeenCalled();
+    });
+  });
 });
 
 describe("crm/convert — Deal(thắng) → Order", () => {
@@ -167,14 +222,13 @@ describe("crm/convert — Deal(thắng) → Order", () => {
   test("delegate orderService.create + ghi orderId vào deal", async () => {
     mockClient.crmDeal.findUnique.mockResolvedValue(wonDeal());
     mockClient.product.findMany.mockResolvedValue([{ id: "p1", name: "SP", price: 400000, isActive: true }]);
-    mockClient.crmDeal.update.mockResolvedValue(wonDeal({ orderId: "order-1" }));
 
     const res = await dealsService.convertToOrder("deal-1", {}, "u1", MANAGER);
 
     expect(orderService.create).toHaveBeenCalledTimes(1);
     expect(res.order.orderCode).toBe("ORD-20260930-0001");
-    const arg = mockClient.crmDeal.update.mock.calls[0][0].data;
-    expect(arg.orderId).toBe("order-1");
+    const finalize = mockClient.crmDeal.updateMany.mock.calls.at(-1)[0];
+    expect(finalize.data.orderId).toBe("order-1");
   });
 
   test("giá deal CAO hơn giá sản phẩm → chiết khấu bù lệch (FIXED)", async () => {
@@ -271,7 +325,6 @@ describe("crm/convert — Deal(thắng) → Order", () => {
     mockClient.crmDeal.findUnique.mockResolvedValue(wonDeal());
     mockClient.product.findMany.mockResolvedValue([{ id: "p1", name: "SP", price: 500000, isActive: true }]);
     mockClient.customer.findFirst.mockResolvedValue({ id: "cus-1" });
-    mockClient.crmDeal.update.mockResolvedValue(wonDeal({ orderId: "order-1" }));
 
     await dealsService.convertToOrder("deal-1", {}, "u1", MANAGER);
 
@@ -279,5 +332,64 @@ describe("crm/convert — Deal(thắng) → Order", () => {
     expect(orderData.channel).toBe("CRM");
     expect(orderData.note).toContain("Hợp đồng 2026");
     expect(orderData.items).toEqual([{ productId: "p1", quantity: 2, discountType: "NONE", discountValue: 0 }]);
+  });
+
+  // ============================================================
+  // C2 — chống double-click tạo 2 đơn (mất tồn kho + bút toán kép)
+  // ============================================================
+  describe("C2 — chống race khi 2 request convert cùng lúc", () => {
+    const setup = () => {
+      mockClient.crmDeal.findUnique.mockResolvedValue(wonDeal());
+      mockClient.product.findMany.mockResolvedValue([{ id: "p1", name: "SP", price: 500000, isActive: true }]);
+      mockClient.customer.findFirst.mockResolvedValue({ id: "cus-existing" });
+    };
+
+    test("marker là chuỗi duy nhất (orderId có @unique — marker trùng sẽ nổ)", async () => {
+      setup();
+      await dealsService.convertToOrder("deal-1", {}, "u1", MANAGER);
+      const [claim] = mockClient.crmDeal.updateMany.mock.calls;
+      expect(claim[0].where).toEqual({ id: "deal-1", orderId: null });
+      expect(String(claim[0].data.orderId)).toMatch(/^PENDING_CRM_[0-9a-f-]{36}$/);
+    });
+
+    test("2 request song song → chỉ 1 tạo đơn, request kia nhận 409", async () => {
+      setup();
+      // Request thứ 2 thua giành quyền: conditional update trả count = 0
+      mockClient.crmDeal.updateMany
+        .mockResolvedValueOnce({ count: 1 })
+        .mockResolvedValueOnce({ count: 0 });
+
+      const [a, b] = await Promise.allSettled([
+        dealsService.convertToOrder("deal-1", {}, "u1", MANAGER),
+        dealsService.convertToOrder("deal-1", {}, "u2", MANAGER),
+      ]);
+
+      expect(a.status).toBe("fulfilled");
+      expect(b.status).toBe("rejected");
+      expect(b.reason).toMatchObject({ status: 409 });
+      // KHÔNG được có 2 đơn: đây là điểm mấu chốt của C2
+      expect(orderService.create).toHaveBeenCalledTimes(1);
+    });
+
+    test("orderService.create ném lỗi → gỡ marker, deal thử lại được", async () => {
+      setup();
+      orderService.create.mockRejectedValueOnce(new Error("hết tồn kho"));
+
+      await expect(dealsService.convertToOrder("deal-1", {}, "u1", MANAGER)).rejects.toThrow("hết tồn kho");
+
+      const rollback = mockClient.crmDeal.updateMany.mock.calls.at(-1)[0];
+      expect(rollback.data).toEqual({ orderId: null });
+      const claim = mockClient.crmDeal.updateMany.mock.calls[0][0].data.orderId;
+      expect(rollback.where).toEqual({ id: "deal-1", orderId: claim });
+    });
+
+    test("currency của deal được truyền xuống đơn hàng (H9)", async () => {
+      setup();
+      mockClient.crmDeal.findUnique.mockResolvedValue(wonDeal({ currency: "USD" }));
+
+      await dealsService.convertToOrder("deal-1", {}, "u1", MANAGER);
+
+      expect(orderService.create.mock.calls[0][0].currency).toBe("USD");
+    });
   });
 });

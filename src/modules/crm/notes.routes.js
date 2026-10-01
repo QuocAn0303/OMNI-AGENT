@@ -19,8 +19,9 @@ const notesService = require("./notes.service");
 const { authenticate, authorize } = require("../../middleware/auth.middleware");
 const { requireModule } = require("../../middleware/plan.middleware");
 const { paginated, created, success } = require("../../utils/response");
+const { CRM_NOTE_ROLES } = require("./roles");
 
-router.use(authenticate, authorize("ADMIN", "MANAGER", "CASHIER"), requireModule("crm"));
+router.use(authenticate, authorize(...CRM_NOTE_ROLES), requireModule("crm"));
 
 const NOTE_TYPES = ["NOTE", "CALL", "EMAIL", "MEETING", "ZALO"];
 

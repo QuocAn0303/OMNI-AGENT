@@ -46,7 +46,9 @@ const fmtPct = (v) => (v == null ? "—" : `${(Number(v) * 100).toFixed(2)}%`);
 const fmtDate = (v) => (v ? dayjs(v).format("DD/MM/YYYY HH:mm") : "—");
 
 // GRN POSTED của PO — hiển thị số tiền nhận hàng làm mốc đối chiếu (tự tính lại ở FE)
-export const sumPostedGrn = (grns = []) =>
+// KHÔNG export: file này chỉ export component (react-refresh/HMR). Không có file
+// nào khác dùng hàm này.
+const sumPostedGrn = (grns = []) =>
   grns
     .filter((g) => g.status === "POSTED")
     .reduce(
