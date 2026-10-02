@@ -62,7 +62,11 @@ CLAUDE.md
 AGENTS.md
 
 # Internal planning docs, demos & temp files
-/docs/
+# Dùng `/docs/*` (không phải `/docs/`) để git vẫn đi vào thư mục và tìm được
+# ngoại lệ bên dưới — `/docs/` chặn luôn thư mục nên `!` không có tác dụng.
+/docs/*
+# ...trừ tài liệu AISC26, phải được track để đội đọc và triển khai được.
+!/docs/aisc26/
 /plans/
 structure.txt
 /Demo Issue Triage*/
