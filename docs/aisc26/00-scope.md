@@ -1,4 +1,4 @@
-# 00 — Khảo sát hệ thống & chốt phạm vi Vòng 2
+﻿# 00 — Khảo sát hệ thống & chốt phạm vi Vòng 2
 
 **Dự án:** OmniAgent (AISC26-0058) · **Nền tảng:** Aduu ERP
 **Ngày khảo sát:** 2026-10-02 · **Commit khảo sát:** `e44b6b3` (working tree sạch)
@@ -118,6 +118,9 @@ Lý do chung: **không phục vụ một luồng duy nhất**, và mỗi cái th
 
 ### 3.1. 🔴 F1 — Nhánh "AI tự tạo PO khi hết tồn" là **code chết** — chưa bao giờ chạy được
 
+> **Trạng thái:** xác minh lại bằng HTTP thật. Cổng đang chạy, CDC đã bắt đầu
+> `LISTEN agent_events`, nhưng nhánh này vẫn không thể tạo PO. Sửa ở **P0-2**.
+
 `agent.cdc.js:48-53` gọi `purchaseService.create({ vendorId: null, ... })`, còn `purchase.service.js:116` chặn cứng:
 ```js
 if (!vendorId) throw { status: 400, message: "Thiếu nhà cung cấp (vendorId) cho đơn nhập" };
@@ -227,6 +230,18 @@ Select-String -Path src\app.js -Pattern 'app\.use\(' |
 
 ---
 
+### 3.9. ✅ Đã xử lý xong
+
+| Việc | Kết quả | Commit |
+|---|---|---|
+| **P0-1** — `db-agent` mất phân quyền + LLM tự chọn write tool | `WRITE_TOOLS` là nguồn duy nhất; chặn ở **tầng service**; `authorize(READ_ROLES)`; 19 test | `761ea52` |
+| **Nhãn `LLM_CALL` sai** ở `agent.routes.js:456` | Đổi sang `TOOL_CALL`, path `fallback_llm` → `fallback_keyword`; 4 test chặn hồi quay lại | `ef1c15f` |
+| **P0-4** — 5 nơi dùng 5 ngưỡng tồn thấp khác nhau | Một hàm `evaluateStockStatus` (`atp <= rop`) cho luồng demo; module `replenishment` với 54 unit test | `64b7541` |
+
+Còn lại (F1, F2, và 4 đường tạo PO) → **P0-2 / P0-3, chờ duyệt `00b`**.
+
+---
+
 ## 4. Rủi ro cho buổi trình bày
 
 > Nhãn `F1–F8` = phát hiện ở §3 (lỗi trong code). Nhãn `R1–R7` = rủi ro riêng của buổi trình bày.
@@ -272,4 +287,84 @@ Select-String -Path src\app.js -Pattern 'app\.use\(' |
 - ✅ Số liệu §3.7 đã đối chiếu lại bằng lệnh chạy được, có ghi kèm lệnh để đội và giám khảo tự kiểm.
 - ⏸ Chờ đội điền 3 mục ở §5.2.
 - ⏭ Tiếp theo theo thứ tự đội chỉ định: P0-1 → note thiết kế gate → Pha 1 → P0-2/4/5 → module replenishment → P0-3 code.
-- ⏸ Chờ đội xác nhận **luồng demo §2** và trả lời 3 câu §5 trước khi sang Pha 1.
+
+---
+
+## 7. Backlog đã ghi nhận (không sửa ở Vòng 2)
+
+Mỗi mục đã được **xác minh** chứ không phải nghi ngờ. Cột "Vì sao hoãn" là lý do cụ thể.
+
+| # | Vấn đề | Vì sao hoãn | Khi nào xử lý |
+|---|---|---|---|
+| B1 | `requireModule` đặt **trước** `authenticate` ở **16 router** ⇒ paywall không chặn được | Không nằm trên luồng demo. Sửa là đổi 16 file. Đã ghi rõ trong `01`/`06`: **đừng trình bày tính phân quyền theo gói như đang hoạt động.** | Vòng 3 · Kích thước: sửa chỉ là đổi thứ tự middleware + thêm test, **~1 ngày** — báo để đội quyết định có làm không |
+| B2 | `PO_APPROVE_THRESHOLD = 50_000_000` hard-code (`purchase.service.js:45,243`), không đọc `companySettings.poApprovalThreshold` | **Đã xác minh KHÔNG nằm trên luồng demo** — nó chỉ chạy trong `approve()`, tức bước duyệt thứ hai của `PO_ABOVE`. Demo dùng PO dưới ngưỡng nên không gọi tới. Chi tiết: `00b` §5.2 | Vòng 3 · Cần đội chốt chính sách *"ai duyệt PO bao nhiêu tiền"* — câu hỏi kinh doanh, không phải kỹ thuật |
+| B3 | `automation.service.js` không bọc `runWithTenant` ⇒ notification có `tenantId = null`, người dùng không thấy (F8) | **P0-5 đã đánh giá: không nằm trên luồng demo.** `checkAutoReorder` chạy từ `onOrderCompleted` trong request ⇒ đã có tenant context từ `authenticate`. Các job còn lại (morning briefing, thu nợ, payroll…) đã bị loại khỏi phạm vi | Vòng 3 · **Lưu ý:** P0-2 sẽ gọi từ cron ⇒ **P0-2 phải tự bọc `runWithTenant`** |
+| B4 | Pattern `'po'` trong `db-agent.service.js:837` khớp chuỗi `"áo polo"` ⇒ route sai sang tra đơn nhập | Chỉ là lỗi phân loại intent, không có tác dụng phụ | Vòng 3 · Sửa 1 dòng: dùng `\bpo\b` hoặc bỏ khỏi substring |
+| B5 | Gói `enterprise` có `price: 0` với `allowedModules: ["*"]` (`seed.js:351`) | Ảnh hưởng hiển thị giá, không ảnh hưởng logic | Pha 6 · Sửa seed, **không** chạy `db:seed` trên DB có dữ liệu thật |
+| B6 | `LLM_PROVIDER=openai-compatible` nhưng `config/llm.js:138` hard-code URL Gemini | Vòng 2 chỉ dùng Gemini. Đã chốt "một đường LLM duy nhất" | Vòng 3 |
+| B7 | `BCRYPT_ROUNDS` lệch: `auth`/`users` dùng 12, nhưng `seed.js:188` và `hr.service.js:49` dùng 10 | Bảo mật, không ảnh hưởng demo. Nhưng **không được coi là đã xong** — `hr.service.js:49` **bỏ qua biến môi trường** hoàn toàn | Vòng 3 · Sửa 2 dòng |
+| B8 | Sai lệch README ↔ code (mục 3.7) | Theo kế hoạch cuối Vòng 2 sẽ có **một commit riêng** cập nhật README theo số đo từ code | Cuối Vòng 2 |
+| B9 | `agent.cdc.js:49` truyền `vendorId: null` ⇒ nhánh LOW_STOCK chết (F1) | Sửa cùng P0-2 (đã gộp vào đề xuất gate) | Sau khi duyệt `00b` |
+| B10 | `purchase.service.js:164,173` nuốt lỗi audit bằng `.catch(() => {})` | Nằm trên đường demo ⇒ **đề xuất sửa trong commit P0-3**, không để lâu | Cùng P0-3 |
+
+**Đã được xử lý xong:** F1 → P0-2 (chờ duyệt `00b`) · F2 → P0-3 (chờ duyệt `00b`) · F3 phần `db-agent` → **P0-1 xong** (commit `761ea52`) · F3 phần `/api/agent/chat` → **đã kiểm tra, không phải lỗ hổng** (xem mục 8) · nhãn `LLM_CALL` sai → **xong** (commit `ef1c15f`) · ngưỡng tồn thấp 5 kiểu → **P0-4 xong** (commit `64b7541`).
+
+---
+
+## 8. Kiểm tra bổ sung `/api/agent/chat` (yêu cầu mốc 2, mục 3.1)
+
+**Kết luận: `/api/agent/chat` KHÔNG phải lỗ hổng như `db-agent`.** Đã kiểm chứng bằng HTTP thật, không chỉ đọc code.
+
+| Câu hỏi | Trả lời | Bằng chứng |
+|---|---|---|
+| Route có `authorize` không? | **Không** — `router.post('/chat')` (`agent.routes.js:380`) không có `authorize` | đọc code |
+| Nhưng intent ghi có bị kiểm tra quyền không? | **Có** — kiểm tra inline `['ADMIN','MANAGER']` tại `agent.routes.js:415` | đọc code |
+| Thực tế thì sao? | **Đúng như mong đợi.** Gọi thật bằng token của `cashier@candory.com`: cả 3 intent ghi (`createOrder`, `createPO`, `sendReminder`) đều bị chặn, trả về *"Xin lỗi, bạn không có quyền thực hiện thao tác này. Chỉ ADMIN và MANAGER…"* | probe HTTP xem dưới |
+
+**Hai khác biệt còn lại so với `db-agent` — không phải lỗ hổng, nhưng nên biết:**
+
+1. **Role bị từ chối trả HTTP 200**, kèm câu từ chối trong nội dung — không phải 403. Đúng về mặt an toàn (không thực thi), nhưng đối tác gọi API không phân biệt được bằng mã trạng thái.
+2. **Lần từ chối không được ghi audit.** `recordWriteAudit` chỉ chạy ở nhánh được phép (`agent.routes.js:422`), sau khi hành động đã xong và với `status: 'APPROVED'` cứng. Không có bản ghi cho *"CASHIER đã thử tạo PO và bị chặn"*.
+
+### 8.1. Nhánh đọc dữ liệu nhạy cảm — P0-1 có làm hỏng không?
+
+**Không.** Hai cơ chế hoàn toàn tách biệt:
+
+| | Endpoint | `authorize` sau P0-1 | Luồng `buildDataRequestGate` |
+|---|---|---|---|
+| Tra cứu NL | `POST /api/db-agent/query` | ✅ có `READ_ROLES` | ❌ không dùng, đã read-only |
+| Chat agent | `POST /api/agent/chat` | ❌ **không thêm** (giữ nguyên) | ✅ tạo gate PENDING cho role thấp |
+
+Bằng chứng mạnh nhất: `npm run check:humangate` **PASS** sau P0-1 (§8.2) — đúng script đó chạy luồng `CASHIER hỏi "khách hàng" → bị chặn → tạo gate PENDING → ADMIN duyệt`.
+
+### 8.2. Baseline `check:humangate` (điều kiện trước khi merge P0-3)
+
+Đã chạy với backend + DB thật trên nhánh hiện tại. **Baseline XANH.**
+
+```
+=== TẤT CẢ PASS ===
+OK | Role CASHIER bị chặn, không lộ dữ liệu nhạy cảm → HTTP 200
+OK | Trả lời không chứa SĐT khách hàng → không lộ PII
+OK | Tạo được gate mới → 1 gate mới
+OK | actionSummary không rỗng (bug PrismaClientValidationError cũ)
+OK | triggerRule = SENSITIVE_TOOL_ROLE_GATE
+OK | CASHIER không tự duyệt được (403) → HTTP 403
+OK | ADMIN duyệt được (200) → HTTP 200
+OK | status chuyển sang APPROVED
+OK | ghi decidedAt + decidedById + decisionNote (đúng tên field schema)
+OK | Duyệt lần 2 bị từ chối (400)
+OK | Gate đã xử lý không còn trong danh sách PENDING
+```
+
+→ Sau khi P0-3, chạy lại; **đỏ ⇒ lỗi do P0-3**.
+
+Lệnh để đội chạy lại: mở cửa sổ khác chạy `npm run dev`, rồi `npm run check:humangate`.
+
+### 8.3. Frontend có phụ thuộc `/api/db-agent/*` không?
+
+**Không.** Quét toàn `frontend/src`: chỉ 3 nơi gọi API agent —
+`components/agent-ui/CRMActionCard.jsx:35` và `ERPAssistantWidget.jsx:51` gọi `/agent/chat`;
+`components/agent-ui/SmartApprovalCard.jsx:37` gọi `/api/agent/human-gates/:id/decide`.
+Không chỗ nào gọi `/api/db-agent/query` hay `/api/db-agent/tools`.
+→ Việc gỡ write tool khỏi danh mục `/tools` và thêm `executableHere` **không làm vỡ UI nào**.
+
