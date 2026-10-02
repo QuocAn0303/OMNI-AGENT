@@ -64,6 +64,23 @@ function buildWhere(filters = {}, searchFields = [], extraKeys = []) {
 
 // ─── TOOL HANDLERS ───
 
+/**
+ * Tool có TÁC DỤNG PHỤ (ghi dữ liệu). Danh sách này là nguồn duy nhất —
+ * mọi entrypoint phải hỏi ở đây trước khi execute, không tự liệt kê lại.
+ *
+ * Lý do tồn tại: `POST /api/db-agent/query` mặc định `useLlm=true`, LLM tự
+ * chọn tool rồi `chat()` gọi thẳng `HANDLERS[tool]` — không kiểm tra tool có
+ * phải write hay không. Trước khi có set này, CASHIER/WAREHOUSE đã đăng nhập
+ * gọi được create_order/create_po mà không cần quyền, không audit, không gate.
+ *
+ * Write tool KHÔNG được chạy ở bất kỳ đường chat NL nào. Đường hợp lệ duy nhất
+ * là tool nhận diện chủ động + human-gate: xem modules/ai/agent.routes.js.
+ */
+const WRITE_TOOLS = new Set(['create_order', 'create_po', 'send_reminder']);
+
+/** Tool có ghi dữ liệu hay không (dùng bởi route và service để chặn trước khi execute). */
+const isWriteTool = (tool) => WRITE_TOOLS.has(tool);
+
 const HANDLERS = {
 
   search_products: async (params = {}) => {
@@ -954,7 +971,7 @@ async function processQuery(text) {
   }
 
   // Block write tools from processQuery — use POST /api/agent/chat for actions
-  if (['create_order', 'create_po', 'send_reminder'].includes(tool)) {
+  if (isWriteTool(tool)) {
     return {
       success: false,
       message: `Thao tác "${tool}" yêu cầu xác nhận. Vui lòng sử dụng chat agent (POST /api/agent/chat) để thực hiện hành động này.`,
@@ -1002,4 +1019,6 @@ module.exports = {
   HANDLERS,
   resolveIntent,
   extractParams,
+  WRITE_TOOLS,
+  isWriteTool,
 };

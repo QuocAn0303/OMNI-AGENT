@@ -13,8 +13,23 @@
  */
 
 const { queryModel, startPythonProcess } = require('./agent.llm');
-const { HANDLERS, resolveIntent, extractParams } = require('./db-agent.service');
+const { HANDLERS, resolveIntent, extractParams, isWriteTool } = require('./db-agent.service');
 const logger = require('../../utils/logger');
+
+/**
+ * Endpoint này là READ-ONLY. Write tool bị chặn ở đây (service) chứ không chỉ ở
+ * route, vì `chat()` là hàm được require ở nhiều nơi — chặn ở route là chặn hụt.
+ *
+ * LLM tự chọn tool, nên không thể tin prompt nói "chọn tool phù hợp": `create_po`
+ * là một tool hợp lệ trong danh mục và LLM hoàn toàn có thể chọn nó khi người
+ * dùng hỏi "tạo đơn nhập cho tôi". Đường hợp lệ cho hành động ghi là
+ * `POST /api/agent/chat` (tool nhận diện chủ động + human-gate).
+ */
+const WRITE_TOOL_REFUSAL = (tool) => ({
+  success: false,
+  message: `Thao tác "${tool}" là hành động ghi dữ liệu và không được phép qua đường tra cứu ngôn ngữ tự nhiên. ` +
+    `Vui lòng dùng POST /api/agent/chat — thao tác đó sẽ đi qua human-gate và cần người duyệt.`,
+});
 
 const TOOL_DESCRIPTIONS = [
   { name: 'search_products', desc: 'Tra cứu sản phẩm', params: 'search (từ khóa), categoryId (danh mục), minPrice, maxPrice, limit, sortBy (price/name/createdAt), sortOrder (asc/desc)' },
@@ -42,12 +57,10 @@ const TOOL_DESCRIPTIONS = [
   { name: 'search_grn', desc: 'Tra cứu phiếu nhập kho (GRN)', params: 'status (DRAFT/QC_PENDING/QC_DONE/POSTED), limit' },
   { name: 'search_purchase_invoices', desc: 'Tra cứu hóa đơn NCC + 3-way matching', params: 'matchStatus (PENDING/MATCHED/VARIANCE_HOLD/APPROVED_OVERRIDE), limit' },
   { name: 'search_vendor_performance', desc: 'Hiệu suất nhà cung cấp (Kraljic, OTIF, defect, grade)', params: 'limit' },
-
-  // Write tools — HÀNH ĐỘNG (cần xác nhận human-gate)
-  { name: 'create_order', desc: 'Tạo đơn hàng mới', params: 'customerName (tên KH), customerPhone (SĐT KH), items (mảng [{productName, quantity, price}]), paymentMethod (CASH/BANK_TRANSFER/CARD), note (ghi chú)' },
-  { name: 'create_po', desc: 'Tạo đơn nhập hàng mới', params: 'vendorName (tên NCC), items (mảng [{productName, quantity, unitCost}]), note (ghi chú), expectedAt (ngày dự kiến nhận)' },
-  { name: 'send_reminder', desc: 'Gửi nhắc nợ cho khách hàng', params: 'customerName (tên KH), debtId (ID công nợ), message (nội dung nhắc)' },
 ];
+// Write tools (create_order / create_po / send_reminder) CỐ TÌNH không nằm trong
+// danh mục này: endpoint này read-only, mọi write tool đều bị từ chối ở `chat()`.
+// Quảng bá tool rồi từ chối nó chỉ tốn thêm một vòng LLM để trả lời "không".
 
 function buildToolPrompt(query) {
   return `Ban la tro ly ERP Aduu chuyen mon. Nhiem vu: chon cong cu (tool) phu hop nhat va trich xuat tham so tu câu hỏi.
@@ -74,17 +87,17 @@ Cac cong cu:
 - search_vendor_performance: Hieu suat nha cung cap (Kraljic/OTIF/grade). Tham so: limit
 - get_dashboard: Dashboard tong quan kinh doanh. (không can tham so)
 
-- create_order: TAO đơn hàng moi (can ADMIN/MANAGER). Tham so: customerName, customerPhone, items (mang [{productName, quantity, price}]), paymentMethod (CASH/BANK_TRANSFER/CARD), note
-- create_po: TAO don nhập hàng moi (can ADMIN/MANAGER). Tham so: vendorName, items (mang [{productName, quantity, unitCost}]), note, expectedAt
-- send_reminder: GUI nhắc nợ cho khach (can ADMIN/MANAGER). Tham so: customerName, debtId, message
-
 Quy tac:
 1. Chon cong cu phu hop nhat voi câu hỏi
-2. Trich xuat tham so tu câu hỏi (ten, thời gian, trang thai, số lượng...)
+2. Trich xuat tham so tu câu hỏi (ten, thời gian, trang thái, số lượng...)
 3. Neu co "top N" hoac "N moi nhat" → set limit = N
 4. Neu co "thang nay/tuan nay/hom nay" → set period tuong ung
 5. Neu co "ke toan", "sổ cái", "kết chuyển", "khau hao", "thue" → dung search_finance
 6. Neu co "cong thuc", "cach tinh" → co gang tim tool lien quan
+
+CHỈ ĐƯỢC CHỌN CÔNG CỤ TRA CỨU Ở TRÊN. Endpoint này không tạo và không sửa
+dữ liệu. Nếu câu hỏi yêu cầu tạo đơn / tạo đơn nhập / gửi nhắc nợ, hãy trả
+{"tool":"unknown","params":{}} — thao tác đó đi qua kênh khác có human-gate.
 
 Tra ve JSON DUY NHAT dang: { "tool": "ten_tool", "params": { ... } }
 KHONG them text nao khac ngoai JSON.
@@ -165,6 +178,12 @@ async function chat(query) {
       };
     }
     intent = { tool, params: extractParams(query, tool) };
+  }
+
+  // Chặn write tool TRƯỚC khi log và trước khi execute.
+  if (isWriteTool(intent.tool)) {
+    logger.warn(`[LLM-Chat] Từ chối write tool "${intent.tool}" trên đường tra cứu NL`);
+    return WRITE_TOOL_REFUSAL(intent.tool);
   }
 
   // Step 3: Execute tool
