@@ -90,3 +90,30 @@ npm run smoke:po-gate
 - PowerShell hay hỏng file tiếng Việt khi dùng `-replace`/`Set-Content`.
   Dùng thẻ `edit`/`write` cho file nhiều dấu.
 - Khi dùng ~70% ngữ cảnh: dừng việc mới, cập nhật file này, commit, báo hash.
+
+
+---
+
+## Cap nhat dem 2026-10-02 (phien tu hanh qua dem)
+
+**RESUME HERE — viec tiep theo: T3 (D6).**
+
+Da xong T0, T1a, T1b, T2. Commit moi: 3e4ba86, e701ad1, c7b5fe0.
+- check:tenant PASS toan bo (truoc do FAIL).
+- Phat hien loi MA THAT: settings.service.getOrCreate() la race read-then-write,
+  company_settings thieu UNIQUE(tenantId) => hanh vi nguong duyet PO khong xac dinh.
+  Da sua bang orderBy + hoi tu ve mot dong.
+- 124 audit_logs NULL: ca 124 deu co userId = NULL (log he thong khong chu), khong co
+  gi de xoa; khai bao ngoai le co dieu kien + tran 124.
+- ai_documents: da cam ghi de tai lieu cua tenant khac.
+
+**Tiep theo theo thu tu: T3 (D6) -> T4 (runbook + review + Swagger + D7) -> T5
+(giao thuc S1-S12) -> T6 (dataset) -> T7 (Pha 5) -> T8 (Pha 6) -> T9 (nap
+du lieu) -> T10 (backtest) -> T11 (smoke demo flow) -> T12 (frontend) -> T13..T18.**
+
+Chi tiet va bang chung: docs/aisc26/MORNING-REPORT.md, DECISIONS.md,
+AI-HANDOVER.md.
+
+Ket qua hien tai: jest 4003/4008 | smoke:po-gate 18/18 | check:tenant PASS |
+check-tenant-aidocs 12/12 | check:modules 203 | 0 tenant rac | 0 dong mo coi |
+company_settings CANDORY = 1 dong | CANDORY 82 don / 158 dong / 89.862.000 VND (khong doi)
