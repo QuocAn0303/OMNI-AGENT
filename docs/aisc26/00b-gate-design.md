@@ -1,356 +1,334 @@
-# 00b — Note thiết kế: human-gate có hiệu lực cho PO (P0-3)
+# 00b — Note thiết kế: human-gate có hiệu lực cho PO (P0-3) — **BẢN 3**
 
-**Trạng thái:** CHỜ ĐỘI DUYỆT — chưa viết code.
-**Ngày:** 2026-10-02 (bản 2) · **Nhánh:** `round2/p0-hardening`
-**Bối cảnh:** phát hiện F2 ở `docs/aisc26/00-scope.md`.
+**Ngày:** 2026-10-02 · **Nhánh:** `round2/p0-hardening`
+**Trạng thái:** đội đã duyệt **có điều kiện**; bản 3 thực hiện các sửa đổi của mốc 4.
 
-**Quyết định đã chốt (phản hồi mốc 2):**
-- Chỉ thêm **một** cột `resultRef String?` — **bỏ `executedAt`**, nullable, additive, một migration, triển khai bằng `npm run db:migrate:deploy`.
-- **Giữ 2 lớp duyệt tách biệt** — không gộp.
-- Vì bỏ `executedAt`, phải chặt ở trạng thái thất bại → xem mục 3.4.
-- Luồng demo **không được bắt duyệt hai lần** cho một PO → xem mục 5.3.
-
-**Chưa duyệt:** phần còn lại của note. **Không viết code P0-3 cho tới khi có xác nhận.**
+> **⚠️ ĐIỀU KIỆN DỪNG (mục 6 của phản hồi) ĐÃ KÍCH HOẠT.**
+> Hướng "bọc toàn bộ trong một interactive transaction" (mục 2 của bản này) **không khả thi
+> với `purchase.service.create` hiện tại**. Bằng chứng ở mục 3. Vì vậy bản 3 dùng
+> **phương án dự phòng (A′)** mà đội đã định sẵn, với đúng hai sửa đã nêu.
+> Phần code chưa viết cho tới khi đội xác nhận chọn A′ hay yêu cầu tái cấu trúc.
 
 ---
 
-## 1. Vấn đề cần giải
+## 1. Các quyết định đã chốt
 
-`AgentHumanGate` hôm nay là **audit + thông báo**, không phải approval có hiệu lực:
-
-| Builder | Status | Chặn hành động? |
+| # | Vấn đề | Quyết định |
 |---|---|---|
-| `buildDataRequestGate` (`agent.humangate.js:46`) | `PENDING` | ✅ Chặn **đọc** dữ liệu nhạy cảm |
-| `buildReminderGate` (`:73`) | `PENDING` | ⚠️ Ghi nhận, nhưng tin đã gửi trước đó |
-| `buildWriteActionGate` (`:60`) | **`APPROVED` cứng** (`:66`) | ❌ Ghi **sau khi** hành động đã xong |
+| a | Xử lý thất bại | **Phương án A′** (bản 2 phương án A, đã sửa) — xem mục 3. Lý do bắt buộc ở mục 3. |
+| b | `ACCOUNTANT` duyệt đề xuất PO? | **KHÔNG.** Chỉ `ADMIN` / `MANAGER` / `SUPER_OMEGA_ULTRA_ADMIN`. Đây là mặc định Vòng 2, sau này có thể cấu hình. Lý do: quyết định *mua bao nhiêu* là quyết định vận hành; quyết định *cho thanh toán* là quyết định tài chính. |
+| c | Tách người đề xuất / người duyệt | **KHÔNG chặn cứng.** Cho tự duyệt, nhưng audit log **bắt buộc** ghi `selfApproved: true/false` (so `decidedById` với `session.userId`). |
 
-Thêm: `POST /human-gates/:id/decide` khi `APPROVED` chỉ đóng `AgentSession` (`agent.routes.js:621-628`), **không thực thi** gì.
+**Về (c) — đồng ý với đội, và đây là bài học tôi đã sai:**
 
-Mục tiêu: PO do agent đề xuất phải **không tồn tại cho tới khi có người bấm duyệt**.
+Nhận xét "chi phí gần bằng 0" của tôi chỉ đúng khi tenant có **tối thiểu hai người có quyền duyệt**. Khách hàng mục tiêu là shop SME, rất nhiều trường hợp **một chủ shop duy nhất là `ADMIN`**. Chặn cứng nghĩa là tính năng vô dụng đúng với nhóm chính.
+
+| Nguồn đề xuất | Có người đề xuất? | Xử lý |
+|---|---|---|
+| `SYSTEM_EVENT` (CDC — **luồng demo chính**) | Không | `selfApproved = false` theo cấu trúc |
+| `USER_CHAT` (chủ shop chat với agent) | Có (`session.userId`) | So sánh với `decidedById`, ghi `selfApproved` |
+
+**Hạn chế đã biết, ghi vào tài liệu:** *"chưa có tuỳ chọn bắt buộc bốn mắt cho tenant có nhiều người duyệt"*. Không phải lỗ hổng (vẫn có audit đầy đủ), là **giới hạn thiết kế** phải nói thẳng.
 
 ---
 
-## 2. Dữ liệu gate lưu gì — và có cần model mới không?
+## 2. Phát hiện của đội về fingerprint là ĐÚNG — đã thay
 
-### Không cần model mới.
+Đội nói đúng: `hash(ATP | ROP | unitCost)` sẽ gần như **luôn** lệch.
 
-`AgentHumanGate` **đã có đủ cột**: `actionType`, `actionPayload` (Json), `actionSummary`, `triggerRule`, `status`, `decidedById`, `decisionNote`, `decidedAt`, `expiresAt`, `tenantId`, `sessionId`.
+ATP đổi **mỗi lần bán hàng**. Với SKU đang bán thật, vài phút sau là fingerprint khác ⇒ người duyệt gần như luôn nhận 409 ⇒ tính năng không dùng được. Tôi đã đề xuất và đội đã duyệt về nguyên tắc — rút lại.
 
-### Nhưng cần sửa 3 điểm:
+**Đã thay bằng so sánh theo ngưỡng ý nghĩa** (đã code + 94 unit test, commit `cdda246`):
 
-**(a) `sessionId` là bắt buộc + `onDelete: Cascade`** → đề xuất từ CDC (không có phiên chat) cũng cần gate.
-→ **Không đổi schema.** Tạo một `AgentSession` tổng hợp với `triggerSource: 'SYSTEM_EVENT'` (giá trị này **đã có** trong schema, `AgentSession.triggerSource`) rồi tạo gate trỏ vào. Đây đúng mô hình CDC vốn dùng.
+`replenishment.calc.js` → `evaluateProposalFreshness({ proposed, current, acknowledgeDrift })`
 
-**(b) Thiếu chỗ ghi "gate này đã sinh ra PO nào"** → không hiển thị được "duyệt xong ra PO-2026...-0001", và khó kiểm chứng trong demo.
-→ Đã chốt: thêm **1 cột nullable**:
+Tính lại từ DB lúc duyệt bằng **đúng hàm** `planReplenishment` của module replenishment — không tái tạo công thức ở chỗ khác.
 
-```prisma
-model AgentHumanGate {
-  // ... các cột hiện có
-  resultRef   String?   // PurchaseOrder.id — KHÔNG có cột executedAt (đã chốt bỏ)
-}
-```
+| Kết quả | Điều kiện | Người duyệt được làm gì |
+|---|---|---|
+| `NO_LONGER_NEEDED` | ATP **mới** > ROP | Chỉ **Từ chối**. Không có đường override |
+| `DRIFT_BLOCK` | Lệch > `QTY_DRIFT_TOL` (25%) hoặc `COST_DRIFT_TOL` (10%) | 409 + diff → gửi lại kèm `acknowledgeDrift: true`, hoặc Từ chối |
+| `DRIFT_WARN` | Lệch nhỏ hơn ngưỡng | Duyệt được, kèm cảnh báo |
+| `DRIFT_NONE` | Không lệch | Duyệt thẳng |
 
-Không thêm `executedAt`, không thêm index. Hệ quả: **phải xử lý trạng thái thất bại bằng state machine, không dựa vào mốc thời gian** → mục 3.4.
+Sau khi `acknowledgeDrift`, `status` **vẫn là `DRIFT_BLOCK`** kèm `acknowledged: true` — để UI phân biệt được "đã vượt ngưỡng và đã được xác nhận" với "chưa ai xác nhận".
 
-**(c) Không có trường nào chặn "đề xuất lỗi thời".** Đề xuất được tạo lúc T với ATP = 12; đến T+3h người duyệt thì ATP đã = 2.
-→ Giải quyết trong payload, **không cần cột mới**: `inputFingerprint` (hash của ATP + ROP + đơn giá tại thời điểm đề xuất). Lúc duyệt, tính lại và so.
+**Không phải override tự động:** người duyệt phải thấy diff và bấm xác nhận có chủ đích; server **vẫn tính lại** ở lần gọi thứ hai.
 
-### Payload chuẩn cho đề xuất PO
+> ⚠️ Hai hằng số 25% / 10% là **mặc định chưa hiệu chỉnh, không có căn cứ thực nghiệm** — đã ghi rõ trong code. Sẽ xem lại sau backtest. **Không trích ra slide như kết quả đo.**
 
-```jsonc
-{
-  "kind": "PURCHASE_ORDER_PROPOSAL",
-  "vendorId": "...", "vendorName": "...",
-  "items": [{ "productId": "...", "sku": "...", "name": "...",
-              "quantity": 24, "unitCost": 45000 }],
-  "expectedAt": "2026-10-10",
-  "totalEstimate": 1080000,
-  // chặn spam đề xuất (yêu cầu mục 3 của đội): mỗi (SKU, NCC) chỉ 1 đề xuất mở
-  "proposalKey": "PROP:<productId>:<vendorId>",
-  // phát hiện đề xuất đã lỗi thời lúc duyệt
-  "inputFingerprint": "sha256(ATP|ROP|unitCost|...)",
-  // mọi con số ở đây do công thức tính, KHÔNG do LLM sinh ra
-  "rationale": {
-    "atp": 12, "rop": 30, "demandPerDay": 2.1, "leadTimeDays": 7,
-    "leadTimeEstimated": true, "stockoutInDays": 5.7, "method": "moving-average-28d"
+`inputFingerprint` bị loại khỏi payload. `rationale` (snapshot số lúc đề xuất) **giữ lại** cho phần hiển thị.
+
+---
+
+## 3. [BẮT BUỘC] Vì sao không thể bọc transaction — bằng chứng
+
+Đội yêu cầu kiểm chứng 4 điểm trước khi chọn hướng. Kết quả:
+
+### 3.1. `withCodeRetry` không thể chạy trong transaction — vấn đề cấu trúc
+
+`purchase.service.create` gọi `withCodeRetry(generateCode, tx => ...)` (`purchase.service.js:131`). Hàm đó (`journal.service.js`) thử `fn(code)` tối đa 5 lần:
+
+```js
+for (let i = 0; i < maxRetries; i++) {
+  const code = await generator();
+  try { return await fn(code); }
+  catch (err) {
+    if (!isUniqueConstraintError(err)) throw err;   // ← chết ở đây
+    ...
   }
 }
 ```
 
-`rationale` là thứ **chỉ để hiển thị cho người duyệt**. Executor **không** tính lại từ `rationale` — nó chỉ dùng `items` đã chốt.
+Trong Postgres, một unique violation **abort toàn bộ transaction**; mọi câu lệnh sau đó trả `25P02` *"current transaction is aborted"*.
+
+- Lần 1: `insert` va chạm `PO-YYYYMMDD-XXXX` → unique violation → **tx đã chết**.
+- Lần 2: `generator()` gọi `tx.purchaseOrder.count()` → lỗi `25P02`.
+- `isUniqueConstraintError(25P02)` = `false` → **`throw err` ngay**.
+
+⇒ **Retry bên trong transaction là bất khả thi.** Cách đúng phải là bọc **cả transaction** trong retry — tức phải cấu trúc lại `create`, **không phải thêm một tham số tuỳ chọn**.
+
+### 3.2. Side effect dùng `prisma` toàn cục ⇒ sống sót qua rollback
+
+| Chỗ | Gọi gì | Vấn đề |
+|---|---|---|
+| `purchase.service.js:164` | `auditService.log(...)` | Dùng `prisma` toàn cục → connection khác → **ngoài tx** |
+| `purchase.service.js:178` | `workflowService.trigger("PO_ABOVE", ...)` | `workflow.service` dùng `prisma` toàn cục → **ngoài tx** |
+
+Khi tx rollback, hai bảng này **vẫn có dòng** ⇒ audit log và workflow run ghi nhận một PO **không tồn tại**.
+
+Tệ hơn: `AuditLog.entityId` và `WorkflowRun.entityId` đều là `String` thuần, **không có khóa ngoại** tới `PurchaseOrder`. Nghĩa là nó **hỏng âm thầm** — không ném lỗi để bắt, chỉ phát hiện được khi đọc lại log.
+
+⇒ Cần truyền `tx` vào `audit.service` và `workflow.service` (**2 module nữa**), hoặc dời cả hai ra **sau commit** (đổi hành vi mọi caller cũ).
+
+### 3.3. Timeout
+
+Prisma mặc định `maxWait: 2000ms`, `timeout: 5000ms`. Đủ cho một lần tạo PO, nhưng thêm vòng retry 5 lần có thể vượt. Phải nâng `timeout`.
+
+### 3.4. Kết luận
+
+**Điều kiện dừng mục 6 #1 ĐÃ BỊ KÍCH HOẠT.** `create` không thể tx-safe chỉ bằng tham số tuỳ chọn.
+
+→ Dùng **phương án dự phòng A′** (mục 4). Nếu đội muốn giữ hướng transaction thì phải cấu trúc lại `create` + `audit.service` + `workflow.service` ⇒ **3 module**, cần phê duyệt riêng.
 
 ---
 
-## 3. Cơ chế resume
+## 4. Phương án A′ — cơ chế resume và xử lý thất bại
+
+### 4.1. Luồng
 
 ```
 người duyệt bấm APPROVED
         ↓
 [1] Đảo trạng thái NGAY, nguyên tử, có điều kiện:
       updateMany({ where:{ id, status:'PENDING' }, data:{ status:'APPROVED', ... } })
-      count !== 1  → 409 "gate đã được xử lý" (dừng, không tạo PO)
+      count !== 1  → 409 (đã có người thắng)
         ↓
-[2] Kiểm tra lại (mục 4)
+[2] Re-validation (mục 5) — gồm evaluateProposalFreshness
         ↓
-[3] purchaseService.create(payload.items, userId = người duyệt)
+[3] purchaseService.create(payload.items, decidedById)
         ↓
-[4] Ghi executedAt + resultRef, audit log, notification
+[4] update gate.resultRef = po.id
+        ↓
+    thành công: audit APPROVED, notification, trả mã PO cho UI
 ```
 
 Ba điều bất di bất dịch:
 
-1. **Không có đường tắt.** Executor **bắt buộc** gọi `purchase.service.create` — không được `prisma.purchaseOrder.create`. Nhờ vậy PO tự động có audit log, workflow `PO_ABOVE`, mã `PO-YYYYMMDD-XXXX` có `withCodeRetry`, và bắt buộc có `vendorId`.
-2. **`userId` = người duyệt**, không phải "system". PO phải ghi đúng ai đã bấm.
-3. **Đảo trạng thái trước, thực thi sau** — xem 3.4.
+1. **Không đường tắt.** Bắt buộc gọi `purchase.service.create` — không `prisma.purchaseOrder.create`. Nhờ vậy có audit, có workflow `PO_ABOVE`, có `withCodeRetry`, và bắt buộc có `vendorId`.
+2. **`userId` = người duyệt**, không phải "system".
+3. **Đảo trạng thái trước, thực thi sau** — hệ quả ở 4.2.
 
-### 3.4. Trạng thái thất bại (quan trọng — vì đã bỏ `executedAt`)
+### 4.2. Trạng thái thất bại — hai sửa so với bản 2
 
-Tình huống cần trả lời rõ: `updateMany` đã giành được quyền (`status` đã thành `APPROVED`) nhưng `purchase.service.create` **ném lỗi**.
+Bản 2 tự mâu thuẫn: §3.4 nói "cửa sổ 5 phút", ghi chú §9 nói chỉ cần `resultRef IS NULL`. Đã bỏ cửa sổ 5 phút.
 
-**Đề xuất: đưa `purchase.service.create` vào cùng transaction với lần ghi `resultRef`.**
+**Nhận diện duy nhất:**
 
-```js
-const po = await prisma.$transaction(async (tx) => {
-  const created = await purchaseService.create(payload.items, decidedById, { tx });
-  await tx.agentHumanGate.update({
-    where: { id: gateId },
-    data: { resultRef: created.id },
-  });
-  return created;
-});
+```
+actionType = 'PURCHASE_ORDER_PROPOSAL'  AND  status = 'APPROVED'  AND  resultRef IS NULL
 ```
 
-Nhưng `purchase.service.create` **hiện không nhận `tx`** — nó tự gọi `prisma.purchaseOrder.create` và `auditService.log` (dòng 134, 164). Đây là **một thay đổi cần đội duyệt thêm**, vì nó chạm `purchase.service`.
-
-**Ba phương án, xếp theo mức độ cần sửa code:**
-
-| | Cách | Cần sửa | Đánh giá |
-|---|---|---|---|
-| **A** (khuyến nghị) | Bọc transaction: sửa `purchase.service.create` nhận tham số `{ tx }` tuỳ chọn, mặc định `prisma` | thêm 1 tham số tuỳ chọn, không đổi hành vi call site cũ | **Sạch nhất.** PO và `resultRef` cùng thành công hoặc cùng hỏng. Không cần `executedAt`. |
-| **B** | Không sửa `purchase.service`. Ghi `APPROVED` + `decisionNote` kiểu `THỰC THI LỖI: <msg>`, để `resultRef = null` | không sửa service | Kém hơn: có khoảnh khắc PO tồn tại mà `resultRef` chưa ghi. Khoảnh khắc đó rất ngắn và chỉ xảy ra khi lỗi, nhưng là **cửa sổ không khép kín**. |
-| **C** | Thêm cột `executionError String?` | 1 migration | **Không dùng** — thêm cột chỉ để ghi lỗi là xấu; lỗi thuộc về `decisionNote` + audit log. |
-
-**Chốt theo đội: phương án A, kèm điều kiện bắt buộc.**
-
-Với phương án A, nếu transaction rollback thì **trạng thái gate vẫn là `APPROVED` với `resultRef = null`** — vì `status` được ghi ở *request trước*, ngoài transaction. Đây là khoảng trạng thái cần xử lý tường minh:
+Ba điều kiện **cùng lúc**. Hai điều kiện còn lại bắt buộc vì:
+- `DATA_REQUEST` và các gate khác cũng có `resultRef = null` ⇒ **không được tính nhầm**. Đã có contract test cho việc này (mục 8 test #6b).
+- `resultRef` có thể rỗng vì lý do khác (chưa bao giờ từng chạy) ⇒ phải thêm `actionType`.
 
 | Quy tắc | Nội dung |
 |---|---|
-| Nhận diện | `status = APPROVED` **và** `resultRef = null` **và** `decidedAt` trong 5 phút gần nhất ⇒ **"đã duyệt, đang thực thi / thực thi lỗi"**. Không phải "đã xong". |
-| Hiển thị UI | Hiện cảnh báo đỏ *"Đã duyệt nhưng chưa tạo được PO — cần thử lại"*, kèm `decisionNote`. **Không** hiện như đã hoàn tất. |
-| Audit | Bắt buộc ghi `AGENT_PO_GATE_EXECUTION_FAILED` với `gateId`, `decidedById`, message lỗi. **Không** dùng `.catch(() => {})` (quy ước `AGENTS.md`). |
-| Thử lại | **Thao tác có chủ đích.** Endpoint riêng `POST /human-gates/:id/retry-execution`, `authorize(ADMIN, MANAGER)`, chạy lại executor. Không có cron, không có tự động retry — PO là hành động tài chính, tự retry là điều không được phép. |
-| Chống chạy đôi | `retry` cũng dùng atomic `updateMany` với điều kiện `status='APPROVED' AND resultRef IS NULL` ⇒ `count=0` nghĩa là đã có người thắng. |
-| Điều kiện duy nhất để retry | `resultRef IS NULL`. Không kiểm tra hạn (đã APPROVED thì hạn không còn ý nghĩa), nhưng **phải** chạy lại toàn bộ re-validation ở mục 4 — dữ liệu đã cũ hơn. |
+| Hiển thị UI | Cảnh báo đỏ *"Đã duyệt nhưng chưa tạo được PO — cần thử lại"*. **Không** hiện như hoàn tất. |
+| Tuổi đề xuất | Hiện thời gian đã duyệt. Không dùng để quyết định. |
+| Audit | Bắt buộc `AGENT_PO_GATE_EXECUTION_FAILED` kèm `gateId`, `decidedById`, message lỗi. **Không** `.catch(() => {})` |
+| Thử lại | `POST /human-gates/:id/retry-execution`, `authorize(ADMIN, MANAGER)`. Điều kiện duy nhất: `status='APPROVED' AND resultRef IS NULL` ⇒ atomic `updateMany`, `count=0` nghĩa là đã có người thắng |
+| Không tự retry | **Không cron, không tự động.** PO là hành động tài chính |
+| Retry có chạy lại validation không | **Có, đầy đủ** — dữ liệu đã cũ hơn. Không kiểm tra hạn (đã APPROVED thì hạn không còn ý nghĩa) |
 
-**Nếu đội không muốn đụng `purchase.service`:** phương án B vẫn chấp nhận được, nhưng phải ghi rõ trong báo cáo giới hạn *"khoảnh khắc gate APPROVED nhưng PO chưa ghi resultRef là trạng thái cần người kiểm tra"* — và thêm test cho nó.
-
----
-
-## 4. Kiểm tra lại lúc duyệt (re-validation)
-
-Không được tin payload cũ. Trước khi gọi `create`, kiểm tra:
-
-| # | Kiểm tra | Hành động nếu fail |
-|---|---|---|
-| 1 | Gate còn `PENDING` (đã xử lý ở bước [1] bằng atomic update) | 409 |
-| 2 | Chưa quá `expiresAt` | 400 |
-| 3 | NCC còn tồn tại và `isActive` | 400 "NCC không còn hợp lệ" |
-| 4 | `inputFingerprint` khớp tính lại từ DB | **409, chặn**, kèm diff ATP cũ/mới. Không có đường override tự động |
-| 5 | `(productId, vendorId)` không còn đề xuất `PENDING` khác | 409 |
-| 6 | Tổng tiền > 0, mọi dòng có `productId` + `quantity > 0` | 400 |
-
-Điểm 4 là điểm quan trọng nhất: **ATP thay đổi là lý do chính khiến một đề xuất nhập hàng trở nên sai**. Người duyệt phải thấy "lúc đề xuất còn 12, giờ còn 2" rồi tự quyết, chứ hệ thống không được âm thầm tạo PO.
-
-**Idempotent:** bấm duyệt 2 lần → `updateMany` lần 2 có `count = 0` → 409, **không tạo PO thứ hai**.
-
----
-
-## 5. Quyền duyệt & ngưỡng — đề xuất TÁCH
-
-Repo đang có **hai ngưỡng mâu thuẫn**: `getPoApprovalThreshold()` đọc `companySettings.poApprovalThreshold` (mặc định 5tr, quyết định `DRAFT` vs `PENDING_APPROVAL`) và `PO_APPROVE_THRESHOLD = 50_000_000` hard-code (quyết định ai được duyệt, `purchase.service.js:45,243`). Thêm ngưỡng thứ ba ở gate làm tệ hơn.
-
-**Đề xuất: gate KHÔNG có ngưỡng tiền riêng.**
-
-| Lớp | Câu hỏi | Cơ chế | Ngưỡng |
-|---|---|---|---|
-| `AgentHumanGate` | "Agent có được tạo PO này không?" | Người bấm duyệt — `ADMIN`/`MANAGER` | Không có (quyết định của người) |
-| `workflow PO_ABOVE` | "PO này có cần quản lý duyệt tiếp không?" | Đã có, `purchase.service.js:178` | `companySettings.poApprovalThreshold` |
-
-Mỗi lớp trả lời **một câu hỏi khác nhau**, không chồng lấn. Luồng: CDC → đề xuất → gate PENDING → ADMIN/MANAGER duyệt → `purchase.service.create` → hàm này tự tính `needsApproval` và bắn `PO_ABOVE` nếu vượt ngưỡng. **Không gộp, không thêm ngưỡng mới.**
-
-**Một câu để nói trên slide:**
-> Gate hỏi *"có cho phép AI tạo PO này không"* — con người trả lời.
-> `PO_ABOVE` hỏi *"PO này có cần duyệt tài chính tiếp không"* — ngưỡng tiền trả lời.
-
-### 5.2. Hai ngưỡng mâu thuẫn đã tìm thấy — xử lý thế nào
-
-| Ngưỡng | Vị trí | Dùng để | Vấn đề |
-|---|---|---|---|
-| `companySettings.poApprovalThreshold` (mặc định 5.000.000) | `purchase.service.js:34-40` | Quyết định PO tạo ra là `DRAFT` hay `PENDING_APPROVAL` | Đọc từ settings ✅ |
-| `PO_APPROVE_THRESHOLD = 50_000_000` | `purchase.service.js:45`, dùng ở `:243` | Quyết định **ai** được duyệt: dưới ngưỡng thì role nào cũng duyệt, từ ngưỡng trở lên phải `ADMIN`/`MANAGER` | **Hard-code, không đọc settings** ❌ |
-
-**Trả lời câu hỏi của đội: `PO_APPROVE_THRESHOLD` có nằm trên luồng demo không?**
-
-- **Không nằm trên luồng demo.** Nó chỉ chạy trong `purchase.service.approve()` (`:237-265`) — tức bước duyệt **thứ hai** của `PO_ABOVE`. Luồng demo Vòng 2 dừng ở bước gate và dùng kịch bản PO **dưới ngưỡng** (mục 5.3), nên `approve()` không được gọi.
-
-**→ Đề xuất: ghi backlog, không sửa ở Vòng 2.** Lý do: sửa nó là đổi hành vi phân quyền của một endpoint khác (`POST /purchase-orders/:id/approve`), nằm ngoài luồng demo, và cần đội thống nhất chính sách *"ai được duyệt PO bao nhiêu tiền"* — đó là câu hỏi kinh doanh, không phải kỹ thuật.
-
-**Nhưng phải nói thẳng trong tài liệu:** trước khi sửa, cơ chế phân quyền duyệt PO **không nhất quán với cấu hình của tenant**. Đây là hạn chế đã biết, không phải bí mật. Nếu muốn sửa: một commit riêng, đọc `getPoApprovalThreshold()`, kèm test cho cả hai vế ngưỡng.
-
-### 5.3. Ràng buộc cho kịch bản demo: không được duyệt hai lần
-
-Để khỏi trả lời câu *"vậy phải bấm duyệt 2 lần à?"*:
-
-| Kịch bản | Hành vi | Cách đạt |
-|---|---|---|
-| **PO dưới ngưỡng `PO_ABOVE`** *(kịch bản dùng cho demo)* | 1 lần duyệt: gate → PO `DRAFT`, xong | Demo chọn nhóm SKU nhỏ để tổng PO < `poApprovalThreshold` |
-| PO từ ngưỡng trở lên | 2 lớp: gate duyệt (cho phép tạo) → PO `PENDING_APPROVAL` → `PO_ABOVE` duyệt tài chính | Hợp lệ, có chủ đích |
-
-**Cách duy trì bảo mật cho kịch bản 1 bước:** demo dùng PO nhỏ, nhưng **không được** hạ ngưỡng trong settings để "cho dễ". Ngưỡng lấy nguyên từ `companySettings`; nếu cần PO nhỏ thì **chọn SKU rẻ**, không chỉnh ngưỡng.
-
-**Phải ghi trong tài liệu, không được che:**
-> "PO vượt `poApprovalThreshold` của công ty sẽ có thêm một bước duyệt tài chính nữa. Chúng tôi giữ cả hai lớp vì chúng trả lời hai câu hỏi khác nhau; đây là kiểm soát, không phải trùng lặp."
-
----
-
-## 6. Ai được phép duyệt
-
-### 6.1. Xem danh sách gate
-
-`GET /human-gates` — giữ nguyên `authorize('ADMIN', 'MANAGER')` (`agent.routes.js:588`). Đã đúng.
-
-### 6.2. Quyết định gate
-
-`POST /human-gates/:id/decide` — giữ `authorize('ADMIN', 'MANAGER')` (`agent.routes.js:602`).
-
-**Không thêm ngưỡng tiền cho quyền duyệt gate** (lý do ở mục 5). Bảng quyền:
-
-| Role | Xem gate | Duyệt gate đồ nhạy cảm (`DATA_REQUEST`) | Duyệt đề xuất PO | Thử lại thực thi lỗi |
-|---|---|---|---|---|
-| `SUPER_OMEGA_ULTRA_ADMIN` | ✅ | ✅ | ✅ | ✅ |
-| `ADMIN` | ✅ | ✅ | ✅ | ✅ |
-| `MANAGER` | ✅ | ✅ | ✅ | ✅ |
-| `ACCOUNTANT` | ❌ | ❌ | ❌ | ❌ |
-| `CASHIER` / `WAREHOUSE` / `SALE` | ❌ | ❌ | ❌ | ❌ |
-
-**Hai điểm chống lạm dụng cần ghi rõ:**
-
-1. **Không cho người đề xuất tự duyệt.** Nếu đề xuất do người dùng `U` gửi (trigger `USER_CHAT`), thì `decidedById` phải khác `session.userId`. Nếu do CDC/system gửi (`SYSTEM_EVENT`), không có người đề xuất nên không áp dụng. Đề xuất PO là hành động tài chính — tách người đề xuất và người ký là nguyên tắc bốn mắt, áp dụng được ở Vòng 2 với chi phí gần bằng 0.
-2. **`ACCOUNTANT` không được duyệt gate PO** dù có vai trò tài chính, vì quyết định "mua bao nhiêu" là quyết định vận hành; quyết định "cho thanh toán" là quyết định tài chính. Việc này hiện nằm ở `PO_ABOVE` (`purchase.service.js:243` yêu cầu `ADMIN`/`MANAGER`). **Điểm này cần đội xác nhận** vì có thể mâu thuẫn với cách họ tổ chức quy trình thật.
-
-## 7. Nhánh REJECTED và hết hạn
-
-### 7.1. REJECTED
-
-| Việc | Cách làm |
-|---|---|
-| Ghi quyết định | `buildDecisionData({ decision: 'REJECTED', note, userId })` — có sẵn |
-| Tạo PO | **Không.** `REJECTED` là terminal, executor không bao giờ chạy |
-| `decisionNote` | **Bắt buộc có lý do.** UI chặn submit rỗng. Người duyệt nói "không" mà không nói vì sao thì người sau không sửa được |
-| Audit | `AGENT_PO_GATE_REJECTED` |
-| Đóng đề xuất để CDC sinh lại | **Có**, nhưng có điều kiện: chỉ mở lại nếu (a) đã qua ≥ 24h kể từ lúc reject, **và** (b) ATP vẫn ≤ ROP. Tránh lặp vô hạn mỗi lần CDC bắn |
-
-### 7.2. Hết hạn
-
-- `sweepExpiredHumanGates()` (`agent.humangate.js:126`) đã có, cron `*/5` (`cron.js:84-93`), có `@@index([status, expiresAt])`. **Tái dùng, không viết mới.**
-- Cron này chạy **ngoài tenant context** (`updateMany` không có `where tenantId`) → quét mọi tenant một lượt. Đúng cho sweep hết hạn, không phải lỗi.
-
-**TTL riêng theo loại** — `GATE_TTL_MS` hiện là 24h cho mọi gate (`agent.humangate.js:32`). Với đề xuất PO, 24h là dài: tồn kho đã đổi nhiều, và re-validation sẽ chặn gần hết. Đề xuất:
-
-| Loại gate | TTL | Lý do |
-|---|---|---|
-| `DATA_REQUEST` | 24h (giữ nguyên) | Dữ liệu nhạy cảm vẫn nhạy cảm sau một ngày |
-| `PURCHASE_ORDER_PROPOSAL` | **8h** | Quá 8h thì fingerprint lệch gần như chắc chắn; người duyệt thà tạo lại đề xuất mới còn hơn duyệt cái cũ |
-
-Hết hạn = `EXPIRED`, terminal, không executor. Người duyệt thấy `EXPIRED` thì bấm "Sinh lại đề xuất" (tạo gate mới), không retry được vì chưa từng được duyệt.
-
----
-
-## 8. Audit log
-
-Ghi qua `auditService.log` sẵn có, **không** dùng `.catch(() => {})` (quy ước `AGENTS.md`):
-
-| Action | `entityId` | Ghi kèm |
-|---|---|---|
-| `AGENT_PO_PROPOSED` | `gateId` | payload + rationale |
-| `AGENT_PO_GATE_APPROVED` | `gateId` | payload, fingerprint cũ/mới, PO id tạo ra |
-| `AGENT_PO_GATE_REJECTED` | `gateId` | `decisionNote` (bắt buộc có) |
-| `AGENT_PO_GATE_EXPIRED` | `gateId` | do cron sweep ghi, không cần hành động người |
-| `AGENT_PO_GATE_EXECUTION_FAILED` | `gateId` | `decidedById`, message lỗi — **bắt buộc**, đây là dấu vết của khoảng trạng thái mục 3.4 |
-| `CREATE_PURCHASE_ORDER` | `poId` | **đã có** sẵn trong `purchase.service:164` |
-
-Cần trả lời được câu *"ai đề xuất, ai duyệt, lúc nào, dựa trên số liệu nào"* bằng **truy vấn được**, không phải bằng lời.
-
-**Quy tắc bắt buộc:** không dùng `.catch(() => {})` (quy ước `AGENTS.md`). Lỗi audit phải `logger.error` + **làm rõ hành động đã xảy ra hay chưa**. Hiện `purchase.service.js:164,173` đang nuốt lỗi — nằm ngay trên đường demo ⇒ **đề xuất sửa trong cùng commit P0-3**, tách bạch khỏi thay đổi hành vi.
-
----
-
-## 9. Schema & migration
+### 4.3. Schema
 
 | Hạng mục | Kết luận |
 |---|---|
 | Model mới | **Không** |
-| Cột mới | `AgentHumanGate.resultRef String?` — **1 cột, nullable, additive, không backfill**. Không `executedAt` (đã chốt). |
-| Migration | Một file duy nhất, chạy bằng **`npm run db:migrate:deploy`** |
-| Cấm | **`npm run db:migrate`** — repo có bảng RAG vector tại `prisma/migrations/20260620100000_add_ai_vector_tables/migration.sql` (đã kiểm tra) → `migrate dev` có nguy cơ sinh `ALTER` phá `real[]`/`vector` |
-| `TENANT_SCOPED_MODELS` | `AgentHumanGate` **đã có** sẵn (`src/config/prisma.js:79`), `AgentSession` ở `:78` → không sửa |
-| Contract test | `tests/tenant-scoped-models.contract.test.js` phải xanh sau migration (thêm cột nullable không đổi tập model) |
-| Gộp với `LlmUsageLog`? | **Khuyến nghị gộp** vào một migration duy nhất (xem `01-llm-role.md` §4.4) để chỉ deploy một lần. `LlmUsageLog` có `tenantId` nên **phải** thêm vào `TENANT_SCOPED_MODELS`. |
-
-> Ghi chú: khi đã bỏ `executedAt`, trạng thái "đã duyệt nhưng chưa tạo được PO" nhận diện bằng **`resultRef IS NULL`**, không bằng mốc thời gian. Mọi test và UI đều dựa vào điều kiện này.
+| Cột mới | `AgentHumanGate.resultRef String?` — 1 cột, nullable, additive, không backfill |
+| Migration | 1 file, chạy bằng **`npm run db:migrate:deploy`** |
+| Cấm tuyệt đối | **`npm run db:migrate`** — repo có bảng RAG vector tại `prisma/migrations/20260620100000_add_ai_vector_tables/migration.sql` (đã kiểm tra) |
+| Gộp `LlmUsageLog`? | **Khuyến nghị gộp** — một lần deploy. `LlmUsageLog` có `tenantId` ⇒ **phải** thêm vào `TENANT_SCOPED_MODELS` |
+| `TENANT_SCOPED_MODELS` | `AgentHumanGate` đã có (`src/config/prisma.js:79`), `AgentSession` ở `:78` → không sửa |
+| Contract test | `tests/tenant-scoped-models.contract.test.js` phải xanh |
 
 ---
 
-## 10. Contract test bắt buộc
+## 5. Re-validation lúc duyệt
 
-Yêu cầu của đội: **write tool không thực thi được nếu chưa có `APPROVED`**.
+| # | Kiểm tra | Hành động nếu fail |
+|---|---|---|
+| 1 | Gate còn `PENDING` (atomic `updateMany` ở bước [1]) | 409 |
+| 2 | Chưa quá `expiresAt` | 400 |
+| 3 | NCC còn tồn tại và `isActive` | 400 |
+| 4 | `evaluateProposalFreshness` (§2) | `NO_LONGER_NEEDED` → 409 không override; `DRIFT_BLOCK` → 409 + diff |
+| 5 | Không còn đề xuất `PENDING` khác cho cùng `proposalKey` | 409 |
+| 6 | Tổng tiền > 0, đúng một dòng hàng, `productId` + `quantity > 0` | 400 |
+
+---
+
+## 6. Chống trùng đề xuất — nguyên tử
+
+`proposalKey` nằm trong JSON nên không có ràng buộc DB: hai sự kiện CDC đồng thời vẫn tạo hai đề xuất.
+
+**Chọn `pg_advisory_xact_lock`** — không cần đổi schema:
+
+```
+BEGIN;
+  SELECT pg_advisory_xact_lock(hashtext(tenantId || '::' || proposalKey));
+  -- đếm gate PENDING có proposalKey này
+  -- nếu = 0 thì tạo
+COMMIT;
+```
+
+Khoá tự giải phóng khi transaction kết thúc ⇒ không cơ hội deadlock do khoá bị giữ lâu, không cần dọn khoá khi lỗi.
+
+*(Phương án thay thế: partial unique index bằng SQL thô trong migration. Chọn phương án này vì không sửa schema — `AgentHumanGate` đã dùng một migration cho `resultRef`, tránh thêm.)*
+
+**Đơn giản hoá có chủ đích:** payload có `items` là mảng nhưng khoá theo (SKU, NCC). **Chốt Vòng 2: mỗi đề xuất đúng một dòng hàng** (`items.length === 1`), không gộp theo NCC. Vì một `PurchaseOrder` mới đây đã là một PO đơn giản; gộp nhiều NCC vào một PO sẽ tạo đề xuất với `vendorId` không xác định.
+
+---
+
+## 7. TTL — giữ 24h, bỏ cơ chế TTL theo loại
+
+Cửa hàng mở 8h sáng sẽ **không bao giờ** thấy đề xuất CDC sinh lúc 22h nếu TTL là 8h. Với §2 đã bảo vệ khỏi dữ liệu cũ, giữ nguyên `GATE_TTL_MS` = 24h.
+
+**Bỏ** cơ chế TTL riêng theo loại ⇒ ít code hơn.
+**Thay vào đó:** UI hiển thị **tuổi của đề xuất** (số giờ kể từ `createdAt`).
+
+---
+
+## 8. Quyền duyệt
+
+`GET /human-gates`, `POST /human-gates/:id/decide`, `POST /human-gates/:id/retry-execution` → `authorize('ADMIN','MANAGER')`, giữ nguyên như hiện tại.
+
+| Role | Xem gate | Duyệt PO | Duyệt `DATA_REQUEST` | Retry |
+|---|---|---|---|---|
+| `SUPER_OMEGA_ULTRA_ADMIN` | ✅ | ✅ | ✅ | ✅ |
+| `ADMIN` / `MANAGER` | ✅ | ✅ | ✅ | ✅ |
+| `ACCOUNTANT` | ❌ | ❌ | ❌ | ❌ |
+| `CASHIER` / `WAREHOUSE` / `SALE` | ❌ | ❌ | ❌ | ❌ |
+
+**Không có ngưỡng tiền cho quyền duyệt gate.** Lý do ở `00b` §5 bản 2 (giữ nguyên): hai lớp trả lời hai câu hỏi khác nhau — gate hỏi *"có cho phép AI tạo PO này không"*, `PO_ABOVE` hỏi *"PO này có cần duyệt tài chính tiếp không"*.
+
+**Tự duyệt:** cho phép. Audit bắt buộc ghi `selfApproved` = (`decidedById === session.userId`) khi `triggerSource === 'USER_CHAT'`; `false` cho `SYSTEM_EVENT`.
+
+---
+
+## 9. Giữ nguyên hành vi các gate khác
+
+Nhánh resume **chỉ kích hoạt** cho `actionType === 'PURCHASE_ORDER_PROPOSAL'`. Duyệt `DATA_REQUEST` và mọi gate hiện có phải chạy y như cũ.
+
+`check:humangate` phải giữ **11/11** — đây là baseline đã đo (xem `00-scope.md` §8.2).
+
+---
+
+## 10. Bộ contract test
 
 | # | Test | Chứng minh |
 |---|---|---|
-| 1 | Executor gọi với gate `PENDING` | throw, `purchaseService.create` **0 lần** |
-| 2 | Executor gọi với gate `REJECTED` / `EXPIRED` / `CANCELLED` | throw, 0 lần |
-| 3 | Bấm duyệt 2 lần song song | đúng 1 PO (`updateMany.count === 1` ở đúng một lần) |
-| 4 | Fingerprint lệch (ATP đã đổi) | 409, 0 lần, trả về diff |
+| 1 | Executor với gate `PENDING` | throw, `purchaseService.create` **0 lần** |
+| 2 | Executor với `REJECTED` / `EXPIRED` / `CANCELLED` | throw, 0 lần |
+| 3 | Duyệt 2 lần song song | đúng 1 PO (`updateMany.count === 1`) |
+| 4a | `NO_LONGER_NEEDED` (ATP mới > ROP) | 409, 0 lần, **không** override được kể cả khi `acknowledgeDrift: true` |
+| 4b | `DRIFT_BLOCK` chưa acknowledge | 409, 0 lần, trả diff |
+| 4c | `DRIFT_BLOCK` + `acknowledgeDrift: true` | chạy được, số lượng lấy **số vừa tính lại** chứ không phải số cũ |
+| 4d | Lệch nhỏ (`DRIFT_WARN`) | duyệt được, kết quả có cảnh báo |
 | 5 | NCC bị vô hiệu hoá sau khi đề xuất | 400, 0 lần |
-| 6 | `purchase.service.create` ném lỗi | gate `APPROVED` + `resultRef = null`; audit có `AGENT_PO_GATE_EXECUTION_FAILED`; **không** trả `success: true` giả |
-| 7 | Executor chạy **ngoài** tenant context | không đọc/ghi được dữ liệu tenant khác |
-| 8 | **Người đề xuất bấm duyệt chính đề xuất của mình** | 403 (mục 6.2, điểm 1) |
-| 9 | `REJECTED` không tạo PO, `decisionNote` rỗng bị chặn | 400, 0 lần |
+| 6 | `create` ném lỗi | gate `APPROVED` + `resultRef IS NULL`; audit `AGENT_PO_GATE_EXECUTION_FAILED`; **không** trả `success: true` |
+| 6b | Gate `DATA_REQUEST` đã `APPROVED` (không phải đề xuất PO) | **không** bị tính nhầm là trạng thái lỗi |
+| 7 | Executor ngoài tenant context | không đọc/ghi được dữ liệu tenant khác |
+| 8 | Tự duyệt (`USER_CHAT`) | **được phép**, audit có `selfApproved: true` |
+| 8b | Đề xuất `SYSTEM_EVENT` | `selfApproved: false` |
+| 9 | `REJECTED` | không tạo PO; `decisionNote` rỗng bị chặn |
 | 10 | Gate quá hạn bấm duyệt | 400, 0 lần |
-| 11 | `retry-execution` chạy 2 lần song song | đúng 1 PO (điều kiện `resultRef IS NULL`) |
+| 11 | `retry-execution` 2 lần song song | đúng 1 PO |
 | 12 | `retry-execution` khi `resultRef` đã có | 409, 0 lần |
-| 13 | `POST /query` của `db-agent` không tạo được gate PO | Write tool vẫn bị chặn (bảo đảm P0-1 không bị lấn) |
-| 14 | Tenant A không thấy gate của tenant B | `findUnique` không tự chặn ⇒ phải có `where: { id, tenantId }` |
+| 13 | `POST /db-agent/query` không tạo được gate PO | Write tool vẫn bị chặn (bảo đảm P0-1 không bị lấn) |
+| 14 | Va chạm mã PO trong retry | được thử lại đúng, không tạo 2 PO |
+| 15 | Tạo 2 đề xuất song song cùng `proposalKey` | đúng **1** gate (kiểm `pg_advisory_xact_lock`) |
+| 16 | **Hồi quy:** duyệt `DATA_REQUEST` | chạy y như cũ, `check:humangate` 11/11 |
 
-Test 1, 2 và 14 là trái tim: 1–2 biến "gate là trang trí" thành "gate là ràng buộc"; 14 là cái duy nhất chứng minh gate cũng cách ly tenant như phần còn lại hệ thống.
+**Đính chính so với bản 2:** bản 2 mục test #14 viết *"phải có `where: { id, tenantId }` vì `findUnique` không tự giới hạn"*. **Điều đó SAI.** Đã kiểm chứng bằng DB thật (commit `a758ce4`): `prisma.js:96` khai báo `READ_OPS` **bao gồm `findUnique`**, nên extension tiêm `tenantId` — `findUnique({where:{id}})` **được bảo vệ đúng**. `npm run check:tenant`: 11/11 pass. Yêu cầu sửa `where: { id, tenantId }` **không còn cần thiết về mặt an toàn**.
 
-**Cảnh báo về test 14:** `prisma.agentHumanGate.findUnique({ where: { id } })` — cách dùng hiện tại ở `agent.routes.js:611` — **không** tự giới hạn theo tenant. Prisma extension chỉ can thiệp `findMany`/`updateMany`/`create`, không can thiệp `findUnique` với `where` chỉ có `id`. Đây là điểm cần sửa kèm P0-3.
+Điểm mới đáng biết: extension **ghi đè** `tenantId` trong `where` (`{ ...args.where, tenantId }` — `tenantId` spread sau nên thắng). Truyền `tenantId: B` trong khi context là A vẫn ra kết quả của A, **không phải `null`**. An toàn, nhưng dễ gây hiểu nhầm.
 
 ---
 
-## 11. Phạm vi code dự kiến (sau khi duyệt)
+## 11. Phạm vi frontend
+
+Demo cần một màn hình thật. **Nguyên tắc: sửa cái có sẵn, không dựng giao diện mới.**
+
+### 11.1. 🐞 Bug sẵn có phải sửa trước
+
+`frontend/src/components/agent-ui/SmartApprovalCard.jsx:40` gửi:
+
+```js
+await api.post(endpoint, { action, note: '' });
+```
+
+nhưng backend đọc `req.body.decision` (`agent.routes.js:605`). ⇒ `decision` là `undefined` ⇒ **400 "decision must be APPROVED or REJECTED"**.
+
+→ **Thẻ duyệt hiện tại luôn lỗi.** Đã kiểm tra trực tiếp, chưa sửa (ngoài phạm vi commit này).
+Ngoài ra `note: ''` — thiết kế mới yêu cầu `REJECTED` **bắt buộc có lý do**.
+
+### 11.2. Danh sách file sẽ sửa
+
+| File | Việc | Ước lượng |
+|---|---|---|
+| `components/agent-ui/SmartApprovalCard.jsx` | Sửa `{action}` → `{decision}`; bắt buộc nhập lý do khi từ chối; hiện tuổi đề xuất; hiện diff khi `DRIFT`; hiện mã PO sau khi duyệt | ~2 giờ |
+| Trang danh sách gate (tìm chỗ render `SmartApprovalCard`) | Lọc theo `actionType`, hiện `rationale` (ATP/ROP/nhu cầu/lead time/cờ ước lượng), nút "Duyệt" / "Từ chối", badge cảnh báo `resultRef IS NULL` | ~3 giờ |
+| `src/api/` (thêm hàm gọi gate) | `listGates`, `decide(gateId, decision, note, acknowledgeDrift)`, `retryExecution(gateId)` | ~30 phút |
+| `i18n` | Chuỗi mới vào `locales/vi.json` + `en.json` | ~30 phút |
+
+**Tổng ~1 ngày công.** Không cần trang mới — danh sách gate đã có `GET /human-gates`.
+
+---
+
+## 12. Phạm vi code dự kiến (sau khi đội xác nhận A′)
 
 | File | Việc |
 |---|---|
-| `src/modules/ai/agent.humangate.js` | thêm `buildPoProposalGate` (PENDING) + TTL riêng 8h cho PO; giữ nguyên 3 builder cũ |
-| `src/modules/ai/agent.gate.exec.js` **(mới)** | `executeGate(gateId, decidedById)` — re-validation + `purchase.service.create`; `retryExecution(gateId, decidedById)` |
-| `src/modules/ai/agent.routes.js` | `decide` → atomic `updateMany` + `where: { id, tenantId }`; thêm nhánh resume; thêm `POST /human-gates/:id/retry-execution` |
-| `src/modules/accounting/purchase.service.js` | `create(data, userId, { tx })` — tham số tuỳ chọn cho mục 3.4 phương án A; bỏ `.catch(() => {})` ở `:164,173` |
-| `prisma/schema.prisma` + 1 migration | 1 cột `resultRef` |
-| `tests/agent-gate-po.contract.test.js` **(mới)** | 14 test ở mục 10 |
+| `src/modules/ai/agent.humangate.js` | `buildPoProposalGate` (PENDING, TTL 24h) |
+| `src/modules/ai/agent.gate.exec.js` **(mới)** | `executeGate(gateId, decidedById, { acknowledgeDrift })`; `retryExecution(...)` |
+| `src/modules/ai/agent.routes.js` | `decide` → atomic `updateMany` + nhánh resume; thêm `POST /:id/retry-execution`; ghi `selfApproved` |
+| `src/modules/replenishment/replenishment.suggest.js` **(mới)** | dựng đề xuất từ DB: `pg_advisory_xact_lock` + `planReplenishment` + `proposalKey` |
+| `prisma/schema.prisma` + 1 migration | `resultRef`; gộp `LlmUsageLog` |
+| `tests/agent-gate-po.contract.test.js` **(mới)** | 16 test mục 10 |
+| `src/modules/accounting/purchase.service.js:164,173` | Bỏ `.catch(() => {})` → `logger.error` — **commit riêng**, không gộp thay đổi hành vi |
 
-**Không** đụng: `automation.service.js` (P0-2 làm riêng), `smart-guide`, `ai-forecast`, adapter marketplace.
+**Không** đụng `automation.service.js` (P0-2 riêng), `smart-guide`, `ai-forecast`, adapter marketplace.
 
-> **Cảnh báo phạm vi:** `purchase.service.js` là file thứ 4 bị đụng, ngoài `modules/ai/`. Đề nghị đội xác nhận riêng việc cho phép thêm `{ tx }` vào `purchase.service.create`, vì đó là thay đổi nằm ngoài module agent.
+> `purchase.service.create` **không** cần thêm `{ tx }` nữa — vì đã chọn A′. Diff nhỏ hơn nhiều so với hướng transaction.
 
 ---
 
-## 12. Câu hỏi còn chờ đội quyết định
+## 13. Hạn chế đã biết (ghi thẳng vào tài liệu trình bày)
 
-*(Câu 1 và 2 đã chốt ở đầu note — không hỏi lại.)*
-
-1. **Phương án xử lý thất bại:** phương án **A** (sửa `purchase.service.create` nhận `{ tx }`, bọc transaction) hay **B** (không sửa service, chấp nhận khoảng trạng thái `APPROVED` + `resultRef = null` phải có người kiểm tra)? Mục 3.4. **Khuyến nghị A.**
-2. **`ACCOUNTANT` có được duyệt đề xuất PO không?** Mục 6.2 điểm 2 — hiện đề xuất là **không**.
-3. **Chốt tách người đề xuất / người duyệt** (mục 6.2 điểm 1)? Đề nghị **có** cho `USER_CHAT`, không áp dụng cho `SYSTEM_EVENT`.
+1. **Chưa có tuỳ chọn bốn mắt** cho tenant có nhiều người duyệt (mục 1).
+2. **Trạng thái `APPROVED + resultRef IS NULL` tồn tại** — cần người kiểm, đã có nhãn cảnh báo đỏ và nút thử lại thủ công.
+3. **`QTY_DRIFT_TOL` / `COST_DRIFT_TOL` chưa hiệu chỉnh** — mặc định 25% / 10%, không có căn cứ thực nghiệm.
+4. **Adapter marketplace chưa chạy với credential thật** — luồng demo dùng file CSV.
+5. **PO vượt `poApprovalThreshold` có thêm một bước duyệt tài chính.** Demo dùng PO dưới ngưỡng để chỉ một lần duyệt; ngưỡng lấy nguyên từ settings, **không hạ ngưỡng cho dễ** — chọn SKU rẻ thay thế.
