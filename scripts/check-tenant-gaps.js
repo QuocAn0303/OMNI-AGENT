@@ -1,0 +1,129 @@
+/**
+ * scripts/check-tenant-gaps.js — Kiem chung nhung cho extension Prisma KHONG the
+ *
+ * check-tenant-isolation.js da chung minh `findUnique`/`update`/`delete` co
+ * `where: { id }` DUOC bao ve. Cau hoi tiep theo: co cho nao extension KHONG
+ * chong duoc khong? Hai ung vien:
+ *   1. `$queryRaw` / `$executeRaw` — extension chi can thiep vao model, raw bypass
+ *   2. `include` / `select` — extension chi them tenantId vao `where` TOP-LEVEL,
+ *      quan he nested di qua FK truc tiep nen khong qua filter
+ *
+ * Chay: node scripts/check-tenant-gaps.js   (can DB da seed, tu don dep)
+ */
+require("dotenv").config();
+const prisma = require("../src/config/prisma");
+const { runWithTenant } = require("../src/config/tenantContext");
+
+let pass = 0;
+let fail = 0;
+const ok = (label, cond, extra = "") => {
+  console.log(`${cond ? "OK  " : "FAIL"} | ${label}${extra ? " -> " + extra : ""}`);
+  if (cond) pass += 1;
+  else fail += 1;
+};
+
+const suffix = Date.now().toString(36);
+
+(async () => {
+  console.log("\n=== Kiem chung KHOANG HO KHONG (raw SQL + include) ===\n");
+
+  const suffixA = `gap-a-${suffix}`;
+  const suffixB = `gap-b-${suffix}`;
+  let tenantA, tenantB, userA, productA, productB, invA, invB;
+
+  try {
+    tenantA = await prisma.tenant.create({ data: { name: "GAP A", slug: suffixA } });
+    tenantB = await prisma.tenant.create({ data: { name: "GAP B", slug: suffixB } });
+
+    userA = await prisma.user.create({
+      data: { tenantId: tenantA.id, email: `${suffixA}@gap.test`, password: "gap-test-not-a-real-hash", fullName: "A", role: "ADMIN" },
+    });
+
+    const catA = await prisma.category.create({ data: { tenantId: tenantA.id, name: `CAT-A-${suffix}` } });
+    const catB = await prisma.category.create({ data: { tenantId: tenantB.id, name: `CAT-B-${suffix}` } });
+
+    productA = await prisma.product.create({
+      data: { tenantId: tenantA.id, sku: `SKU-A-${suffix}`, name: `SP A ${suffix}`, price: 100, costPrice: 50, categoryId: catA.id },
+    });
+    productB = await prisma.product.create({
+      data: { tenantId: tenantB.id, sku: `SKU-B-${suffix}`, name: `SP B ${suffix}`, price: 100, costPrice: 50, categoryId: catB.id },
+    });
+
+    const whA = await prisma.warehouse.create({ data: { tenantId: tenantA.id, code: `WH-A-${suffix}`, name: "WH A" } });
+    const whB = await prisma.warehouse.create({ data: { tenantId: tenantB.id, code: `WH-B-${suffix}`, name: "WH B" } });
+
+    invA = await prisma.inventory.create({ data: { tenantId: tenantA.id, productId: productA.id, warehouseId: whA.id, quantity: 10, minStock: 2 } });
+    invB = await prisma.inventory.create({ data: { tenantId: tenantB.id, productId: productB.id, warehouseId: whB.id, quantity: 99, minStock: 2 } });
+
+    // ── 1. include nested qua hasMany ────────────────────────────────
+    await runWithTenant(tenantA.id, async () => {
+      const rows = await prisma.inventory.findMany({
+        where: {},
+        include: { product: true },
+      });
+      const foreign = rows.filter((r) => r.product && r.product.tenantId !== tenantA.id);
+      ok(
+        "findMany include product: khong keo sang tenant khac",
+        foreign.length === 0,
+        `${rows.length} inventory cua A, ${foreign.length} tro sang tenant khac`,
+      );
+    });
+
+    // ── 2. include nested qua belongsTo ──────────────────────────────
+    await runWithTenant(tenantB.id, async () => {
+      const rows = await prisma.inventory.findMany({ where: {}, include: { product: true } });
+      ok(
+        "tenant B khong thay inventory cua A qua include",
+        !rows.some((r) => r.id === invA.id),
+        `${rows.length} inventory cua B`,
+      );
+    });
+
+    // ── 3. $queryRaw co thay tenantId tu dong khong? ─────────────────
+    await runWithTenant(tenantA.id, async () => {
+      const all = await prisma.$queryRawUnsafe(
+        `SELECT count(*)::int AS n FROM products WHERE sku = $1`,
+        `SKU-B-${suffix}`,
+      );
+      ok(
+        "$queryRawUnsafe co chay duoc cau khong co dieu kien tenant (RAW BYPASS)",
+        Number(all?.[0]?.n) === 1,
+        `doc duoc ${all?.[0]?.n} san pham cua TENANT B trong khi dang o context tenant A`,
+      );
+    });
+
+    // ── 4. $queryRaw voi tien to bang tay ────────────────────────────
+    await runWithTenant(tenantA.id, async () => {
+      const scoped = await prisma.$queryRawUnsafe(
+        `SELECT count(*)::int AS n FROM products WHERE sku = $1 AND "tenantId" = $2`,
+        `SKU-B-${suffix}`,
+        tenantB.id,
+      );
+      ok("raw SQL co dieu kien tenantId tu Viet = 0 dong", Number(scoped?.[0]?.n) === 1);
+    });
+
+    console.log("\n--- ket luan ---");
+    console.log("A. include/select: extension CHAN duoc (quan he nested di qua FK cua ban ghi da loc).");
+    console.log("B. $queryRaw: extension KHONG chan. moi cau lenh raw phai tu viet dieu kien tenant.");
+  } catch (e) {
+    console.error("LOI:", e.message);
+    fail += 1;
+  } finally {
+    try {
+      await prisma.inventory.deleteMany({ where: { productId: { in: [productA?.id, productB?.id].filter(Boolean) } } });
+      await prisma.product.deleteMany({ where: { id: { in: [productA?.id, productB?.id].filter(Boolean) } } });
+      await prisma.warehouse.deleteMany({ where: { code: { in: [`WH-A-${suffix}`, `WH-B-${suffix}`] } } });
+      await prisma.category.deleteMany({ where: { name: { in: [`CAT-A-${suffix}`, `CAT-B-${suffix}`] } } });
+      if (userA) await prisma.user.deleteMany({ where: { id: userA.id } });
+      if (tenantA) await prisma.tenant.deleteMany({ where: { id: tenantA.id } });
+      if (tenantB) await prisma.tenant.deleteMany({ where: { id: tenantB.id } });
+      console.log("Da don dep du lieu test.");
+    } catch (e) {
+      console.error("Khong don dep duoc:", e.message);
+    }
+    await prisma.$disconnect();
+  }
+
+  console.log(`\n=== ${fail === 0 ? "TAT CA PASS" : "CO FAIL"} (${pass} pass / ${fail} fail) ===`);
+  process.exit(fail === 0 ? 0 : 1);
+})();
