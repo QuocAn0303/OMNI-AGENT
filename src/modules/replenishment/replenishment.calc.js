@@ -1,4 +1,4 @@
-/**
+﻿/**
  * modules/replenishment/replenishment.calc.js — CÔNG THỨC bổ sung tồn kho
  *
  * Mọi hàm ở đây là **hàm thuần**: input JSON → output JSON, không đọc DB,
@@ -38,6 +38,44 @@ const LEAD_TIME_MIN_SAMPLES = 3;
 /** Ít hơn ngưỡng này ngày có bán ⇒ SKU bán thưa ⇒ đổi phương pháp. */
 const SPARSE_NONZERO_DAYS = 10;
 
+/**
+ * Ngưỡng trôi (drift) khi người duyệt bấm duyệt.
+ *
+ * MỐI BẠN CẢNH BÁO: hai hằng số dưới đây là **mặc định chưa hiệu chỉnh, không
+ * có căn cứ thực nghiệm**. Chúng được đặt theo kinh nghiệm chung của lĩnh vực,
+ * chưa từng chạy trên dữ liệu của bất kỳ khách hàng nào. Sẽ xem lại sau backtest
+ * (xem `docs/aisc26/03-evaluation-protocol.md`). Đừng trích hai số này ra slide
+ * như kết quả đo.
+ *
+ * Vì sao cần: lúc đề xuất và lúc duyệt đã cách nhau vài giờ, nên tồn kho và đơn
+ * giá có thể đã đổi. So sánh "lệch bao nhiêu thì chặn" có ý nghĩa; so sánh "hash
+ * có khớp không" thì không — vì ATP đổi mỗi lần bán.
+ */
+const QTY_DRIFT_TOL = 0.25;
+const COST_DRIFT_TOL = 0.1;
+
+/** Kết quả kiểm tra độ lệch của một đề xuất. */
+const DRIFT_NONE = "DRIFT_NONE";
+const DRIFT_WARN = "DRIFT_WARN";
+const DRIFT_BLOCK = "DRIFT_BLOCK";
+const NO_LONGER_NEEDED = "NO_LONGER_NEEDED";
+
+/**
+ * Ép về số hữu hạn. Mọi giá trị không phải số (NaN, undefined, chuỗi vô nghĩa,
+ * object, array rỗng...) đều thành `fallback`.
+ *
+ * Bắt buộc dùng hàm này thay cho `Number(x || 0)`: biểu thức đó KHÔNG an toàn
+ * vì `x || 0` chỉ thay khi x falsy — `"abc" || 0` vẫn là `"abc"`, và
+ * `Number("abc") = NaN` lọt vào payload đề xuất PO.
+ */
+const num = (v, fallback = 0) => {
+  const n = Number(v);
+  return Number.isFinite(n) ? n : fallback;
+};
+
+/** Ép về số không âm (số lượng, giá, tồn không thể âm). */
+const nonNeg = (v, fallback = 0) => Math.max(0, num(v, fallback));
+
 const round = (n, digits = 2) => {
   if (!Number.isFinite(n)) return n;
   const f = 10 ** digits;
@@ -67,14 +105,19 @@ const median = (xs) => {
  * @param {Array<{date:string, qty:number, outOfStock?:boolean}>} rows
  * @returns {{daily: Array<{date:string,qty:number,censored:boolean}>, totalDays:number}}
  */
-const normalizeDailySales = (rows = []) =>
-  (rows || []).map((r) => ({
-    date: r.date,
-    qty: Number(r.qty || 0),
-    // censored = trong ngày đó hàng không còn để bán ⇒ doanh số bị cắt,
-    // KHÔNG phải nhu_cầu = 0. Đây là lỗi phổ biến nhất trong mô hình tồn kho.
-    censored: Boolean(r.outOfStock),
-  }));
+const normalizeDailySales = (rows = []) => {
+  if (!Array.isArray(rows)) return [];
+  return rows
+    .filter((r) => r && typeof r === "object")
+    .map((r) => ({
+      date: r.date,
+      // `qty` âm là dữ liệu bẩn ⇒ kẹp 0. NaN/chuỗi ⇒ 0.
+      qty: nonNeg(r.qty),
+      // censored = trong ngày đó hàng không còn để bán ⇒ doanh số bị cắt,
+      // KHÔNG phải nhu_cầu = 0. Đây là lỗi phổ biến nhất trong mô hình tồn kho.
+      censored: Boolean(r.outOfStock),
+    }));
+};
 
 /**
  * Nhu cầu nền trên ngày — có hiệu chỉnh censored demand.
@@ -237,9 +280,9 @@ const calcLeadTime = ({ receipts = [], defaultDays = DEFAULT_LEAD_TIME_DAYS } = 
  * @param {Array<{quantity:number, reserved?:number}>} inventories
  */
 const calcAtp = ({ inventories = [] } = {}) => {
-  const rows = inventories || [];
-  const onHand = rows.reduce((s, i) => s + Number(i.quantity || 0), 0);
-  const reserved = rows.reduce((s, i) => s + Number(i.reserved || 0), 0);
+  const rows = Array.isArray(inventories) ? inventories.filter((i) => i && typeof i === "object") : [];
+  const onHand = rows.reduce((s, i) => s + nonNeg(i.quantity), 0);
+  const reserved = rows.reduce((s, i) => s + nonNeg(i.reserved), 0);
   const available = onHand - reserved;
   return {
     atp: available,
@@ -268,7 +311,10 @@ const calcSafetyStock = ({
       status: 400,
     });
   }
-  const sigmaLT = Number(sigmaDaily || 0) * Math.sqrt(Math.max(0, Number(leadTimeDays) || 0));
+  // sigma âm là dữ liệu bẩn, không phải "an toàn hơn" ⇒ kẹp 0. leadTime tương tự.
+  const sigma = nonNeg(sigmaDaily);
+  const lt = nonNeg(leadTimeDays);
+  const sigmaLT = sigma * Math.sqrt(lt);
   const safetyStock = Math.ceil(z * sigmaLT);
   return {
     safetyStock,
@@ -285,9 +331,9 @@ const calcSafetyStock = ({
  * LLM KHÔNG BAO GIỜ ĐƯỢC TÍNH HÀM NÀY (xem `docs/aisc26/01-llm-role.md`).
  */
 const calcRop = ({ demandPerDay = 0, leadTimeDays = DEFAULT_LEAD_TIME_DAYS, safetyStock = 0 } = {}) => {
-  const d = Math.max(0, Number(demandPerDay) || 0);
-  const lt = Math.max(0, Number(leadTimeDays) || 0);
-  const ss = Math.max(0, Number(safetyStock) || 0);
+  const d = nonNeg(demandPerDay);
+  const lt = nonNeg(leadTimeDays);
+  const ss = nonNeg(safetyStock);
   return {
     rop: Math.ceil(d * lt + ss),
     demandDuringLeadTime: round(d * lt, 2),
@@ -298,8 +344,8 @@ const calcRop = ({ demandPerDay = 0, leadTimeDays = DEFAULT_LEAD_TIME_DAYS, safe
 
 /** Số ngày tồn còn đủ trước khi hết, theo nhu cầu đã hiệu chỉnh. */
 const calcDaysOfCover = ({ atp = 0, demandPerDay = 0 } = {}) => {
-  const d = Number(demandPerDay) || 0;
-  const a = Number(atp) || 0;
+  const d = nonNeg(demandPerDay);
+  const a = nonNeg(atp);
   if (d <= 0) return { daysOfCover: null, infinite: true };
   return { daysOfCover: round(a / d, 1), infinite: false };
 };
@@ -319,8 +365,8 @@ const OK = "OK";
 const STOCKOUT = "STOCKOUT";
 
 const evaluateStockStatus = ({ atp = 0, rop = 0, demandPerDay = 0 } = {}) => {
-  const a = Number(atp) || 0;
-  const r = Number(rop) || 0;
+  const a = num(atp);
+  const r = nonNeg(rop);
   const { daysOfCover, infinite } = calcDaysOfCover({ atp: a, demandPerDay });
 
   let status;
@@ -353,17 +399,15 @@ const calcOrderQty = ({
   reviewPeriodDays = 7,
   packMultiple = 1,
 } = {}) => {
-  const d = Math.max(0, Number(demandPerDay) || 0);
+  const d = nonNeg(demandPerDay);
   // Ngoặc là bắt buộc: `||` có độ ưu tiên thấp hơn `+`, viết không ngoặc sẽ
   // thành `rop || (0 + d*...)` và luôn trả về rop.
-  const orderUpToLevel = Math.ceil(
-    (Number(rop) || 0) + d * Math.max(0, Number(reviewPeriodDays) || 0),
-  );
-  const raw = orderUpToLevel - (Number(atp) || 0);
+  const orderUpToLevel = Math.ceil(nonNeg(rop) + d * nonNeg(reviewPeriodDays));
+  const raw = orderUpToLevel - nonNeg(atp);
   if (raw <= 0) {
     return { orderQty: 0, orderUpToLevel, rawNeed: raw, packMultiple, formula: "max(0, S − ATP) làm tròn theo bao bì" };
   }
-  const pack = Math.max(1, Math.floor(Number(packMultiple) || 1));
+  const pack = Math.max(1, Math.floor(nonNeg(packMultiple, 1)) || 1);
   const orderQty = Math.ceil(raw / pack) * pack;
   return {
     orderQty,
@@ -386,17 +430,128 @@ const proposalFingerprint = ({ atp, rop, unitCost, orderQty, vendorId } = {}) =>
     .createHash("sha256")
     .update(
       [
-        `atp=${Number(atp) || 0}`,
-        `rop=${Number(rop) || 0}`,
-        `unitCost=${Number(unitCost) || 0}`,
-        `orderQty=${Number(orderQty) || 0}`,
+        `atp=${num(atp)}`,
+        `rop=${num(rop)}`,
+        `unitCost=${num(unitCost)}`,
+        `orderQty=${num(orderQty)}`,
         `vendorId=${vendorId || ""}`,
       ].join("|"),
     )
     .digest("hex");
 
 /**
- * Hàm duy nhất cho luồng demo: gộp mọi bước tính cho một SKU.
+ * Kiểm tra đề xuất còn hợp lệ không — so sánh theo NGƯỠNG Ý NGHĨA, không băm.
+ *
+ * Bốn trạng thái, mỗi trạng thái nói rõ người duyệt được làm gì:
+ *
+ * | Kết quả | Điều kiện | Người duyệt được làm gì |
+ * |---|---|---|
+ * | `NO_LONGER_NEEDED` | ATP **mới** > ROP ⇒ không còn cần đặt | Chỉ Từ chối. **Không có đường override.** |
+ * | `DRIFT_BLOCK` | Lệch quá `QTY_DRIFT_TOL` hoặc `COST_DRIFT_TOL` | Xem diff rồi gửi lại kèm `acknowledgeDrift: true`, hoặc Từ chối |
+ * | `DRIFT_WARN` | Lệch nhỏ hơn ngưỡng | Duyệt được, kèm cảnh báo trong kết quả |
+ * | `DRIFT_NONE` | Không lệch | Duyệt thẳng |
+ *
+ * `acknowledgeDrift` KHÔNG phải override tự động: người duyệt phải thấy diff và
+ * bấm xác nhận có chủ đích, và server **vẫn tính lại** ở lần gọi thứ hai.
+ *
+ * @param {object} proposed  payload đề xuất: { atp, rop, orderQty, unitCost }
+ * @param {object} current   số vừa tính lại từ DB lúc duyệt (cùng cấu trúc)
+ * @param {boolean} acknowledgeDrift  người duyệt đã xác nhận thấy diff
+ */
+const evaluateProposalFreshness = ({ proposed = {}, current = {}, acknowledgeDrift = false } = {}) => {
+  const p = proposed && typeof proposed === "object" ? proposed : {};
+  const c = current && typeof current === "object" ? current : {};
+  const pAtp = num(p.atp);
+  const pRop = num(p.rop);
+  const cAtp = num(c.atp);
+  const cRop = num(c.rop);
+
+  // Không còn cần đặt nữa — chặn tuyệt đối, không override được.
+  if (Number.isFinite(cAtp) && Number.isFinite(cRop) && cAtp > cRop) {
+    return {
+      status: NO_LONGER_NEEDED,
+      canApprove: false,
+      canAcknowledge: false,
+      message:
+        `SKU không còn cần đặt: lúc đề xuất ATP=${pAtp} <= ROP=${pRop}, ` +
+        `nay ATP=${cAtp} > ROP=${cRop}. Chi co the Tu choi.`,
+      diff: { atp: { proposed: pAtp, current: cAtp }, rop: { proposed: pRop, current: cRop } },
+    };
+  }
+
+  const pQty = nonNeg(p.orderQty);
+  const cQty = nonNeg(c.orderQty);
+  const pCost = nonNeg(p.unitCost);
+  const cCost = nonNeg(c.unitCost);
+
+  // Lệch tương đối so với giá trị CŨ (proposed). Tránh chia cho 0.
+  const relQty = pQty > 0 ? Math.abs(cQty - pQty) / pQty : cQty > 0 ? 1 : 0;
+  const relCost = pCost > 0 ? Math.abs(cCost - pCost) / pCost : cCost > 0 ? 1 : 0;
+
+  const diff = {
+    orderQty: { proposed: pQty, current: cQty, relDrift: round(relQty, 4) },
+    unitCost: { proposed: pCost, current: cCost, relDrift: round(relCost, 4) },
+    atp: { proposed: pAtp, current: cAtp },
+    rop: { proposed: pRop, current: cRop },
+  };
+
+  const qtyBlocked = relQty > QTY_DRIFT_TOL;
+  const costBlocked = relCost > COST_DRIFT_TOL;
+  const anyDrift = relQty > 0 || relCost > 0;
+
+  if ((qtyBlocked || costBlocked) && !acknowledgeDrift) {
+    const parts = [];
+    if (qtyBlocked) parts.push(`so luong ${pQty} -> ${cQty} (lech ${Math.round(relQty * 100)}%)`);
+    if (costBlocked) parts.push(`don gia ${pCost} -> ${cCost} (lech ${Math.round(relCost * 100)}%)`);
+    return {
+      status: DRIFT_BLOCK,
+      canApprove: false,
+      canAcknowledge: true,
+      acknowledged: false,
+      message:
+        `Du lieu da doi so voi luc de xuat: ${parts.join("; ")}. ` +
+        `Neu van mua, gui lai kem acknowledgeDrift=true; neu khong thi Tu choi.`,
+      diff,
+    };
+  }
+
+  // Đã vượt ngưỡng nhưng người duyệt đã xác nhận có chủ đích. Giữ status
+  // DRIFT_BLOCK để UI vẫn hiển thị "đây là đề xuất đã lệch" — chỉ thêm cờ để
+  // phân biệt với trường hợp chưa ai xác nhận.
+  if (qtyBlocked || costBlocked) {
+    const parts = [];
+    if (qtyBlocked) parts.push(`so luong ${pQty} -> ${cQty}`);
+    if (costBlocked) parts.push(`don gia ${pCost} -> ${cCost}`);
+    return {
+      status: DRIFT_BLOCK,
+      canApprove: true,
+      canAcknowledge: false,
+      acknowledged: true,
+      message:
+        `Da vuot nguong troi du lieu (${parts.join("; ")}) nhung nguoi duyet da ` +
+        `xac nhan co chu dich. Server van tinh lai so moi o lan goi nay.`,
+      diff,
+    };
+  }
+
+  if (anyDrift) {
+    return {
+      status: DRIFT_WARN,
+      canApprove: true,
+      canAcknowledge: false,
+      acknowledged: false,
+      message:
+        `Du lieu da doi nhe: so luong ${pQty} -> ${cQty}, don gia ${pCost} -> ${cCost}. ` +
+        `Duoi nguong chan (${Math.round(QTY_DRIFT_TOL * 100)}% / ${Math.round(COST_DRIFT_TOL * 100)}%).`,
+      diff,
+    };
+  }
+
+  return { status: DRIFT_NONE, canApprove: true, canAcknowledge: false, acknowledged: false, message: "Du lieu khong doi.", diff };
+};
+
+/**
+ * Hàm duy nhất cho luong demo: gop moi buoc tinh cho mot SKU.
  * Đây là thứ P0-4 yêu cầu — một ngưỡng tồn thấp, một nơi định nghĩa.
  *
  * @returns {object} mọi số ở đây là CÔNG THỨC. LLM chỉ đọc, không sửa.
@@ -438,7 +593,7 @@ const planReplenishment = ({
     packMultiple,
   });
 
-  const totalEstimate = qty.orderQty * (Number(unitCost) || 0);
+  const totalEstimate = qty.orderQty * nonNeg(unitCost);
 
   return {
     ...status,
@@ -459,7 +614,7 @@ const planReplenishment = ({
       leadTimeEstimated: lead.estimated,
       daysOfCoverLeft: status.daysOfCover,
       orderQty: qty.orderQty,
-      unitCost: Number(unitCost) || 0,
+      unitCost: nonNeg(unitCost),
       totalEstimate,
       demandMethod: demand.method,
       demandConfidence: demand.confidence,
@@ -474,9 +629,15 @@ module.exports = {
   DEFAULT_LEAD_TIME_DAYS,
   LEAD_TIME_MIN_SAMPLES,
   SPARSE_NONZERO_DAYS,
+  QTY_DRIFT_TOL,
+  COST_DRIFT_TOL,
   STOCKOUT,
   NEED_REPLENISHMENT,
   OK,
+  DRIFT_NONE,
+  DRIFT_WARN,
+  DRIFT_BLOCK,
+  NO_LONGER_NEEDED,
   // hàm
   calcDemand,
   crostonDemandPerDay,
@@ -486,6 +647,7 @@ module.exports = {
   calcRop,
   calcDaysOfCover,
   evaluateStockStatus,
+  evaluateProposalFreshness,
   calcOrderQty,
   proposalFingerprint,
   planReplenishment,
