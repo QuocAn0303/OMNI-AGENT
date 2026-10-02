@@ -20,7 +20,7 @@
  *   formatMoney:       Hàm định dạng tiền tệ VND
  */
 import { useState } from 'react';
-import { Card, Button, Space, Typography, Tag, message, Modal } from 'antd';
+import { Card, Button, Space, Typography, Tag, message, Modal, Input } from 'antd';
 import { CheckOutlined, CloseOutlined, InfoCircleOutlined } from '@ant-design/icons';
 import api from '../../api/axios';
 
@@ -33,11 +33,24 @@ export default function SmartApprovalCard({ actionSummary, expenseId, amount, bu
   const handleDecision = async (action) => {
     setLoading(true);
     try {
-      const endpoint = gateId
-        ? `/api/agent/human-gates/${gateId}/decide`
-        : `/api/workflows/${expenseId}/decide`;
-
-      await api.post(endpoint, { action, note: '' });
+      // Backend dùng HAI hợp đồng khác nhau, dễ nhầm:
+      //   POST /api/agent/human-gates/:id/decide  → body { decision, note }
+      //       (agent.routes.js:605 đọc req.body.decision)
+      //   POST /api/workflows/approvals/:id/decide → body { status, comment }
+      //       (workflow.validation.decideSchema) — chú ý có đoạn "approvals/"
+      // Component này trước đây gửi { action, note } tới cả hai, nên
+      // `decision` luôn là undefined ⇒ server trả 400 ⇒ thẻ duyệt luôn hỏng.
+      if (gateId) {
+        await api.post(`/api/agent/human-gates/${gateId}/decide`, {
+          decision: action,
+          note: '',
+        });
+      } else {
+        await api.post(`/api/workflows/approvals/${expenseId}/decide`, {
+          status: action,
+          comment: '',
+        });
+      }
       setDecision(action);
       message.success(action === 'APPROVED' ? 'Đã duyệt thành công!' : 'Đã từ chối.');
     } catch (e) {
