@@ -25,6 +25,7 @@ const mockOrderItem = { findMany: jest.fn() };
 const mockPurchaseItem = { findMany: jest.fn() };
 const mockVendor = { findFirst: jest.fn() };
 const mockInventory = { findMany: jest.fn() };
+const mockProduct = { findFirst: jest.fn() };
 
 jest.mock("../src/config/prisma", () => ({
   agentHumanGate: mockAgentHumanGate,
@@ -34,7 +35,8 @@ jest.mock("../src/config/prisma", () => ({
   purchaseItem: mockPurchaseItem,
   vendor: mockVendor,
   inventory: mockInventory,
-  product: {},
+  // `recomputeCurrent` đọc giá vốn hiện tại từ Product để bắt COST_DRIFT.
+  product: mockProduct,
   user: {},
   order: {},
   customer: {},
@@ -164,6 +166,9 @@ beforeEach(() => {
   mockAgentHumanGate.updateMany.mockResolvedValue({ count: 1 });
   mockAgentHumanGate.update.mockImplementation(async () => ({}));
   mockAgentSession.update.mockResolvedValue({});
+  // Mặc định khớp `unitCost` trong fixture `poGate` (45000) ⇒ KHÔNG drift.
+  // Test COST_DRIFT sẽ override lại bằng giá khác.
+  mockProduct.findFirst.mockResolvedValue({ costPrice: 45000 });
 });
 
 describe("P0-3 · revalidate — kiểm lại lúc duyệt", () => {

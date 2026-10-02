@@ -42,10 +42,15 @@ const checkAutoReorder = async (productIds, warehouseId) => {
 
     for (const inv of inventories) {
       if (!inv.product?.isActive) continue;
-      const available = inv.quantity - (inv.reserved || 0);
-      // Ngưỡng giống `evaluateStockStatus`: ATP <= ROP. Ở đây chỉ lọc sơ bộ để
-      // KHÔNG gọi loader 28 ngày cho mọi SKU; quyết định thật do calc.js đưa ra.
-      if (available > (inv.minStock || 0)) continue;
+
+      // KHÔNG lọc sơ bộ bằng `minStock`.
+      //
+      // Trước đây có `if (available > inv.minStock) continue;` với lý do tiết kiệm
+      // chi phí loader. Nhưng `minStock` KHÁC ngưỡng quyết định: `minStock` thường
+      // nhỏ hơn ROP, nên một SKU có ATP > minStock nhưng vẫn <= ROP (trường hợp rất
+      // phổ biến) sẽ bị bỏ qua ⇒ âm thầm không sinh đề xuất nhập hàng.
+      // Quyết định "có cần nhập không" phải do đúng một nơi đưa ra là `calc.js`
+      // (ATP + onOrder <= ROP). Ở đây chỉ giữ lọi rẻ tiền `isActive`.
 
       if (!inv.tenantId) {
         logger.error(`${LOG} auto-reorder: inventory ${inv.id} không có tenantId — bỏ qua ${inv.product.sku}`);

@@ -77,10 +77,13 @@ describe("automation — advanced scenarios", () => {
       expect(prisma.purchaseOrder.create).not.toHaveBeenCalled();
     });
 
-    test("một SKU tồn thấp, một SKU tồn cao → chỉ 1 đề xuất", async () => {
+    // KHÔNG lọc sơ bộ bằng `minStock`: `minStock` khác ngưỡng quyết định (ROP),
+    // nên lọc theo nó sẽ bỏ sót những SKU có ATP > minStock nhưng vẫn <= ROP.
+    // Mọi SKU active đều được đưa vào loader; `calc.js` mới là nơi quyết định.
+    test("mọi SKU active đều được đưa vào loader — KHÔNG lọc bằng minStock", async () => {
       setupReorderMock({ quantity: 1, minStock: 10, quantity2: 100 });
       await checkAutoReorder(["p1", "p2"], "w1");
-      expect(mockSuggestForProductInTenant).toHaveBeenCalledTimes(1);
+      expect(mockSuggestForProductInTenant).toHaveBeenCalledTimes(2);
       expect(prisma.purchaseOrder.create).not.toHaveBeenCalled();
     });
 
@@ -91,16 +94,10 @@ describe("automation — advanced scenarios", () => {
       expect(prisma.purchaseOrder.create).not.toHaveBeenCalled();
     });
 
-    test("tồn đúng bằng ngưỡng (ATP <= minStock) → sinh đề xuất", async () => {
-      setupReorderMock({ quantity: 10, minStock: 10 });
-      await checkAutoReorder(["p1"], "w1");
-      expect(mockSuggestForProductInTenant).toHaveBeenCalledTimes(1);
-    });
-
-    test("tồn CAO HƠN ngưỡng một đơn vị → không sinh đề xuất", async () => {
+    test("tồn CAO HƠN minStock vẫn được gọi loader (quyết định thuộc calc.js)", async () => {
       setupReorderMock({ quantity: 11, minStock: 10 });
       await checkAutoReorder(["p1"], "w1");
-      expect(mockSuggestForProductInTenant).not.toHaveBeenCalled();
+      expect(mockSuggestForProductInTenant).toHaveBeenCalledTimes(1);
     });
 
     test("DB lỗi → bắt và log, không làm chết cron", async () => {

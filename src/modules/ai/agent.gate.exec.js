@@ -131,16 +131,29 @@ const findPoByGate = async (gate, { item, vendorId, decidedById } = {}) => {
 const recomputeCurrent = async (item) => {
   const { loadReplenishmentInput, loadLeadTimeReceipts } =
     require("../replenishment/replenishment.suggest");
+  const prisma = require("../../config/prisma");
 
   const inputs = await loadReplenishmentInput([item.productId]);
   const input = inputs.get(item.productId) || { dailySales: [], inventories: [], onOrder: 0 };
   const receipts = await loadLeadTimeReceipts(item.productId);
 
+  // Giá vốn HIỆN TẠI phải đọc từ Product. Nếu dùng luôn `item.unitCost` (giá
+  // lúc đề xuất) thì COST_DRIFT không bao giờ kích hoạt — nhánh này chết âm
+  // thầm và người duyệt không được cảnh báo dù giá đã đổi.
+  const product = await prisma.product.findFirst({
+    where: { id: item.productId },
+    select: { costPrice: true },
+  });
+  const currentCost =
+    product && product.costPrice !== null && Number.isFinite(Number(product.costPrice))
+      ? Number(product.costPrice)
+      : Number(item.unitCost || 0);
+
   const plan = planReplenishment({
     dailySales: input.dailySales,
     inventories: input.inventories,
     receipts,
-    unitCost: item.unitCost,
+    unitCost: currentCost,
     packMultiple: 1,
     onOrder: input.onOrder,
   });
@@ -151,7 +164,8 @@ const recomputeCurrent = async (item) => {
     inventoryPosition: plan.atp.position,
     rop: plan.rationale.rop,
     orderQty: plan.order.orderQty,
-    unitCost: item.unitCost,
+    // Giá dùng để SO SÁNH với giá lúc đề xuất (để bắt COST_DRIFT).
+    unitCost: currentCost,
     demandPerDay: plan.rationale.demandPerDay,
   };
 };
@@ -315,7 +329,10 @@ const payload = gate.actionPayload || {};
     })
     .catch((logErr) => logger.error(`[gate-exec] gate ${gateId}: khong ghi duoc audit thanh cong: ${logErr.message}`));
 
-  return { po, linked: false };
+  // Trả kèm `freshness` để HTTP layer hiện được cảnh báo DRIFT_WARN cho người
+  // duyệt — nếu im lặng thì "đã cảnh báo" chỉ nằm trong audit log, người dùng
+  // không bao giờ thấy.
+  return { po, linked: false, freshness: check.freshness, current: check.current };
 };
 
 /**

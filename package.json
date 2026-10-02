@@ -19,6 +19,7 @@
     "check:humangate": "node scripts/check-humangate.js",
     "check:tenant": "node scripts/check-tenant-isolation.js && node scripts/check-tenant-gaps.js",
     "smoke:humangate": "node scripts/smoke-humangate.js",
+    "smoke:po-gate": "node scripts/smoke-po-gate.js",
     "db:shadow": "node scripts/ensure-shadow-db.js",
     "smoke:crm-pipeline": "node scripts/smoke-crm-pipeline.js",
     "smoke:crm-phase2": "node scripts/smoke-crm-phase2.js",

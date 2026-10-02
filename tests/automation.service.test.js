@@ -59,13 +59,15 @@ describe("automation.service", () => {  beforeEach(() => {    jest.clearAllMocks
       expect(prisma.purchaseOrder.update).not.toHaveBeenCalled();
     });
 
-    test("BẬT: tồn cao hơn ngưỡng thì không sinh đề xuất", async () => {
+    // Không lọc bằng `minStock`: ngưỡng quyết định là ATP+onOrder <= ROP, thuộc
+    // `calc.js`. Lọc ở đây bằng `minStock` sẽ bỏ sót SKU còn cần nhập.
+    test("BẬT: tồn cao hơn minStock vẫn được đưa vào loader để calc.js quyết định", async () => {
       process.env.AUTO_REORDER_PROPOSAL = "1";
       prisma.inventory.findMany.mockResolvedValue([inv({ quantity: 100, minStock: 5 })]);
 
       await checkAutoReorder(["p1"], "w1");
 
-      expect(mockSuggestForProductInTenant).not.toHaveBeenCalled();
+      expect(mockSuggestForProductInTenant).toHaveBeenCalledTimes(1);
     });
 
     test("BẬT: sản phẩm không active thì bỏ qua", async () => {

@@ -219,7 +219,10 @@ const suggestForProduct = async ({
   });
   if (!product || product.isActive === false) return null;
 
-  const cost = Number.isFinite(Number(unitCost)) ? Number(unitCost) : Number(product.costPrice || 0);
+  // `Number(null)` là 0 và 0 cũng hữu hạn — nên phải loại null/rỗng TRƯỚC khi kiểm
+  // tra, nếu không giá vốn sẽ mặc định thành 0 và tổng tiền đề xuất luôn bằng 0.
+  const hasUnitCost = unitCost !== null && unitCost !== undefined && unitCost !== "" && Number.isFinite(Number(unitCost));
+  const cost = hasUnitCost ? Number(unitCost) : Number(product.costPrice || 0);
   const plan = planReplenishment({
     dailySales: input.dailySales,
     inventories: input.inventories,
@@ -304,8 +307,10 @@ const suggestForProduct = async ({
         proposalKey: key,
         fingerprint,
         rationale: plan.rationale,
-        leadTimeDays: plan.leadTime.leadTimeDays,
-        leadTimeEstimated: plan.leadTime.estimated,
+        // `planReplenishment` trả về `lead` (không phải `leadTime`); mock trong
+        // unit test cũ từng dùng sai tên nên lỗi này chỉ lộ ra khi chạy thật.
+        leadTimeDays: plan.lead.leadTimeDays,
+        leadTimeEstimated: plan.lead.estimated,
       }),
       tx,
     );
