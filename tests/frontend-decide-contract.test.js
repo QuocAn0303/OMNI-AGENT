@@ -25,11 +25,15 @@ const WORKFLOW_ROUTES = "src/modules/workflow/workflow.routes.js";
 describe("hợp đồng decide — frontend khớp backend", () => {
   it("human-gates/:id/decide: backend đọc `decision`", () => {
     const routes = read(AGENT_ROUTES);
-    const m = routes.match(/human-gates\/:id\/decide[\s\S]*?const\s*\{\s*decision\s*,\s*note\s*\}\s*=\s*req\.body[\s\S]*?includes\(decision\)/);
-    expect(m).not.toBeNull();
-    expect(m[0]).not.toMatch(/const\s*\{\s*action\s*,/);
-    // Backend chỉ chấp nhận APPROVED/REJECTED
-    expect(m[0]).toMatch(/\['APPROVED',\s*'REJECTED'\]\.includes\(decision\)/);
+    // Không giới hạn chiều dài: phải quay tới dòng kiểm tra enum.
+// `indexOf` sẽ khớp nhầm dòng comment ở đầu file — phải tìm đúng chỗ
+// đăng ký route.
+const start = routes.indexOf("router.post('/human-gates/:id/decide'");
+expect(start).toBeGreaterThan(-1);
+const branch = routes.slice(start, start + 1200);
+expect(branch).toMatch(/const\s*\{\s*decision\s*,\s*note\s*(,\s*acknowledgeDrift\s*)?\}\s*=\s*req\.body/);
+expect(branch).not.toMatch(/const\s*\{\s*action\s*,/);
+expect(branch).toMatch(/\['APPROVED',\s*'REJECTED'\]\.includes\(decision\)/);
   });
 
   it("SmartApprovalCard gửi `decision` cho human-gates, KHÔNG gửi `action`", () => {

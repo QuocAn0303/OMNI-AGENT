@@ -1,4 +1,4 @@
-/**
+﻿/**
  * tests/agent-humangate.route.test.js — HTTP-layer cho luồng phê duyệt human-gate
  *
  * tests/agent-humangate.contract.test.js đã chắc payload khớp schema Prisma.
@@ -26,9 +26,13 @@ jest.mock("../src/config/prisma", () => {
   mockPrisma.agentStep = { create: jest.fn().mockResolvedValue({}), aggregate: jest.fn() };
   mockPrisma.agentFeedback = { create: jest.fn(), groupBy: jest.fn() };
   mockPrisma.agentHumanGate = {
-    create: jest.fn().mockResolvedValue({ id: "gate-1" }),
+    create: jest.fn().mockResolvedValue({ id: 'gate-1' }),
     findMany: jest.fn(),
     findUnique: jest.fn(),
+    // P0-3: decide chuyen sang doc bang findFirst va dao trang thai bang
+    // updateMany CO DIEU KIEN (update() doc-roi-ghi => bam duyet hai lan tao hai PO).
+    findFirst: jest.fn(),
+    updateMany: jest.fn().mockResolvedValue({ count: 1 }),
     update: jest.fn(),
   };
   mockPrisma.order = { count: jest.fn(), aggregate: jest.fn(), findMany: jest.fn(), findFirst: jest.fn() };
@@ -136,15 +140,24 @@ describe("GET /api/agent/human-gates", () => {
 });
 
 
+beforeEach(() => {
+  prisma.agentHumanGate.updateMany.mockReset();
+  prisma.agentHumanGate.updateMany.mockResolvedValue({ count: 1 });
+  prisma.agentHumanGate.update.mockReset();
+  prisma.agentHumanGate.update.mockResolvedValue({});
+  prisma.agentSession.update.mockReset();
+  prisma.agentSession.update.mockResolvedValue({});
+});
+
 describe("POST /api/agent/human-gates/:id/decide", () => {
   it("APPROVED ghi đúng tên field của schema + đóng AgentSession", async () => {
-    prisma.agentHumanGate.findUnique.mockResolvedValue(pendingGate());
+    prisma.agentHumanGate.findFirst.mockResolvedValue(pendingGate());
     const { status, body } = await decide();
 
     expect(status).toBe(200);
     expect(body.success).toBe(true);
 
-    const data = prisma.agentHumanGate.update.mock.calls[0][0].data;
+    const data = prisma.agentHumanGate.updateMany.mock.calls[0][0].data;
     expect(data.status).toBe("APPROVED");
     expect(data.decidedById).toBe("u-admin");
     expect(data.decidedAt).toBeInstanceOf(Date);
@@ -159,12 +172,12 @@ describe("POST /api/agent/human-gates/:id/decide", () => {
   });
 
   it("REJECTED không đóng session, không tự nhận đã duyệt", async () => {
-    prisma.agentHumanGate.findUnique.mockResolvedValue(pendingGate());
+    prisma.agentHumanGate.findFirst.mockResolvedValue(pendingGate());
     prisma.agentHumanGate.update.mockResolvedValue(pendingGate({ status: "REJECTED" }));
     const { status } = await decide("gate-1", { decision: "REJECTED", note: "khong duoc" });
 
     expect(status).toBe(200);
-    expect(prisma.agentHumanGate.update.mock.calls[0][0].data.status).toBe("REJECTED");
+    expect(prisma.agentHumanGate.updateMany.mock.calls[0][0].data.status).toBe("REJECTED");
     expect(prisma.agentSession.update).not.toHaveBeenCalled();
   });
 
@@ -172,36 +185,36 @@ describe("POST /api/agent/human-gates/:id/decide", () => {
     const { status, body } = await decide("gate-1", { decision: "MAYBE" });
     expect(status).toBe(400);
     expect(body.message).toMatch(/APPROVED or REJECTED/);
-    expect(prisma.agentHumanGate.findUnique).not.toHaveBeenCalled();
+    expect(prisma.agentHumanGate.findFirst).not.toHaveBeenCalled();
   });
 
   it("404 khi gate không tồn tại", async () => {
-    prisma.agentHumanGate.findUnique.mockResolvedValue(null);
+    prisma.agentHumanGate.findFirst.mockResolvedValue(null);
     const { status } = await decide("gate-missing");
     expect(status).toBe(404);
   });
 
   it("400 khi gate đã được quyết định trước đó (chống double-decide)", async () => {
-    prisma.agentHumanGate.findUnique.mockResolvedValue(pendingGate({ status: "APPROVED" }));
+    prisma.agentHumanGate.findFirst.mockResolvedValue(pendingGate({ status: "APPROVED" }));
     const { status, body } = await decide();
     expect(status).toBe(400);
     expect(body.message).toMatch(/already APPROVED/);
-    expect(prisma.agentHumanGate.update).not.toHaveBeenCalled();
+    expect(prisma.agentHumanGate.updateMany).not.toHaveBeenCalled();
   });
 
   it("400 khi gate PENDING nhưng quá hạn (trạng thái cron sweep sửa)", async () => {
-    prisma.agentHumanGate.findUnique.mockResolvedValue(
+    prisma.agentHumanGate.findFirst.mockResolvedValue(
       pendingGate({ expiresAt: new Date(Date.now() - 60_000).toISOString() }),
     );
     const { status, body } = await decide();
     expect(status).toBe(400);
     expect(body.message).toMatch(/expired/i);
-    expect(prisma.agentHumanGate.update).not.toHaveBeenCalled();
+    expect(prisma.agentHumanGate.updateMany).not.toHaveBeenCalled();
   });
 
-  it("REGRESSION: gate update lỗi → 500, không phải 200 'Đã phê duyệt' giả", async () => {
-    prisma.agentHumanGate.findUnique.mockResolvedValue(pendingGate());
-    prisma.agentHumanGate.update.mockRejectedValue(new Error("actionSummary cannot be null"));
+  it("REGRESSION: đảo trạng thái lỗi → 500, không phải 200 'Đã phê duyệt' giả", async () => {
+    prisma.agentHumanGate.findFirst.mockResolvedValue(pendingGate());
+    prisma.agentHumanGate.updateMany.mockRejectedValue(new Error("actionSummary cannot be null"));
 
     const { status, body } = await decide();
     expect(status).toBe(500);
@@ -209,8 +222,35 @@ describe("POST /api/agent/human-gates/:id/decide", () => {
     expect(prisma.agentSession.update).not.toHaveBeenCalled();
   });
 
+  it("P0-3: đảo trạng thái dùng updateMany CÓ ĐIỀU KIỆN status=PENDING", async () => {
+    prisma.agentHumanGate.findFirst.mockResolvedValue(pendingGate());
+    const { status } = await decide();
+    expect(status).toBe(200);
+    expect(prisma.agentHumanGate.updateMany.mock.calls[0][0].where).toMatchObject({
+      id: "gate-1", status: "PENDING",
+    });
+  });
+
+  it("P0-3: count=0 (người khác vừa duyệt) → 409, không báo thành công giả", async () => {
+    prisma.agentHumanGate.findFirst.mockResolvedValue(pendingGate());
+    prisma.agentHumanGate.updateMany.mockResolvedValue({ count: 0 });
+
+    const { status, body } = await decide();
+    expect(status).toBe(409);
+    expect(body.success).toBe(false);
+    expect(prisma.agentSession.update).not.toHaveBeenCalled();
+  });
+
+  it("P0-3: REJECTED không có lý do → 400 (người sau không biết sửa gì)", async () => {
+    prisma.agentHumanGate.findFirst.mockResolvedValue(pendingGate());
+    const { status, body } = await decide("gate-1", { decision: "REJECTED", note: "   " });
+    expect(status).toBe(400);
+    expect(body.message).toMatch(/lý do/);
+    expect(prisma.agentHumanGate.updateMany).not.toHaveBeenCalled();
+  });
+
   it("gate đã lưu nhưng đóng session fail → vẫn 200 và PHẢI log có gate id (bug cũ: nuốt lỗi)", async () => {
-    prisma.agentHumanGate.findUnique.mockResolvedValue(pendingGate());
+    prisma.agentHumanGate.findFirst.mockResolvedValue(pendingGate());
     prisma.agentSession.update.mockRejectedValue(new Error("session row missing"));
 
     const { status } = await decide("gate-1");

@@ -3421,11 +3421,16 @@ model AgentHumanGate {
   decisionNote  String?
   decidedAt     DateTime?
   expiresAt     DateTime
+  resultRef     String?
   createdAt     DateTime        @default(now())
 
   @@index([sessionId])
   @@index([status, expiresAt])
   @@index([tenantId])
+  // Truy vấn "đề xuất PO đã duyệt nhưng chưa tạo được PO" (00b §4.2).
+  // Ba điều kiện phải khớp CÙNG LÚC — resultRef null một mình không đủ vì
+  // các gate loại khác (DATA_REQUEST...) cũng có resultRef null.
+  @@index([actionType, status, resultRef])
   @@map("agent_human_gates")
 }
 

@@ -35,7 +35,9 @@ const {
   buildWriteActionGate,
   buildDecisionData,
   createGate,
+  PO_PROPOSAL,
 } = require('./agent.humangate');
+const { executeGate, retryExecution } = require('./agent.gate.exec');
 
 // ─────────────────────────────────────────────────────────────
 // M3: Role matrix cho tool AI
@@ -607,29 +609,71 @@ router.get('/human-gates', authorize('ADMIN', 'MANAGER'), async (req, res, next)
 router.post('/human-gates/:id/decide', authorize('ADMIN', 'MANAGER'), async (req, res, next) => {
   try {
     const { id } = req.params;
-    const { decision, note } = req.body;
+    const { decision, note, acknowledgeDrift } = req.body;
 
     if (!['APPROVED', 'REJECTED'].includes(decision)) {
       throw { status: 400, message: 'decision must be APPROVED or REJECTED' };
     }
+    // Từ chối mà không ghi lý do thì người sau không biết vì sao phải sửa.
+    if (decision === 'REJECTED' && !String(note || '').trim()) {
+      throw { status: 400, message: 'Từ chối đề xuất cần nhập lý do' };
+    }
 
-    const gate = await prisma.agentHumanGate.findUnique({ where: { id } });
+    const gate = await prisma.agentHumanGate.findFirst({
+      where: { id },
+      include: { session: { select: { userId: true, triggerSource: true } } },
+    });
     if (!gate) throw { status: 404, message: 'Human gate not found' };
     if (gate.status !== 'PENDING') throw { status: 400, message: `Gate is already ${gate.status}` };
     if (new Date(gate.expiresAt) < new Date()) throw { status: 400, message: 'Gate has expired' };
 
-    const updated = await prisma.agentHumanGate.update({
-      where: { id },
+    // ĐẢO TRẠNG THÁI BẰNG updateMany CÓ ĐIỀU KIỆN, không dùng update().
+    // `update()` đọc-rồi-ghi nên hai request song song đều thấy PENDING và cùng
+    // ghi được ⇒ bấm duyệt hai lần tạo hai PO. `updateMany` khoá dòng, chỉ một
+    // bên nhận count=1, bên kia nhận count=0 ⇒ 409 (00b §10 test #3).
+    const claimed = await prisma.agentHumanGate.updateMany({
+      where: { id, status: 'PENDING' },
       data: buildDecisionData({ decision, note, userId: req.user.id }),
     });
+    if (claimed.count !== 1) {
+      throw { status: 409, message: 'Gate đã được xử lý bởi người khác' };
+    }
 
+    const updated = await prisma.agentHumanGate.findFirst({ where: { id } });
+
+    // ── Tự duyệt: KHÔNG chặn ──────────────────────────────────────────────
+    // Khách SME thường chỉ có MỘT chủ shop là ADMIN; chặn tự duyệt cứng sẽ làm
+    // tính năng vô dụng với đúng nhóm khách chính. Thay vào đó audit bắt buộc ghi
+    // lại. Đề xuất từ SYSTEM_EVENT vốn không có người đề xuất nên luôn false.
+    const selfApproved =
+      gate.actionType === PO_PROPOSAL &&
+      gate.session?.triggerSource === 'USER_CHAT' &&
+      gate.session?.userId === req.user.id;
+
+    let po = null;
     if (decision === 'APPROVED') {
+      if (gate.actionType === PO_PROPOSAL) {
+        // ĐÂY LÀ NHÁNH CÓ HIỆU LỰC ĐẦU TIÊN TRONG HỆ THỐNG: chỉ sau khi gate
+        // được duyệt thì PO mới tồn tại. Re-validation tính lại từ DB (ATP/ROP/đơn
+        // giá); lệch quá ngưỡng ⇒ 409 kèm diff, người duyệt phải xác nhận có chủ đích.
+        const result = await executeGate(id, req.user.id, { acknowledgeDrift: Boolean(acknowledgeDrift) });
+        po = result.po;
+      }
       // Gate đã lưu quyết định thành công → không được fail response. Nhưng nếu không đánh
       // dấu được session COMPLETED thì phiên chat kẹt PENDING vĩnh viễn → PHẢI log có id để trace.
       try {
         await prisma.agentSession.update({
           where: { id: gate.sessionId },
-          data: { status: 'COMPLETED', finalResult: { approved: true, actionType: gate.actionType, payload: gate.actionPayload } },
+          data: {
+            status: 'COMPLETED',
+            finalResult: {
+              approved: true,
+              actionType: gate.actionType,
+              payload: gate.actionPayload,
+              selfApproved,
+              ...(po ? { poId: po.id, poCode: po.poCode } : {}),
+            },
+          },
         });
       } catch (e) {
         logger.error(
@@ -638,7 +682,46 @@ router.post('/human-gates/:id/decide', authorize('ADMIN', 'MANAGER'), async (req
       }
     }
 
-    res.json({ success: true, data: updated, message: decision === 'APPROVED' ? 'Đã phê duyệt' : 'Đã từ chối' });
+    res.json({
+      success: true,
+      data: {
+        ...updated,
+        selfApproved,
+        po: po ? { id: po.id, poCode: po.poCode, total: po.total } : null,
+      },
+      message: decision === 'APPROVED'
+        ? (po ? `Đã phê duyệt — tạo PO ${po.poCode}` : 'Đã phê duyệt')
+        : 'Đã từ chối',
+    });
+  } catch (e) {
+    next(e);
+  }
+});
+
+/**
+ * Thử lại thực thi cho đề xuất PO đã duyệt nhưng `resultRef` vẫn null.
+ *
+ * Thao tác CỐ Ý — KHÔNG có cron tự gọi. PO là hành động tài chính nên không được
+ * tự retry. Chạy lại đầy đủ re-validation vì dữ liệu đã cũ hơn lần đầu.
+ * Điều kiện nhận diện trạng thái lỗi là BA điều kiện CÙNG LÚC
+ * (`actionType` + `status` + `resultRef IS NULL`) — không được tính nhầm gate
+ * loại khác, xem 00b §4.2.
+ */
+router.post('/human-gates/:id/retry-execution', authorize('ADMIN', 'MANAGER'), async (req, res, next) => {
+  try {
+    const { id } = req.params;
+    const { acknowledgeDrift } = req.body || {};
+    const { po, linked } = await retryExecution(id, req.user.id, {
+      acknowledgeDrift: Boolean(acknowledgeDrift),
+    });
+    res.json({
+      success: true,
+      data: { id: po.id, poCode: po.poCode, total: po.total },
+      linked,
+      message: linked
+        ? `PO ${po.poCode} đã được tạo từ đề xuất này — đã liên kết, không tạo mới`
+        : `Đã tạo PO ${po.poCode}`,
+    });
   } catch (e) {
     next(e);
   }
