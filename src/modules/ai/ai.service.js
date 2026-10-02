@@ -96,11 +96,17 @@ const upsertDocument = async (entityType, entityId, content, metadata = {}) => {
   const vectorStr = `[${embedding.join(",")}]`;
   const tenantId = getTenantId() || null;
 
+  // `tenant_id` BẮT BUỘC cập nhật khi conflict.
+  //
+  // Ràng buộc unique của `ai_documents` là TOÀN CỤC: `(entity_type, entity_id)`,
+  // không có `tenant_id`. Nếu không set lại `tenant_id` ở nhánh DO UPDATE thì
+  // một tài liệu thuộc tenant A sẽ bị ghi đè nội dung mà `tenant_id` vẫn NULL
+  // ⇒ biến thành "knowledge global" và bị MỌI tenant khác đọc thấy.
   await prisma.$executeRawUnsafe(
     `INSERT INTO ai_documents (id, entity_type, entity_id, content, metadata, tenant_id, updated_at)
      VALUES (gen_random_uuid(), $1, $2, $3, $4::jsonb, $5, NOW())
      ON CONFLICT (entity_type, entity_id)
-     DO UPDATE SET content = $3, metadata = $4::jsonb, updated_at = NOW()`,
+     DO UPDATE SET content = $3, metadata = $4::jsonb, updated_at = NOW(), tenant_id = $5`,
     entityType,
     entityId,
     content,
@@ -108,10 +114,22 @@ const upsertDocument = async (entityType, entityId, content, metadata = {}) => {
     tenantId,
   );
 
+  // Đọc lại PHẢI khoanh theo tenant. Trước đây chỉ lọc `entity_type`/`entity_id`
+  // nên có thể trả về `id` của tài liệu đang thuộc về tenant khác, và bước ghi
+  // embedding ngay sau đó sẽ đè lên vector của họ.
   const [doc] = await prisma.$queryRawUnsafe(
-    `SELECT id FROM ai_documents WHERE entity_type = $1 AND entity_id = $2`,
+    tenantId
+      ? `SELECT id FROM ai_documents
+         WHERE entity_type = $1 AND entity_id = $2
+           AND (tenant_id = $3 OR tenant_id IS NULL)
+         ORDER BY (tenant_id = $3) DESC
+         LIMIT 1`
+      : `SELECT id FROM ai_documents
+         WHERE entity_type = $1 AND entity_id = $2 AND tenant_id IS NULL
+         LIMIT 1`,
     entityType,
     entityId,
+    tenantId,
   );
 
   if (!doc) return;

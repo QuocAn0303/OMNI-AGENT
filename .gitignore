@@ -62,12 +62,14 @@ CLAUDE.md
 AGENTS.md
 
 # Internal planning docs, demos & temp files
-# Lưu ý git: KHÔNG thể dùng `/docs/` + `!/docs/aisc26/` — git không đi vào thư mục
-# đã bị loại nên không bao giờ thấy file con để re-include. Phải loại nội dung
-# (`/docs/*`) chứ không loại chính thư mục.
+# Lưu ý git: KHÔNG thể dùng `/docs/` + `!/docs/aisc26/` — git không đi vào
+# thư mục đã bị loại nên không bao giờ thấy file con để re-include. Phải loại
+# nội dung (`/docs/*`) chứ không loại ngoài thư mục, và dùng `**` để bao cả
+# thư mục con (ví dụ `docs/aisc26/one-off/`).
 /docs/*
-# Tài liệu thi AISC26: 3 người cần chung lịch sử quyết định, truy vết theo commit.
+# Tài liệu thi AISC26: đội cần chung lịch sử quyết định, truy vết theo commit.
 !/docs/aisc26/
+!/docs/aisc26/**
 /plans/
 structure.txt
 /Demo Issue Triage*/
