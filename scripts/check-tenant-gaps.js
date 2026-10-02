@@ -11,6 +11,10 @@
  * Chay: node scripts/check-tenant-gaps.js   (can DB da seed, tu don dep)
  */
 require("dotenv").config();
+const { assertLocalDb } = require("./lib/assert-local-db");
+assertLocalDb("check-tenant-gaps");
+const { track, cleanup, installSignalHandlers } = require("./lib/cleanup-registry");
+installSignalHandlers("check-tenant-gaps");
 const prisma = require("../src/config/prisma");
 const { runWithTenant } = require("../src/config/tenantContext");
 
@@ -33,27 +37,38 @@ const suffix = Date.now().toString(36);
 
   try {
     tenantA = await prisma.tenant.create({ data: { name: "GAP A", slug: suffixA } });
+    track(() => prisma.tenant.deleteMany({ where: { id: tenantA.id } }));
     tenantB = await prisma.tenant.create({ data: { name: "GAP B", slug: suffixB } });
+    track(() => prisma.tenant.deleteMany({ where: { id: tenantB.id } }));
 
     userA = await prisma.user.create({
       data: { tenantId: tenantA.id, email: `${suffixA}@gap.test`, password: "gap-test-not-a-real-hash", fullName: "A", role: "ADMIN" },
     });
+    track(() => prisma.user.deleteMany({ where: { id: userA.id } }));
 
     const catA = await prisma.category.create({ data: { tenantId: tenantA.id, name: `CAT-A-${suffix}` } });
+    track(() => prisma.category.deleteMany({ where: { id: catA.id } }));
     const catB = await prisma.category.create({ data: { tenantId: tenantB.id, name: `CAT-B-${suffix}` } });
+    track(() => prisma.category.deleteMany({ where: { id: catB.id } }));
 
     productA = await prisma.product.create({
       data: { tenantId: tenantA.id, sku: `SKU-A-${suffix}`, name: `SP A ${suffix}`, price: 100, costPrice: 50, categoryId: catA.id },
     });
+    track(() => prisma.product.deleteMany({ where: { id: productA.id } }));
     productB = await prisma.product.create({
       data: { tenantId: tenantB.id, sku: `SKU-B-${suffix}`, name: `SP B ${suffix}`, price: 100, costPrice: 50, categoryId: catB.id },
     });
+    track(() => prisma.product.deleteMany({ where: { id: productB.id } }));
 
     const whA = await prisma.warehouse.create({ data: { tenantId: tenantA.id, code: `WH-A-${suffix}`, name: "WH A" } });
+    track(() => prisma.warehouse.deleteMany({ where: { id: whA.id } }));
     const whB = await prisma.warehouse.create({ data: { tenantId: tenantB.id, code: `WH-B-${suffix}`, name: "WH B" } });
+    track(() => prisma.warehouse.deleteMany({ where: { id: whB.id } }));
 
     invA = await prisma.inventory.create({ data: { tenantId: tenantA.id, productId: productA.id, warehouseId: whA.id, quantity: 10, minStock: 2 } });
+    track(() => prisma.inventory.deleteMany({ where: { id: invA.id } }));
     invB = await prisma.inventory.create({ data: { tenantId: tenantB.id, productId: productB.id, warehouseId: whB.id, quantity: 99, minStock: 2 } });
+    track(() => prisma.inventory.deleteMany({ where: { id: invB.id } }));
 
     // ── 1. include nested qua hasMany ────────────────────────────────
     await runWithTenant(tenantA.id, async () => {
@@ -109,18 +124,8 @@ const suffix = Date.now().toString(36);
     console.error("LOI:", e.message);
     fail += 1;
   } finally {
-    try {
-      await prisma.inventory.deleteMany({ where: { productId: { in: [productA?.id, productB?.id].filter(Boolean) } } });
-      await prisma.product.deleteMany({ where: { id: { in: [productA?.id, productB?.id].filter(Boolean) } } });
-      await prisma.warehouse.deleteMany({ where: { code: { in: [`WH-A-${suffix}`, `WH-B-${suffix}`] } } });
-      await prisma.category.deleteMany({ where: { name: { in: [`CAT-A-${suffix}`, `CAT-B-${suffix}`] } } });
-      if (userA) await prisma.user.deleteMany({ where: { id: userA.id } });
-      if (tenantA) await prisma.tenant.deleteMany({ where: { id: tenantA.id } });
-      if (tenantB) await prisma.tenant.deleteMany({ where: { id: tenantB.id } });
-      console.log("Da don dep du lieu test.");
-    } catch (e) {
-      console.error("Khong don dep duoc:", e.message);
-    }
+    await cleanup();
+    console.log("Da don dep du lieu test.");
     await prisma.$disconnect();
   }
 

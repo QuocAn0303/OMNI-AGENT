@@ -12,6 +12,10 @@
  * Tự dọn dẹp dữ liệu test ở cuối.
  */
 require("dotenv").config();
+const { assertLocalDb } = require("./lib/assert-local-db");
+const assertLocalDbResult = assertLocalDb("check-tenant-isolation");
+const { track, cleanup, installSignalHandlers } = require("./lib/cleanup-registry");
+installSignalHandlers("check-tenant-isolation");
 const prisma = require("../src/config/prisma");
 const { runWithTenant } = require("../src/config/tenantContext");
 
@@ -27,7 +31,7 @@ const suffix = Date.now().toString(36);
 
 (async () => {
   console.log("\n=== KIEM CHUNG CACH LY TENANT (findUnique) ===");
-  console.log(`DB: ${(process.env.DATABASE_URL || "").replace(/:[^:@/]+@/, ":***@")}\n`);
+  console.log(`DB: ${assertLocalDbResult}\n`);
 
   const suffixA = `iso-a-${suffix}`;
   const suffixB = `iso-b-${suffix}`;
@@ -40,7 +44,9 @@ const suffix = Date.now().toString(36);
   try {
     // 2 tenant riêng, có user để gate tham chiếu (FK decidedById / session.userId)
     tenantA = await prisma.tenant.create({ data: { name: "ISO A", slug: suffixA } });
+    track(() => prisma.tenant.deleteMany({ where: { id: tenantA.id } }));
     tenantB = await prisma.tenant.create({ data: { name: "ISO B", slug: suffixB } });
+    track(() => prisma.tenant.deleteMany({ where: { id: tenantB.id } }));
 
     // user tạo ngoài tenant context (nền) -> phải tự gắn tenantId
     userA = await prisma.user.create({
@@ -49,9 +55,11 @@ const suffix = Date.now().toString(36);
         email: `${suffixA}@iso.test`,
         password: "iso-test-not-a-real-hash",
         fullName: "User A",
-        role: "ADMIN",
+role: "ADMIN",
       },
     });
+    track(() => prisma.user.deleteMany({ where: { id: userA.id } }));
+
     userB = await prisma.user.create({
       data: {
         tenantId: tenantB.id,
@@ -61,6 +69,7 @@ const suffix = Date.now().toString(36);
         role: "ADMIN",
       },
     });
+    track(() => prisma.user.deleteMany({ where: { id: userB.id } }));
 
     const sessionA = await prisma.agentSession.create({
       data: {
@@ -177,19 +186,11 @@ const suffix = Date.now().toString(36);
   } catch (e) {
     console.error("LOI:", e.message);
     fail += 1;
-  } finally {
-    // Dọn dẹp — cascade xoá session/gate; tenant/user xoá tay
-    try {
-      if (userA) await prisma.agentSession.deleteMany({ where: { userId: userA.id } });
-      if (userB) await prisma.agentSession.deleteMany({ where: { userId: userB.id } });
-      if (userA) await prisma.user.deleteMany({ where: { id: userA.id } });
-      if (userB) await prisma.user.deleteMany({ where: { id: userB.id } });
-      if (tenantA) await prisma.tenant.deleteMany({ where: { id: tenantA.id } });
-      if (tenantB) await prisma.tenant.deleteMany({ where: { id: tenantB.id } });
-      console.log("Da don dep du lieu test.");
-    } catch (e) {
-      console.error("Khong don dep duoc:", e.message);
-    }
+} finally {
+    // Dọn dẹp theo thứ tự ngược (con trước, cha sau) qua cleanup-registry, nên
+    // dữ liệu vẫn bị xóa đúng kể cả khi tiến trình bị Ctrl+C giữa chừng.
+    await cleanup();
+    console.log("Da don dep du lieu test.");
     await prisma.$disconnect();
   }
 
