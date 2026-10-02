@@ -32,15 +32,11 @@ const ok = (label, cond, extra = "") => {
 const ONE_TO_ONE_TABLES = new Set(["company_settings"]);
 
 /**
- * Bảng được phép còn NULL vì lý do CHỦ Ý (không tính LỖI).
- *
- * `users`: `SUPER_OMEGA_ULTRA_ADMIN` cố ý không thuộc tenant nào. Vì vậy
- * `users.tenantId` KHÔNG được ép NOT NULL ở Vòng 2.
- *
- * `audit_logs` CỐ Ý khi mọi dòng NULL thuộc tài khoản cấp nền tảng; nếu
- * không xác định được chủ thì tính là LỖI (không tự tha để làm số xanh).
+ * Ngoại lệ TƯỜNG MINH có điều kiện + trần — xem `scripts/lib/tenant-null-exceptions.js`.
+ * Dùng ngoại lệ thay vì danh sách "bảng nào được phép NULL", vì danh sách bảng
+ * biến một sự cố thành quy tắc vĩnh viễn và không phát hiện được lỗi mới.
  */
-const INTENTIONAL_NULL = new Set(["users"]);
+const { classifyNullRows } = require("./lib/tenant-null-exceptions");
 
 (async () => {
   console.log("\n=== QUET CHAT LUONG tenantId tren DB hien tai (chi doc) ===\n");
@@ -78,19 +74,41 @@ const INTENTIONAL_NULL = new Set(["users"]);
           )
         )[0].n
       : 0;
-    if (n > 0 || orphan > 0 || dup > 0) rows.push({ table: t.table, n, orphan, dup });
+    if (n > 0 || orphan > 0 || dup > 0) {
+      const cls = await classifyNullRows(prisma, t.schema, t.table, n);
+      rows.push({ table: t.table, n, orphan, dup, covered: cls.covered, overCap: cls.overCap, ex: cls.exception });
+    }
   }
 
-  const errors = rows.filter((r) => r.n > 0 && !INTENTIONAL_NULL.has(r.table));
+  // Dòng NULL chưa được ngoại lệ bao phủ ⇒ LỖI thật.
+  const errors = rows.filter((r) => r.n - r.covered > 0);
+  // Ngoại lệ vượt trần = dữ liệu MỚI sinh, không phải ngoại lệ cũ ⇒ báo động.
+  const overCaps = rows.filter((r) => r.overCap > 0);
   const orphans = rows.filter((r) => r.orphan > 0);
   const dups = rows.filter((r) => r.dup > 0);
 
   for (const r of rows) {
-    const g = r.dup > 0 ? "TRUNG 1-1" : r.orphan > 0 ? "MO COI-TENANT" : r.n === 0 ? "DA XU LY" : INTENTIONAL_NULL.has(r.table) ? "CO Y" : "LOI";
-    console.log(`     [${g}] ${r.table}: NULL=${r.n} mo-coi=${r.orphan} trung=${r.dup}`);
+    const g = r.dup > 0
+      ? "TRUNG 1-1"
+      : r.orphan > 0
+        ? "MO COI-TENANT"
+        : r.n - r.covered === 0
+          ? r.n > 0
+            ? "CO Y (ngoai le)"
+            : "DA XU LY"
+          : "LOI";
+    console.log(
+      `     [${g}] ${r.table}: NULL=${r.n} ngoaiLe=${r.covered}/${r.ex ? r.ex.cap : 0} ` +
+        `vuotTran=${r.overCap} mo-coi=${r.orphan} trung=${r.dup}`,
+    );
   }
 
-  ok("LOI: khong co bang nao NULL tenantId ngoai danh sach 'co y'", errors.length === 0, errors.map((r) => `${r.table}=${r.n}`).join(", "));
+  ok(
+    "LOI: khong co dong NULL tenantId nao CHUA duoc ngoai le bao phu",
+    errors.length === 0,
+    errors.map((r) => `${r.table}=${r.n - r.covered}`).join(", "),
+  );
+  ok("NGOAI LE khong vuot tran da ghi", overCaps.length === 0, overCaps.map((r) => `${r.table}=+${r.overCap}`).join(", "));
   ok("TRUNG 1-1: moi tenant chi co MOT dong o bang 1-1", dups.length === 0, dups.map((r) => `${r.table}=${r.dup} tenant`).join(", "));
 
   const orphanTotal = orphans.reduce((s, r) => s + r.orphan, 0);
