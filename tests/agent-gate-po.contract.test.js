@@ -1,4 +1,4 @@
-/**
+﻿/**
  * tests/agent-gate-po.contract.test.js — P0-3: gate đề xuất PO CÓ hiệu lực
  *
  * Đây là test quan trọng nhất của Vòng 2. Trước P0-3, `buildWriteActionGate`
@@ -68,11 +68,37 @@ jest.mock("../src/modules/accounting/autopost.service", () => ({ autoPost: jest.
 jest.mock("../src/modules/accounting/posting-error.service", () => ({ record: jest.fn() }));
 jest.mock("../src/modules/orders/order.service", () => ({ create: jest.fn() }));
 
+// Đề xuất và kiểm tra lại PHẢI dùng chung một hàm nạp dữ liệu (00b §2 / P0-2 mục 2).
+// Test này mock đúng loader đó, nên nếu ai đó tách thành hai nơi nạp khác nhau thì
+// "drift giả" sẽ quay lại mà test này không bắt được — đó là điểm cần nhớ.
+const mockLoadInput = jest.fn();
+const mockLoadReceipts = jest.fn().mockResolvedValue([]);
+jest.mock("../src/modules/replenishment/replenishment.suggest", () => ({
+  loadReplenishmentInput: (...a) => mockLoadInput(...a),
+  loadLeadTimeReceipts: (...a) => mockLoadReceipts(...a),
+}));
+
 const { PO_PROPOSAL } = require("../src/modules/ai/agent.humangate");
 const gateExec = require("../src/modules/ai/agent.gate.exec");
 const agentRoutes = require("../src/modules/ai/agent.routes");
 
 const FUTURE = new Date(Date.now() + 3600_000).toISOString();
+
+/**
+ * PO đã tạo từ gate, khớp đủ điều kiện xác minh (mục 3D):
+ * cùng NCC, cùng dòng hàng, đúng người tạo, tạo sau thời điểm duyệt.
+ */
+const verifiedPo = (over = {}) => ({
+  id: "po-1",
+  poCode: "PO-20261002-0001",
+  total: 1350000,
+  vendorId: "v1",
+  // các test gọi executeGate(gateId, "u1") ⇒ decidedById = "u1"
+  createdById: "u1",
+  createdAt: new Date(),
+  items: [{ productId: "p1", quantity: 30 }],
+  ...over,
+});
 
 /**
  * Gate đề xuất PO hợp lệ.
@@ -99,7 +125,7 @@ const poGate = (over = {}) => ({
     vendorId: "v1",
     vendorName: "NCC A",
     totalEstimate: 1350000,
-    rationale: { atp: 12, rop: 21, demandPerDay: 3, leadTimeDays: 7, leadTimeEstimated: true },
+    rationale: { atp: 12, onOrder: 0, inventoryPosition: 12, rop: 21, demandPerDay: 3, leadTimeDays: 7, leadTimeEstimated: true },
   },
   session: { userId: "u-other", triggerSource: "SYSTEM_EVENT" },
   ...over,
@@ -108,19 +134,31 @@ const poGate = (over = {}) => ({
 /** ATP thấp hơn ROP ⇒ vẫn cần đặt. */
 const inventoryLow = [{ quantity: 12, reserved: 0 }];
 
+/**
+ * Đổi bộ dữ liệu nạp (tức đổi ATP / nhu cầu / onOrder) như NẾU thời gian trôi qua
+ * giữa lúc đề xuất và lúc duyệt.
+ */
+const setRecomputedInput = ({ inventories = inventoryLow, qtyPerDay = 3, onOrder = 0 }) => {
+  mockLoadInput.mockImplementation(async (ids) =>
+    new Map(ids.map((id) => [id, {
+      dailySales: Array.from({ length: 28 }, (_, i) => ({
+        date: new Date(Date.now() - i * 86400000).toISOString().slice(0, 10),
+        qty: qtyPerDay, outOfStock: false,
+      })),
+      inventories,
+      onOrder,
+    }])),
+  );
+};
+
 beforeEach(() => {
   jest.clearAllMocks();
   mockCurrentUser = { id: "u-admin", role: "ADMIN" };
   mockVendor.findFirst.mockResolvedValue({ id: "v1", isActive: true });
   mockInventory.findMany.mockResolvedValue(inventoryLow);
-  // Lịch sử bán 28 ngày: 3/ngày ⇒ ROP ≈ 3×7 + SS = 21+ > ATP 12 ⇒ vẫn cần đặt.
-  mockOrderItem.findMany.mockResolvedValue(
-    Array.from({ length: 28 }, (_, i) => ({
-      quantity: 3,
-      order: { createdAt: new Date(Date.now() - i * 86400000) },
-    })),
-  );
-  mockPurchaseItem.findMany.mockResolvedValue([]);
+  // Loader dùng chung: 28 ngày × 3/ngày, σ = 0 ⇒ ROP = 21, onOrder = 0.
+  setRecomputedInput({});
+  mockLoadReceipts.mockResolvedValue([]);
   mockPurchaseOrder.findFirst.mockResolvedValue(null); // chưa có PO nào từ gate
   mockPurchaseCreate.mockResolvedValue({ id: "po-1", poCode: "PO-20261002-0001", total: 1890000 });
   mockAgentHumanGate.updateMany.mockResolvedValue({ count: 1 });
@@ -177,7 +215,7 @@ describe("P0-3 · revalidate — kiểm lại lúc duyệt", () => {
 describe("P0-3 · NO_LONGER_NEEDED / DRIFT (mục 2.1)", () => {
   test("ATP mới > ROP → 409, KHÔNG override được kể cả khi acknowledgeDrift", async () => {
     mockAgentHumanGate.findFirst.mockResolvedValue(poGate({ status: "APPROVED" }));
-    mockInventory.findMany.mockResolvedValue([{ quantity: 5000, reserved: 0 }]); // ATP >> ROP
+    setRecomputedInput({ inventories: [{ quantity: 5000, reserved: 0 }] }); // ATP >> ROP
 
     await expect(
       gateExec.executeGate("g1", "u1", { acknowledgeDrift: true }),
@@ -188,11 +226,7 @@ describe("P0-3 · NO_LONGER_NEEDED / DRIFT (mục 2.1)", () => {
 test("số lượng lệch quá ngưỡng → 409 kèm diff, chưa acknowledge thì không tạo PO", async () => {
     mockAgentHumanGate.findFirst.mockResolvedValue(poGate({ status: "APPROVED" }));
     // Giả lập dữ liệu đã đổi mạnh: nhu cầu tăng gấp đôi ⇒ orderQty tính lại lệch > 25%.
-    mockOrderItem.findMany.mockResolvedValue(
-      Array.from({ length: 28 }, (_, i) => ({
-        quantity: 12, order: { createdAt: new Date(Date.now() - i * 86400000) },
-      })),
-    );
+    setRecomputedInput({ qtyPerDay: 12 });
 
     await expect(gateExec.executeGate("g1", "u1")).rejects.toMatchObject({
       status: 409, drift: "DRIFT_BLOCK",
@@ -202,11 +236,7 @@ test("số lượng lệch quá ngưỡng → 409 kèm diff, chưa acknowledge t
 
   test("acknowledgeDrift cho phép chạy (đây KHÔNG phải override tự động)", async () => {
     mockAgentHumanGate.findFirst.mockResolvedValue(poGate({ status: "APPROVED" }));
-    mockOrderItem.findMany.mockResolvedValue(
-      Array.from({ length: 28 }, (_, i) => ({
-        quantity: 12, order: { createdAt: new Date(Date.now() - i * 86400000) },
-      })),
-    );
+    setRecomputedInput({ qtyPerDay: 12 });
 
     const res = await gateExec.executeGate("g1", "u1", { acknowledgeDrift: true });
 
@@ -226,7 +256,7 @@ describe("P0-3 · chống tạo PO TRÙNG (điều kiện quan trọng nhất c�
   });
 
   test("PO đã tồn tại (ghi resultRef lỗi) → LIÊN KẾT LẠI, không tạo PO thứ hai", async () => {
-    const existingPo = { id: "po-OLD", poCode: "PO-20261002-0007", total: 1890000 };
+    const existingPo = verifiedPo({ id: "po-OLD", poCode: "PO-20261002-0007" });
     mockAgentHumanGate.findFirst.mockResolvedValue(poGate({ status: "APPROVED" }));
     mockPurchaseOrder.findFirst.mockResolvedValue(existingPo);
 
@@ -239,7 +269,7 @@ describe("P0-3 · chống tạo PO TRÙNG (điều kiện quan trọng nhất c�
 
   test("resultRef đã có và trỏ tới PO thật → không tạo thêm", async () => {
     mockAgentHumanGate.findFirst.mockResolvedValue(poGate({ status: "APPROVED", resultRef: "po-1" }));
-    mockPurchaseOrder.findFirst.mockResolvedValue({ id: "po-1", poCode: "PO-1" });
+    mockPurchaseOrder.findFirst.mockResolvedValue(verifiedPo({ id: "po-1", poCode: "PO-1" }));
     const res = await gateExec.executeGate("g1", "u1");
     expect(res.linked).toBe(true);
     expect(mockPurchaseCreate).not.toHaveBeenCalled();
@@ -255,9 +285,7 @@ describe("P0-3 · chống tạo PO TRÙNG (điều kiện quan trọng nhất c�
     // Lần 2 (thử lại): tra theo mốc note tìm thấy PO cũ → KHÔNG tạo thêm.
     mockPurchaseCreate.mockClear();
     mockAgentHumanGate.update.mockResolvedValue({});
-    mockPurchaseOrder.findFirst.mockResolvedValue({
-      id: "po-1", poCode: "PO-20261002-0001", total: 1890000,
-    });
+    mockPurchaseOrder.findFirst.mockResolvedValue(verifiedPo({ id: "po-1", poCode: "PO-20261002-0001" }));
     const res = await gateExec.executeGate("g1", "u1");
 
     expect(res.linked).toBe(true);
@@ -283,6 +311,88 @@ describe("P0-3 · purchase.create ném lỗi", () => {
     mockPurchaseCreate.mockRejectedValue(new Error("lỗi PO"));
     mockAuditLog.mockRejectedValueOnce(new Error("audit cũng lỗi"));
     await expect(gateExec.executeGate("g1", "u1")).rejects.toThrow(/lỗi PO/);
+  });
+});
+
+describe("P0-3 · làm cứng findPoByGate (mục 3D: mốc trong `note` do người sửa được)", () => {
+  const approve = () => mockAgentHumanGate.findFirst.mockResolvedValue(
+    poGate({ status: 'APPROVED', decidedAt: new Date(Date.now() - 60000) }),
+  );
+
+  test("verifyPoBelongsToGate chấp nhận PO khớp đủ", () => {
+    const { verifyPoBelongsToGate } = gateExec;
+    const gate = poGate({ status: "APPROVED", decidedAt: new Date(Date.now() - 60000) });
+    const item = gate.actionPayload.items[0];
+    const r = verifyPoBelongsToGate(verifiedPo(), { gate, item, vendorId: "v1", decidedById: "u1" });
+    expect(r.ok).toBe(true);
+  });
+
+  test.each([
+    ["khac-ncc", { vendorId: "v-NOCC-KHAC" }],
+    ["khac-san-pham", { items: [{ productId: "p-OTHER", quantity: 30 }] }],
+    ["khac-so-luong", { items: [{ productId: "p1", quantity: 999 }] }],
+    ["khac-nguoi-tao", { createdById: "u-khac" }],
+    ["tao-truoc-khi-duyet", { createdAt: new Date(Date.now() - 86400000) }],
+  ])("PO lệch (%s) → KHÔNG liên kết, KHÔNG tạo PO thứ hai", async (reason, patch) => {
+    approve();
+    mockPurchaseOrder.findFirst.mockResolvedValue(verifiedPo(patch));
+
+    await expect(gateExec.executeGate("g1", "u1")).rejects.toMatchObject({ status: 409 });
+    expect(mockPurchaseCreate).not.toHaveBeenCalled();
+  });
+
+  test("PO không có dòng hàng → không liên kết", async () => {
+    approve();
+    mockPurchaseOrder.findFirst.mockResolvedValue(verifiedPo({ items: [] }));
+    await expect(gateExec.executeGate("g1", "u1")).rejects.toMatchObject({ status: 409 });
+    expect(mockPurchaseCreate).not.toHaveBeenCalled();
+  });
+
+  test("GIỚI HẠN ĐÃ BIẾT: mốc bị XOÁ khỏi note → KHÔNG phát hiện được, sẽ tạo PO mới", () => {
+    // Ghi rõ giới hạn thay vì hứa hơn mức làm được: khi marker đã mất thì truy vấn
+    // `note contains` không trả về gì, hệ thống coi như chưa từng tạo PO và tạo mới.
+    // Ngăn chặn việc này cần một cột riêng trên PurchaseOrder (ngoài phạm vi đã duyệt).
+    const queryWhere = { note: { contains: "[gate:g1]" } };
+    const poNoteDaXoa = "[gate-g1-v0-cu] abc"; // không chứa marker
+    expect(poNoteDaXoa).not.toMatch(/\[gate:g1\]/);
+    expect(queryWhere.note.contains).toBe("[gate:g1]");
+    // Không có cơ chế nào trong phạm vi hiện tại phát hiện trường hợp này.
+    expect(gateExec.verifyPoBelongsToGate).toBeInstanceOf(Function);
+  });
+});
+
+describe("P0-3 · onOrder — vị thế tồn (mục 3A)", () => {
+  test("có hàng đang đặt thì không cần đặt thêm nữa", async () => {
+    // ATP = 12, nhưng đang đặt 60 ⇒ vị thế tồn = 72 > ROP 21 ⇒ KHÔNG cần nhập.
+    setRecomputedInput({ inventories: [{ quantity: 12, reserved: 0 }], onOrder: 60 });
+    const { verifyPoBelongsToGate } = gateExec;
+    const gate = poGate({ status: "APPROVED" });
+    const item = gate.actionPayload.items[0];
+    const plan = require("../src/modules/replenishment/replenishment.calc").planReplenishment({
+      dailySales: Array.from({ length: 28 }, (_, i) => ({
+        date: `d${i}`, qty: 3, outOfStock: false,
+      })),
+      inventories: [{ quantity: 12, reserved: 0 }],
+      onOrder: 60,
+    });
+    expect(plan.atp.atp).toBe(12);
+    expect(plan.atp.onOrder).toBe(60);
+    expect(plan.atp.position).toBe(72);
+    expect(plan.status).toBe("OK");           // không đề xuất lần nữa
+    expect(plan.order.orderQty).toBe(0);
+    expect(verifyPoBelongsToGate).toBeInstanceOf(Function);
+  });
+
+  test("lúc duyệt cũng phải thấy onOrder — nếu không sẽ 'thấy cần' dù đã có PO đi đường", async () => {
+    mockAgentHumanGate.findFirst.mockResolvedValue(poGate({ status: "APPROVED" }));
+    // onOrder lớn ⇒ sau khi quyệt PO cũ, vị thế tồn đủ ⇒ không phát sinh drift giả.
+    setRecomputedInput({ inventories: [{ quantity: 12, reserved: 0 }], onOrder: 9999 });
+    // Đề xuất nói ATP=12/ROP=21 (cần nhập), hiện tại position=10011 (không cần) ⇒
+    // NO_LONGER_NEEDED, chặn đúng — không phải DRIFT giả.
+    await expect(gateExec.executeGate("g1", "u1")).rejects.toMatchObject({
+      status: 409, drift: "NO_LONGER_NEEDED",
+    });
+    expect(mockPurchaseCreate).not.toHaveBeenCalled();
   });
 });
 

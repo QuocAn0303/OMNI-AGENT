@@ -1,4 +1,4 @@
-jest.mock("../src/config/prisma", () => {
+﻿jest.mock("../src/config/prisma", () => {
   const m = {};
   m.$transaction = jest.fn(async (fn) => fn(m));
   m.inventory = { findMany: jest.fn(), count: jest.fn() };
@@ -22,6 +22,10 @@ jest.mock("../src/modules/audit/audit.service", () => ({ log: jest.fn() }));
 
 const prisma = require("../src/config/prisma");
 const { checkAutoReorder, autoPayroll, debtAutoCollection, morningBriefing, anomalyDetection } = require("../src/modules/automation/automation.service");
+const mockSuggestForProductInTenant = jest.fn();
+jest.mock("../src/modules/replenishment/replenishment.suggest", () => ({
+  suggestForProductInTenant: (...a) => mockSuggestForProductInTenant(...a),
+}));
 const notif = require("../src/modules/notifications/notification.service");
 const hrService = require("../src/modules/hr/hr.service");
 const journalService = require("../src/modules/accounting/journal.service");
@@ -31,11 +35,11 @@ const MOCK_VENDOR_PO = { vendorId: "v1", vendor: MOCK_VENDOR, date: new Date() }
 
 function setupReorderMock({ quantity = 1, reserved = 0, minStock = 10, sku = "SKU1", costPrice = 10000, isActive = true, quantity2, sku2 } = {}) {
   const items = [
-    { productId: "p1", warehouseId: "w1", quantity, reserved, minStock,
+    { id: "inv1", tenantId: "t1", productId: "p1", warehouseId: "w1", quantity, reserved, minStock,
       product: { id: "p1", name: "Product A", sku, costPrice, isActive } },
   ];
   if (quantity2 !== undefined) {
-    items.push({ productId: "p2", warehouseId: "w1", quantity: quantity2, reserved: 0, minStock: 20,
+    items.push({ id: "inv2", tenantId: "t1", productId: "p2", warehouseId: "w1", quantity: quantity2, reserved: 0, minStock: 20,
       product: { id: "p2", name: "Product B", sku: sku2 || "B1", costPrice: 5000, isActive: true } });
   }
   prisma.inventory.findMany.mockResolvedValue(items);
@@ -47,58 +51,59 @@ describe("automation — advanced scenarios", () => {
     prisma.user.findFirst.mockResolvedValue({ id: "sys-user" });
   });
 
-  describe("checkAutoReorder — edge cases", () => {
+  /**
+   * P0-2: edge cases của `checkAutoReorder` theo HỢP ĐỒNG MỚI.
+   *
+   * Các test cũ ở đây khẳng định "2 SKU tồn thấp → 2 PO", "quantity = minStock*2"
+   * v.v. — tức khẳng định đường này TẠO PO. Nhưng tạo PO tự động (kèm tự đặt
+   * `status: APPROVED` khi dưới 5tr) chính là đường né kiểm soát mà P0-2 gỡ bỏ.
+   * Nên chúng bị XOÁ thay vì sửa.
+   *
+   * Thay bằng: đường này chỉ SINH ĐỀ XUẤT, và việc chống trùng / tính số lượng
+   * do `replenishment.suggest` + `replenishment.calc` đảm nhiệm (đã có unit test
+   * riêng: `tests/replenishment.*.test.js`).
+   */
+  describe("checkAutoReorder — edge cases (P0-2)", () => {
     beforeEach(() => {
-      prisma.purchaseItem.findFirst.mockResolvedValue({ purchaseOrder: MOCK_VENDOR_PO });
-      prisma.purchaseOrder.findFirst.mockResolvedValue(null);
-      prisma.purchaseOrder.count.mockResolvedValue(0);
-      prisma.purchaseOrder.create.mockResolvedValue({ id: "new-po", poCode: "PO-001", vendor: MOCK_VENDOR });
+      process.env.AUTO_REORDER_PROPOSAL = "1";
+      mockSuggestForProductInTenant.mockResolvedValue({ gate: { id: "g1" } });
     });
+    afterEach(() => { delete process.env.AUTO_REORDER_PROPOSAL; });
 
-    test("two low-stock products → 2 POs", async () => {
+    test("NHIỀU SKU tồn thấp → mỗi SKU một đề xuất, TUYỆT ĐỐI không tạo PO", async () => {
       setupReorderMock({ quantity: 2, minStock: 10, quantity2: 0 });
       await checkAutoReorder(["p1", "p2"], "w1");
-      expect(prisma.purchaseOrder.create).toHaveBeenCalledTimes(2);
-    });
-
-    test("one low, one OK → only 1 PO", async () => {
-      setupReorderMock({ quantity: 1, minStock: 10, quantity2: 100 });
-      await checkAutoReorder(["p1", "p2"], "w1");
-      expect(prisma.purchaseOrder.create).toHaveBeenCalledTimes(1);
-    });
-
-    test("PO creation should include correct quantity (minStock*2)", async () => {
-      setupReorderMock({ quantity: 0, minStock: 50 });
-      await checkAutoReorder(["p1"], "w1");
-      expect(prisma.purchaseOrder.create).toHaveBeenCalledWith(expect.objectContaining({
-        data: expect.objectContaining({
-          items: expect.objectContaining({ create: [expect.objectContaining({ quantity: 100 })] }),
-        }),
-      }));
-    });
-
-    test("reserved stock reduces available, triggers reorder", async () => {
-      setupReorderMock({ quantity: 20, reserved: 18, minStock: 10 });
-      await checkAutoReorder(["p1"], "w1");
-      expect(prisma.purchaseOrder.create).toHaveBeenCalledTimes(1);
-    });
-
-    test("inactive vendor should skip gracefully", async () => {
-      setupReorderMock({ quantity: 1 });
-      prisma.purchaseItem.findFirst.mockResolvedValue({
-        purchaseOrder: { vendorId: "v1", vendor: { id: "v1", name: "V", isActive: false } },
-      });
-      await checkAutoReorder(["p1"], "w1");
+      expect(mockSuggestForProductInTenant).toHaveBeenCalledTimes(2);
       expect(prisma.purchaseOrder.create).not.toHaveBeenCalled();
     });
 
-    test("exactly at minStock → should trigger reorder", async () => {
-      setupReorderMock({ quantity: 10, minStock: 10 });
-      await checkAutoReorder(["p1"], "w1");
-      expect(prisma.purchaseOrder.create).toHaveBeenCalledTimes(1);
+    test("một SKU tồn thấp, một SKU tồn cao → chỉ 1 đề xuất", async () => {
+      setupReorderMock({ quantity: 1, minStock: 10, quantity2: 100 });
+      await checkAutoReorder(["p1", "p2"], "w1");
+      expect(mockSuggestForProductInTenant).toHaveBeenCalledTimes(1);
+      expect(prisma.purchaseOrder.create).not.toHaveBeenCalled();
     });
 
-    test("DB failure should be caught, not crash caller", async () => {
+    test("reserved làm giảm tồn khả dụng → vẫn sinh đề xuất (không tự tạo PO)", async () => {
+      setupReorderMock({ quantity: 20, reserved: 18, minStock: 10 });
+      await checkAutoReorder(["p1"], "w1");
+      expect(mockSuggestForProductInTenant).toHaveBeenCalledTimes(1);
+      expect(prisma.purchaseOrder.create).not.toHaveBeenCalled();
+    });
+
+    test("tồn đúng bằng ngưỡng (ATP <= minStock) → sinh đề xuất", async () => {
+      setupReorderMock({ quantity: 10, minStock: 10 });
+      await checkAutoReorder(["p1"], "w1");
+      expect(mockSuggestForProductInTenant).toHaveBeenCalledTimes(1);
+    });
+
+    test("tồn CAO HƠN ngưỡng một đơn vị → không sinh đề xuất", async () => {
+      setupReorderMock({ quantity: 11, minStock: 10 });
+      await checkAutoReorder(["p1"], "w1");
+      expect(mockSuggestForProductInTenant).not.toHaveBeenCalled();
+    });
+
+    test("DB lỗi → bắt và log, không làm chết cron", async () => {
       prisma.inventory.findMany.mockRejectedValue(new Error("DB down"));
       let threw = false;
       try { await checkAutoReorder(["p1"], "w1"); } catch { threw = true; }

@@ -3,100 +3,63 @@ const logger = require('../../utils/logger');
 
 const LOG = "[automation]";
 
+/**
+ * Cờ bật đường đề xuất nhập hàng của `checkAutoReorder`.
+ *
+ * MẶC ĐỊNH OFF — và kể cả khi BẬT, đường này cũng KHÔNG tạo PO.
+ * Trước đây `checkAutoReorder` gọi thẳng `prisma.purchaseOrder.create` và tự
+ * đặt `status: 'APPROVED'` khi tổng tiền < 5.000.000 (ngưỡng hard-code, không đọc
+ * `companySettings.poApprovalThreshold`). Đó chính là đường né kiểm soát được
+ * nêu ở `00-scope.md` F2/F3.
+ *
+ * Nay đường này chỉ SINH ĐỀ XUẤT qua cùng cơ chế với CDC: công thức tính số →
+ * gate PENDING → ADMIN/MANAGER duyệt → mới có PO.
+ *
+ * Bật bằng: `AUTO_REORDER_PROPOSAL=1` trong .env.
+ * Tắt (mặc định): đường này KHÔNG làm gì; CDC vẫn là nguồn sinh đề xuất chính.
+ *
+ * Đọc env TẠI LỜI GỌI (không phải lúc require) để test bật/tắt được trong cùng
+ * một tiến trình — nếu đọc lúc require thì phải nạp lại cả module để đổi cờ.
+ */
+const isAutoReorderProposalEnabled = () => process.env.AUTO_REORDER_PROPOSAL === '1';
+
 const checkAutoReorder = async (productIds, warehouseId) => {
+  if (!isAutoReorderProposalEnabled()) {
+    logger.debug(
+      `${LOG} auto-reorder TAT (AUTO_REORDER_PROPOSAL chua bat) — bo qua. ` +
+      `Khong tao PO. Nguon de xuat chinh la CDC (agent.cdc.js LOW_STOCK).`,
+    );
+    return;
+  }
   try {
-    const notif = require("../notifications/notification.service");
+    const prisma = require('../../config/prisma');
+    const { suggestForProductInTenant } = require('../replenishment/replenishment.suggest');
 
     const inventories = await prisma.inventory.findMany({
-      where: {
-        productId: { in: productIds },
-        warehouseId,
-      },
-      include: {
-        product: { select: { id: true, name: true, sku: true, costPrice: true, isActive: true } },
-      },
+      where: { productId: { in: productIds }, warehouseId },
+      include: { product: { select: { id: true, name: true, sku: true, costPrice: true, isActive: true } } },
     });
 
     for (const inv of inventories) {
       if (!inv.product?.isActive) continue;
       const available = inv.quantity - (inv.reserved || 0);
-      if (available > inv.minStock) continue;
+      // Ngưỡng giống `evaluateStockStatus`: ATP <= ROP. Ở đây chỉ lọc sơ bộ để
+      // KHÔNG gọi loader 28 ngày cho mọi SKU; quyết định thật do calc.js đưa ra.
+      if (available > (inv.minStock || 0)) continue;
 
-      const lastPO = await prisma.purchaseItem.findFirst({
-        where: { productId: inv.productId },
-        orderBy: { purchaseOrder: { date: "desc" } },
-        include: { purchaseOrder: { select: { vendorId: true, vendor: { select: { id: true, name: true, isActive: true } } } } },
-      });
-
-      const vendor = lastPO?.purchaseOrder?.vendor;
-      if (!vendor || !vendor.isActive) {
-        logger.info(`${LOG} auto-reorder: không tìm thấy vendor cho ${inv.product.sku}, skip`);
+      if (!inv.tenantId) {
+        logger.error(`${LOG} auto-reorder: inventory ${inv.id} không có tenantId — bỏ qua ${inv.product.sku}`);
         continue;
       }
 
-      const existingDraft = await prisma.purchaseOrder.findFirst({
-        where: {
-          vendorId: vendor.id,
-          status: "DRAFT",
-          items: { some: { productId: inv.productId } },
-        },
+      const result = await suggestForProductInTenant({
+        tenantId: inv.tenantId,
+        productId: inv.productId,
       });
-      if (existingDraft) {
-        logger.info(`${LOG} auto-reorder: da co PO draft ${existingDraft.poCode} cho ${inv.product.sku}, skip`);
-        continue;
-      }
-
-      const reorderQty = Math.max(1, (inv.minStock * 2) - inv.quantity);
-      const unitCost = Number(inv.product.costPrice) || 0;
-      const subtotal = reorderQty * unitCost;
-
-      const today = new Date().toISOString().slice(0, 10).replace(/-/g, "");
-      const start = new Date(); start.setHours(0, 0, 0, 0);
-      const count = await prisma.purchaseOrder.count({ where: { createdAt: { gte: start } } });
-      const poCode = `PO-${today}-${String(count + 1).padStart(4, "0")}`;
-
-      const autoApprove = subtotal < 5_000_000;
-      const po = await prisma.purchaseOrder.create({
-        data: {
-          poCode,
-          vendorId: vendor.id,
-          status: autoApprove ? "APPROVED" : "DRAFT",
-          subtotal,
-          total: subtotal,
-          note: `[Auto-Reorder] ${inv.product.name} con ${inv.quantity}, minStock=${inv.minStock}`,
-          createdById: (await getSystemUserId()),
-          items: {
-            create: [{
-              productId: inv.productId,
-              quantity: reorderQty,
-              unitCost,
-              subtotal,
-            }],
-          },
-        },
-        include: { vendor: true },
-      });
-
-      logger.info(`${LOG} auto-reorder: tao PO ${poCode} cho ${inv.product.sku}, qty=${reorderQty}, total=${subtotal}, autoApprove=${autoApprove}`);
-
-      if (autoApprove) {
-        await notif.notifyRoles(["MANAGER", "ADMIN"], {
-          type: "SYSTEM",
-          severity: "INFO",
-          title: "PO tự động đã duyệt",
-          message: `PO ${poCode}: nhap ${reorderQty} x ${inv.product.name} tu ${vendor.name} (${subtotal.toLocaleString()} VND)`,
-          link: "/purchase-orders",
-          meta: { poId: po.id, autoApproved: true },
-        });
-      } else {
-        await notif.notifyRoles(["MANAGER", "ADMIN"], {
-          type: "PO_PENDING_APPROVAL",
-          severity: "WARNING",
-          title: "PO tự động cần duyệt",
-          message: `PO ${poCode}: nhap ${reorderQty} x ${inv.product.name} tu ${vendor.name} (${subtotal.toLocaleString()} VND). Vui lòng duyet.`,
-          link: "/purchase-orders",
-          meta: { poId: po.id, autoApproved: false },
-        });
+      if (result?.needVendor) {
+        logger.info(`${LOG} auto-reorder: ${result.sku} chưa có NCC — chờ người chọn`);
+      } else if (result?.gate) {
+        logger.info(`${LOG} auto-reorder: đã tạo đề xuất ${result.gate.id} cho ${inv.product.sku}`);
       }
     }
   } catch (err) {

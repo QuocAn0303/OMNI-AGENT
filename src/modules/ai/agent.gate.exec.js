@@ -1,4 +1,4 @@
-/**
+﻿/**
  * modules/ai/agent.gate.exec.js — Thực thi đề xuất PO sau khi người duyệt bấm Duyệt
  *
  * ============================================================================
@@ -53,6 +53,39 @@ const buildNote = (gateId, note) =>
   [GATE_MARKER(gateId), note].filter(Boolean).join(' ').slice(0, 500);
 
 /**
+ * Xác minh PO tìm được THỰC SỰ là do gate này sinh ra.
+ *
+ * Vì sao phải kiểm: mốc `[gate:<id>]` nằm trong `PurchaseOrder.note` — trường
+ * người dùng sửa được. Người ta có thể (a) xoá mốc rồi thử lại → ta tạo PO
+ * trùng, hoặc (b) ghi mốc giả vào một PO khác → ta liên kết nhầm.
+ *
+ * Vì vậy không được chỉ tin chuỗi mốc, mà phải đối chiếu nội dung:
+ *   cùng NCC, cùng dòng hàng (productId + quantity), đúng `decidedById`,
+ *   và tạo SAU thời điểm duyệt.
+ *
+ * @returns {{ok:true}|{ok:false, reason:string}}
+ */
+const verifyPoBelongsToGate = (po, { gate, item, vendorId, decidedById }) => {
+  if (!po) return { ok: false, reason: 'khong-tim-thay' };
+  if (po.vendorId !== vendorId) return { ok: false, reason: 'khac-ncc' };
+
+  const poItem = Array.isArray(po.items) && po.items.length ? po.items[0] : null;
+  if (!poItem) return { ok: false, reason: 'po-khong-co-dong-hang' };
+  if (poItem.productId !== item.productId) return { ok: false, reason: 'khac-san-pham' };
+  if (Number(poItem.quantity) !== Number(item.quantity)) return { ok: false, reason: 'khac-so-luong' };
+
+  if (decidedById && po.createdById && po.createdById !== decidedById) {
+    return { ok: false, reason: 'khac-nguoi-tao' };
+  }
+  // PO phải tạo SAU khi gate được duyệt — nếu trước thì nó không phải do gate này sinh.
+  const decidedAt = gate.decidedAt ? new Date(gate.decidedAt) : null;
+  if (decidedAt && po.createdAt && new Date(po.createdAt) < decidedAt) {
+    return { ok: false, reason: 'tao-truoc-khi-duyet' };
+  }
+  return { ok: true };
+};
+
+/**
  * Tìm PO đã sinh ra từ gate này — gọi TRƯỚC khi tạo.
  *
  * Vì sao cần: nếu PO đã tạo xong nhưng ghi `resultRef` lỗi (hoặc tiến trình chết),
@@ -63,64 +96,59 @@ const buildNote = (gateId, note) =>
  * `note`, nên đây là seq scan trong phạm vi tenant. Chấp nhận được ở quy mô
  * demo/SME; nếu một tenant vượt ~10^4 PO thì cần thêm index (backlog B11).
  *
- * @returns {object|null} PO đã tồn tại, hoặc null
+ * GIỚI HẠN KHÔNG SỬA ĐƯỢC: nếu mốc bị XOÁ khỏi `note` sau khi PO đã tạo thì
+ * lần thử lại KHÔNG phát hiện được và sẽ tạo PO thứ hai. Không có cách nào phát
+ * hiện trôi chỉ với dữ liệu hiện có — cần cột riêng trên `PurchaseOrder`
+ * (ngoài phạm vi đã duyệt). Ghi nhận giới hạn, không hứa hơn mức làm được.
+ *
+ * @returns {Promise<{po:object}|{rejected:object, reason:string}>}
  */
-const findPoByGate = async (gateId) =>
-  prisma.purchaseOrder.findFirst({
-    where: { note: { contains: GATE_MARKER(gateId) } },
+const findPoByGate = async (gate, { item, vendorId, decidedById } = {}) => {
+  const po = await prisma.purchaseOrder.findFirst({
+    where: { note: { contains: GATE_MARKER(gate.id) } },
     orderBy: { createdAt: 'desc' },
+    include: { items: { select: { productId: true, quantity: true } } },
   });
+  if (!po) return { rejected: null };
 
-/** Số ngày lịch sử dùng để tính lại nhu cầu — phải KHỚP với lúc lập đề xuất. */
-const RECOMPUTE_WINDOW_DAYS = 28;
+  const check = verifyPoBelongsToGate(po, { gate, item, vendorId, decidedById });
+  if (!check.ok) return { rejected: po, reason: check.reason };
+  return { po };
+};
 
 /**
- * Tính lại số hiện tại của SKU từ DB.
+ * Tính lại số hiện tại của SKU từ DB — dùng CHUNG hàm nạp với lúc sinh đề xuất.
  *
- * Vì sao phải tính lại từ LỊCH SỬ THẬT, không lấy số trong payload: nếu tính
- * với `dailySales: []` thì ROP = 0, và mọi ATP > 0 đều bị coi là "không còn
- * cần đặt" ⇒ chặn nhầm mọi đề xuất. Đề xuất chỉ hợp lệ khi so sánh được với
- * chính bộ số liệu đã dùng để tạo ra nó.
+ * Vì sao phải dùng chung: nếu nơi nạp lịch sử bán khác nhau giữa lúc đề xuất và
+ * lúc duyệt thì hai bên sẽ tự sinh ra "drift giả" — đúng lỗi đã gặp khi viết
+ * unit test (đề xuất `quantity: 42`, `planReplenishment` tính ra `30`, chênh 29%
+ * > `QTY_DRIFT_TOL` ⇒ chặn nhầm dù dữ liệu không đổi). Ngoài đời thật lỗi đó
+ * khó tái hiện và khó chẩn đoán hơn nhiều.
+ *
+ * `onOrder` cũng được nạp ở đây: lúc duyệt phải thấy đúng cái mà lúc đề xuất
+ * thấy, nếu không sẽ "thấy cần nhập" trong khi đã có PO đang trên đường.
  */
-const recomputeCurrent = async (item, { windowDays = RECOMPUTE_WINDOW_DAYS } = {}) => {
-  const since = new Date(Date.now() - windowDays * 86400000);
+const recomputeCurrent = async (item) => {
+  const { loadReplenishmentInput, loadLeadTimeReceipts } =
+    require("../replenishment/replenishment.suggest");
 
-  const [orderItems, receipts] = await Promise.all([
-    // Lịch sử bán theo ngày. `outOfStock` không có sẵn ở bảng OrderItem nên
-    // không hiệu chỉnh censored ở đây — đề xuất gốc cũng phải ghi nhận điều này.
-    prisma.orderItem.findMany({
-      where: { productId: item.productId, order: { createdAt: { gte: since } } },
-      select: { quantity: true, order: { select: { createdAt: true } } },
-    }),
-    prisma.purchaseItem.findMany({
-      where: { productId: item.productId, purchaseOrder: { date: { gte: since } } },
-      select: { purchaseOrder: { select: { date: true, receivedAt: true } } },
-    }),
-  ]);
-
-  // Gom theo ngày để ra đúng định dạng dailySales của calc.js.
-  const byDay = new Map();
-  for (const oi of orderItems) {
-    const key = new Date(oi.order.createdAt).toISOString().slice(0, 10);
-    byDay.set(key, (byDay.get(key) || 0) + Number(oi.quantity || 0));
-  }
-  const dailySales = [...byDay.entries()].map(([date, qty]) => ({ date, qty, outOfStock: false }));
+  const inputs = await loadReplenishmentInput([item.productId]);
+  const input = inputs.get(item.productId) || { dailySales: [], inventories: [], onOrder: 0 };
+  const receipts = await loadLeadTimeReceipts(item.productId);
 
   const plan = planReplenishment({
-    dailySales,
-    inventories: await prisma.inventory.findMany({
-      where: { productId: item.productId },
-      select: { quantity: true, reserved: true },
-    }),
-    receipts: receipts
-      .map((r) => r.purchaseOrder)
-      .filter((po) => po?.date && po?.receivedAt),
+    dailySales: input.dailySales,
+    inventories: input.inventories,
+    receipts,
     unitCost: item.unitCost,
     packMultiple: 1,
+    onOrder: input.onOrder,
   });
 
   return {
     atp: plan.atp.atp,
+    onOrder: plan.atp.onOrder,
+    inventoryPosition: plan.atp.position,
     rop: plan.rationale.rop,
     orderQty: plan.order.orderQty,
     unitCost: item.unitCost,
@@ -152,13 +180,23 @@ const revalidate = async (gate, { acknowledgeDrift = false, recompute = recomput
     return { ok: false, status: 400, message: `Nhà cung cấp ${payload.vendorName || ''} đã ngừng hoạt động` };
   }
 
+  // So sánh bằng VỊ THẾ TỒN (ATP + onOrder), không phải ATP thô.
+  // Lý do: sau khi PO được duyệt, hàng còn trên đường và ATP chưa tăng. Nếu so
+  // ATP thô thì hệ thống vẫn "thấy cần nhập" dù đã có PO đang đi — đúng cái lỗi
+  // mà `onOrder` sinh ra để chặn.
+  const cur = await recompute(item);
   const proposed = {
-    atp: payload.rationale?.atp,
+    atp: payload.rationale?.inventoryPosition ?? payload.rationale?.atp,
     rop: payload.rationale?.rop,
     orderQty: item.quantity,
     unitCost: item.unitCost,
   };
-  const current = await recompute(item);
+  const current = {
+    atp: cur.inventoryPosition ?? cur.atp,
+    rop: cur.rop,
+    orderQty: cur.orderQty,
+    unitCost: cur.unitCost,
+  };
   const freshness = evaluateProposalFreshness({ proposed, current, acknowledgeDrift });
 
   if (freshness.status === 'NO_LONGER_NEEDED') {
@@ -196,25 +234,39 @@ const executeGate = async (gateId, decidedById, { acknowledgeDrift = false, reco
     throw { status: 400, message: `Gate phải ở trạng thái APPROVED mới thực thi được (đang: ${gate.status})` };
   }
 
+const payload = gate.actionPayload || {};
+  const item = payload.items[0];
+
   // ── Chống tạo PO trùng ────────────────────────────────────────────────
   if (gate.resultRef) {
     const existing = await prisma.purchaseOrder.findFirst({ where: { id: gate.resultRef } });
     if (existing) return { po: existing, linked: true };
   }
-  const alreadyCreated = await findPoByGate(gateId);
-  if (alreadyCreated) {
-    logger.warn(`[gate-exec] gate ${gateId} da tao PO ${alreadyCreated.poCode} truoc do — lien ket lai, khong tao moi`);
-    await prisma.agentHumanGate.update({ where: { id: gateId }, data: { resultRef: alreadyCreated.id } });
-    return { po: alreadyCreated, linked: true };
+  const found = await findPoByGate(gate, { item, vendorId: payload.vendorId, decidedById });
+  if (found.po) {
+    logger.warn(`[gate-exec] gate ${gateId} đã tạo PO ${found.po.poCode} trước đó — liên kết lại, không tạo mới`);
+    await prisma.agentHumanGate.update({ where: { id: gateId }, data: { resultRef: found.po.id } });
+    return { po: found.po, linked: true };
+  }
+  if (found.rejected) {
+    // Có PO mang mốc của gate này nhưng nội dung KHÔNG khớp → tuyệt đối không
+    // liên kết và cũng không tạo mới (tạo mới lúc này là tạo trùng chắc chắn).
+    logger.error(
+      `[gate-exec] gate ${gateId}: tìm thấy PO ${found.rejected.poCode} mang mốc nhưng nội dung KHÔNG khớp ` +
+      `(${found.reason}) — KHÔNG liên kết. Cần người xử lý tay.`,
+    );
+    throw {
+      status: 409,
+      message:
+        `Tìm thấy PO ${found.rejected.poCode} ghi mốc của đề xuất này nhưng nội dung không khớp (${found.reason}). ` +
+        `Hệ thống KHÔNG tự liên kết và KHÔNG tạm tạo PO thứ hai. Vui lòng kiểm tra thủ công.`,
+    };
   }
 
   const check = await revalidate(gate, { acknowledgeDrift, recompute });
   if (!check.ok) {
     throw { status: check.status, message: check.message, drift: check.drift, diff: check.diff };
   }
-
-  const payload = gate.actionPayload || {};
-  const item = payload.items[0];
 
   let po;
   try {
@@ -285,6 +337,7 @@ const retryExecution = async (gateId, decidedById, opts = {}) => {
 module.exports = {
   GATE_MARKER,
   buildNote,
+  verifyPoBelongsToGate,
   findPoByGate,
   revalidate,
   executeGate,

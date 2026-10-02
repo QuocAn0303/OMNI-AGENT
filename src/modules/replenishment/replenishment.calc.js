@@ -551,6 +551,30 @@ const evaluateProposalFreshness = ({ proposed = {}, current = {}, acknowledgeDri
 };
 
 /**
+ * TRẠNG THÁI PO ĐANG CÒN TRÊN ĐƯỜNG (chưa nhập kho).
+ *
+ * Gồm cả `DRAFT` — vì PO do gate tạo ra khi tổng tiền dưới ngưỡng
+ * `PO_ABOVE` chính là DRAFT, nhưng nó LÀ hàng sắp đặt. Bỏ DRAFT khỏi danh sách
+ * này là nguyên nhân kinh điển của việc đặt trùng hàng.
+ */
+const OPEN_PO_STATUSES = ["DRAFT", "PENDING", "PENDING_APPROVAL", "APPROVED", "ORDERED"];
+
+/**
+ * Vị thế tồn (inventory position) = ATP + onOrder.
+ *
+ * Vì sao BẮT BUỘC cộng `onOrder`: sau khi người duyệt, PO còn nằm trên đường về
+ * kho nhưng ATP CHƯA tăng. Nếu chỉ so `ATP ≤ ROP` thì CDC sẽ thấy thiếu hàng và
+ * sinh đề xuất thứ hai cho đúng nhu cầu đó → hai PO cho một lần mua.
+ *
+ * @param {Array<{quantity:number, receivedQty?:number}>} lines
+ *   Dòng PO còn mở, kèm số lượng đã nhận qua GRN đã POST (mặc định 0).
+ */
+const calcOnOrder = ({ lines = [] } = {}) => {
+  const rows = Array.isArray(lines) ? lines.filter((l) => l && typeof l === "object") : [];
+  return rows.reduce((sum, l) => sum + Math.max(0, nonNeg(l.quantity) - nonNeg(l.receivedQty)), 0);
+};
+
+/**
  * Hàm duy nhất cho luong demo: gop moi buoc tinh cho mot SKU.
  * Đây là thứ P0-4 yêu cầu — một ngưỡng tồn thấp, một nơi định nghĩa.
  *
@@ -566,10 +590,15 @@ const planReplenishment = ({
   serviceLevel = DEFAULT_SERVICE_LEVEL,
   defaultLeadTimeDays = DEFAULT_LEAD_TIME_DAYS,
   demandMethod = "auto",
+  onOrder = 0,
 } = {}) => {
   const demand = calcDemand({ dailySales, method: demandMethod });
   const lead = calcLeadTime({ receipts, defaultDays: defaultLeadTimeDays });
   const atp = calcAtp({ inventories });
+  // Inventory position = tồn khả dụng + hàng đang trên đường. Dùng vị thế này
+  // để quyết định, còn ATP giữ nguyên để hiển thị cho người duyệt.
+  const onOrderQty = nonNeg(onOrder);
+  const position = atp.atp + onOrderQty;
   const safety = calcSafetyStock({
     sigmaDaily: demand.sigmaDaily,
     leadTimeDays: lead.leadTimeDays,
@@ -581,12 +610,12 @@ const planReplenishment = ({
     safetyStock: safety.safetyStock,
   });
   const status = evaluateStockStatus({
-    atp: atp.atp,
+    atp: position,
     rop: rop.rop,
     demandPerDay: demand.demandPerDay,
   });
   const qty = calcOrderQty({
-    atp: atp.atp,
+    atp: position,
     rop: rop.rop,
     demandPerDay: demand.demandPerDay,
     reviewPeriodDays,
@@ -599,13 +628,15 @@ const planReplenishment = ({
     ...status,
     demand,
     lead,
-    atp,
+    atp: { ...atp, onOrder: onOrderQty, position },
     safety,
     rop,
     order: { ...qty, totalEstimate },
     // LLM chỉ được nhận khối này. Không được suy ra số khác.
     rationale: {
       atp: atp.atp,
+      onOrder: onOrderQty,
+      inventoryPosition: position,
       rop: rop.rop,
       safetyStock: safety.safetyStock,
       demandPerDay: demand.demandPerDay,
@@ -649,6 +680,8 @@ module.exports = {
   evaluateStockStatus,
   evaluateProposalFreshness,
   calcOrderQty,
+  calcOnOrder,
+  OPEN_PO_STATUSES,
   proposalFingerprint,
   planReplenishment,
 };

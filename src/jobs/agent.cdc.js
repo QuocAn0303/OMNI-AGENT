@@ -20,9 +20,38 @@
 const { Pool } = require('pg');
 const logger = require('../utils/logger');
 const { getIo } = require('../realtime/socket');
+const { runWithTenant } = require('../config/tenantContext');
 
 let pool = null;
 let listening = false;
+
+/**
+ * Khoảng gộp ("debounce") cho đề xuất tồn kho, tính theo (tenant, SKU).
+ *
+ * Vì sao cần: trigger `notify_agent_inventory_change` bắn MỖI LẦN ghi vào
+ * `inventories`. Một lần nhập hàng 500 dòng sẽ bắn hàng trăm sự kiện cho cùng
+ * một SKU. Không gộp thì hệ thống quét lại lịch sử 28 ngày hàng trăm lần.
+ *
+ * Giá trị 60s là chọn có chủ đích: đủ để gom một đợt nhập hàng, và ngắn hơn đáng
+ * kể so với TTL 24h của gate nên không ảnh hưởng độ trễ phát hiện.
+ */
+const LOW_STOCK_DEBOUNCE_MS = Number(process.env.CDC_LOW_STOCK_DEBOUNCE_MS) || 60_000;
+
+/** key -> timer, chỉ giữ trong RAM. Mất khi restart — chấp nhận được. */
+const lowStockTimers = new Map();
+
+/**
+ * Gộp sự kiện theo (tenant, SKU) trong `LOW_STOCK_DEBOUNCE_MS`.
+ * Trả về true nghĩa là sự kiện này bị gộp (đã có hẹn giờ rồi).
+ */
+const shouldDebounce = (key) => {
+  if (lowStockTimers.has(key)) return true;
+  const timer = setTimeout(() => lowStockTimers.delete(key), LOW_STOCK_DEBOUNCE_MS);
+  // Không giữ tiến trình sống chỉ vì một timer debounce.
+  if (typeof timer.unref === 'function') timer.unref();
+  lowStockTimers.set(key, timer);
+  return false;
+};
 
 const poolConfig = {
   connectionString: process.env.DATABASE_URL,
@@ -31,44 +60,51 @@ const poolConfig = {
 };
 
 const EVENT_HANDLERS = {
+  /**
+   * Tồn thấp / hết hàng → SINH ĐỀ XUẤT, không tạo PO.
+   *
+   * Trước đây nhánh này gọi thẳng `purchaseService.create({ vendorId: null, ... })`
+   * trong khi `purchase.service.js:116` chặn cứng `vendorId` rỗng ⇒ **mọi lần chạy
+   * đều chỉ ghi log lỗi**, chưa bao giờ tạo được PO nào (phát hiện F1 ở
+   * `00-scope.md`). Nay nó đi qua cùng cơ chế đề xuất của người dùng: công thức
+   * tính số, agent soạn đề xuất, ADMIN/MANAGER duyệt, rồi mới có PO.
+   */
   LOW_STOCK: async (data) => {
-    try {
-      const inventoryService = require('../modules/inventory/inventory.service');
-      const purchaseService = require('../modules/accounting/purchase.service');
-      const prisma = require('../config/prisma');
+    // `tenantId` đến từ `row_to_json(NEW)` — tức từ DÒNG DỮ LIỆU HỆ THỐNG, không
+    // phải từ dữ liệu người dùng. Thiếu thì bỏ qua và ghi log để lộ ra.
+    const tenantId = data?.tenantId;
+    if (!tenantId) {
+      logger.error(
+        '[CDC] LOW_STOCK thiếu tenantId trong payload trigger — bỏ qua ' +
+        `(payload: ${JSON.stringify(data).slice(0, 200)})`,
+      );
+      return;
+    }
+    if (!data?.productId) {
+      logger.error('[CDC] LOW_STOCK thiếu productId — bỏ qua');
+      return;
+    }
+    if (shouldDebounce(`${tenantId}:${data.productId}`)) return;
 
-      const alerts = await inventoryService.checkAlerts();
-      if (!alerts?.critical?.length) return;
+    // Chạy NGOÀI request ⇒ không có tenant context ⇒ phải bọc, nếu không Prisma
+    // extension không tiêm tenantId và ta sẽ đọc/ghi nhầm tenant.
+    await runWithTenant(tenantId, async () => {
+      const { suggestForProduct } = require('../modules/replenishment/replenishment.suggest');
+      const result = await suggestForProduct({ tenantId, productId: data.productId });
 
-      for (const item of alerts.critical) {
-        const product = await prisma.product.findUnique({ where: { id: item.productId } });
-        if (!product) continue;
-
-        // Auto-create draft PO
-        const po = await purchaseService.create({
-          vendorId: null,
-          items: [{ productId: item.productId, quantity: Math.max(item.minStock * 2, 10), unitCost: 0 }],
-          note: `AI auto-generated: ${item.name} out of stock`,
-          createdById: 'system',
-        }).catch(e => {
-          logger.error(`[CDC] PO creation error for ${item.name}:`, e.message);
-          return null;
-        });
-
-        if (po) {
-          const io = getIo();
-          if (io && item.tenantId) {
-            io.to(`tenant:${item.tenantId}:role:MANAGER`).emit('AI_ACTION', {
-              type: 'AUTO_PO',
-              message: `🤖 AI tự động tạo đơn nhập hàng cho "${item.name}" (hết tồn kho)`,
-              data: po,
-            });
-          }
+      if (result?.needVendor) {
+        logger.info(`[CDC] ${result.sku} cần nhập nhưng chưa có NCC — chờ người chọn, không tự đặt`);
+      } else if (result?.gate) {
+        const io = getIo();
+        if (io) {
+          io.to(`tenant:${tenantId}:role:MANAGER`).emit('AI_ACTION', {
+            type: 'PO_PROPOSAL',
+            message: `🤖 Có đề xuất nhập hàng mới cần bạn duyệt`,
+            data: { gateId: result.gate.id, actionSummary: result.gate.actionSummary },
+          });
         }
       }
-    } catch (e) {
-      logger.error('[CDC] LOW_STOCK handler error:', e.message);
-    }
+    });
   },
 
   ORDER_COMPLETED: async (data) => {
@@ -225,17 +261,26 @@ async function startCDC() {
     await client.query('LISTEN agent_events');
 
     client.on('notification', (msg) => {
+      let event = null;
       try {
-        const event = JSON.parse(msg.payload);
-        const handler = EVENT_HANDLERS[event.type];
-        if (handler) {
-          handler(event.data || event).catch((e) =>
-            logger.error(`[CDC] Handler error for ${event.type}:`, e.message)
-          );
-        }
+        event = JSON.parse(msg.payload);
       } catch (e) {
-        logger.error('[CDC] Parse error:', e.message);
+        logger.error('[CDC] Không parse được payload NOTIFY:', e.message);
+        return;
       }
+
+      const handler = EVENT_HANDLERS[event?.type];
+      if (!handler) return;
+
+      // Bọc bằng async IIFE + try/catch: handler là `async` nên lỗi bên trong
+      // sẽ thành Promise rejection. Nếu không bắt ở đây thì một sự kiện hỏng có
+      // thể kéo sập listener và CDC im lặng vĩnh viễn — tệ hơn nhiều so với bỏ
+      // qua một sự kiện.
+      Promise.resolve()
+        .then(() => handler(event.data || event))
+        .catch((e) =>
+          logger.error(`[CDC] Handler lỗi cho ${event.type}: ${e.message}`)
+        );
     });
 
     client.on('error', (e) => {
