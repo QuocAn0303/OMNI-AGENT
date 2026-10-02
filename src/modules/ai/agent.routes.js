@@ -453,7 +453,12 @@ router.post('/chat', async (req, res, next) => {
               reply = DATA_REQUEST_FAILED_REPLY;
             }
           } else {
-            stepType = 'LLM_CALL';
+            // KHÔNG phải LLM_CALL. `generateResponse` chỉ nối chuỗi summary+message
+            // từ kết quả processQuery (xem db-agent.service.js:989-997) — không có
+            // lời gọi mô hình nào. Trước đây gắn nhãn LLM_CALL và path gợi ý đây là
+            // nhánh LLM, khiến số liệu thống kê agent trên UI phản ánh sai mức dùng LLM thật.
+            // Nhãn đúng cho nhánh này là TOOL_CALL (đã chạy truy vấn), path là keyword.
+            stepType = 'TOOL_CALL';
             reply = await generateResponse(userMsg, dbResult);
           }
         } else {
@@ -486,7 +491,7 @@ router.post('/chat', async (req, res, next) => {
         toolOutput: { response: reply },
         status: 'COMPLETED',
         durationMs,
-        path: intent?.tool ? 'fast_path' : 'fallback_llm',
+        path: intent?.tool ? 'fast_path' : 'fallback_keyword',
       },
     });
 

@@ -51,3 +51,42 @@ describe("AgentStep.type phải thuộc enum AgentStepType", () => {
     expect(createBlock[0]).toMatch(/type:\s*stepType\b/);
   });
 });
+
+/**
+ * Nhãn LLM_CALL phải khớp hành vi thật.
+ *
+ * `db-agent.service.generateResponse` chỉ nối chuỗi `summary + message` — không
+ * import `config/llm`, không gọi mô hình. Trước đây nhánh fallback gắn
+ * `stepType = 'LLM_CALL'` và `path = 'fallback_llm'`, khiến số liệu thống kê agent
+ * trên UI báo đã dùng LLM khi thực tế chưa hề gọi.
+ */
+describe("nhãn LLM_CALL chỉ dùng khi thật sự gọi LLM", () => {
+  it("generateResponse không import/gọi LLM (nên không được gắn nhãn LLM_CALL)", () => {
+    const service = fs.readFileSync(
+      path.join(__dirname, "..", "src", "modules", "ai", "db-agent.service.js"),
+      "utf8",
+    );
+    // Nếu file này bắt đầu require LLM thì nhãn LLM_CALL lại hợp lệ —
+    // test này sẽ báo sai và cần cập nhật, đó là chủ ý.
+    expect(service).not.toMatch(/require\((['"])\.\/agent\.llm\1\)/);
+    expect(service).not.toMatch(/require\((['"])\.\.\/\.\.\/config\/llm\1\)/);
+  });
+
+  it("không còn nhãn 'fallback_llm' (nhánh đó là keyword, không phải LLM)", () => {
+    expect(ROUTES).not.toMatch(/fallback_llm/);
+  });
+
+  it("nhánh gọi generateResponse gắn stepType = TOOL_CALL, không phải LLM_CALL", () => {
+    const branch = ROUTES.match(
+      /stepType\s*=\s*'TOOL_CALL';[\s\S]{0,400}?generateResponse\(/,
+    );
+    expect(branch).not.toBeNull();
+  });
+
+  it("toàn file không gán LLM_CALL cho bước nào chỉ nối chuỗi", () => {
+    // Mỗi lần gán LLM_CALL phải nằm cạnh một lời gọi LLM thật (generateNLResponse/
+    // queryModel). Ở agent.routes.js hiện không có lời gọi LLM nào ⇒ kỳ vọng 0.
+    const assignments = [...ROUTES.matchAll(/stepType\s*=\s*'LLM_CALL'/g)];
+    expect(assignments).toHaveLength(0);
+  });
+});
