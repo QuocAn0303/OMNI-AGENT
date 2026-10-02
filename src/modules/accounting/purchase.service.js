@@ -31,12 +31,13 @@ const auditService = require("../audit/audit.service");
 const debtService = require("../debt/debt.service");
 const logger = require("../../utils/logger");
 
+// Ngưỡng duyệt PO: đọc CÀI ĐẶT của tenant, thiếu thì mặc định 5tr.
+// Dùng chung `settings.service` để việc đọc có `orderBy` xác định —
+// `companySettings.findFirst()` trần không có UNIQUE(tenantId) nên trả về
+// dòng tuỳ ý, và ngưỡng duyệt PO là thứ quyết định PO có cần duyệt lần hai.
 const getPoApprovalThreshold = async () => {
-  try {
-    const settings = await prisma.companySettings.findFirst();
-    if (settings?.poApprovalThreshold != null) return Number(settings.poApprovalThreshold);
-  } catch (_) {}
-  return 5_000_000;
+  const { getPoApprovalThreshold: read } = require("../settings/settings.service");
+  return read();
 };
 
 const toNum = (v) => Number(v || 0);
