@@ -96,17 +96,25 @@ const upsertDocument = async (entityType, entityId, content, metadata = {}) => {
   const vectorStr = `[${embedding.join(",")}]`;
   const tenantId = getTenantId() || null;
 
-  // `tenant_id` BẮT BUỘC cập nhật khi conflict.
-  //
   // Ràng buộc unique của `ai_documents` là TOÀN CỤC: `(entity_type, entity_id)`,
-  // không có `tenant_id`. Nếu không set lại `tenant_id` ở nhánh DO UPDATE thì
-  // một tài liệu thuộc tenant A sẽ bị ghi đè nội dung mà `tenant_id` vẫn NULL
-  // ⇒ biến thành "knowledge global" và bị MỌI tenant khác đọc thấy.
-  await prisma.$executeRawUnsafe(
+  // không có `tenant_id` (xem backlog — cần migration mới để sửa tận gốc).
+  //
+  // Vì vậy `ON CONFLICT DO UPDATE` PHẢI có điều kiện: chỉ cập nhật được dòng mà
+  // `tenant_id` trùng với `EXCLUDED.tenant_id`. Không có điều kiện thì tenant B
+  // ghi một `entity_id` trùng sẽ CƯỚP tài liệu của tenant A (nội dung bị thay,
+  // và nếu không set `tenant_id` thì nó còn rơi về NULL ⇒ biến thành "global" để
+  // mọi tenant đọc thấy). `entity_id` là cuid nên hiếm khi trùng, nhưng nếu bất
+  // kỳ endpoint nào cho phép client cung cấp `entity_id` thì đây là lỗ hổng
+  // thật — nên không được dựa vào "hiếm khi trùng".
+  //
+  // `WHERE` trong `ON CONFLICT` làm nút cổ: khi không thoả thì **không** ghi
+  // gì và `rowCount = 0`; ta phát hiện được và ném lỗi rõ ràng thay vì im lặng.
+  const res = await prisma.$executeRawUnsafe(
     `INSERT INTO ai_documents (id, entity_type, entity_id, content, metadata, tenant_id, updated_at)
      VALUES (gen_random_uuid(), $1, $2, $3, $4::jsonb, $5, NOW())
      ON CONFLICT (entity_type, entity_id)
-     DO UPDATE SET content = $3, metadata = $4::jsonb, updated_at = NOW(), tenant_id = $5`,
+     DO UPDATE SET content = $3, metadata = $4::jsonb, updated_at = NOW()
+     WHERE ai_documents.tenant_id = EXCLUDED.tenant_id`,
     entityType,
     entityId,
     content,
@@ -114,15 +122,31 @@ const upsertDocument = async (entityType, entityId, content, metadata = {}) => {
     tenantId,
   );
 
-  // Đọc lại PHẢI khoanh theo tenant. Trước đây chỉ lọc `entity_type`/`entity_id`
-  // nên có thể trả về `id` của tài liệu đang thuộc về tenant khác, và bước ghi
-  // embedding ngay sau đó sẽ đè lên vector của họ.
+  if (res === 0) {
+    // Đã tồn tại (entity_type, entity_id) nhưng thuộc tenant KHÁC.
+    const logger = require("../../utils/logger");
+    logger.error(
+      `[ai] CHỐNG GHI ĐÈ CROSS-TENANT: tenant=${tenantId || "(global)"} thử ghi ` +
+        `entity_type=${entityType} entity_id=${entityId} nhưng mốc đã thuộc tenant khác. ` +
+        "Từ chối ghi. Nếu đây là hành vi mong muốn, cần đổi entityId hoặc sửa schema " +
+        "(unique phải gồm tenant_id).",
+    );
+    const err = new Error(
+      `Tài liệu đã tồn tại và thuộc tenant khác: entity_type=${entityType}, entity_id=${entityId}. ` +
+        "Từ chối ghi đè tài liệu của tenant khác.",
+    );
+    err.code = "AI_DOC_CROSS_TENANT_CONFLICT";
+    err.status = 409;
+    throw err;
+  }
+
+  // Đọc lại PHẢI khoanh theo tenant: nếu không, có thể trả về `id` của tài liệu
+  // đang thuộc về tenant khác, và bước ghi embedding ngay sau đó sẽ đè lên vector
+  // của họ.
   const [doc] = await prisma.$queryRawUnsafe(
     tenantId
       ? `SELECT id FROM ai_documents
-         WHERE entity_type = $1 AND entity_id = $2
-           AND (tenant_id = $3 OR tenant_id IS NULL)
-         ORDER BY (tenant_id = $3) DESC
+         WHERE entity_type = $1 AND entity_id = $2 AND tenant_id = $3
          LIMIT 1`
       : `SELECT id FROM ai_documents
          WHERE entity_type = $1 AND entity_id = $2 AND tenant_id IS NULL

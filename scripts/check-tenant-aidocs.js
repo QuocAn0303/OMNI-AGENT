@@ -53,7 +53,8 @@ const upsertDoc = (entityId, content, tenantId) =>
     `INSERT INTO ai_documents (id, entity_type, entity_id, content, metadata, tenant_id, updated_at)
      VALUES (gen_random_uuid(), $1, $2, $3, $4::jsonb, $5, NOW())
      ON CONFLICT (entity_type, entity_id)
-     DO UPDATE SET content = $3, metadata = $4::jsonb, updated_at = NOW(), tenant_id = $5`,
+     DO UPDATE SET content = $3, metadata = $4::jsonb, updated_at = NOW()
+     WHERE ai_documents.tenant_id = EXCLUDED.tenant_id`,
     ETYPE,
     entityId,
     content,
@@ -64,9 +65,8 @@ const upsertDoc = (entityId, content, tenantId) =>
 const readBack = (entityId, tenantId) =>
   prisma.$queryRawUnsafe(
     `SELECT id, content, tenant_id FROM ai_documents
-      WHERE entity_type = $1 AND entity_id = $2
-        AND (tenant_id = $3 OR tenant_id IS NULL)
-      ORDER BY (tenant_id = $3) DESC LIMIT 1`,
+      WHERE entity_type = $1 AND entity_id = $2 AND tenant_id = $3
+      LIMIT 1`,
     ETYPE,
     entityId,
     tenantId,
@@ -102,7 +102,7 @@ const searchLike = (tenantId) =>
     ok("Tenant A chi thay tai lieu cua A", idsA.includes("eA") && !idsA.includes("eB"), idsA.join(","));
     ok("Tenant B chi thay tai lieu cua B", idsB.includes("eB") && !idsB.includes("eA"), idsB.join(","));
 
-    // ── 2. Ghi đè cùng entity_id: phải chuyển quyền sở hữu, không để lọt ──
+    // ── 2. Ghi đè cùng entity_id: KHÔNG được cướp của tenant khác ──────────
     await upsertDoc("shared", "v1-tu-A", tA);
     const owner1 = await prisma.$queryRawUnsafe(
       `SELECT tenant_id FROM ai_documents WHERE entity_type = $1 AND entity_id = 'shared'`,
@@ -110,27 +110,41 @@ const searchLike = (tenantId) =>
     );
     ok("Ghi 'shared' lan 1 -> thuoc A", owner1[0]?.tenant_id === tA, String(owner1[0]?.tenant_id));
 
-    await upsertDoc("shared", "v2-tu-B", tB);
-    const owner2 = await prisma.$queryRawUnsafe(
+    // Tenant B thử ghi cùng entity_id: phải bị TỪ CHỐI (rowCount = 0), và
+    // tài liệu của A phải còn nguyên — không được đổi quyền sở hữu.
+    let bError = null;
+    let bRowCount = null;
+    try {
+      bRowCount = await upsertDoc("shared", "v2-tu-B", tB);
+    } catch (e) {
+      bError = e;
+    }
+    ok("B ghi 'shared' cùng entity_id -> KHONG duoc ghi (rowCount = 0)", bRowCount === 0 && !bError, `rowCount=${bRowCount}, err=${bError?.code || bError?.message?.slice(0, 40)}`);
+
+    const afterB = await prisma.$queryRawUnsafe(
       `SELECT tenant_id, content FROM ai_documents WHERE entity_type = $1 AND entity_id = 'shared'`,
       ETYPE,
     );
-    ok(
-      "Ghi 'shared' lan 2 -> chuyen sang B (khong bien thanh global)",
-      owner2[0]?.tenant_id === tB,
-      String(owner2[0]?.tenant_id),
+    ok("Tai lieu van thuoc A sau khi B thu ghi", afterB[0]?.tenant_id === tA, String(afterB[0]?.tenant_id));
+    ok("Noi dung cua A KHONG bi doi", afterB[0]?.content === "v1-tu-A", String(afterB[0]?.content));
+
+    // ── 3. A ghi lại tài liệu CỦA CHÍNH MÌNH thì vẫn cập nhật được ────────
+    const selfWrite = await upsertDoc("shared", "v3-tu-A-cap-nhat", tA);
+    const afterSelf = await prisma.$queryRawUnsafe(
+      `SELECT tenant_id, content FROM ai_documents WHERE entity_type = $1 AND entity_id = 'shared'`,
+      ETYPE,
     );
-    ok("Noi dung la ban moi nhat", owner2[0]?.content === "v2-tu-B", String(owner2[0]?.content));
+    ok("A ghi lai tai lieu cua chinh minh -> cap nhat duoc", selfWrite === 1 && afterSelf[0]?.content === "v3-tu-A-cap-nhat", `rowCount=${selfWrite}`);
 
-    // ── 3. Đọc lại theo tenant không được trả nhầm tài liệu của tenant khác ──
-    const backB = await readBack("shared", tB);
-    ok("Tenant B doc lai duoc 'shared'", backB[0]?.tenant_id === tB);
-
+    // ── 4. Đọc lại theo tenant không được trả nhầm tài liệu của tenant khác ──
     const backA = await readBack("shared", tA);
+    ok("Tenant A doc lai duoc tai lieu cua minh", backA[0]?.tenant_id === tA);
+
+    const backB = await readBack("shared", tB);
     ok(
-      "Tenant A KHONG doc duoc 'shared' cua B qua duong doc lai",
-      backA.length === 0,
-      backA.length ? `tra ve ${backA.length} dong` : "",
+      "Tenant B KHONG doc lai duoc tai lieu cua A",
+      backB.length === 0,
+      backB.length ? `tra ve ${backB.length} dong` : "",
     );
 
     // ── 4. Ràng buộc unique toàn cục: ghi lại phải CHỈ có 1 hàng ────────────
@@ -141,8 +155,12 @@ const searchLike = (tenantId) =>
     ok("Chi co MOT hang cho (entity_type, entity_id)", rows[0].n === 1, `n=${rows[0].n}`);
 
     ok(
-      "Tenant A khong con thay 'shared' sau khi B ghi de",
-      !(await searchLike(tA)).some((r) => r.entity_id === "shared"),
+      "Tenant A VAN thay 'shared' cua chinh minh (khong mat tai lieu)",
+      (await searchLike(tA)).some((r) => r.entity_id === "shared"),
+    );
+    ok(
+      "Tenant B KHONG thay 'shared' cua A",
+      !(await searchLike(tB)).some((r) => r.entity_id === "shared"),
     );
   } finally {
     await prisma.$executeRawUnsafe(`DELETE FROM ai_documents WHERE entity_type = $1`, ETYPE);
