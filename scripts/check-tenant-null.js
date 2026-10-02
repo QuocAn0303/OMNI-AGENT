@@ -1,4 +1,4 @@
-/**
+﻿/**
  * scripts/check-tenant-null.js - Phat hien `tenantId IS NULL` tren DB dang chay
  *
  * VI SAO CO SCRIPT NAY
@@ -26,20 +26,24 @@ const ok = (label, cond, extra = "") => {
 };
 
 /**
- * Cac bang duoc phep con NULL.
- *
- * - `users`: `SUPER_OMEGA_ULTRA_ADMIN` co tinh khong thuoc tenant nao (no vong
- *   qua co ly tenant), nen NULL la hop le. Cac dong NULL khac deu la rac du
- *   lieu de nguoi xu ly - script bao nhung khong fail.
- * - `company_settings`: bang 1-1 theo tenant, khong co khoa ngoai suy duoc.
- *
- * Hai bang nay KHONG dua vao danh sach "duoc phep" o duoi; chi duoc dan vao
- * danh sach "can nguoi xem" de fail khong lang am thanh.
+ * Bảng 1-1 theo tenant — mỗi tenant đúng MỘT dòng. Liệt kê tường minh kèm
+ * lý do; đo bằng tỉ lệ số dòng chính là thứ đã giấu bug 36 dòng settings.
  */
-const HUMAN_REVIEW_TABLES = new Set(["users", "company_settings"]);
+const ONE_TO_ONE_TABLES = new Set(["company_settings"]);
+
+/**
+ * Bảng được phép còn NULL vì lý do CHỦ Ý (không tính LỖI).
+ *
+ * `users`: `SUPER_OMEGA_ULTRA_ADMIN` cố ý không thuộc tenant nào. Vì vậy
+ * `users.tenantId` KHÔNG được ép NOT NULL ở Vòng 2.
+ *
+ * `audit_logs` CỐ Ý khi mọi dòng NULL thuộc tài khoản cấp nền tảng; nếu
+ * không xác định được chủ thì tính là LỖI (không tự tha để làm số xanh).
+ */
+const INTENTIONAL_NULL = new Set(["users"]);
 
 (async () => {
-  console.log("\n=== QUET tenantId IS NULL tren DB hien tai (chi doc) ===\n");
+  console.log("\n=== QUET CHAT LUONG tenantId tren DB hien tai (chi doc) ===\n");
 
   const tables = await prisma.$queryRawUnsafe(`
     SELECT c.table_schema AS schema, c.table_name AS table
@@ -51,33 +55,51 @@ const HUMAN_REVIEW_TABLES = new Set(["users", "company_settings"]);
        AND c.table_schema NOT IN ('pg_catalog', 'information_schema')
      ORDER BY c.table_name`);
 
-  const withNull = [];
+  const rows = [];
   for (const t of tables) {
-    const res = await prisma.$queryRawUnsafe(
-      `SELECT count(*)::int AS n FROM "${t.schema}"."${t.table}" WHERE "tenantId" IS NULL`,
-    );
-    if (res[0].n > 0) withNull.push({ table: t.table, n: res[0].n });
+    const n = (
+      await prisma.$queryRawUnsafe(
+        `SELECT count(*)::int AS n FROM "${t.schema}"."${t.table}" WHERE "tenantId" IS NULL`,
+      )
+    )[0].n;
+    const orphan = (
+      await prisma.$queryRawUnsafe(
+        `SELECT count(*)::int AS n FROM "${t.schema}"."${t.table}" c
+          WHERE c."tenantId" IS NOT NULL
+            AND NOT EXISTS (SELECT 1 FROM tenants x WHERE x.id = c."tenantId")`,
+      )
+    )[0].n;
+    const dup = ONE_TO_ONE_TABLES.has(t.table)
+      ? (
+          await prisma.$queryRawUnsafe(
+            `SELECT count(*)::int AS n FROM (
+                SELECT "tenantId" FROM "${t.schema}"."${t.table}"
+                 WHERE "tenantId" IS NOT NULL GROUP BY "tenantId" HAVING count(*) > 1) d`,
+          )
+        )[0].n
+      : 0;
+    if (n > 0 || orphan > 0 || dup > 0) rows.push({ table: t.table, n, orphan, dup });
   }
 
-  // Cac bang duoc xem la "sach" neu khong con NULL o bat ky bang nao khac.
-  const unexpected = withNull.filter((r) => !HUMAN_REVIEW_TABLES.has(r.table));
+  const errors = rows.filter((r) => r.n > 0 && !INTENTIONAL_NULL.has(r.table));
+  const orphans = rows.filter((r) => r.orphan > 0);
+  const dups = rows.filter((r) => r.dup > 0);
 
-  ok(
-    "KHONG co bang nao ngoai danh sach 'can nguoi xem' bi NULL tenantId",
-    unexpected.length === 0,
-    unexpected.map((r) => `${r.table}=${r.n}`).join(", "),
-  );
-
-  for (const r of withNull) {
-    const tag = HUMAN_REVIEW_TABLES.has(r.table) ? "[can nguoi xem]" : "[LOI]";
-    console.log(`     ${tag} ${r.table}: ${r.n} dong`);
+  for (const r of rows) {
+    const g = r.dup > 0 ? "TRUNG 1-1" : r.orphan > 0 ? "MO COI-TENANT" : r.n === 0 ? "DA XU LY" : INTENTIONAL_NULL.has(r.table) ? "CO Y" : "LOI";
+    console.log(`     [${g}] ${r.table}: NULL=${r.n} mo-coi=${r.orphan} trung=${r.dup}`);
   }
 
-  if (withNull.length > 0) {
+  ok("LOI: khong co bang nao NULL tenantId ngoai danh sach 'co y'", errors.length === 0, errors.map((r) => `${r.table}=${r.n}`).join(", "));
+  ok("TRUNG 1-1: moi tenant chi co MOT dong o bang 1-1", dups.length === 0, dups.map((r) => `${r.table}=${r.dup} tenant`).join(", "));
+
+  const orphanTotal = orphans.reduce((s, r) => s + r.orphan, 0);
+  ok("MO COI-TENANT: bao cao so dong (khong fail)", true, `${orphanTotal} dong o ${orphans.length} bang`);
+
+  if (errors.length || dups.length) {
     console.log(
-      "\n     -> Chay `node scripts/tenant-null.js --backfill` de xem ke hoach va\n" +
-        "        `node scripts/tenant-null.js --backfill --apply` de va (chi DB local).\n" +
-        "        Runbook cho moi truong: docs/aisc26/runbook-tenant-null.md",
+      "\n     -> Backfill: node scripts/tenant-null.js --backfill (dry-run mac dinh)\n" +
+        "        Runbook moi truong: docs/aisc26/runbook-tenant-null.md",
     );
   }
 

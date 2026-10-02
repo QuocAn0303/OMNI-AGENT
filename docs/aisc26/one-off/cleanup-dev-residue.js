@@ -5,7 +5,7 @@
  *
  * BỐN NHÓM ĐƯỢC PHÉP XOÁ — danh sách tường minh, ngoài danh sách thì HỦY.
  *
- *   A. 9 user kiểm thử + dữ liệu kéo theo
+ * DUNG MOT LAN (Moc 10). CHI ap dung cho DB local.
  *      users: e2e_test_%@example.com | smoke-%@test.local, tenantId NULL,
  *             role <> SUPER_OMEGA_ULTRA_ADMIN
  *      orders của 9 user đó, CHỈ khi tenant KHÔNG tồn tại và không có payments
@@ -27,7 +27,7 @@
  *      nào của tenant còn tồn tại tham chiếu tới (kiểm bằng metadata, không đoán)
  *
  * CHỐT CHẶN
- *   - Số dòng dry-run phải khớp ĐÚNG `EXPECTED` (cấp bởi quyet-dinh-moc-9.md).
+ *   - So dong dry-run phai khop DUNG `EXPECTED` (cap boi quyet-dinh-moc-10).
  *   - Phép trừ 281 − 170 = 111 phải khớp tổng nhóm D.
  *   - Snapshot 2 tenant thật (CANDORY SCENT, Á đù) trước/sau phải GIỐNG HỆT.
  *   - `audit_logs` NULL toàn DB không được vượt 124.
@@ -56,8 +56,12 @@ const db = new Client({
 const APPLY = process.argv.includes("--apply");
 
 /**
- * Số kỳ vọng — nguồn: quyet-dinh-moc-9.md, ngày 2026-10-02.
+ * Số kỳ vọng — nguồn: quyet-dinh-moc-10, ngày 2026-10-02.
  * Sửa ở đây là chỗ cần đội ký, đừng tự đổi để cho khớp.
+ *
+ * Nhóm D được Mốc 10 ký lại vì phép đo Mốc 8/9 (warehouses 36, audit_logs 69)
+ * đã LỖI THỜI: chính script smoke còn rò dữ liệu trong lúc đo. Xem
+ * `docs/aisc26/corrections.md`.
  */
 const EXPECTED = {
   // Nhóm A
@@ -73,17 +77,17 @@ const EXPECTED = {
   dbg_vendors: 5,
   // Nhóm C
   company_settings: 38,
-  // Nhóm D
-  d_warehouses: 36,
-  d_audit_logs: 69,
+  // Nhóm D — cấp bởi quyet-dinh-moc-10
+  d_warehouses: 40,
+  d_audit_logs: 81,
   d_products: 3,
   d_categories: 3,
 };
 
 /** Tổng mồ côi-tenant trước khi dọn; phép trừ này phải khớp (điều kiện dừng). */
-const ORPHAN_TOTAL_BEFORE = 281;
-/** 281 − (86 orders + 84 order_items) = 111. */
-const ORPHAN_GROUP_D_EXPECTED = 111;
+const ORPHAN_TOTAL_BEFORE = 297;
+/** 297 − (86 orders + 84 order_items) = 127. */
+const ORPHAN_GROUP_D_EXPECTED = 127;
 
 /** Ngưỡng trần `audit_logs` NULL toàn DB (điều kiện dừng). */
 const AUDIT_LOGS_NULL_CEILING = 124;
