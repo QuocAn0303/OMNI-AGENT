@@ -44,7 +44,9 @@ describe("settings.service — đọc xác định", () => {
     mockCompanySettings.findFirst.mockResolvedValue(row("r1", "2026-06-02T00:00:00Z"));
     await svc.getOrCreate();
     const args = mockCompanySettings.findFirst.mock.calls[0][0];
-    expect(args.orderBy).toEqual({ createdAt: "asc" });
+    // PHẢI có hai khoá: chỉ `createdAt` thì hai dòng cùng mili-giây có thể đảo thứ
+    // tự, quay lại trạng thái không xác định.
+    expect(args.orderBy).toEqual([{ createdAt: "asc" }, { id: "asc" }]);
   });
 
   test("getOrCreate trả dòng đã có, không tạo thêm", async () => {

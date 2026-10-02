@@ -31,11 +31,18 @@ const DEFAULT_PO_APPROVAL_THRESHOLD = 5_000_000;
  *
  * Chọn dòng **tạo sớm nhất** là dòng gốc của tenant nên đó là dòng mang cấu
  * hình thật; các dòng sinh sau là rác.
+ *
+ * `orderBy` có HAI khoá, không phải một: `createdAt` rồi `id`. Nếu chỉ
+ * `createdAt`, hai dòng tạo trong cùng một mili-giây sẽ bị sắp xếp tuỳ ý và
+ * `findCanonical` có thể trả về hai kết quả khác nhau ở hai lần gọi khác nhau —
+ * tức lại quay về trạng thái không xác định mà bản vá này sinh ra để chữa.
  */
+const CANONICAL_ORDER = [{ createdAt: 'asc' }, { id: 'asc' }];
+
 const findCanonical = async (client = prisma) =>
   client.companySettings.findFirst({
     where: { tenantId: client.tenantId ?? undefined },
-    orderBy: { createdAt: 'asc' },
+    orderBy: CANONICAL_ORDER,
   });
 
 /**
