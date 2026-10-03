@@ -28,6 +28,15 @@ const { maskPII } = require('../../utils/piiMask');
  * @param {Object} params.before - trạng thái trước (sẽ lưu dưới dạng JSON)
  * @param {Object} params.after - trạng thái sau (sẽ lưu dưới dạng JSON)
  * @param {Object} params.meta - metadata bổ sung (ip, note...)
+ * @param {string} [params.tenantId] - ghi đè tenant của dòng log.
+ *
+ *   CẦN khi luồng **không chạy trong tenant context** (`getTenantId()` = null)
+ *   nhưng vẫn biết tenant: đăng ký tài khoản (`REGISTER`), xác minh email
+ *   (`VERIFY_EMAIL`). Trước đây hai đường này ghi `tenantId = NULL` dù tenant
+ *   đã có trong tay — 52 dòng trong `audit_logs` trên DB phát triển thuộc loại
+ *   này (đo 2026-10-03, xem `scripts/lib/tenant-null-exceptions.js`).
+ *   Truyền `null` tường minh = "cố ý không thuộc tenant nào" (ví dụ
+ *   `CREATE_ADMIN_CAMPAIGN` trên bảng nền tảng `AdminCampaign`).
  */
 const log = async ({
   userId = null,
@@ -37,12 +46,15 @@ const log = async ({
   before = null,
   after = null,
   meta = null,
+  tenantId,
 }) => {
   try {
     // Mask PII trước khi lưu (role null → luôn mask, không bao giờ lưu PII raw)
     await prisma.auditLog.create({
       data: {
-        tenantId: getTenantId(),
+        // `tenantId` truyền vào được ưu tiên; extension Prisma cũng không ghi đè
+        // giá trị đã có (`if (!args.data.tenantId)`), nên hai đường không đụng nhau.
+        tenantId: tenantId === undefined ? getTenantId() : tenantId,
         userId,
         action,
         entity,

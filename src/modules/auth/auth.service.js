@@ -444,6 +444,10 @@ const register = async ({ companyName, email, password, industry, fullName }) =>
 
   auditService.log({
     userId: result.user.id,
+    // Đăng ký chạy NGOÀI tenant context (chưa có phiên đăng nhập) nhưng tenant
+    // vừa được tạo ⇒ truyền `tenantId` để dòng log thuộc đúng tenant, thay vì
+    // để `NULL` (đã có 26 dòng `REGISTER` NULL trên DB phát triển).
+    tenantId: result.tenant.id,
     action: 'REGISTER',
     entity: 'Tenant',
     entityId: result.tenant.id,
@@ -483,6 +487,9 @@ const verifyEmail = async (token) => {
 
   auditService.log({
     userId: user.id,
+    // Xác minh email đi qua link/token nên không có tenant context; tenant lấy từ
+    // chính user. Tài khoản nền tảng có `tenantId = NULL` thì vẫn để NULL — có ý.
+    tenantId: user.tenantId ?? null,
     action: 'VERIFY_EMAIL',
     entity: 'User',
     entityId: user.id,

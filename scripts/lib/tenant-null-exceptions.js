@@ -29,16 +29,34 @@ const EXPLICIT_EXCEPTIONS = [
   },
   {
     table: "audit_logs",
-    where: `"tenantId" IS NULL AND "userId" IS NULL`,
+    // ĐIỀU KIỆN THEO `action`, không phải "bảng này được phép NULL".
+    // Truy nguồn 124 dòng (2026-10-03, `SELECT action, entity, count(*) FROM
+    // audit_logs WHERE "tenantId" IS NULL GROUP BY 1,2`) cho đúng 4 nhóm, tất cả
+    // đều `userId = NULL`:
+    //   CREATE_ADMIN_CAMPAIGN | AdminCampaign | 36
+    //   SEND_ADMIN_CAMPAIGN   | AdminCampaign | 36   -> 72 dòng: bảng NỀN TẢNG,
+    //     `AdminCampaign` không có `tenantId`; người ghi là SUPER_ADMIN ngoài
+    //     tenant context ⇒ KHÔNG THỂ gán tenant, đúng theo thiết kế.
+    //   REGISTER              | Tenant        | 26
+    //   VERIFY_EMAIL          | User          | 26   -> 52 dòng: lỗi gán thuộc
+    //     tenant của mã (đăng ký / verify email chạy ngoài tenant context dù
+    //     tenant đã biết). ĐÃ SỬA: `audit.service.log` nhận `tenantId` và hai
+    //     call site truyền tường minh. 52 dòng CŨ giữ nguyên (không có nguồn
+    //     để suy ngược lại từng tenant), nên vẫn phải nằm trong ngoại lệ này.
+    where:
+      `"tenantId" IS NULL AND "userId" IS NULL AND "action" IN ` +
+      `('CREATE_ADMIN_CAMPAIGN','SEND_ADMIN_CAMPAIGN','REGISTER','VERIFY_EMAIL')`,
     cap: 124,
     reason:
-      "Nhật ký hệ thống không gắn user (audit log phát sinh ngoài ngữ cảnh người dùng). " +
-      "Đã khôi phục dump aduu-dev-before-residue-cleanup-20261002-202352.dump để truy " +
-      "userId: CẢ 124 dòng đều có userId = NULL — tức KHÔNG phải user đã xoá mà là log " +
-      "không có chủ, nên không có nguồn để suy tenantId. Đã đối chiếu: không dòng nào thuộc " +
-      "9 user rác đã xoá ở Mốc 10. Giữ nguyên, không xoá. Nếu số dòng vượt trần này thì là " +
-      "dữ liệu mới sinh ⇒ phải điều tra, không tự động tha.",
-    since: "2026-10-02",
+      "Truy nguồn bằng lệnh (2026-10-03): 124 dòng NULL chia làm 72 dòng log " +
+      "chiến dịch NỀN TẢNG (`AdminCampaign` không có `tenantId` — không thể gán) " +
+      "và 52 dòng `REGISTER`/`VERIFY_EMAIL` là lỗi quy thuộc tenant trong mã. " +
+      "Phần 52 đã sửa tại `src/modules/audit/audit.service.js` + `auth.service.js` " +
+      "(truyền `tenantId` tường minh); dữ liệu cũ giữ nguyên vì không có nguồn suy. " +
+      "Đã đối chiếu dump `aduu-dev-before-residue-cleanup-20261002-202352.dump`: " +
+      "không dòng nào thuộc 9 user rác đã xoá ở Mốc 10. Cap 124 giữ làm lưới an " +
+      "toàn: có action KHÁC xuất hiện NULL ⇒ phải điều tra, không tự động tha.",
+    since: "2026-10-02 (điều kiện chuyển sang theo `action` ngày 2026-10-03)",
   },
 ];
 

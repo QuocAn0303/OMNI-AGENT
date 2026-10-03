@@ -65,3 +65,22 @@ thất bại trên môi trường đang có dữ liệu trùng nên phải dọn
 
 **Cách đảo ngược:** bỏ khối `if (canonical && canonical.id !== created.id)` trong
 `settings.service.getOrCreate()`.
+
+
+---
+
+## D-008 Truy nguon 124 `audit_logs` NULL: sua 52 dong do LOI MA, giu 72 dong BAN THIEN KE
+
+**Boi canh (do bang lenh, 2026-10-03):** `SELECT action, entity, count(*) FROM audit_logs WHERE "tenantId" IS NULL GROUP BY 1,2` tra ve DUNG 4 nhom, tat ca deu `userId = NULL`:
+`CREATE_ADMIN_CAMPAIGN|AdminCampaign` 36, `SEND_ADMIN_CAMPAIGN|AdminCampaign` 36, `REGISTER|Tenant` 26, `VERIFY_EMAIL|User` 26 = 124.
+
+**Phuong an da can nhac:**
+1. Giu nguyen ngoai le "tran so luong" (trang thai hien tai).
+2. Sua ma: cho `audit.service.log` nhan `tenantId` tieu minh.
+3. Backfill 52 dong cu bang cach doan tenant tu `entityId` (user/tenant id trong `afterJson`).
+
+**Lua chon:** **(2) + (3) KHONG lam**; ngoai le doi tu "tran so luong" sang **"dieu kien theo `action`"**, van giu cap 124.
+
+**Ly do:** 72 dong log chien dich **nen tang** (`AdminCampaign` khong co `tenantId`; nguoi ghi la SUPER_ADMIN ngoai tenant context) — KHONG THEM gan tenant, dung thiet ke. 52 dong `REGISTER`/`VERIFY_EMAIL` la **loi quy thuoc tenant trong ma**: hai luong nay chay ngoai tenant context (getTenantId() = null) du tenant da biet. Sua (2) la sua nguyen nhan, kiem chung duoc bang unit test; (3) se **doan** tenant tu du lieu JSON — trai hieu "chi dung so da do duoc", nen khong lam. Do lai ngoai le theo `action` lam phat hien "action KHAC bi NULL" ngay thay vi chi dem tong.
+
+**Cach dao nguoc:** bo tham so `tenantId` khoi `audit.service.log` va hai call site trong `auth.service.js`; khoi ngoai le trong `scripts/lib/tenant-null-exceptions.js` tro lai dieu kien `"userId" IS NULL`. 52 dong du lieu cu KHONG bi dung vao.
