@@ -62,7 +62,7 @@ router.get("/", authenticate, authorize("ADMIN", "MANAGER"), async (req, res, ne
  *         name: clvLimit
  *         schema: { type: integer, default: 20 }
  *     responses:
- *       200: { description: totals, rfmSegments[], tiers[], clv{}, churn{}, atRisk[], topClv[] }
+ *       200: { description: "totals, rfmSegments[], tiers[], clv, churn, atRisk, topClv" }
  */
 router.get("/customer-insights", authenticate, authorize("ADMIN", "MANAGER"), async (req, res, next) => {
   try {

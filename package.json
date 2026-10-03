@@ -32,7 +32,8 @@
     "smoke:crm-phase4": "npm run smoke:crm-phase4-send && npm run smoke:crm-phase4-campaign && npm run smoke:crm-phase4-hierarchy && npm run smoke:crm-phase4-insights",
     "check:i18n": "node scripts/check-i18n-keys.js",
     "verify": "node scripts/verify.js",
-    "verify:quick": "node scripts/verify.js --quick"
+    "verify:quick": "node scripts/verify.js --quick",
+    "check:swagger": "node scripts/check-swagger-yaml.js"
   },
   "dependencies": {
     "@ai-sdk/openai": "^3.0.67",
