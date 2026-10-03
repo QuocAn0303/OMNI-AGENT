@@ -33,8 +33,8 @@ tay với đề xuất của hệ thống**, trên một bài toán tồn kho gi
 # 1) Sinh lại kịch bản (chỉ đọc DB local, không ghi gì)
 npm run usertest:scenario
 
-# 2) In giấy: bảng SKU theo từng điều kiện, phiếu bấm giờ, phiếu quyết định
-node scripts/usertest/print-sheets.js --out docs/aisc26/usertest/print/   # tuỳ chọn
+# 2) In bảng SKU cho từng điều kiện ra giấy (thư mục `print/` KHÔNG commit)
+node scripts/usertest/print-sheets.js --out docs/aisc26/usertest/print
 
 # 3) Thu kết quả vào results/tasks.csv + results/decisions.csv (theo mẫu)
 

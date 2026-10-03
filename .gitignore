@@ -108,3 +108,6 @@ venv/
 # Bản ghi LLM (record/replay) chứa NỘI DUNG prompt/response của dữ liệu người dùng.
 # Tuyệt đối không commit — vừa vì dữ liệu, vừa vì nó có thể chứa thông tin khách hàng.
 /data/llm-recordings.jsonl
+
+# AISC26 P8: thu muc in giay cua bo cong cu nguoi thu (sinh lai bang lenh, khong commit)
+docs/aisc26/usertest/print/
