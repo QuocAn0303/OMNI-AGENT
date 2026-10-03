@@ -505,7 +505,10 @@ const runDemoFlow = async ({ tenantId, onEvent = () => {} } = {}) => {
       demandPerDay: picked.demandPerDay,
       orderQty: num(item?.quantity),
       unitCost: num(item?.unitCost),
-      totalEstimate: num(item?.totalEstimate),
+      // `totalEstimate` nằm ở CẤP PAYLOAD, không nằm trong `items[0]`
+      // (xem `buildPoProposalGate`) — đọc sai chỗ thì ra 0 và in ra
+      // "2.489 × 0,04 = 0" trông như hệ thống tính sai.
+      totalEstimate: num(gate.actionPayload?.totalEstimate),
       vendorName: gate.actionPayload?.vendorName,
       leadTimeDays: num(gate.actionPayload?.leadTimeDays),
       leadTimeEstimated: gate.actionPayload?.leadTimeEstimated === true,
