@@ -23,8 +23,19 @@
  */
 const crypto = require("crypto");
 
-/** Hệ số z chuẩn ứng với mức phục vụ. Bảng tra, không cần thư viện thống kê. */
+/**
+ * Hệ số z chuẩn ứng với mức phục vụ. Bảng tra, không cần thư viện thống kê.
+ *
+ * `0.80` và `0.85` thêm vào ngày 2026-10-03 (gói P5 / T10): lưới tinh chỉnh đã
+ * chốt trước trong `docs/aisc26/03-evaluation-protocol.md` §3.3 (S12) là
+ * `0.80, 0.85, 0.90, 0.95`, nhưng bảng này thiếu hai mức đầu nên backtest sẽ
+ * phải tự chế z — tức là mã backtest và mã sản phẩm dùng hai nguồn số khác nhau
+ * cho cùng một khái niệm. Thêm vào bảng là thay đổi **cộng thêm**, không đổi
+ * hành vi của bất kỳ mức nào đang tồn tại.
+ */
 const Z_BY_SERVICE_LEVEL = {
+  0.80: 0.842,
+  0.85: 1.036,
   0.90: 1.282,
   0.95: 1.645,
   0.975: 1.96,

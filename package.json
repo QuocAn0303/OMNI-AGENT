@@ -33,7 +33,8 @@
     "check:i18n": "node scripts/check-i18n-keys.js",
     "verify": "node scripts/verify.js",
     "verify:quick": "node scripts/verify.js --quick",
-    "check:swagger": "node scripts/check-swagger-yaml.js"
+    "check:swagger": "node scripts/check-swagger-yaml.js",
+    "backtest": "node scripts/backtest/run.js"
   },
   "dependencies": {
     "@ai-sdk/openai": "^3.0.67",

@@ -400,6 +400,35 @@ vào P0-3" như bản 2026-10-02 ghi.
 
 ---
 
+## 13.1. Diễn giải chốt TRƯỚC lần chạy đầu (khi giao thức còn chưa nói rõ)
+
+Bảng này ghi lại **mọi điểm mà giao thức trên để ngỏ**, và cách đã chốt. Tất cả
+được viết **trước** khi có bất kỳ `run_id` nào; bằng chứng: `notes/backtest-runs.md`
+chỉ có các dòng `smoke`/`kiểm thúc` được ghi rõ là không phải lần chạy giao thức.
+
+| Mã | Điểm giao thức để ngỏ | Chốt | Vì sao |
+|---|---|---|---|
+| **D-P5-01** | §5.1 viết `Σ y_thực` nhưng không nói `y_thực` là nhu cầu chung hay số đơn vị **do chính phương án đó bán được** | Mẫu số = **số đơn vị phương án đó thực sự bán được** | Chỉ số tên là "chi phí chuẩn hoá **mỗi đơn**". Nếu dùng mẫu số chung, phương án bán ít sẽ được thưởng vì mẫu số không đổi — đó là lỗi thiết kế chỉ số, không phải kết quả. **Hệ quả bắt buộc phải báo:** chỉ số này thiên về phương án bán ít, nên bảng **số tuyệt đối** (tổng chi phí, đơn vị bán, đơn vị mất bán, tồn dư) và **fill rate** phải đi kèm, không được bỏ. |
+| **D-P5-02** | §3.1 yêu cầu ≥ 3 cửa sổ nhưng không nói cửa sổ nào | `test` = **3 tháng lịch đầy đủ gần nhất**; `mid` = tháng liền trước; `train` = mọi ngày trước đó | Cách duy nhất tất định, không cần biết trước kết quả. Tháng thiếu ngày (tháng đầu và tháng cuối kỳ) bị loại. |
+| **D-P5-03** | §1 ghi "TB 28 ngày" cho P2/P3 nhưng §2.1 nói `d_ref`/`σ` tính trên **toàn bộ** tập quan sát | `d_ref` **và** `σ` lấy trên **28 ngày cuối của tập quan sát**; cờ censored xác định bằng **2 lượt cố định** (lượt 1 coi mọi ngày không censored; lượt 2 dùng cờ thật của lượt 1) | Nếu lấy cả tập quan sát thì "28 ngày" là vô nghĩa, và tập quan sát phình theo cửa sổ ⇒ P2/P3 ở các cửa sổ khác nhau không cùng hệ thống. Số vòng lặp phải chốt trước, nếu không kết quả phụ thuộc thứ tự cập nhật. |
+| **D-P5-04** | §2.1 định nghĩa `ATP` = tồn cuối ngày trước; mã sản phẩm lại dùng `ATP + onOrder` (`replenishment.calc.js:668`) | Chạy **cả hai**: bảng chính dùng `ATP + onOrder` (khớp mã sản phẩm), bảng độ nhạy dùng `ATP` thuần | Nếu chỉ so ATP thì mọi phương án đặt tối đa mỗi ngày trong suốt `LT` ngày và phép so sánh trở nên vô nghĩa. Số `z` cho tồn đầu kỳ = **1,645** (mức phục vụ 0,95 — mặc định sản phẩm), `LT = 7` như §2.3, và **giống nhau cho mọi phương án / lead time / nhánh**. |
+| **D-P5-05** | §3.3 lưới P3 có `alpha ∈ {0,1;0,2;0,3}` | Backtest dùng Croston với **alpha tường minh**; KHÔNG dùng `crostonDemandPerDay` của sản phẩm | Hàm đó **nhận tham số `alpha` nhưng không dùng** — nó tự suy `a = 1/(k+1)` từ dữ liệu. Dùng nó thì ba "cấu hình" cho ra một kết quả và P3 không được đo đúng nghĩa. Đây là **lỗi tiềm ẩn của mã sản phẩm**, chưa sửa (ngoài phạm vi T10), ghi vào backlog. |
+| **D-P5-06** | §3.3 cho P3 **12** cấu hình, §6 bắt "tối đa 4 cấu hình, ngân sách bằng nhau" | P3 chỉ lưới `serviceLevel` (4 cấu hình), `alpha` cố định **0,1** | §6 (S2) là ràng buộc ngân sách, §3.3 (S12) chỉ là danh sách tham số. P1 có đúng 1 cấu hình vì không có tham số. |
+| **D-P5-07** | Tệp CSV chỉ có dòng cho ngày có bán: 604/739 ngày | Trục ngày = **lịch đầy đủ 739 ngày**; 135 ngày không có dòng = 0 đơn vị bán | Rolling-origin cần trục ngày liên tục, và "không ghi nhận bán" là cách đọc không bịa thêm dữ liệu. Nếu một số ngày đó là ngày cửa hàng đóng thì `d_ref` thấp đi — nhưng **áp dụng như nhau cho mọi phương án** nên không đổi kết luận so sánh. |
+| **D-P5-08** | §7 nói bootstrap theo SKU nhưng không nói gộp cửa sổ thế nào | Mỗi SKU = **một hàng** sau khi cộng dồn `totalCost`/`sold` của cửa sổ nào có SKU đó; căn theo **tên SKU**, không theo chỉ số | Cửa sổ có thể loại SKU khác nhau (giá vốn tính trên tập quan sát riêng — D-P5-09). Căn theo chỉ số sẽ lệch hàng và ra số sai mà vẫn trông hợp lệ. |
+| **D-P5-09** | §5.1 cần "giá vốn hàng vừa nhập" nhưng dataset **không có** giá vốn | Giá vốn 1 đơn vị = **trung vị `unit_price_median` của SKU trên tập quan sát của cửa sổ đó** (không dùng cả kỳ) | Đây là **giả định**, không phải giá vốn thật — `02-data.md` §6.4 đã ghi. Tính trên tập quan sát riêng để giá của tháng kiểm định không lọt ngược vào mô phỏng. Dùng chung một giá cho cả hàng nhập, hàng tồn dư và hàng mất bán để ba thành phần của chỉ số chính cùng một cơ sở. |
+| **D-P5-10** | §1 liệt kê **P5** = "hành vi quan sát (mua thực tế trong dataset)" | **SKIPPED** — UCI Online Retail II chỉ có bán ra, **không có** phiếu mua/PO/GRN | Không có dữ liệu thì không có hành vi để quan sát. Bịa nhánh "người quyết định tay" từ dữ liệu bán là vi phạm hiến pháp `NIGHT-PROMPT.md` §3 ("không dùng dữ liệu bịa rồi gọi là thật"). Ghi `SKIPPED` kèm lý do. |
+| **D-P5-11** | §4.2 nói SKU "bán thưa và ít dữ liệu" thì loại, nhưng không đặt ngưỡng | **Không loại SKU nào thêm** ngoài bộ lọc L1–L4 của `02-data.md` §4 và điều kiện "có giá niêm yết trong tập quan sát của cửa sổ" | Loại SKU sau khi biết mô hình sai trên SKU đó là hành vi bị cấm ở §10 mục 2. Ngưỡng loại phải chốt **trước**; ở lần chạy này không cần ngưỡng nào. Số SKU bị loại vì không đủ điều kiện được ghi trong bảng kết quả. |
+
+Ngoài ra, để lưới tinh chỉnh của §3.3 chạy được, `Z_BY_SERVICE_LEVEL` trong
+`src/modules/replenishment/replenishment.calc.js` **bổ sung thêm** hai mức
+`0.80 → 0,842` và `0.85 → 1,036`. Đây là thay đổi **cộng thêm**, không đổi hành vi
+của bất kỳ mức nào đang tồn tại; nếu không bổ sung thì backtest sẽ phải tự chế
+bảng z riêng — tức mã backtest và mã sản phẩm dùng hai nguồn số cho cùng một khái
+niệm, đúng cái lỗi mà `docs/aisc26/01-llm-role.md` cấm.
+
+---
+
 ## 14. Trạng thái
 
 | Mục | Trạng thái |
