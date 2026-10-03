@@ -34,7 +34,11 @@
     "verify": "node scripts/verify.js",
     "verify:quick": "node scripts/verify.js --quick",
     "check:swagger": "node scripts/check-swagger-yaml.js",
-    "backtest": "node scripts/backtest/run.js"
+    "backtest": "node scripts/backtest/run.js",
+    "dataset:names": "node --max-old-space-size=8192 scripts/dataset/build-sku-names.js",
+    "dataset:marketplace": "node scripts/dataset/gen-marketplace-orders.js",
+    "data:import": "node scripts/dataset/import-erp-demo.js",
+    "smoke:import-demo": "node scripts/smoke-import-demo.js"
   },
   "dependencies": {
     "@ai-sdk/openai": "^3.0.67",

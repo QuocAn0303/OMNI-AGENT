@@ -212,3 +212,84 @@ phạm vi P1.
    hợp có seed, ghi nhãn **TỔNG HỢP** + `BLOCKER-HUMAN`.
 3. Bundle D-009 **đã cũ**: dùng `aduu-round2-final-20261003-093927.bundle`
    (đầu `f887d44`).
+
+---
+
+## Cap nhat 2026-10-03 (phien P4 — T9 XONG)
+
+**RESUME HERE — gói tiếp theo: P5 (T10 backtest). LƯU Ý: đang có phiên khác chạy
+P5 song song trong cùng thư mục — đọc `git log`/`git status` trước khi làm lại.**
+
+P2 (T5,T6) va P3 (T7,T8) da merge vao nhanh (`4a9fac0`, `977a40b`) truoc khi phien
+nay bat dau. P4 lam 3 viec cua T9, tat ca **DONE-VERIFIED tren DB that**.
+
+### 1. Script nap `scripts/dataset/import-erp-demo.js` (DONE-VERIFIED)
+
+- `assertLocalDb`, **dry-run la mac dinh**, `--apply` moi ghi, `--reset` xoa dung
+  thu tu phu thuoc trong MOT transaction.
+- Ghi trong `runWithTenant`; san pham/ton upsert theo **id tat dinh**; don co
+  `orderCode = Order ID` cua tep xuat (`@unique`) => chay lai khong nhan ban.
+  Do la bang chung: lan 2 bao **0 don moi / 1.025 bo qua**.
+- Tenant demo `omni-demo-mo-phong` (ten co chu MO PHONG): 500 san pham, 1 kho,
+  1 NCC, 2.500 giao dich ton dau ky. DB hien co **2.452 don / 4.874 dong** (nhieu
+  hon vi cac phien khac cung nap vao cung tenant).
+- Ba gia dinh A1/A2/A3 (minStock p90, ton = 3 x p50, GBP khong quy doi) ghi o
+  `02-data.md` §9.2. Khong do duoc tu dataset — phai noi ra.
+
+### 2. Tep xuat don mo phong `gen-marketplace-orders.js` (DONE-VERIFIED)
+
+5.573 don / 11.085 dong, seed co dinh => chay lai ra **CUNG sha256**
+(`bb8e2069...`). Dinh dang **GIA DINH** (Shopee khong cong khai dac ta) — nguon +
+URL + ngay o `notes/marketplace-format.md`. Co `.truth.csv` va `MANIFEST.json`
+(manifest ghi ro "cong Grand Total se dem thua").
+
+### 3. Khop SKU khong LLM `src/modules/import/sku-matcher.js` (DONE-VERIFIED)
+
+trigram Dice + Levenshtein chuan hoa + cosine TF-IDF. Nguong ten hang so:
+`AUTO_ACCEPT 0.86` · `REVIEW 0.62` · `MIN_SCORE_MARGIN 0.05`. Unit test 15/15.
+`data/dataset/sku-review-queue.csv` la **hang doi "can nguoi xac nhan"**; don nao
+con dong chua du tin cay thi **KHONG nap** (D-010).
+
+### Kiem chung P4 (2026-10-03)
+
+| Lenh | Ket qua | Loai |
+|---|---|---|
+| `npm run smoke:import-demo` | **9/9** | **DB that** |
+| `npm run data:import -- --apply --days 7` (x2) | 1.025 don / 0 don moi lan 2 | **DB that** |
+| `npm run tenant:null -- --scan` | MO COI-TENANT **0** · TRUNG 0 | **DB that** |
+| `npx jest` | **4058/4063** pass (71 suite, 5 skip) | mock |
+| `npx jest tests/sku-matcher.test.js` | 15/15 | mock |
+
+Smoke 9 kiem chat, trong do: 0 don ngoai tep xuat, 0 dong hang troi san pham tenant
+khac (chung minh nested write giu cach ly), tap SKU 500 = 500, **444 SKU duoi
+`minStock`** (tien de cho P6), `candory-scent` giu nguyen 82 don / 158 dong /
+89.862.000 VND.
+
+### Phat hien dang chu y (P4)
+
+1. **Buoc do sai hon thuật toan.** Do chinh xac `AUTO_ACCEPT` do ra **50,32%** o
+   lan chay dau — do la loi cua **phong do**: dap an lay theo "SKU dau tien cua
+   don" thay vi SKU cua **dung dong hang**. Sua bang cach ghep `.truth.csv` theo
+   **chi so dong** => 100,00%. Bai nay da ghi vao smoke nen khong quay lai.
+2. `upsert` mac dinh KHONG du lam idempotent: `user.email`, `warehouse.code`,
+   `vendor.code` UNIQUE **toan cuc**. Phai dat **id tat dinh** cho moi ban ghi cha.
+3. `for` + `continue` lam lech so dem (`skippedOrders` 142575 cho 1025 don) — phai
+   dung `while` co buoc tuong minh.
+
+### Ranh gioi giua cac phien (PHAI TON TRONG khi lam tiep)
+
+Co **phien khac dang chay P5** trong cung thu muc (3 tien trinh node; sua
+`scripts/backtest/*`, `docs/aisc26/notes/backtest-runs.*`, tao
+`03-evaluation-results.md`). Phien nay **khong** chay `--reset` tenant demo de
+khong pha du lieu cua ho. Khi nghiên cứu `03-evaluation-results.md` phai đọc
+trước khi sua. Thay đổi cua phien khac **KHONG** commit.
+
+### Tiep theo
+
+1. **P5 (T10)** — `scripts/backtest/` **đã có sẵn** do phien kia lam; phien sau
+   **KHONG viet lai**, chi chay + bo sung theo giao thuc S1–S12 da commit
+   (`1f1a402`) va ghi `03-evaluation-results.md` kem CI + 3 kich ban lead time.
+2. **P6 (T11, T12)** — tien de da co: tenant demo da nap 500 SKU + 2.452 don +
+   **444 SKU duoi `minStock`**.
+3. **P7 (T13, T14)** — `LlmUsageLog` va duong khop SKU lai (fuzzy xu ly ca de,
+   LLM chi ca mo ho, nguoi xac nhan ca do tin cay thap).

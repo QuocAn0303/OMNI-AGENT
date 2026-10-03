@@ -123,3 +123,67 @@ Bản đầu `aduu-round2-20261003-093557.bundle` **đã cũ** (chỉ tới `1cd
 
 **Cách đảo ngược / làm tiếp:** `git push <remote> round2/p0-hardening` khi đội xác
 nhận deploy lấy từ `main` và xác nhận đúng remote nào.
+
+## D-010 - Don con dong hang chua du tin cay thi KHONG nap, cho vao hang doi xac nhan (P4 / T9)
+
+**Boi canh.** Khop SKU khong-LLM tra 3 trang thai. Don nao co MOT dong hang
+chua dat AUTO_ACCEPT thi khong con dinh nghia day du.
+
+**Phuong an da can nhac.**
+1. Van nap don, bo qua dong hang chua khop. - Sai: Grand Total trong tep xuat van
+   ghi tron, don trong ERP se thieu dong hang va bao cao lech.
+2. Nap het, gan SKU gan nhat. - Sai: ghi sai du lieu khong ai biet.
+3. Giu nguyen don trong DB o trang thai cho xem xet. - Can bang moi (can cot
+   trang thai + API), vuot pham vi P4 va nguyen tac "khong co chuc nang moi".
+
+**Chon.** Phuong an 3-*nhe*: KHONG nap don do; ghi ra
+`data/dataset/sku-review-queue.csv` (co dong, diem, ly do, 3 ung vien tot nhat)
+de nguoi xac nhan roi nap lai. Khong co cho nao trong ma tu quyet.
+
+**Ly do.** Sai mot lan khongiem thi ghi am tham du lieu sai vao ERP; mat mot don
+thi con kha phat hien.
+
+**Cach dao nguoc.** --days / --max-orders cua
+`scripts/dataset/import-erp-demo.js`; xac nhan xong thi chay lai `--apply`.
+
+## D-011 - minStock va ton dau ky la GIA DINH mo phong, tach bang mo dong A1 (P4 / T9)
+
+**Boi canh.** Dataset UCI khong co cot ton kho (02-data.md 6.1), nhung khong co
+`minStock` thi `replenishment.calc` khong chay duoc va khong co tinh huong
+"sap het hang" de trinh dien.
+
+**Phuong an da can nhac.**
+1. Bo qua `minStock` (de mac dinh 10). - Sai: khong tach duoc.
+2. Dung mot hang so bat bien. - Sai: khong co gi de lich la tu du lieu.
+3. `minStock` = p90 luong ban/ngay cua chinh SKU do (tinh tu `daily_sku.csv`),
+   ton dau ky = 3 x p50, va 1/4 SKU co y int thap hon `minStock`.
+
+**Chon.** Phuong an 3. Nhan A1 trong `02-data.md` 9.2; ten san pham kem
+chu "MO PHONG"; `--reset` xoa sach duoc.
+
+**Ly do.** Tinh duoc tu chinh dataset (khong bia), lai tien de luong demo P6 co
+444 SKU duoi `minStock` (do bang lenh, co nhan pham vi).
+
+**Cach dao nguoc.** Do lai bang tham so p50/p90 va `LOW_STOCK_EVERY`; hoac bo
+`minStock` khi co du lieu ton kho that.
+
+## D-012 - Tach `sku_names.csv` thay vi sua `build-daily-sku.js` (P4 / T9)
+
+**Boi canh.** T9 can khop SKU theo TEN hang, nhung `build-daily-sku.js` co y bo
+cot `Description`; va `daily_sku.csv` da co sha256 da ky trong `02-data.md` 1.
+
+**Cach dao nguoc.** Gop vao mot file khi can; sha256 cua `daily_sku.csv` khong doi.
+
+---
+
+## Ghi chuc ky thuat cua P4 (khong phai quyet dinh, chi de khong phai do lai)
+
+- `sku-matcher.js` chuan hoa chi TEN chua hang, KHONG tron ma hang vao. Khi
+  tron, hai ma khac nhau cung ten khong bao gio dat diem tuyet doi, chi so
+  diem giua hai ma gan nht - xau hon.
+- Dung vong lap `for` + `continue` lam lech so dem: `continue` bo qua buoc
+  nhay chi so, nen mot lo bi dem lai nhieu lan (`skippedOrders` chay toi
+  142575 cho 1025 don). Dung `while` co buoc tuong minh.
+- Do chinh xac `AUTO_ACCEPT` phai la **100%**, dung la 100% moi tinh la "dat".
+  50,32% o lan do o dau chi do la **loi cua phong do**: so dap an theo
+  "SKU dau tien cua don" thay vi SKU cua dung dong hang.

@@ -133,3 +133,76 @@ Không có blocker nào chặn T9/T10: bảng SKU×ngày đã sẵn sàng và c�
 | T9 — nạp vào ERP demo | `daily_sku.csv` + bộ lọc §4 + quy tắc "cột PII không được nạp" |
 | T10 — backtest | 25 tháng, 500 SKU, 166.578 dòng; chạy 3 cửa sổ trượt S6, lead time 3/7/14 S4, censored nhánh A/B S3 |
 | T10 — kết luận | Mọi bảng số phải ghi nhãn **CÔNG KHAI / MÔ PHỎNG (tồn kho, lead time, kênh)** |
+
+---
+
+## 9. Bổ sung gói P4 (T9) — nạp vào ERP + khớp SKU không-LLM
+
+**Ngày:** 2026-10-03 · **Nhánh:** `round2/p0-hardening` · **Gói:** P4 / T9
+**Nhãn phạm vi:** catalog + tồn + khách + đơn trong ERP demo là **MÔ PHỎNG**
+(dựng từ dataset CÔNG KHAI ở §1, không phải dữ liệu khách hàng/doanh nghiệp nào).
+
+### 9.1 Tệp sinh thêm
+
+| Tệp | Nội dung | sha256 |
+|---|---|---|
+| `data/dataset/sku_names.csv` | 500 SKU → tên hàng thật trong tệp gốc (`Description`, chọn theo mode) | `df175a831c2123b56eed6958cba3a16dedc881b44233e28fa5c23cb6c667a442` |
+| `data/dataset/marketplace/orders_2011-11-06_2011-12-09.csv` | 5.573 đơn / 11.085 dòng hàng **MÔ PHỎNG**, định dạng **giả định** | `bb8e2069af361ed03b1415c82c5a323915b202b590909b6cfd86d4b974c9bbf6` |
+| `….truth.csv` | đáp án SKU sinh cùng lúc (không tồn tại trong tệp xuất thật) | — |
+| `…/MANIFEST.json` | nhãn MÔ PHỎNG + phân bố nhiễu + sha256 | — |
+| `data/dataset/sku-review-queue.csv` | hàng đợi "cần người xác nhận" | — |
+
+Vì sao thêm `sku_names.csv`: `build-daily-sku.js` **cố ý** bỏ cột `Description` (văn
+bản tự do). T9 lại cần khớp SKU theo tên ⇒ tách riêng một tệp tên, **không** sửa
+`build-daily-sku.js` (sửa sẽ đổi sha256 `daily_sku.csv` đã ghi ở §1). Chi tiết quy
+tắc lấy tên (N1–N5) nằm trong đầu `scripts/dataset/build-sku-names.js`.
+
+**Lệnh cần thêm 1 tham số:** `npm run dataset:names` ( `--max-old-space-size=8192`).
+Đọc 45 MB xlsx bằng ExcelJS cần heap đó; thiếu thì Node OOM.
+
+Định dạng tệp xuất sàn: **ĐỊNH DẠNG GIẢ ĐỊNH** — Shopee không công khai đặc tả.
+Nguồn + URL + ngày + mức độ tin cậy: `notes/marketplace-format.md`.
+
+### 9.2 Ba giả định khi nạp (không đo được từ dataset)
+
+| Mã | Giả định | Vì sao |
+|---|---|---|
+| A1 | `minStock` = p90 lượng bán/ngày (làm tròn lên, ≥1); tồn đầu kỳ = 3 × p50; cứ mỗi 4 SKU đặt tồn = ⌊minStock/2⌋ | dataset **không có tồn kho** (§6.1). Phần "mỗi 4 SKU tồn thấp" là để luồng demo có tình huống sắp hết hàng |
+| A2 | `costPrice = price` (giá niêm yết) | dataset **không có giá vốn** (§6.4) |
+| A3 | `currency = GBP`, `exchangeRate = 1`, **không** quy đổi | giá là của nước Anh (§6.8) |
+
+### 9.3 Tenant demo
+
+`slug = omni-demo-mo-phong`, tên có chữ **MÔ PHỎNG**. 500 sản phẩm, 1 kho, 1 NCC,
+1 category, 2.500 giao dịch tồn đầu kỳ. Xoá sạch bằng
+`npm run data:import -- --reset --apply` (đúng thứ tự phụ thuộc, một transaction).
+
+### 9.4 Khớp SKU không-LLM
+
+`src/modules/import/sku-matcher.js`: trigram Dice + Levenshtein chuẩn hoá + cosine
+TF-IDF, ghép trọng số `0.45/0.25/0.30`. Ngưỡng tên hằng số `AUTO_ACCEPT_SCORE =
+0.86`, `REVIEW_SCORE = 0.62`, `MIN_SCORE_MARGIN = 0.05` (hạng 1 và 2 gần nhau thì
+đẩy xem lại dù điểm cao). **Đơn nào còn dòng hàng chưa đủ tin cậy thì KHÔNG nhập**
+và được ghi ra `sku-review-queue.csv` — không tự quyết ở bất kỳ đâu trong mã.
+
+### 9.5 Số đo (ngày 2026-10-03) — **trên dữ liệu tự tạo, KHÔNG phải sàn thật**
+
+| Số | Giá trị | Cách đo |
+|---|---|---|
+| Dòng hàng trong tệp xuất | 11.085 | đếm dòng CSV |
+| Dòng bị CỐ Ý giấu mã | 2.177 (19,6%) | cột `SKU Reference No.` rỗng |
+| `AUTO_ACCEPT` | 10.790 | `SkuMatcher.match` |
+| `NEEDS_REVIEW` | 292 | idem |
+| `NO_MATCH` | 3 | idem |
+| **Độ chính xác `AUTO_ACCEPT`** | **100,00%** (sai 0) | so với `.truth.csv` |
+| Độ bao phộ nếu `REVIEW` đều đúng | 99,97% | idem |
+
+**Không** suy ra gì từ các số này về dữ liệu sàn thật: tệp là do chính bộ sinh tạo
+ra. Số đo thật về tỉ lệ khớp SKU phải chờ `S10` trên tệp thật của đội.
+
+### 9.6 Kiểm chứng
+
+`npm run smoke:import-demo` — 9/9 trên **DB thật**: 0 mồ côi-tenant ở 139 bảng
+scoped; 0 dòng hàng trỏ sản phẩm tenant khác; 0 đơn ngoài tệp xuất; dòng hàng
+khớp đúng SKU/số lượng/giá; tập SKU = 500 = dataset; có 444 SKU dưới `minStock`;
+`candory-scent` giữ nguyên 82 đơn / 158 dòng / 89.862.000 VND.

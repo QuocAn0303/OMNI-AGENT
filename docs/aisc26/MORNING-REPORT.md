@@ -247,3 +247,55 @@ minh (có test 5/5). Ngoại lệ chuyển từ "trần số lượng" sang **"�
 ("boss KHÔNG còn bậc dưới → null"). Đã xác nhận lỗi này có **ở HEAD** (chạy bản
 không có bản vá của P1 vẫn đỏ) ⇒ **không** phải do P1 gây ra. Để nguyên, ghi
 BLOCKED cho gói sau vì sửa nó là sửa logic cache ngoài phạm vi P1.
+
+---
+
+## Phu luc P4 - phien tu hanh 2026-10-03 (T9: nap du lieu + khop SKU khong-LLM)
+
+### 5.2p So kiem chung (chi them, khong sua dong cu)
+
+| Lenh | Ket qua | Loai | Thoi diem |
+|---|---|---|---|
+| `npm run dataset:names` | 500 dong, sha256 `df175a83...`, 0 SKU fallback | may tinh | 2026-10-03 |
+| `npm run dataset:marketplace` | 5.573 don / 11.085 dong; chay lai ra CUNG sha256 `bb8e2069...` | may tinh | 2026-10-03 |
+| `npm run data:import` (dry-run mac dinh) | 1.075 don / 2.134 dong; 50 don giu lai cho nguoi xac nhan | may tinh + doc | 2026-10-03 |
+| `npm run data:import -- --apply --days 7` | 1.025 don / 2.020 dong / 958 khach ghi | **DB that** | 2026-10-03 |
+| `npm run data:import -- --apply --days 7` (LAN 2) | 0 don moi, 1.025 bo qua => IDEMPOTENT | **DB that** | 2026-10-03 |
+| `npm run tenant:null -- --scan` | MO COI-TENANT **0**, TRUNG 0 (125 NULL la ngoai le da ky) | **DB that** | 2026-10-03 |
+| `npm run smoke:import-demo` | **9/9** | **DB that** | 2026-10-03 |
+| `npx jest tests/sku-matcher.test.js` | 15/15 | mock | 2026-10-03 |
+
+### 5.3p Phat hien dang chu y (P4)
+
+1. **Do chinh xac phai la 100%, va do la 50,32% o lan do o - do la loi cua phong do,
+   khong phai cua bo khop.** Nguyen do: so dap an theo "SKU dau tien cua don" thay
+   vi SKU cua **dung dong hang** (mot don co nhieu dong, moi dong mot SKU khac nhau).
+   Bai "do" (K5/K9) gio doi danh dap an theo **chi so dong** vi `.truth.csv` duoc
+   sinh cung thu tu voi tep xuat.
+2. **Idempotent khong duoc sua bang upsert mac dinh.** `user.email`,
+   `warehouse.code`, `vendor.code` la UNIQUE **toan cuc**; chi upsert san pham
+   van vo lop 2. Da dung **id tat dinh** cho moi ban ghi cha.
+3. **Don con dong hang chua du tin cay van duoc ghi vao DB** (loi that cua
+   `import-erp-demo.js`): bao cao "1.025/1.075" nhung thao tac ghi lay ca 1.075.
+   Da chuyen sang `planToWrite` va kiem lai bang smoke K4/K5.
+4. **Co phien khac chay cung DB local** (3 tien trinh node, tep P5 dang sua). DB
+   hien co 2.452 don tren tenant demo (nhieu hon 1.025 cua phien nay) do cac phien
+   khac chay import voi cua so khac - K4 xac nhan **khong co don nao ngoai tep xuat**,
+   nen khong phai du lieu hong. **Phien nay KHONG chay `--reset`** cho khi cac
+   phien khac dung tenant demo.
+5. Doc 45 MB xlsx bang ExcelJS can `--max-old-space-size=8192`; mac dinh se OOM
+   (da gap mot lan). Da danh vao `npm run dataset:names`.
+
+### 5.6p Quyet dinh tu dong (P4)
+
+D-010 don chua du tin cay thi khong nap vao hang doi xac nhan · D-011 `minStock` /
+ton dau ky la gia dinh mo phong A1 · D-012 tach `sku_names.csv` thay vi sua
+`build-daily-sku.js` (chi tiet trong `DECISIONS.md`).
+
+### Vi?c con nguoi lam
+
+| Vi?c | Vì sao | Buoc |
+|---|---|---|
+| **Xac nhan 50 don trong `sku-review-queue.csv`** | Khong tu quyet theo D-010 | mo file, sua `product_name`/`input_sku`, chay lai `npm run data:import -- --apply` |
+| Tai mot tep xuat that cua Shopee | De khop xac minh dinh dang gia dinh | bo vao `data/dataset/marketplace/`, doi dinh dang, ghi lai nguon + ngay |
+| Chon nguon >=18 thang **co gia von that** | Con ngai cho chi so gia von | xem BLOCKER-HUMAN cua `02-data.md` 7 |
