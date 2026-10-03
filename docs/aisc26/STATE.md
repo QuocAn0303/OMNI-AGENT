@@ -472,3 +472,108 @@ unit test).
 - P6 de lai 1 viec con: chay `check:humangate` khi backend chay (xem muc 6.1).
 
 Dump/ghi chu ky thuc cua P6: `docs/aisc26/DECISIONS.md` D-013, D-014, D-015.
+
+---
+
+## Cap nhat 2026-10-03 (phien P7 - T13 + T14 XONG)
+
+**RESUME HERE - gói tiếp theo: P8 (T15 bộ công cụ 6 người thử, T16 kịch bản demo,
+T17 dàn ý + QA, T18 chốt + báo cáo sáng).**
+
+Commit moi theo thu tu: `f4c6c13` (T13), `5806795` (T14 + sua loi P6). Xem
+`git log --oneline -3`.
+
+### 1. T13 - `LlmUsageLog` (DONE-VERIFIED, DB that)
+
+Migration chờ **trước khi chạy**: `npx prisma migrate status` → 29 migration, **0
+chờ**, schema khớp. Dung 1 migration **additive** duy nhat:
+`20261003190000_llm_usage_log` (CREATE TABLE + 3 index, khong ALTER/DROP/backfill).
+`prisma/schema.prisma` model `LlmUsageLog` (tenantId, task, provider, model, mode,
+promptTokens, completionTokens, totalTokens, latencyMs, succeeded, createdAt).
+Dang ky `TENANT_SCOPED_MODELS` ngay tai migration do (D-016: khong FK toi `tenants`,
+giong `AgentHumanGate`; `tenantId` NULL van ghi duoc).
+
+`src/config/llm.js`: doc `json.usageMetadata.{promptTokenCount,candidatesTokenCount,
+totalTokenCount}` (truoc do **bo qua hoan toan**), giu `getLastUsage()`, ghi **1 dong
+`LlmUsageLog` moi lan goi logic** ke ca that bai. Loi ghi chi `logger.error` - do la
+**so do**, khong phai luong nghiep vu; vi vay moi chung minh ve bang nay la **smoke
+tren DB that**, khong phai unit test.
+
+### 2. T14 - Hai vai tro (DONE-VERIFIED code + DB that; **chua do LLM that**)
+
+**Duong LLM duy nhat:** `src/config/llm-policy.js` (moi vai tro goi qua day,
+khong ai `require` thang provider).
+
+- **Mac dinh la KHONG-LLM.** `resolveMode()` tra `'off'` troi khi co key; `LLM_DISABLED=1`
+  thang moi thu. Che do `live` / `record` / `replay`. `replay` **khong doi key**
+  (D-018) va khong goi mang. `throttle` mac dinh 1200 ms, `backoff` nhan doi khi
+  429/503, tran 30 s. `assertPublicDataOnly()` chan du lieu that o live/record.
+- **Vai tro 1** `src/modules/import/sku-matcher.hybrid.js`: giu nguyen `sku-matcher.js`
+  va nguong da ky. LLM **CHI** goi o ca mo ho `[0,62; 0,86)`. Ca de: khong goi LLM.
+  Ca duoi nguong: **khong** goi LLM, vao hang doi kem ly do. JSON + Zod, `sku` phai
+  nam trong ung vien (LLM bia ma => coi nhu khong khop). `confidence < 0,85` =>
+  chuyen nguoi xac nhan.
+- **Vai tro 2** `src/modules/replenishment/proposal-explain.llm.js`: LLM chi nhan
+  **so da tinh san** (`buildPayload` la hop dong). `assertNumbersUnchanged()` quet moi
+  con so trong output; so la => loai + dung mau (co test LLM nhan doi so luong).
+  `vendorMessage` **chi soan**: `sent=false`, `requiresHumanSend=true`, khong import
+  SMS/Zalo/email. Luon kem `source` + `notice` de khong gia von la LLM viet.
+- **Noi vao luong demo:** `demo-flow.js` them buoc `explain-proposal` ⇒ bang chung
+  "che do khong-LLM chay tron luong demo" la **do duoc**, khong phai khai bao.
+
+### 3. Harness + bo nhan (san dung ngay)
+
+- `npm run llm:eval` (S10): tach dev/test tinh dinh (seed `20261003`), P/R/F1 tai
+  nguong **0,85**, `fallbackRate`, ms/cap, bootstrap F1(hybrid - fuzzy) 1000 lan,
+  Cohen kappa, **bat buoc** doi chung baseline fuzzy tren cung bo nhan.
+  **Khong co nhan tay ⇒ in `BLOCKER-HUMAN`, tu choi ra so.**
+- `npm run llm:eval -- --simulated`: chay may, nhan **MO PHONG**, khong cong bo.
+- `npm run llm:labels` ⇒ `data/aisc26/skus/labels/label-sheet.csv` (**120 cap**, cot
+  `label_*` **DE TRONG**), `truth.simulated.csv` (chi doi chieu sau), huong dan
+  `docs/aisc26/notes/sku-labeling-guide.md`.
+- `npm run llm:policy`: in che do + **co/khong** co key (khong in gia tri).
+- `npm run smoke:llm-usage`: replay tren **DB that**, 9/9, **khong can key**.
+
+### 4. Phat hien cua P7 (de sua hoac de noi thang)
+
+1. **Ro rac THAT cua chinh P6** da tim va sua: `cleanup()` demo-flow bo qua
+   `journal_posting_errors` ⇒ moi lan chay luong **+1 dong**, smoke FAIL. Bay 2 lan
+   lien tiep = 0 rac.
+2. **`replay` vo hieu khi khong co key** (D-018) - duong lui bien thanh duong chet.
+   Bat boi smoke, **khong** bat boi doc code.
+3. **Khoa ban ghi phu thuoc `model`** lam mat toan bo ban ghi khi doi `LLM_MODEL`
+   (D-017).
+4. **Tran tri cua viec thu hep ung vien:** ung vien cho LLM la **top-K theo diem
+   fuzzy**, nen khi dap an ngoai top-5 thi LLM **khong the** dung. Co ca nhu vay o
+   bo MO PHONG. Phai noi thang khi trinh bay.
+5. `CSV` doc bang `split(',')` cat cut ten hang (D-019) - tach `scripts/lib/csv.js`.
+
+### 5. Kiem chung P7 (2026-10-03)
+
+| Lenh | Ket qua | Loai |
+|---|---|---|
+| `npm run smoke:demo-flow` (LLM **tat**) | **12/12**, 2 lan lien tiep 0 rac | **DB that** |
+| `npm run smoke:llm-usage` (replay) | **9/9**, khong can key | **DB that** |
+| `npm run check:tenant` | 11/11 + 4/4 + 4/4 PASS | **DB that** |
+| `npm run tenant:null -- --scan` | MO COI 0 / TRUNG 0 / NULL 125 (ngoai le) | **DB that** |
+| `npx jest` | **4092/4097** pass (73 suite, 5 skip) | mock |
+| `npm run check:modules` | 203 module | — |
+| `npm run llm:eval` (khong nhan tay) | BLOCKER-HUMAN, tu choi ra so | — |
+| `npm run llm:eval -- --simulated` | chay tron; token/cap = **CHUA DO** | may tinh + doc |
+| `candory-scent` | 82 don / 158 dong / 89.862.000 VND — **khong doi** | **DB that** |
+
+### 6. Han muc Gemini: **KHONG ghi con so** (D-020)
+
+3 lan `fetch` toi `ai.google.dev` deu **transport error**. Da dung cong cu tim kiem
+de doc trang chinh thuc: chi ghi **chieu do** (RPM/TPM/RPD, theo project, RPD reset
+luc nua Pacific) + **dieu khoan du lieu**: Free tier **"Used to improve our products
+= YES"** ⇒ chan gui du lieu that. Trang chinh thuc noi han muc phai xem trong AI
+Studio ⇒ khong ghi so. Chi tiet + BLOCKER-HUMAN: `docs/aisc26/notes/gemini-free-tier.md`.
+
+### 7. Con lai cho P8 (khong phai lam lai)
+
+1. **T15** `docs/aisc26/usertest/` — chua co gi (moi co `usertest/` trong yeu cau P8).
+2. **T16/T17** kich ban demo + dan y + QA — chua viet.
+3. **T18** chay lai toan bo, quet secret, hoan tat `MORNING-REPORT.md`.
+4. P6 de lai: `npm run check:humangate` (can backend dang chay).
+5. **Khong duoc** cong bo so LLM khi chua chay `live`: hien ghi **"chua do"**.
