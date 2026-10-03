@@ -501,7 +501,29 @@ const runBacktest = (opts) => {
   };
 };
 
-module.exports = { runBacktest, parseArgs, NOTES_DIR, RUNS_MD, RUNS_JSONL, SEED, RESAMPLES, POLICY_NAMES, BASELINES, FORECAST_BASELINES };
+/**
+ * `run-exp2.js` (thí nghiệm 2, protocol §13.2) dùng lại các hàm dưới đây. Xuất ra
+ * KHÔNG đổi hành vi thí nghiệm 1 — chỉ để không chép lại cùng một thuật toán.
+ */
+module.exports = {
+  runBacktest,
+  parseArgs,
+  NOTES_DIR,
+  RUNS_MD,
+  RUNS_JSONL,
+  SEED,
+  RESAMPLES,
+  POLICY_NAMES,
+  BASELINES,
+  FORECAST_BASELINES,
+  DEMAND_WINDOW_DAYS,
+  INITIAL_ATP_LEAD_TIME,
+  INITIAL_ATP_SERVICE_LEVEL,
+  dayRange,
+  dense,
+  unitCost,
+  estimateForSku,
+};
 
 if (require.main === module) {
   const opts = parseArgs(process.argv.slice(2));

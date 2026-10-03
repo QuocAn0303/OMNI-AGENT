@@ -130,4 +130,112 @@ const clusterBootstrap = ({
   };
 };
 
-module.exports = { REPORT_SLICE, assertSlice, mulberry32, round, wape, pooledMetric, clusterBootstrap };
+/**
+ * Thí nghiệm 2 (protocol §13.2.3): so GIÁ TRỊ TỒN TRUNG BÌNH ở CÙNG MỨC DỊCH VỤ.
+ *
+ * "Cùng mức dịch vụ" = khớp theo từng SKU: giữ SKU mà fill rate của `a` và `b`
+ * lệch nhau ≤ `band` (2 điểm phần trăm, chốt trước). Trên đúng tập SKU đã khớp,
+ * bootstrap **theo SKU** (S7: seed, số lần resample, ngưỡng tỉ lệ thắng 0,55).
+ * `wins` = SKU nào có giá trị tồn TB **thấp hơn**.
+ */
+const matchedServiceBootstrap = ({
+  perSku,
+  band = 0.02,
+  seed = 20261003,
+  resamples = 1000,
+  slice = REPORT_SLICE,
+  alpha = 0.05,
+}) => {
+  assertSlice(slice);
+  const usable = perSku.filter(
+    (r) =>
+      r.a &&
+      r.b &&
+      r.a.avgValue !== undefined &&
+      r.b.avgValue !== undefined &&
+      r.a.actualUnits > 0 &&
+      r.b.actualUnits > 0,
+  );
+  const matched = usable.filter((r) => Math.abs(r.a.fillRate - r.b.fillRate) <= band);
+  const n = matched.length;
+  if (n < 2) {
+    return {
+      band,
+      n,
+      usableCount: usable.length,
+      excluded: perSku.length - n,
+      resamples,
+      seed,
+      point: null,
+      ciLow: null,
+      ciHigh: null,
+      excludesZero: false,
+      wins: 0,
+      losses: 0,
+      ties: 0,
+      winRatio: null,
+      winRatioThreshold: 0.55,
+      winRatioMet: false,
+    };
+  }
+
+  let sumA = 0;
+  let sumB = 0;
+  let wins = 0;
+  let losses = 0;
+  let ties = 0;
+  for (const r of matched) {
+    sumA += r.a.avgValue;
+    sumB += r.b.avgValue;
+    if (r.a.avgValue < r.b.avgValue) wins += 1;
+    else if (r.a.avgValue > r.b.avgValue) losses += 1;
+    else ties += 1;
+  }
+  const point = sumA / n - sumB / n;
+
+  const rnd = mulberry32(seed);
+  const diffs = new Float64Array(resamples);
+  for (let r = 0; r < resamples; r += 1) {
+    let a = 0;
+    let b = 0;
+    for (let k = 0; k < n; k += 1) {
+      const row = matched[Math.floor(rnd() * n)];
+      a += row.a.avgValue;
+      b += row.b.avgValue;
+    }
+    diffs[r] = a / n - b / n;
+  }
+  const sorted = Array.from(diffs).sort((x, y) => x - y);
+  const lo = sorted[Math.floor((alpha / 2) * resamples)];
+  const hi = sorted[Math.min(resamples - 1, Math.ceil((1 - alpha / 2) * resamples) - 1)];
+
+  return {
+    band,
+    n,
+    usableCount: usable.length,
+    excluded: perSku.length - n,
+    resamples,
+    seed,
+    point: round(point),
+    ciLow: round(lo),
+    ciHigh: round(hi),
+    excludesZero: !(lo <= 0 && hi >= 0),
+    wins,
+    losses,
+    ties,
+    winRatio: round(wins / n),
+    winRatioThreshold: 0.55,
+    winRatioMet: wins / n > 0.55,
+  };
+};
+
+module.exports = {
+  REPORT_SLICE,
+  assertSlice,
+  mulberry32,
+  round,
+  wape,
+  pooledMetric,
+  clusterBootstrap,
+  matchedServiceBootstrap,
+};

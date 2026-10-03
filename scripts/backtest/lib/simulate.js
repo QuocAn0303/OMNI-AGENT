@@ -99,6 +99,9 @@ const simulate = ({
 
   const endAtp = Math.ceil(atp);
   const endValue = endAtp * costPerUnit;
+  // Thí nghiệm 2 (protocol §13.2.3): giá trị tồn TRUNG BÌNH = TB của ATP × giá vốn
+  // theo từng ngày. `endValue` chỉ là tồn dư CUỐI kỳ nên không dùng để so mức dịch vụ.
+  const avgAtp = daily.reduce((a, d) => a + d.atpEnd, 0) / (nDays || 1);
   return {
     nDays,
     sold,
@@ -112,6 +115,8 @@ const simulate = ({
     censored,
     endAtp,
     endValue,
+    avgAtp,
+    avgValue: avgAtp * costPerUnit,
     totalCost: purchaseCost + endValue + lostValue,
     reviews: nDays,
     daily,

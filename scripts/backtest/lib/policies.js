@@ -19,9 +19,14 @@ const REVIEW_PERIOD_DAYS = 7;
 
 /** P1 — ngưỡng tồn tối thiểu cố định (hiện trạng), công thức giữ nguyên theo §2.2. */
 const buildP1 = (p) => {
-  const minStock = Math.ceil(DOC_P1 * p.demandPerDay);
+  // Thí nghiệm 1 (protocol §2.2) khoá `DOC_P1 = 14`. Thí nghiệm 2 (protocol
+  // §13.2.2) mở lưới `DOC ∈ {7,14,21,28}` để P1 cũng "tune dưới ràng buộc
+  // dịch vụ" — cấu hình DOC=14 chính là P1 của thí nghiệm 1.
+  const doc = p.doc === undefined ? DOC_P1 : p.doc;
+  const minStock = Math.ceil(doc * p.demandPerDay);
   return {
     name: "P1",
+    doc,
     threshold: minStock,
     orderQty: ({ position }) => {
       // d_ref = 0 ⇒ minStock = 0 ⇒ P1 không bao giờ đặt (protocol §2.2).
@@ -116,6 +121,45 @@ const configGrid = (policyName) => {
 /** Thứ tự ưu tiên khi hoà (S2): P1 < P4 < P2 < P3. */
 const SIMPLICITY_ORDER = { P1: 0, P4: 1, P2: 2, P3: 3 };
 
+/**
+ * Thí nghiệm 2 (protocol §13.2.2) — cùng lưới như thí nghiệm 1, **trừ P1** được mở
+ * `DOC ∈ {7,14,21,28}` để chịu cùng ràng buộc dịch vụ. Ngân sách vẫn 4 cấu hình mỗi
+ * phương án (S2).
+ */
+const constrainedGrid = (policyName) => {
+  if (policyName === "P1") return DOC_GRID.map((doc) => ({ kind: "P1", doc, label: `P1(DOC=${doc})` }));
+  return configGrid(policyName);
+};
+
+/**
+ * Sắp xếp theo ràng buộc dịch vụ (protocol §13.2.1), chốt trước khi chạy:
+ *   1. cấu hình nào `fillRate_mid >= MIN_FILL_RATE` (feasible) được xếp trước;
+ *   2. trong feasible: `z`/`DOC` NHỎ nhất trước (mức phục vụ thấp nhất vẫn thoả);
+ *   3. hoà z: chi phí chuẩn hoá nhỏ hơn; hoà tiếp: phương án đơn giản hơn (S2);
+ *   4. hoàn toàn không feasible ⇒ `fillRate_mid` CAO nhất, rồi chi phí nhỏ nhất.
+ * Không bao giờ nới `MIN_FILL_RATE`, không thêm mức ngoài lưới.
+ */
+const pickConstrained = (candidates, minFillRate) => {
+  if (!candidates.length) return { best: null, infeasible: true };
+  const level = (c) => (c.config.serviceLevel !== undefined ? c.config.serviceLevel : c.config.doc);
+  const feasible = candidates.filter((c) => c.fillRateMid !== null && c.fillRateMid >= minFillRate);
+  const infeasible = feasible.length === 0;
+  const pool = infeasible ? candidates : feasible;
+  const sorted = pool.slice().sort((a, b) => {
+    if (infeasible) {
+      const d = (b.fillRateMid ?? -1) - (a.fillRateMid ?? -1);
+      if (Math.abs(d) > 1e-12) return d;
+    } else {
+      const d = level(a) - level(b);
+      if (Math.abs(d) > 1e-12) return d;
+    }
+    const dObj = a.objectiveMid - b.objectiveMid;
+    if (Math.abs(dObj) > 1e-9) return dObj;
+    return a.simplicity - b.simplicity;
+  });
+  return { best: sorted[0], infeasible };
+};
+
 const BASELINE_POLICIES = ["P1", "P4"];
 
 module.exports = {
@@ -126,6 +170,8 @@ module.exports = {
   P3_ALPHA_FIXED,
   buildConfig,
   configGrid,
+  constrainedGrid,
+  pickConstrained,
   SIMPLICITY_ORDER,
   BASELINE_POLICIES,
 };

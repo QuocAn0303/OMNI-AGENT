@@ -35,6 +35,7 @@
     "verify:quick": "node scripts/verify.js --quick",
     "check:swagger": "node scripts/check-swagger-yaml.js",
     "backtest": "node scripts/backtest/run.js",
+    "backtest:exp2": "node scripts/backtest/run-exp2.js",
     "dataset:names": "node --max-old-space-size=8192 scripts/dataset/build-sku-names.js",
     "dataset:marketplace": "node scripts/dataset/gen-marketplace-orders.js",
     "data:import": "node scripts/dataset/import-erp-demo.js",
