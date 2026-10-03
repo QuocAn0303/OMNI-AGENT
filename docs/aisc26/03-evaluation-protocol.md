@@ -395,6 +395,11 @@ Lệnh phải **chạy lại được từ sạch** và cho ra cùng kết quả
 **Sửa sau khi đã có `run_id` đầu tiên = vi phạm giao thức.** Mọi sửa đổi từ đây trở đi
 phải kèm: mô tả lý do, `run_id` cũ, `run_id` mới, và **cả hai kết quả**.
 
+**Ngoại lệ duy nhất được phép, và nó không phải "sửa":** thêm một **thí nghiệm mới**
+(hàm mục tiêu mới) sau khi đã thấy kết quả thí nghiệm 1 — ghi ở **§13.2**, tiền-đăng
+ký, commit trước khi chạy, mang nhãn post-hoc, và **không** đụng vào kết quả thí
+nghiệm 1.
+
 Ngoài ra, đính chính cùng đợt: `LlmUsageLog` là **migration riêng** (T13), không "gộp
 vào P0-3" như bản 2026-10-02 ghi.
 
@@ -429,11 +434,154 @@ niệm, đúng cái lỗi mà `docs/aisc26/01-llm-role.md` cấm.
 
 ---
 
+## 13.2. Phụ lục đăng ký TRƯỚC lần chạy thí nghiệm 2 (khám phá, post-hoc)
+
+> **Nhãn bắt buộc:** mọi bảng, mọi câu kết luận sinh ra từ mục này phải mang nhãn
+> **"Thí nghiệm 2 — post-hoc, khám phá"**. Không được trộn vào kết luận của thí
+> nghiệm 1. Xem §13.2.5.
+
+### 13.2.0. Vì sao có mục này, và vì sao nó là post-hoc
+
+Thí nghiệm 1 (`run_id` `BT-20261003045045`, commit `43db39b`) cho ra một kết quả mà
+chính báo cáo của nó đã gọi là **xấu**: hàm mục tiêu §5.1 (mẫu số = số đơn vị phương
+án đó bán được) **không có sàn dịch vụ**, nên nó thưởng cho việc bán ít — bộ tinh chỉnh
+chọn `z = 0.80`, mức phục vụ thấp nhất trong lưới, ở **cả 3 cửa sổ**.
+
+Vì vậy câu hỏi *"ở mức phục vụ nào thì ROP hơn ngưỡng cố định?"* **chưa được trả lời**.
+
+**Sự thật phải nói trước:** mục này được viết **sau khi đã thấy kết quả thí nghiệm 1**.
+Theo §10 mục 1, đổi hàm mục tiêu của thí nghiệm 1 rồi chạy lại và báo như thể đó là
+thí nghiệm cùng điều kiện là **vi phạm giao thức**. Nên cách làm đúng ở đây là:
+
+1. **Thí nghiệm 1 giữ nguyên**, kết quả giữ nguyên, không sửa một số nào.
+2. Thí nghiệm 2 là **một thí nghiệm mới**, có hàm mục tiêu mới, được **tiền-đăng ký
+   bằng chính mục này** rồi **commit** trước khi chạy.
+3. Báo **cả hai cạnh nhau**, và **không** dùng kết quả thí nghiệm 2 để định nghĩa lại
+   kết luận của thí nghiệm 1.
+
+### 13.2.1. Hàm mục tiêu có ràng buộc dịch vụ
+
+Ràng buộc chốt trước, áp dụng **giống hệt** cho **mọi** phương án:
+
+```
+MIN_FILL_RATE = 0.95                      ← sàn dịch vụ, chốt trước
+feasible(c)   := fillRate_mid(c) >= MIN_FILL_RATE
+c*            := c có z nhỏ nhất trong tập feasible      (P1/P4: DOC nhỏ nhất)
+                 nếu nhiều cùng z → chi phí chuẩn hoá nhỏ hơn → đơn giản hơn → thứ tự lưới
+```
+
+- `fillRate_mid(c)` = `bán thực tế / nhu cầu hiệu chỉnh` trên **tập giữa (mid)** —
+  cùng định nghĩa §5.2, chỉ khác tập. **Tập kiểm định không được chạm khi chọn `c*`.**
+- "z nhỏ nhất" nghĩa là **mức phục vụ thấp nhất vẫn thoả ràng buộc** — đây đúng là
+  ý của "ràng buộc dịch vụ": không mua thừa hơn mức dịch vụ đòi hỏi.
+
+**Quy tắc dự phòng khi ràng buộc không khả thi** (chốt trước, không để sau tính):
+
+```
+nếu không cấu hình nào feasible:
+   chọn c* = fillRate_mid CAO NHẤT
+            → nếu hoà: chi phí chuẩn hoá nhỏ hơn → đơn giản hơn → thứ tự lưới
+   đánh dấu constraintInfeasible = true  và PHẢI báo ở báo cáo
+```
+
+Không được nới `MIN_FILL_RATE`, không được thêm mức `z` ngoài lưới, không được đổi
+sang hàm mục tiêu cũ — nếu ràng buộc không khả thi thì **đó là kết quả**, và kết quả
+đó phải được báo.
+
+### 13.2.2. Lưới tinh chỉnh và ngân sách (S2 giữ nguyên)
+
+| Phương án | Lưới ở thí nghiệm 2 | Số cấu hình | Khác gì so với thí nghiệm 1 |
+|---|---|---|---|
+| **P1** | `DOC ∈ {7, 14, 21, 28}` | 4 | **Khác** — thí nghiệm 1 khoá `DOC_P1 = 14` (§2.2, hằng số) |
+| **P2** | `serviceLevel ∈ {0.80, 0.85, 0.90, 0.95}` | 4 | không |
+| **P3** | `serviceLevel` như trên, `alpha = 0.1` cố định (D-P5-06) | 4 | không |
+| **P4** | `DOC ∈ {7, 14, 21, 28}` | 4 | không |
+
+- **S2 giữ nguyên:** cùng tập giữa, **4 cấu hình mỗi phương án** (ngân sách bằng nhau),
+  cùng một hàm ràng buộc, cùng luật hoà (đơn giản hơn: `P1 < P4 < P2 < P3`).
+- **Vì sao P1 được mở lưới:** `DOC_P1 = 14` là hằng số, tức P1 **không thể** "tune
+  dưới ràng buộc"; so hai phương án ở hai mức dịch vụ khác nhau thì vô nghĩa. Cấu
+  hình `DOC = 14` của lưới mới **chính là P1 của thí nghiệm 1**, nên không mất liên
+  hệ với kết quả cũ. Đây là **điểm duy nhất** thí nghiệm 2 chủ động lệch khỏi §2.2,
+  ghi rõ ở đây trước khi chạy.
+- P5 vẫn `SKIPPED` với lý do của D-P5-10; lưới P5 không tồn tại.
+
+### 13.2.3. Chỉ số so sánh: giá trị tồn trung bình **ở cùng mức dịch vụ**
+
+Chỉ số chính của thí nghiệm 2 **không** phải §5.1 (vẫn báo §5.1 để so cạnh nhau), mà là:
+
+```
+Giá trị tồn trung bình (TB) = Σ_t (ATP_t × giá_vốn) / (số ngày × số SKU)   trên tập kiểm định
+```
+
+"**Ở cùng mức dịch vụ**" được thực hiện bằng **khớp dịch vụ theo từng SKU**, chốt trước:
+
+1. Với mỗi SKU tính `fillRate_sku(p) = bán(p) / nhu cầu_thực_tế(sku)` trên tập
+   kiểm định (cùng cách gộp SKU như D-P5-08).
+2. **Dải khớp:** giữ SKU mà `|fillRate_sku(P2) − fillRate_sku(P1)| <= 0.02`
+   (2 điểm phần trăm), và tương tự cho mọi cặp `P3 vs P1`.
+3. Trên **đúng tập SKU đã khớp**, so `giá trị tồn TB` của hai phương án.
+4. **Bootstrap theo SKU** (S7: seed `20261003`, 1000 lần, đơn vị resample = SKU) trên
+   đúng tập SKU đã khớp. Báo `n` của tập khớp và số SKU bị loại vì lệch dịch vụ.
+
+Bổ sung (bắt buộc, để không giấu đường biên): bảng **frontier** với **mọi** cấu hình
+của mọi phương án trên tập kiểm định, mỗi dòng = `{cấu hình, fill rate, giá trị tồn TB}`.
+
+### 13.2.4. Luật kết luận
+
+1. Không được nói **"ROP tốt hơn"** trong thí nghiệm 2 trừ khi **cả hai** điều kiện của
+   S7 đạt: **CI 95% của hiệu số không chứa 0** *và* **tỉ lệ SKU thắng > 55%**.
+2. Nếu một điều kiện không đạt ⇒ ghi đúng chữ **"chưa đủ bằng chứng"**.
+3. Mọi kết luận của thí nghiệm 2 phải kèm nhãn **post-hoc, khám phá**; kết luận
+   thí nghiệm 1 **không được sửa, không được ghi đè, không được rút lại**.
+4. Nếu `constraintInfeasible = true` ở bất kỳ cửa sổ nào ⇒ phải nói rõ ở phần kết
+   luận rằng ràng buộc 95% **không đạt được bằng lưới hiện có**, và mọi so sánh "ở
+   cùng mức dịch vụ" lúc đó là so ở mức dịch vụ **thấp nhất có thể**, không phải 95%.
+
+### 13.2.5. Đính chính cùng đợt (không ảnh hưởng kết quả)
+
+1. **§1 trích sai dòng mã.** §1 ghi công thức P1 "đúng công thức đang chạy ở
+   `automation.service.js:49,209`". Ở **HEAD hiện tại** hai dòng đó **không còn** công
+   thức đó: dòng 49 là hằng số `AUTO_REORDER_DEDUPE_WINDOW_MS`, dòng 209 nằm trong
+   `debtAutoCollection`. P0-4 đã thay ngưỡng cố định bằng ROP qua `planReplenishment`.
+   **Hệ quả phải nói khi trình bày:** "hiện trạng" trong mã **đã là ROP**; P1 của
+   giao thức là một ngưỡng cố định **không còn tồn tại trong mã sản phẩm**, nên
+   thí nghiệm này trả lời *"ROP so với một cách làm cũ đã bị thay"*, **không** trả
+   lời *"ROP so với cách đang chạy hôm nay"*. Không sửa §1 ở đây để giữ nguyên
+   lịch sử tài liệu.
+2. **Backlog lỗi mã sản phẩm.** `crostonDemandPerDay(qtySeries, alpha)`
+   (`src/modules/replenishment/replenishment.calc.js:256`) **nhận tham số `alpha`
+   nhưng không dùng** — nó tự suy `a = 1/(k+1)` từ dữ liệu (dòng 260) rồi trả về
+   `alpha` đã làm tròn, nên người gọi tưởng mình đang truyền tham số. Vì vậy thí
+   nghiệm 1 và 2 đều **không** dùng hàm này cho P3 (D-P5-05): dùng nó thì 3 "cấu
+   hình" `alpha` cho ra **một** kết quả và P3 không được đo đúng nghĩa. **Ghi
+   backlog, sửa ở gói sau kèm test** — không sửa ở T10 vì đổi hành vi đang chạy.
+
+### 13.2.6. Lệnh và bằng chứng "đăng ký trước"
+
+```bash
+# kiểm thức đường ống — KHÔNG phải lần chạy giao thức, KHÔNG ghi sổ
+node scripts/backtest/run.js --experiment=2 --slice=test --log=false \
+  --lead-times=7 --branches=A --windows=1
+
+# lần chạy giao thức duy nhất — ghi sổ S11
+npm run backtest -- --experiment=2 --slice=test
+```
+
+Bằng chứng đăng ký trước: mục §13.2 này nằm trong commit **trước** mọi dòng sổ S11 có
+`experiment=2`; `git log --oneline -- docs/aisc26/03-evaluation-protocol.md` cho thấy
+nó. Kết quả thí nghiệm 2 ghi vào `03-evaluation-results-exp2.md` (sinh tự động) và
+được đối chiếu cạnh thí nghiệm 1 trong phần tay của `03-evaluation-results.md`, kèm
+nhãn post-hoc.
+
+---
+
 ## 14. Trạng thái
 
 | Mục | Trạng thái |
 |---|---|
 | Giao thức S1–S12 | ✅ **Đã commit trước khi chạy** (xem §13) |
+| **Thí nghiệm 2 (post-hoc, khám phá)** | ✅ **Đã tiền-đăng ký ở §13.2**, commit trước lần chạy — **không** thay kết quả thí nghiệm 1 |
 | Nguồn dữ liệu | ✅ Đã chọn ở T6 — xem `02-data.md` |
 | Script backtest | ⏸ Chưa viết (T10) |
 | Người thử thời gian thao tác | ⛔ `[CHỜ ĐỘI ĐIỀN: tên/số người]` |
