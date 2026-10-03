@@ -28,11 +28,24 @@
  *   A2 dataset KHÔNG có giá vốn ⇒ `costPrice = price` (giá niêm yết), và mọi cờ
  *      MISSING_COST vẫn chạy được vì trường NOT NULL.
  *   A3 tiền tệ GBP giữ nguyên, KHÔNG quy đổi sang VND.
+ *   A4 ngày trong tệp xuất (năm 2011) được DỊCH về cuối ngày hôm nay
+ *      (`--anchor today`, mặc định) — giữ nguyên khoảng cách giữa các ngày và
+ *      số đơn mỗi ngày. Vì sao bắt buộc: `loadReplenishmentInput` đọc 28 ngày
+ *      gần nhất theo `Date.now()`, nạp nguyên ngày 2011 ⇒ 0 đơn trong cửa sổ ⇒
+ *      mọi SKU có nhu cầu = 0 ⇒ không SKU nào "cần nhập" ⇒ luồng demo T11 không
+ *      chạy được. `--anchor keep` giữ nguyên ngày gốc (dùng để truy vết dataset),
+ *      `--anchor 2026-01-01` ghim một ngày cụ thể (tất định hoàn toàn).
+ *   A5 một PO "tiền sử" (RECEIVED) + một GRN POSTED cho 20 SKU tồn thấp nhất:
+ *      `suggestForProduct` CỐ Ý không tự bịa NCC — nó lấy NCC từ PO gần nhất của
+ *      SKU đó, nên không có PO tiền sử thì luồng demo không bao giờ ra đề xuất.
+ *      GRN POSTED cho lead time ĐO ĐƯỢC (7 ngày) thay vì giả định mặc định.
+ *      PO này không làm thay đổi tồn kho (tồn vẫn theo giả định A1).
  *
  * Dùng:
  *   node scripts/dataset/import-erp-demo.js                  # dry-run (mặc định)
  *   node scripts/dataset/import-erp-demo.js --apply          # ghi thật vào DB local
  *   node scripts/dataset/import-erp-demo.js --apply --days 7 # giới hạn cửa sổ đơn
+ *   node scripts/dataset/import-erp-demo.js --anchor keep    # giữ ngày gốc 2011
  *   node scripts/dataset/import-erp-demo.js --reset           # xoá sạch tenant demo
  */
 
@@ -71,15 +84,25 @@ const OPENING_DAYS_OF_SUPPLY = 3;
 const LOW_STOCK_EVERY = 4;
 // Chia lô ghi vào DB để không giữ transaction quá dài.
 const ORDER_CHUNK = 150;
+// Giả định A5 — bao nhiêu SKU có trong PO "tiền sử" (xem đầu tệp).
+const HISTORY_PO_SKUS = 20;
+// Các vòng PO "tiền sử", tính từ hôm nay. Ba vòng = `LEAD_TIME_MIN_SAMPLES` (3)
+// trong replenishment.calc.js ⇒ lead time ĐO ĐƯỢC thay vì giả định mặc định.
+// Vòng gần nhất phải nằm NGOÀI cửa sổ bán hàng (34 ngày) để không cộng nhầm vào
+// `dailySales` của các SKU đó.
+const HISTORY_PO_ROUNDS = [{ daysAgo: 75 }, { daysAgo: 60 }, { daysAgo: 45 }];
+// Lead time của mỗi PO tiền sử (ngày) — GRN POSTED sau đúng số này.
+const HISTORY_PO_LEAD_DAYS = 7;
 
 const parseArgs = () => {
   const argv = process.argv.slice(2);
-  const out = { apply: false, reset: false, days: 30, maxOrders: 1500 };
+  const out = { apply: false, reset: false, days: 30, maxOrders: 1500, anchor: 'today' };
   for (let i = 0; i < argv.length; i += 1) {
     if (argv[i] === '--apply') out.apply = true;
     if (argv[i] === '--reset') out.reset = true;
     if (argv[i] === '--days') out.days = Number(argv[++i]);
     if (argv[i] === '--max-orders') out.maxOrders = Number(argv[++i]);
+    if (argv[i] === '--anchor') out.anchor = String(argv[++i] ?? '').toLowerCase();
   }
   if (!Number.isFinite(out.days) || out.days <= 0) out.days = 30;
   if (!Number.isFinite(out.maxOrders) || out.maxOrders <= 0) out.maxOrders = 1500;
@@ -142,8 +165,41 @@ function newestMarketplaceFile() {
   return path.join(MKT_DIR, files[files.length - 1]);
 }
 
+/**
+ * Độ lệch ngày để neo cửa sổ tệp xuất vào "hôm nay" (giả định A4).
+ *
+ * Trả về số MILI-GIÂY cộng thêm vào mọi `createdAt`. Giữ nguyên khoảng cách giữa
+ * các ngày ⇒ lịch sử bán hàng giữ nguyên hình dạng, chỉ dịch mốc thời gian.
+ *
+ * `--anchor keep` ⇒ 0 (giữ nguyên ngày 2011 của dataset).
+ * `--anchor <YYYY-MM-DD>` ⇒ ghim một ngày (tất định hoàn toàn, dùng khi cần
+ * hai lần chạy cho ra cùng kết quả).
+ */
+const anchorShiftMs = (anchor, maxDate) => {
+  if (anchor === 'keep') return 0;
+  const last = new Date(`${maxDate}T00:00:00Z`).getTime();
+  let target;
+  if (anchor === 'today') {
+    target = new Date();
+    target.setUTCHours(0, 0, 0, 0);
+  } else if (/^\d{4}-\d{2}-\d{2}$/.test(anchor)) {
+    target = new Date(`${anchor}T00:00:00Z`);
+  } else {
+    throw new Error(`--anchor không hợp lệ: ${anchor} (chỉ nhận today | keep | YYYY-MM-DD)`);
+  }
+  return target.getTime() - last;
+};
+
 /** Đọc tệp xuất sàn mô phỏng → map theo Order ID, giữ dòng hàng lồng. */
-function readMarketplace(file, days) {
+/** `YYYY-MM-DD → YYYY-MM-DD` của các `createdAt` trong tập đơn đã đọc. */
+const shiftedWindow = (mkt) => {
+  const ts = [...mkt.orders.values()].map((o) => +o.createdAt);
+  if (!ts.length) return '(không có đơn)';
+  return `${new Date(Math.min(...ts)).toISOString().slice(0, 10)} → ${new Date(Math.max(...ts)).toISOString().slice(0, 10)}`;
+};
+
+/** Đọc tệp xuất sàn mô phỏng → map theo Order ID, giữ dòng hàng lồng. */
+function readMarketplace(file, days, shiftMs = 0) {
   const lines = readCsv(file);
   const header = parseCsvLine(lines[0]);
   const idx = Object.fromEntries(header.map((h, i) => [h.trim(), i]));
@@ -171,7 +227,7 @@ function readMarketplace(file, days) {
     if (!orders.has(id)) {
       orders.set(id, {
         orderCode: id,
-        createdAt: new Date(`${date}T09:00:00Z`),
+        createdAt: new Date(new Date(`${date}T09:00:00Z`).getTime() + shiftMs),
         buyer: c[idx['Username (Buyer)']],
         grandTotal: Number(c[idx['Grand Total']]) || 0,
         items: [],
@@ -192,6 +248,10 @@ async function resetTenant(tenantId) {
   const order = [
     ['orderItem', { order: { tenantId } }],
     ['order', { tenantId }],
+    ['goodsReceiptItem', { grn: { tenantId } }],
+    ['goodsReceiptNote', { tenantId }],
+    ['purchaseItem', { purchaseOrder: { tenantId } }],
+    ['purchaseOrder', { tenantId }],
     ['inventoryTransaction', { inventory: { tenantId } }],
     ['inventory', { tenantId }],
     ['product', { tenantId }],
@@ -217,13 +277,18 @@ async function main() {
     console.error('[import] chưa có tệp xuất sàn mô phỏng — chạy: node scripts/dataset/gen-marketplace-orders.js');
     process.exit(1);
   }
-  const mkt = readMarketplace(mktFile, opts.days);
-  let mktList = [...mkt.orders.values()];
+  const mkt = readMarketplace(mktFile, opts.days, 0);
+  const shiftMs = anchorShiftMs(opts.anchor, mkt.maxDate);
+  // Đọc lại với độ lệch đã biết — hai lần đọc tệp 43 MB tốn thời gian hơn cách
+  // ghi chuỗi, nhưng `readMarketplace` là hàm THUẦN KỸT và chỉ có một chỗ gọi.
+  const mktShifted = shiftMs === 0 ? mkt : readMarketplace(mktFile, opts.days, shiftMs);
+  let mktList = [...mktShifted.orders.values()];
   if (mktList.length > opts.maxOrders) {
     mktList = mktList.slice(0, opts.maxOrders);
   }
   console.log(`[import] tệp xuất: ${path.relative(ROOT, mktFile)}`);
-  console.log(`[import] cửa sổ ${mkt.minDate} → ${mkt.maxDate}; bỏ ${mkt.skippedOutOfWindow} dòng ngoài cửa sổ; giữ ${mktList.length}/${mkt.orders.size} đơn`);
+  console.log(`[import] cửa sổ gốc ${mkt.minDate} → ${mkt.maxDate}; bỏ ${mkt.skippedOutOfWindow} dòng ngoài cửa sổ; giữ ${mktList.length}/${mkt.orders.size} đơn`);
+  console.log(`[import] giả định A4 (neo ngày): --anchor ${opts.anchor} ⇒ dịch ${Math.round(shiftMs / 86400000)} ngày; cửa sổ trong ERP: ${shiftedWindow(mktShifted)}`);
 
   // --- catalog + SKU matching KHÔNG LLM -------------------------------------
   const catalog = [...stats.dailyBySku.keys()].sort().map((sku) => ({
@@ -313,6 +378,10 @@ async function main() {
       for (const [model, where] of [
         ['orderItem', { order: { tenantId: tid } }],
         ['order', { tenantId: tid }],
+        ['goodsReceiptItem', { grn: { tenantId: tid } }],
+        ['goodsReceiptNote', { tenantId: tid }],
+        ['purchaseItem', { purchaseOrder: { tenantId: tid } }],
+        ['purchaseOrder', { tenantId: tid }],
         ['inventoryTransaction', { inventory: { tenantId: tid } }],
         ['inventory', { tenantId: tid }],
         ['product', { tenantId: tid }],
@@ -374,6 +443,9 @@ async function main() {
 
     // --- sản phẩm + tồn (giả định A1) ------------------------------------
     const skus = [...stats.dailyBySku.keys()].sort();
+    // Theo giả định A5: 20 SKU tồn thấp nhất (minStock lớn nhất = nhu cầu/ngày
+    // lớn nhất) sẽ nằm trong PO "tiền sử" để `suggest` biết NCC của chúng.
+    const lowStockRows = [];
     let created = 0;
     for (let i = 0; i < skus.length; i += 1) {
       const sku = skus[i];
@@ -386,6 +458,7 @@ async function main() {
       const opening = i % LOW_STOCK_EVERY === 0
         ? Math.max(0, Math.floor(minStock / 2))          // cố ý thấp để demo luồng sắp hết hàng
         : Math.round(p50 * OPENING_DAYS_OF_SUPPLY);
+      if (i % LOW_STOCK_EVERY === 0) lowStockRows.push({ sku, price, minStock });
 
       const product = await prisma.product.upsert({
         where: { id: `${tenantId}:${sku}` },
@@ -417,6 +490,83 @@ async function main() {
           },
         });
       }
+    }
+
+    // --- PO "tiền sử" + GRN (giả định A5) --------------------------------
+    // KHÔNG phải trang trí: `suggestForProduct` lấy NCC từ PO gần nhất CỦA SKU
+    // đó và cố ý không bịa NCC ("Không tự bịa NCC") ⇒ thiếu PO tiền sử thì mọi
+    // SKU đều rơi vào nhánh `needVendor` ⇒ luồng demo không bao giờ ra đề xuất.
+    //
+    // Số vòng = `LEAD_TIME_MIN_SAMPLES` (3, xem replenishment.calc.js): dưới số
+    // này `calcLeadTime` cố ý trả `estimated: true` và dùng mặc định 7 ngày. Ba
+    // vòng PO+GRN ⇒ payload đề xuất có lead time ĐO ĐƯỢC (trung vị 7 ngày,
+    // sampleSize = 3) thay vì giả định — và cơ chế "chưa đủ mẫu thì nói thẳng"
+    // vẫn được giữ nguyên trong mã.
+    const historySkus = lowStockRows
+      .sort((a, b) => b.minStock - a.minStock || a.sku.localeCompare(b.sku))
+      .slice(0, HISTORY_PO_SKUS);
+    const historyCodes = [];
+    for (let round = 0; round < HISTORY_PO_ROUNDS.length; round += 1) {
+      const { daysAgo } = HISTORY_PO_ROUNDS[round];
+      const suffix = `-${daysAgo}d`;
+      const poDate = new Date(Date.now() - daysAgo * 86400000);
+      poDate.setUTCHours(0, 0, 0, 0);
+      const ymd = poDate.toISOString().slice(0, 10).replace(/-/g, '');
+      const grnAt = new Date(+poDate + HISTORY_PO_LEAD_DAYS * 86400000);
+      const historyTotal = round2(historySkus.reduce((s, r) => s + r.minStock * 2 * r.price, 0));
+      const seq = 9001 + round;
+
+      await prisma.purchaseOrder.upsert({
+        where: { id: `${tenantId}:po-lich-su${suffix}` },
+        create: {
+          id: `${tenantId}:po-lich-su${suffix}`, tenantId,
+          poCode: `PO-${ymd}-${seq}`,
+          date: poDate,
+          expectedAt: grnAt,
+          receivedAt: grnAt,
+          status: 'RECEIVED',
+          paymentStatus: 'PAID', paidAmount: historyTotal,
+          subtotal: historyTotal, total: historyTotal,
+          vendorId: vendor.id,
+          note: `PO tiền sử (MÔ PHỎNG — giả định A5, ${daysAgo} ngày trước): cho hệ thống biết NCC của SKU và có lead time đo được.`,
+          createdById: user.id,
+          items: {
+            create: historySkus.map((r) => ({
+              id: `${tenantId}:po-lich-su${suffix}:${r.sku}`, tenantId,
+              productId: `${tenantId}:${r.sku}`,
+              quantity: r.minStock * 2,
+              unitCost: r.price,
+              subtotal: round2(r.minStock * 2 * r.price),
+            })),
+          },
+        },
+        update: {},
+      });
+
+      await prisma.goodsReceiptNote.upsert({
+        where: { id: `${tenantId}:grn-lich-su${suffix}` },
+        create: {
+            id: `${tenantId}:grn-lich-su${suffix}`, tenantId,
+            grnCode: `GRN-${ymd}-${seq}`,
+            purchaseOrderId: `${tenantId}:po-lich-su${suffix}`,
+            warehouseId: warehouse.id,
+            status: 'POSTED',
+            receivedAt: grnAt,
+            onTime: true,
+            createdById: user.id,
+            items: {
+              create: historySkus.map((r) => ({
+                id: `${tenantId}:grn-lich-su${suffix}:${r.sku}`, tenantId,
+                productId: `${tenantId}:${r.sku}`,
+                purchaseItemId: `${tenantId}:po-lich-su${suffix}:${r.sku}`,
+                receivedQty: r.minStock * 2,
+                passQty: r.minStock * 2,
+              })),
+            },
+          },
+          update: {},
+        });
+      historyCodes.push(`PO-${ymd}-${seq}/GRN-${ymd}-${seq}`);
     }
 
     // --- khách ẩn danh (không PII) ----------------------------------------
@@ -500,6 +650,7 @@ async function main() {
     return {
       created, createdOrders, skippedOrders, createdLines,
       customers: buyerNames.length,
+      historyPo: historyCodes.join(' '), historySkus: historySkus.map((r) => r.sku),
       warehouseId: warehouse.id, vendorId: vendor.id, userId: user.id,
     };
   });
@@ -512,6 +663,7 @@ async function main() {
   console.log(`         đơn tạo mới: ${result.createdOrders} (bỏ qua vì đã có: ${result.skippedOrders} — idempotent)`);
   console.log(`         dòng hàng lồng: ${result.createdLines}`);
   console.log(`         khách ẩn danh: ${result.customers}`);
+  console.log(`         PO tiền sử (A5): ${result.historyPo} · ${result.historySkus.length} SKU`);
   console.log(`         hàng đợi người xác nhận: ${reviewRows.length - 2} dòng → ${path.relative(ROOT, QUEUE_CSV)}`);
   console.log('[import] kiểm tra tiếp: npm run tenant:null -- --scan  (mọi bảng scoped phải = 0 mồ côi)');
 }

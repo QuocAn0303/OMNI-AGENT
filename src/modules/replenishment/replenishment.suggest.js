@@ -149,13 +149,28 @@ const loadReplenishmentInput = async (productIds = []) => {
   return byProduct;
 };
 
-/** Lead time PO→GRN đã POSTED, dùng cho `calcLeadTime`. */
+/**
+ * Lead time PO→GRN đã POSTED, dùng cho `calcLeadTime`.
+ *
+ * HỢP ĐỒNG HÌNH DẠNG: `calcLeadTime` đọc `receipts[i].poDate` và `.receivedAt`
+ * (xem `replenishment.calc.js` và `tests/replenishment.calc.test.js`). Hàm này
+ * TRƯỚC đây trả thẳng `{ date, receivedAt }` từ Prisma ⇒ `poDate` luôn
+ * `undefined` ⇒ mọi gap bị lọc ⇒ `calcLeadTime` LUÔN rơi vào nhánh "chưa đủ
+ * mẫu, dùng mặc định 7 ngày". Nhánh "lead time đo được" chết âm thầm, unit test
+ * vẫn xanh vì test chỉ truyền tay đúng hình dạng `poDate`.
+ *
+ * Vì vậy phải đổi TÊN ở đây, không đổi ở `calcLeadTime`: hợp đồng của hàm toán
+ * là `poDate` và mọi nơi gọi khác (backtest, test) đều theo tên đó.
+ */
 const loadLeadTimeReceipts = async (productId) => {
   const rows = await prisma.purchaseItem.findMany({
     where: { productId, purchaseOrder: { grns: { some: { status: "POSTED" } } } },
     select: { purchaseOrder: { select: { date: true, receivedAt: true } } },
   });
-  return rows.map((r) => r.purchaseOrder).filter((po) => po?.date && po?.receivedAt);
+  return rows
+    .map((r) => r.purchaseOrder)
+    .filter((po) => po?.date && po?.receivedAt)
+    .map((po) => ({ poDate: po.date, receivedAt: po.receivedAt }));
 };
 
 /**

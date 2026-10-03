@@ -187,3 +187,68 @@ cot `Description`; va `daily_sku.csv` da co sha256 da ky trong `02-data.md` 1.
 - Do chinh xac `AUTO_ACCEPT` phai la **100%**, dung la 100% moi tinh la "dat".
   50,32% o lan do o dau chi do la **loi cua phong do**: so dap an theo
   "SKU dau tien cua don" thay vi SKU cua dung dong hang.
+
+---
+
+## D-013 - Neo ngay cua so du lieu (A4) + PO "tien su" cho demo (A5) (P6 / T11)
+
+**Boi canh.** Tap xuat san co ngay nam 2011 (UCI Online Retail II). Ham
+`loadReplenishmentInput` doc 28 ngay gan nhat theo `Date.now()` => sau khi P4 nap,
+tenant demo co **0 don COMPLETED trong 28 ngay** (do bang lenh: 2452 don, tuoi
+2011-11-10 den 2011-12-09). Khuc "canh bao het hang -> de xuat" viet bang cong
+thuc nen **khong SKU nao co nhu cau** => luong demo T11 khong the chay.
+
+**Phuong an da can nhac.**
+1. Ghi nho "as-of": them tham so `now` vao `loadReplenishmentInput` va
+   `recomputeCurrent`, cho phep chay luong demo "tai thoi diem 2011-12-09".
+   *Khong sua du lieu, nhung la them khai niem moi vao duong san pham va phai
+   truyen `now` xuyen qua ca `revalidate`.*
+2. Dich ca cua so tap xuat ve cuoi ngay hom nay (mac dinh moi cua
+   `import-erp-demo.js`), giu nguyen khoang cach giua cac ngay va so don/ngay.
+
+**Chon.** Phuong an 2, va ghi ro la **gia dinh mo phong A4** trong
+`02-data.md` 9.2 + dau file n nap. `--anchor keep` giu ngay goc 2011 ( dung de
+truy vet dataset), `--anchor YYYY-MM-DD` ghim mot ngay ( tat dinh hoan toan).
+
+**Ly do.** Khong them khai niem "as-of clock" vao duong san pham; ma n ap van
+giu nguyen tinh idempotent (`orderCode` la `@unique`, `update: {}` nen chay lai
+khong doi `createdAt`).
+
+**Cach dao nguoc.** `node scripts/dataset/import-erp-demo.js --reset --apply
+--anchor keep` (hoac doi tham so `anchor` trong `parseArgs`).
+
+## D-014 - Phai co PO "tien su" + GRN POSTED de chay duoc luong demo (A5) (P6 / T11)
+
+**Boi canh.** `suggestForProduct` lay NCC tu **PO gan nhat cua SKU do** va co y
+khong bia NCC (`return { needVendor: true }`). Tenant demo nạp xong co 0 PO =>
+moi SKU deu rut vao nhanh `needVendor` => khong bao gio co de xuat. Them vao do:
+`calcLeadTime` chi dung lead time **do duoc** khi co >= `LEAD_TIME_MIN_SAMPLES` (3)
+lan nhan hang.
+
+**Chon.** `import-erp-demo.js` them **3 vong PO (RECEIVED) + GRN (POSTED)** cho 20
+SKU ton thap nhat, lech 7 ngay, o -75/-60/-45 ngay (ngoai cua so 34 ngay ban
+hang de khong cong nham vao lich su ban). Day la **gia dinh A5**, khong sua
+du lieu gi, va PO nay **khong** lam thay doi ton (ton van theo A1).
+
+**Ly do.** Khong sua `replenishment.suggest.js` de tu chon NCC (vi do la quyet
+dinh co chu dich, xem D-007); va khong ha `LEAD_TIME_MIN_SAMPLES` xuong 1 (lam
+cham viec "chua du mau thi noi thang").
+
+**Cach dao nguoc.** `HISTORY_PO_ROUNDS = []` (xoa khoi `import-erp-demo.js`),
+hoac bo A5 khi co du lieu NCC that tu ERP cua doanh nghiep that.
+
+## D-015 - Sua nhanh "lead time do duoc" chet am tham trong `loadLeadTimeReceipts` (P6 / T11)
+
+**Boi canh.** `calcLeadTime` doc `receipts[i].poDate` + `.receivedAt`; ham nap
+du lieu tra `{ date, receivedAt }` => `poDate` luon `undefined` => moi gap bi
+loc => **LUON** rơi vao nhanh "chua du mau, dung mac dinh 7 ngay". Unit test van
+xanh vi test chi truyen tay dung hinh dang `poDate`. Phat hien khi chay thu
+luong demo tren DB that (truoc khi sua: 20/20 SKU `leadTimeEstimated = true`).
+
+**Chon.** Do lai o ham nap du lieu (`{ poDate: po.date, receivedAt: po.receivedAt }`),
+khong doi `calcLeadTime` — hop dong cua ham toan la `poDate`, moi noi goi khac
+(backtest, test) deu theo ten do.
+
+**Bang chung.** Sau khi sua: 18/20 SKU co `leadTimeEstimated = false`,
+`sampleSize = 3`, lead time 7 ngay. `npx jest tests/replenishment` 154/154;
+`npm run smoke:po-gate` 24/24.
