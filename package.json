@@ -45,7 +45,9 @@
     "llm:labels": "node scripts/llm/build-label-set.js",
     "llm:eval": "node scripts/llm/eval-sku-match.js",
     "llm:policy": "node scripts/check-llm-policy.js",
-    "smoke:llm-usage": "node scripts/smoke-llm-usage.js"
+    "smoke:llm-usage": "node scripts/smoke-llm-usage.js",
+    "usertest:scenario": "node scripts/usertest/build-scenario.js",
+    "usertest:summarize": "node scripts/usertest/summarize-results.js"
   },
   "dependencies": {
     "@ai-sdk/openai": "^3.0.67",
