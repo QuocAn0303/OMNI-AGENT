@@ -41,6 +41,7 @@ làm trùng. Việc còn lại thuộc nhánh chính: **P1 (T3/D6, T4 còn lại
 | `node scripts/dataset/fetch-online-retail-ii.js` | sha256 khớp, bỏ qua tải (idempotent) | **mạng thật** |
 | `node scripts/dataset/build-daily-sku.js` | 1.067.371 dòng đọc → 166.578 dòng SKU×ngày, 500 SKU, 25 tháng, 7,6% SKU bán thưa | **tệp dữ liệu thật** |
 | `webfetch` trang UCI 502 | giấy phép CC BY 4.0 đọc thật; UCI ghi 1.067.371 dòng — khớp số đo | **nguồn thật** |
+| `build-daily-sku.js` chạy lần 2 | sha256 `daily_sku.csv` **y hệt lần 1** ⇒ bộ lọc tất định, chạy lại cho cùng kết quả | **tệp dữ liệu thật** |
 
 Không chạy test/Jest ở gói này: **không sửa mã ứng dụng**, chỉ thêm script dữ liệu độc lập
 và tài liệu. (Constitution yêu cầu `npm test` sau *thay đổi mã*; ở đây không có mã ứng dụng
