@@ -360,3 +360,115 @@ Khong cham DB, khong cham backend, khong dung cong 4000. Commit: `69a7ba2`, `60a
 1. Duyet **CC BY 4.0** cho muc dich trinh bay.
 2. Co chay **thí nghiem 3 tien dang ky** voi luoi rong hon (`z` toi 0,99, `DOC` toi 42)
    de tra loi cau hoi "o >= 95% thi ROP so voi nguong co dinh the nao" hay khong.
+
+---
+
+## Cap nhat 2026-10-03 (phien P6 - T11 + T12 XONG)
+
+**RESUME HERE - goi tiep theo: P7 (T13 LlmUsageLog, T14 hai vai tro LLM).**
+
+Da xong ca T11 va T12. Commit moi theo thu tu: `bc0d17f` (T11 + import A4/A5 +
+D-015), `e0e4d8a` (T12 frontend + contract test) - xem `git log --oneline -3`.
+
+### 1. T11 - Luong demo end-to-end (DONE-VERIFIED, DB that) - 10/10
+
+`scripts/demo/demo-flow.js` la **THU VIEN DUNG CHUNG**: ca `npm run smoke:demo-flow`
+(khang dinh) va `npm run demo:run` (trinh dien khong can giao dien) deu goi
+`runDemoFlow()` - mot duong ma duy nhat, gi nua "ban nghiem thu" va "ban trinh
+dien" khong the lech nhau.
+
+7 buoc, tat ca la **duong ma san pham that** (unit test + contract test cam
+`prisma.order.create` / `agentHumanGate.create` / `purchaseOrder.create` tay):
+chon SKU (cong thuc) -> `orderService.create` (tru kho that) ->
+`EVENT_HANDLERS.LOW_STOCK` (dung handler ma pg_notify goi) -> `revalidate` CHUA
+duyet (bang chung `freshness`) -> `updateMany` PENDING->APPROVED + `executeGate` ->
+"dung MOT PO" -> goi lai `suggest` de chung minh `onOrder` chan trung.
+
+Smoke 10/10 tren DB that. D7 kiem **rac that**: `captureTenantCounts` doc tat ca
+139 bang scoped truoc/sau moi lan chay; ca 2 lan lien tiep deu **0 bang thay doi**.
+
+### 2. Phat hien lon nhat cua P6 (da sua, co bang chung)
+
+**Nhanh "lead time do duoc" CHET AM THAM.** `calcLeadTime` doc `receipts[i].poDate`
+nhung `loadLeadTimeReceipts` tra `{ date, receivedAt }` => `poDate` luon undefined
+=> **MOI** don hang deu rut vao nhanh "chua du mau, dung mac dinh 7 ngay". Unit
+test van xanh vi test chi truyen tay dung hinh dang `poDate`. Chi phat hien khi
+chay luong tren DB that (truoc khi sua: 20/20 SKU `leadTimeEstimated = true`).
+Sua o ham nap du lieu, KHONG doi ham toan. Chi tiet: D-015.
+
+**Khong co du lieu thi khong co duong chay.** Tap xuat nam 2011 =>
+`loadReplenishmentInput` doc 28 ngay theo `Date.now()` => **0 don 28 ngay** =>
+khong SKU nao "can nhap" => luong demo khong the chay. Giai phap: neo ngay
+(**A4**) + PO tien su + GRN POSTED de co NCC va lead time do duoc (**A5**).
+Chi tiet: D-013, D-014.
+
+### 3. Data demo da nap lai (chi tenant `omni-demo-mo-phong`)
+
+`npm run data:import -- --reset --apply --days 34 --max-orders 6000`:
+**5.282 don / 10.423 dong / 1.000 khach an danh / 500 SKU**, cua so ERP
+2026-08-31 -> 2026-10-03 (A4), **3 PO tien su + 3 GRN POSTED** cho 20 SKU ton thap
+(A5, lead time do duoc 7 ngay). `smoke:import-demo` **9/9**; `tenant-null --scan`
+MO COI-TENANT 0 / TRUNG 0.
+
+Dump truoc khi ghi (ngoai repo):
+`aduu-dev-before-p6-demo-anchor-20261003-173757.dump` (0,99 MB).
+
+**Tenant thuc khong doi:** `candory-scent` 82 don / 158 dong / 89.862.000 VND.
+
+### 4. T12 - Giao dien duyet toi thieu (DONE-VERIFIED)
+
+`SmartApprovalCard.jsx` **dung lai** + sua cho dung chu ky T12: bat buoc ly do khi
+tu choi (modal, nut Disable khi rong), hien thi **tuoi de xuat** (vang > 6h),
+**diff** khi DRIFT_BLOCK + checkbox `acknowledgeDrift` co chu dich, canh bao
+DRIFT_WARN, hien thi `missingCost`, canh bao **trang thai lo lung** (APPROVED nhung
+`resultRef` null) + nut thu lai, va **ma PO sau khi duyet**. Trang moi
+`pages/AgentApprovals.jsx` + route `/agent-approvals` (ADMIN/MANAGER) + menu.
+
+Sua them 1 thu can de xem duoc diff: `agent.gate.exec.js` nem loi 409 **khong co
+`details`** => `error.middleware.js` chi chuyen `status` + `message` => UI **khong
+bao gio thay `diff`**. Nay la gioi han cua ha tang ke thua, da nem them
+`details: { code, drift, missingCost, diff }` (giu nguyen top-level de khong pha
+unit test).
+
+### 5. Ket qua kiem chung P6
+
+| Lenh | Ket qua | Loai |
+|---|---|---|
+| `npm run smoke:demo-flow` | **10/10**, 2 lan lien tiep 0 rac | **DB that** |
+| `npm run demo:run` | chay trọn, in 6 buoc + "bo qua co chu dich" | **DB that** |
+| `npm run smoke:import-demo` | **9/9** | **DB that** |
+| `npm run smoke:po-gate` | **24/24** | **DB that** |
+| `npx jest` | **4071/4076 pass** (72 suite, 5 skip) | mock |
+| `npx jest tests/demo-flow-contract` | 12/12 | mock |
+| `frontend npm run lint` | **0 error** (61 warning co san) | — |
+| `frontend npm run build` | **built in 762ms**, 218 entry PWA | — |
+| `npm run check:modules` | 203 module | — |
+| `npm run tenant:null -- --scan` | MO COI 0 / TRUNG 0 | **DB that** |
+| `npm run check:humangate` | **FAIL - backend khong chay** | can backend |
+
+### 6. Bi gioi han da biet (noi thang, khong giau)
+
+1. **HTTP chua kiem chung o P6**: `check:humangate` can backend dang chay. Phan
+   HTTP cua luong demo **chua** co bang chung o phien nay (T11 kiem `executeGate`
+   truc tiep dung thu tu route). Phai chay `npm run check:humangate` khi backend
+   chay truoc buoi trinh bay.
+2. **Buoc 3 bo qua `pg_notify`/LISTEN** (can server nen) - gọi thang handler.
+3. **`/api/agent/human-gates` chi tra PENDING** => trang thai "lo lung" **khong
+   doc duoc tu API**; trang hien thi ro la chua co duong doc (can endpoint
+   theo trang thai - de giai sau).
+4. `order.service.create` goi `autoIssue` hoa don dien tu; local khong cau hinh
+   VNPT nen log loi - **khong** chan luong.
+
+### 7. Tiep theo - GÓI P7
+
+> **DONG BANG TINH NANG SAU P6** (theo `NIGHT-PROMPT.md` muc 3): tu day chi sua
+> loi, do luong, tai lieu. Khong them tinh nang moi.
+
+- **T13** migration `LlmUsageLog` (duy nhat duoc phep), them vao
+  `TENANT_SCOPED_MODELS`, ghi token tu `usageMetadata` o `config/llm.js`.
+- **T14** khop SKU lai + giai thich de xuat/soan tin nhan NCC; **co mau giai thiep
+  khong-LLM** lam duong lui va mac dinh khi LLM tat/429/503. Chi chay `live` neu
+  **co** bien moi truong key (khong doc gia tri).
+- P6 de lai 1 viec con: chay `check:humangate` khi backend chay (xem muc 6.1).
+
+Dump/ghi chu ky thuc cua P6: `docs/aisc26/DECISIONS.md` D-013, D-014, D-015.

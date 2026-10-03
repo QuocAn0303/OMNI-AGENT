@@ -111,6 +111,7 @@ const Workflows = lazy(() => import("./pages/Workflows"));
 const Integrations = lazy(() => import("./pages/Integrations"));
 const SettingsPage = lazy(() => import("./pages/Settings"));
 const AgentAnalytics = lazy(() => import("./pages/AgentAnalytics"));
+const AgentApprovals = lazy(() => import("./pages/AgentApprovals"));
 const StoreCredits = lazy(() => import("./pages/StoreCredits"));
 const SerialNumbers = lazy(() => import("./pages/SerialNumbers"));
 const SmartGuide = lazy(() => import("./pages/SmartGuide"));
@@ -412,6 +413,7 @@ function App() {
               {/* ADMIN + MANAGER — Management features (ACCOUNTANT excluded) */}
               <Route element={<RequireRole roles={["ADMIN", "MANAGER"]} />}>
                 <Route path="/agent-analytics" element={<AgentAnalytics />} />
+                <Route path="/agent-approvals" element={<AgentApprovals />} />
                 <Route path="/smart-guide" element={<SmartGuide />} />
                 <Route path="/projects" element={<Projects />} />
                 <Route path="/projects/:id" element={<ProjectDetail />} />

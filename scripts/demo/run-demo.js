@@ -65,7 +65,8 @@ async function main() {
   line(`   Mức tồn thấp  ${n(p.minStock)}   ROP ${n(s.rop)}   nhu cầu/ngày ${s.demandPerDay}`);
 
   head('BƯỚC 3–4  CÔNG THỨC TÍNH RA ĐỀ XUẤT (không LLM)');
-  line(`   Đề xuất nhập   ${n(s.orderQty)} × ${n(s.unitCost)} = ${n(s.totalEstimate)}`);
+  line(`   Đơn giá       ${s.unitCost} GBP/cái (giá niêm yết — dataset KHÔNG có giá vốn, xem 02-data.md §6.4)`);
+  line(`   Đề xuất nhập   ${n(s.orderQty)} × ${n(s.unitCost)} = ${n(s.totalEstimate)} GBP`);
   line(`   NCC            ${s.vendorName}`);
   line(`   Lead time      ${s.leadTimeDays} ngày ${s.leadTimeEstimated ? '(UƯỚC LƯỢNG — chưa đủ lịch sử nhận hàng)' : '(ĐO ĐƯỢC từ lịch sử PO → GRN)'}`);
   line(`   Cờ thiếu giá vốn ${p.missingCost === true ? 'CÓ' : 'KHÔNG'}`);
@@ -74,7 +75,7 @@ async function main() {
 
   head('BƯỚC 5  NGƯỜI DUYỆT QUA HUMAN-GATE');
   line(`   Người duyệt    ${s.approver}`);
-  line(`   Kết quả        tạo đúng ${flow.poCheck.found} PO → ${s.poCode} (${n(s.poTotal)} VND)`);
+  line(`   Kết quả        tạo đúng ${flow.poCheck.found} PO → ${s.poCode} (${n(s.poTotal)} GBP — tiền tệ của dataset, KHÔNG quy đổi)`);
 
   head('BƯỚC 6  KHÔNG SINH ĐỀ XUẤT TRÙNG');
   line(`   onOrder        ${n(flow.dedupe.onOrder)} (hàng đang trên đường từ PO vừa tạo)`);

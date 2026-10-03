@@ -311,10 +311,16 @@ const payload = gate.actionPayload || {};
     };
   }
 
-  const check = await revalidate(gate, { acknowledgeDrift, recompute });
+const check = await revalidate(gate, { acknowledgeDrift, recompute });
   if (!check.ok) {
-    // `code` + `missingCost` mang xuống HTTP layer để UI hiện đúng nút/lời nhắc
+    // `code` + `missingCost` mang xuống HTTP layer để UI hiện đúng nút/lời nhắm
     // thay vì một lỗi 409 chung chung. Giữ `drift` cho các nhánh cũ.
+    //
+    // `details` là kênh DUY NHẤT đi qua được `error.middleware.js` tới client
+    // (hạ tầng kế thừa chỉ chuyển `status` + `message` + `details`). Không có nó
+    // thì frontend không bao giờ thấy `diff` ⇒ không hiện được bảng "lệch bao
+    // nhiêu so với lúc đề xuất" mà T12 yêu cầu. Top-level giữ nguyên để không
+    // phá unit test đang assert `rejects.toMatchObject({ status, code })`.
     throw {
       status: check.status,
       message: check.message,
@@ -322,6 +328,12 @@ const payload = gate.actionPayload || {};
       code: check.code,
       missingCost: check.missingCost,
       diff: check.diff,
+      details: {
+        code: check.code || null,
+        drift: check.drift || null,
+        missingCost: check.missingCost === true,
+        diff: check.diff || null,
+      },
     };
   }
 

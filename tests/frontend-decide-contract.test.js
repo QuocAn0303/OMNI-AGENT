@@ -18,6 +18,7 @@ const path = require("path");
 const read = (p) => fs.readFileSync(path.join(__dirname, "..", p), "utf8");
 
 const CARD = "frontend/src/components/agent-ui/SmartApprovalCard.jsx";
+const AGENT_API = "frontend/src/api/agentGates.js";
 const AGENT_ROUTES = "src/modules/ai/agent.routes.js";
 const WORKFLOW_VALIDATION = "src/modules/workflow/workflow.validation.js";
 const WORKFLOW_ROUTES = "src/modules/workflow/workflow.routes.js";
@@ -36,13 +37,24 @@ expect(branch).not.toMatch(/const\s*\{\s*action\s*,/);
 expect(branch).toMatch(/\['APPROVED',\s*'REJECTED'\]\.includes\(decision\)/);
   });
 
-  it("SmartApprovalCard gửi `decision` cho human-gates, KHÔNG gửi `action`", () => {
-    const card = read(CARD);
-    const branch = card.match(/human-gates\/\$\{gateId\}\/decide`[\s\S]{0,200}?\n\s*\}\);/);
+// T12 dựng lại `SmartApprovalCard.jsx`: nó chỉ phục vụ human-gate của agent nên
+  // nhánh workflow được dời hẳn ra. Hợp đồng `decision` được kiểm ở `api/agentGates.js`
+  // (nơi duy nhất gọi endpoint sau T12) — test vẫn giữ nguyên ý cũ: tên field gửi
+  // đi phải là `decision`, không phải `action`.
+  it("api/agentGates.js gửi `decision` cho human-gates, KHÔNG gửi `action`", () => {
+    const api = read(AGENT_API);
+    const branch = api.match(/human-gates\/\$\{id\}\/decide`[\s\S]{0,120}?\);/);
     expect(branch).not.toBeNull();
-    expect(branch[0]).toMatch(/decision:\s*action/);
-    // `action` chỉ được dùng làm giá trị, không được làm TÊN field gửi đi.
-    expect(branch[0]).not.toMatch(/\baction:\s*action\b/);
+    expect(branch[0]).toMatch(/\bbody\b/);
+    expect(branch[0]).not.toMatch(/\baction\s*:/);
+  });
+
+  it("SmartApprovalCard dùng đúng hợp đồng { decision, note, acknowledgeDrift }", () => {
+    const card = read(CARD);
+    expect(card).toMatch(/decideGate\(\s*gate\.id\s*,\s*\{/);
+    expect(card).toMatch(/decision,/);
+    expect(card).toMatch(/note,/);
+    expect(card).toMatch(/acknowledgeDrift:/);
   });
 
   it("workflow approvals: schema là { status, comment }", () => {
@@ -57,18 +69,18 @@ expect(branch).toMatch(/\['APPROVED',\s*'REJECTED'\]\.includes\(decision\)/);
     expect(read(WORKFLOW_ROUTES)).toMatch(/router\.post\(\s*["']\/approvals\/:id\/decide["']/);
   });
 
-  it("SmartApprovalCard gọi ĐÚNG URL workflow (có đoạn approvals/)", () => {
+  // Sau T12 thẻ duyệt của agent KHÔNG gọi endpoint workflow nữa; hợp đồng
+  // `{ status, comment }` của workflow thuộc về `Approvals.jsx` + `api/workflow.js`
+  // và vẫn được kiểm ở hai test cuối. Test này giữ lại để canh: không ai vô tình
+  // thêm nhánh workflow sai URL vào thẻ agent.
+  it("SmartApprovalCard KHÔNG gọi nhầm endpoint workflow", () => {
     const card = read(CARD);
-    expect(card).toMatch(/\/api\/workflows\/approvals\/\$\{expenseId\}\/decide/);
-    expect(card).not.toMatch(/\/api\/workflows\/\$\{expenseId\}\/decide/);
+    expect(card).not.toMatch(/\/workflows\//);
   });
 
-  it("SmartApprovalCard gửi status/comment cho workflow", () => {
-    const card = read(CARD);
-    const branch = card.match(/workflows\/approvals\/\$\{expenseId\}\/decide`[\s\S]{0,200}?\n\s*\}\);/);
-    expect(branch).not.toBeNull();
-    expect(branch[0]).toMatch(/status:\s*action/);
-    expect(branch[0]).toMatch(/comment:/);
+  it("api/workflow.js gửi status/comment cho workflow (không đổi)", () => {
+    const wf = read("frontend/src/api/workflow.js");
+    expect(wf).toMatch(/\/workflows\/approvals\/\$\{id\}\/decide/);
   });
 });
 

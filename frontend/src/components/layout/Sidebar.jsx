@@ -259,6 +259,13 @@ const MENU_GROUPS = [
         label: "AI Phân tích",
         roles: ["ADMIN", "MANAGER"],
       },
+      {
+        // T12 — màn hình duyệt đề xuất nhập hàng của agent (human-gate).
+        key: "/agent-approvals",
+        icon: <AuditOutlined />,
+        label: "Duyệt đề xuất nhập",
+        roles: ["ADMIN", "MANAGER"],
+      },
     ],
   },
   {
