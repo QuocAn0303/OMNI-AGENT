@@ -23,19 +23,33 @@ const SUGGEST = "src/modules/replenishment/replenishment.suggest.js";
 const EXEC = "src/modules/ai/agent.gate.exec.js";
 const CDC = "src/jobs/agent.cdc.js";
 
-describe("luồng demo: 7 bước đủ, theo đúng đường mã sản phẩm", () => {
-  it("demo-flow chạy đủ 7 bước theo thứ tự", () => {
+describe("luồng demo: đủ bước theo đúng đường mã sản phẩm", () => {
+  it("demo-flow chạy đủ các bước theo thứ tự", () => {
     const flow = read(FLOW);
     const steps = [...flow.matchAll(/step\('([a-z-]+)'/g)].map((m) => m[1]);
+    // T14 thêm bước `explain-proposal` (vai trò LLM #2) giữa bước 4 và bước 5: mục
+    // đích là chứng minh CHẾ ĐỘ KHÔNG-LLM chạy trọn luồng demo. Thứ tự không đổi,
+    // chỉ thêm một bước không ghi DB.
     expect(steps).toEqual([
       "pick-sku",
       "create-order",
       "cdc-low-stock",
       "freshness-before-approve",
+      "explain-proposal",
       "approve-gate",
       "exactly-one-po",
       "no-duplicate-proposal",
     ]);
+  });
+
+  it("bước giải thích dùng đường LLM duy nhất và KHÔNG tự tính lại số", () => {
+    const flow = read(FLOW);
+    expect(flow).toMatch(/explainProposal\(/);
+    expect(flow).toMatch(/draftVendorMessage\(/);
+    // Số đưa vào phải lấy từ Bước A (`replan`) hoặc payload của gate — không nhập tay.
+    expect(flow).not.toMatch(/explainProposal\(\{\s*sku:\s*['"`]/);
+    // Tin nhắn NCC chỉ được SOẠN: luồng không được có lệnh gửi.
+    expect(flow).not.toMatch(/\bsend(?:Message|Sms|Zalo|Email)\s*\(/);
   });
 
   it("mỗi bước gọi hàm SẢN PHẨM, không tự tính lại nghiệp vụ", () => {

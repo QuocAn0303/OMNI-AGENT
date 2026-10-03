@@ -54,6 +54,7 @@ const {
 const { planReplenishment, classifyUnitCost, NEED_REPLENISHMENT, STOCKOUT } =
   require(`${ROOT}/src/modules/replenishment/replenishment.calc`);
 const { revalidate, executeGate } = require(`${ROOT}/src/modules/ai/agent.gate.exec`);
+const { explainProposal, draftVendorMessage } = require(`${ROOT}/src/modules/replenishment/proposal-explain.llm`);
 const { buildDecisionData, PO_PROPOSAL } = require(`${ROOT}/src/modules/ai/agent.humangate`);
 
 const DEMO_SLUG = 'omni-demo-mo-phong';
@@ -289,6 +290,54 @@ const runDemoFlow = async ({ tenantId, onEvent = () => {} } = {}) => {
     };
   });
 
+  // ── 4b. GIẢI THÍCH ĐỀ XUẤT (vai trò LLM #2) — KHÔNG-LLM là mặc định ──────
+  // Đặt bước này trong luồng demo để chứng minh đúng điều `NIGHT-PROMPT.md` T14 yêu
+  // cầu: "chế độ không-LLM chạy trọn luồng demo". Với LLM tắt, `explainProposal` trả
+  // MẪU — không gọi mạng, không ghi DB ⇒ `residue` của smoke vẫn phải rỗng.
+  //
+  // Số đưa vào đều lấy từ Bước A (`replan`) và từ payload của gate; không có bước nào
+  // ở đây tính lại ROP hay số lượng đặt.
+  const explain = await step('explain-proposal', async () => {
+    const p = gate.actionPayload || {};
+    const demandPerDay = num(picked.demandPerDay);
+    const result = await explainProposal({
+      sku: picked.sku,
+      name: picked.productName,
+      atp: num(item?.atp ?? picked.atp),
+      rop: num(item?.rop ?? picked.rop),
+      safetyStock: num(p.safetyStock),
+      demandPerDay,
+      leadTimeDays: num(p.leadTimeDays ?? picked.leadTimeDays),
+      daysOfCoverLeft: demandPerDay > 0 ? Number((picked.atp / demandPerDay).toFixed(1)) : null,
+      orderQty: num(item?.quantity),
+      unitCost: num(item?.unitCost),
+      total: num(p.totalEstimate),
+      vendorName: p.vendorName || '',
+      leadTimeEstimated: p.leadTimeEstimated === true || picked.leadTimeEstimated === true,
+    });
+    const vendor = await draftVendorMessage({
+      sku: picked.sku,
+      name: picked.productName,
+      atp: num(item?.atp ?? picked.atp),
+      rop: num(item?.rop ?? picked.rop),
+      leadTimeDays: num(p.leadTimeDays ?? picked.leadTimeDays),
+      orderQty: num(item?.quantity),
+      total: num(p.totalEstimate),
+      vendorName: p.vendorName || '',
+    });
+    return {
+      source: result.source,
+      notice: result.notice,
+      explanation: result.explanation,
+      vendorSource: vendor.source,
+      vendorMessageSent: vendor.sent,
+      llmMode: result.mode,
+      note: result.source === 'template'
+        ? 'LLM tắt ⇒ dùng MẪU. Nhãn "mẫu" hiển thị trên UI, không giả vờ là LLM viết.'
+        : `LLM (mode=${result.mode}) đã diễn giải; số vẫn là số của Bước A.`,
+    };
+  });
+
   // ── 5. duyệt qua human-gate ─────────────────────────────────────────────
   const approved = await step('approve-gate', async () => {
     const claimed = await inTenant(() =>
@@ -437,6 +486,13 @@ const runDemoFlow = async ({ tenantId, onEvent = () => {} } = {}) => {
     deleted.auditLogs = (await inT(() =>
       prisma.auditLog.deleteMany({ where: { createdAt: { gte: since } } }),
     )).count;
+    // Sổ lỗi bút toán: `order.service.create` (BƯỚC A, bước 2) gọi autopost; khi
+    // thiếu tài khoản/số tiền nó KHÔNG ném lỗi mà ghi 1 dòng `journal_posting_errors`
+    // để retry sau. Đây chính là dòng rác đã làm D7 FAIL ở P7 (đo được 2026-10-03:
+    // mỗi lần chạy luồng +1 dòng, 2 lần liên tiếp = 2 dòng rác).
+    deleted.journalPostingErrors = (await inT(() =>
+      prisma.journalPostingError.deleteMany({ where: { createdAt: { gte: since } } }),
+    )).count;
     deleted.purchaseItems = (await inT(() =>
       prisma.purchaseItem.deleteMany({ where: { purchaseOrderId: approved.poId } }),
     )).count;
@@ -489,6 +545,7 @@ const runDemoFlow = async ({ tenantId, onEvent = () => {} } = {}) => {
     gate,
     item,
     fresh,
+    explain,
     approved,
     poCheck,
     dedupe,

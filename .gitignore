@@ -105,3 +105,6 @@ venv/
 
 # Dataset công khai tải về (T6) — chỉ commit mã + sha256, không commit tệp 45 MB
 /data/dataset/
+# Bản ghi LLM (record/replay) chứa NỘI DUNG prompt/response của dữ liệu người dùng.
+# Tuyệt đối không commit — vừa vì dữ liệu, vừa vì nó có thể chứa thông tin khách hàng.
+/data/llm-recordings.jsonl

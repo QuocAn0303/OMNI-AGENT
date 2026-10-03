@@ -252,3 +252,85 @@ khong doi `calcLeadTime` — hop dong cua ham toan la `poDate`, moi noi goi khac
 **Bang chung.** Sau khi sua: 18/20 SKU co `leadTimeEstimated = false`,
 `sampleSize = 3`, lead time 7 ngay. `npx jest tests/replenishment` 154/154;
 `npm run smoke:po-gate` 24/24.
+
+## D-016 - `LlmUsageLog` khong co khoa ngoai toi `tenants` (P7 / T13)
+
+**Boi canh.** Moi model moi co `tenantId` deu phai khai bao trong
+`TENANT_SCOPED_MODELS`; nhung `tenant-null --scan` bao cao "135/140 bang scoped
+KHONG co khoa ngoai toi tenants". `LlmUsageLog` co lam theo khong?
+
+**Phuong an can nhac.**
+1. Khoa ngoai `tenantId -> tenants.id`. **Bi loai vi `tenants` co bang con voi
+   `ON DELETE` mac dinh cua Prisma: xoa tenant se xoa luot so do LLM cua no, va
+   migration additive thi phai them `ON DELETE SET NULL` de khong pha du lieu
+   cua tenant khac. Bai toan "xoa tenant co giu lai bang chi doc?" chua co cau
+   doi voi `tenants`.
+2. Giong het `AgentHumanGate` (cung co `tenantId?`, cung khong co FK). **Chon.**
+
+**Chon.** `tenantId String?` nullable, khong FK - giong `agent_human_gates` va phan
+lon cac bang scoped khac. Da khai bao trong `TENANT_SCOPED_MODELS` ngay tu migration
+do (khong dung "them sau"), va `check:tenant` + `tenant-null --scan` deu xanh.
+
+**Ly do.** Dung chuan hoa "bang co `tenantId` thi phai co FK" se phai sua mot loat
+migration da ap dung - bi cam. Ghi lai day la backlog (ke cung hang voi 135 bang
+kia), khong phai coi la da xong.
+
+**Cach dao nguoc.** `ALTER TABLE llm_usage_logs ADD CONSTRAINT ... FOREIGN KEY
+(tenantId) REFERENCES tenants(id) ON DELETE SET NULL;` - them duoc, khong phai rollback
+co du lieu.
+
+## D-017 - Khoa ban ghi `replay` KHONG dua `model` vao hash (P7 / T14)
+
+**Boi canh.** Ban ghi `record`/`replay` luu hash(prompt) -> response. Ban dau hash
+co ke ca `model`. Smoke `smoke:llm-usage` FAIL 2 lan lien tiep: doi `LLM_MODEL` lam
+toan bo ban ghi cu truot => `replay` khong tim thay gi, va **duong lui bien thanh
+duong chet** ngay luc demo du phong can no nhat.
+
+**Phuong an can nhac.** (a) dua `model` vao hash; (b) dua `task + system + prompt`;
+(c) bo qua `model` hoan toan.
+
+**Chon (b).** `replay` sinh ra de tai lap ** dung cau tra loi da ghi **, bat ke sau
+nay cau hinh model doi. `model` van duoc ghi trong tung dong ban ghi va trong
+`LlmUsageLog`, nen khong mat dau vet - van nho duoc minh chay bang model nao.
+
+**Cach dao nguoc.** `callKey` la ham thuan, them `model` vao lai la mot dong.
+
+## D-018 - `replay` khong doi API key; chi `live`/`record` moi doi (P7 / T14)
+
+**Boi canh.** `callTask` ban dau check `llm.isConfigured()` **truoc** khi xem mode
+=> `replay` cung fail khi khong co key. Nghich ly: `replay` ton tai de chay khi
+**khong** co key (CI, demo du phong mat mang), thi no lai bi chinh no chan.
+
+**Chon.** `replay` bo qua hanh dong kiem tra key; chi `live`/`record` moi doi
+`isConfigured()`. Bat bien `LLM_MODE`/`LLM_DISABLED` van giu nguyen vai tro "co key
+khong tu bat LLM" (test `mac dinh la off`).
+
+**Phat hien tu smoke, khong phai tu doc code** - day la ly do P7 bat buoc co smoke
+ tren DB that chu khong dung mock.
+
+## D-019 - Nhan khong duoc chay do `CSV` cat bang `split(',')` (P7 / T14)
+
+**Boi canh.** `scripts/llm/build-label-set.js` va `eval-sku-match.js` viet ham doc
+CSV bang `split(',')`. Ten hang trong tep xuat co dau phay va dau nhay kep
+(`Assorted Flower Colour "Leis"`) => cot `external_name` bi cat cut, nhung **khong
+bao loi**; doi gop SKU van chay, chi sai am thanh.
+
+**Chon.** Tach `scripts/lib/csv.js` (parse theo RFC 4180: `""` la escape, bo BOM,
+`\r` trong CRLF) va dung o ca hai script. Day la cung loai loi P4 gap o buoc do
+sai hon thuat toan (xem `MORNING-REPORT.md` 5.3p).
+
+**Cach dao nguoc.** Xoa `scripts/lib/csv.js` va tra ve `split(',')` - KHONG nen lam.
+
+## D-020 - Khong ghi con so han muc Gemini (P7 / T14)
+
+**Boi canh.** T14 yeu cau tra han muc goi mien phi tren trang chinh thuc, toi da 3
+`fetch`; ca 3 deu `transport error` (khong phai 404) - xem
+`notes/gemini-free-tier.md` muc 6.
+
+**Chon.** Ghi **khong con so han muc**. Trang chinh thuc khai bao han muc thay doi
+theo tier va phai xem trong AI Studio; con so "15 RPM / 1M TPM / 1.500 RPD" chi
+ton tai trong ban archive cu (2024-05-14) va da loi thoi. Chi ghi chieu do + nguyen
+tac + dieu khoan du lieu (Free tier: "Used to improve our products = YES").
+
+**Ly do.** Ghi so la khong tra duoc = bao cao sai. Yeu cau ro rang: "Khong ghi
+con so han muc khi chua tra".

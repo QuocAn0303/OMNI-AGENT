@@ -240,6 +240,26 @@ class SkuMatcher {
   }
 
   /**
+   * Bảng xếp hạng ứng viên RỘNG hơn `match()` (mặc định 3 ứng viên), dùng cho
+   * lớp LLM: LLM chỉ được chọn trong danh sách ứng viên đã thu hẹp bằng công thức
+   * (`01-llm-role.md` §3.2 nguyên tắc 1). Thêm hàm này thay vì nới `match()` để
+   * không đổi hành vi của ngưỡng đã ký.
+   *
+   * @param {string} inputName
+   * @param {{inputSku?: string, topK?: number}} [opts]
+   * @returns {Array<{sku: string, name: string, total: number, tri: number, lev: number, cos: number}>}
+   */
+  candidatesFor(inputName, opts = {}) {
+    const norm = normalize(inputName);
+    const tokens = tokenize(inputName);
+    const topK = Math.max(1, Number(opts.topK) || 5);
+    return this.entries
+      .map((e) => ({ sku: e.sku, name: e.name, ...this.score(norm, tokens, e) }))
+      .sort((a, b) => (b.total - a.total) || a.sku.localeCompare(b.sku))
+      .slice(0, topK);
+  }
+
+  /**
    * Khớp cả lô. Kết quả TÁCH 2 phần để không lẫn: `matched` chỉ chứa cái đủ tin
    * cậy tự ghi; `reviewQueue` là hàng đợi "cần người xác nhận" — không tự quyết.
    *

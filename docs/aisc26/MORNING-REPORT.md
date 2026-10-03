@@ -299,3 +299,48 @@ ton dau ky la gia dinh mo phong A1 · D-012 tach `sku_names.csv` thay vi sua
 | **Xac nhan 50 don trong `sku-review-queue.csv`** | Khong tu quyet theo D-010 | mo file, sua `product_name`/`input_sku`, chay lai `npm run data:import -- --apply` |
 | Tai mot tep xuat that cua Shopee | De khop xac minh dinh dang gia dinh | bo vao `data/dataset/marketplace/`, doi dinh dang, ghi lai nguon + ngay |
 | Chon nguon >=18 thang **co gia von that** | Con ngai cho chi so gia von | xem BLOCKER-HUMAN cua `02-data.md` 7 |
+
+---
+
+## Phụ lục P7 — phiên tự hành 2026-10-03 (T13 + T14)
+
+### Sổ kiểm chứng P7 (chỉ thêm, không sửa dòng cũ)
+
+| Lệnh | Kết quả | Loại | Thời điểm |
+|---|---|---|---|
+| `npx prisma migrate status` (trước khi thêm) | 29 migration, **không có migration chờ**, schema đã khớp | đọc | 2026-10-03 |
+| `npm run db:migrate:deploy` | `20261003190000_llm_usage_log` áp dụng thành công, Prisma Client sinh lại | **DB thật** | 2026-10-03 |
+| `npm run check:tenant` | 11/11 + 4/4 + **4/4 PASS** | **DB thật** | 2026-10-03 |
+| `npm run tenant:null -- --scan` | MỒ CÔI **0** · TRÙNG **0** · NULL 125 (ngoại lệ đã ký) | **DB thật** | 2026-10-03 |
+| `npm run smoke:demo-flow` (LLM **tắt**) | **12/12** (10 cũ + 2 khẳng định T14), 2 lần liên tiếp 0 rác | **DB thật** | 2026-10-03 |
+| `npm run smoke:llm-usage` (chế độ `replay`, **không cần key**) | **9/9** | **DB thật** | 2026-10-03 |
+| `npm run llm:eval -- --simulated` | harness chạy trọn; P=R=F1=0,6154/0,80/0,6957 ở nhãn **MÔ PHỎNG**; `token/cặp = CHƯA ĐO` | máy tính + đọc DB | 2026-10-03 |
+| `npm run llm:eval` (nhãn tay) | **BLOCKER-HUMAN** — in hướng dẫn, không ra số (đúng S10) | — | 2026-10-03 |
+| `npx jest` | **4092/4097 pass** (73 suite, 5 skip) | mock | 2026-10-03 |
+| `npm run check:modules` | 203 module load được | — | 2026-10-03 |
+
+### Phát hiện đáng chú ý (P7)
+
+1. **Rò dữ liệu trong luồng demo của chính P6 (đo được, đã sửa).** `smoke:demo-flow`
+   FAIL vì `journal_posting_errors` **+1 mỗi lần chạy**: `order.service.create` gọi
+   autopost, thất bại thì ghi dòng để retry chứ không ném lỗi, mà `cleanup()` của P6
+   không xoá bảng này. Sau khi bổ sung: 2 lần liên tiếp đều **0 bảng thay đổi**.
+2. **`replay` vốn không chạy được khi không có key** — `callTask` kiểm tra
+   `isConfigured()` trước khi xét mode. Đường lui biến thành đường chết. Đã sửa
+   (D-018); test chốt hồi quy.
+3. **Khoá bản ghi phụ thuộc `model`** làm mất toàn bộ bản ghi khi đổi `LLM_MODEL`
+   (D-017). Bắt bởi smoke, không bắt bởi đọc code.
+4. **Trần trí của việc thu hẹp ứng viên:** ứng viên cho LLM là **top-K theo điểm
+   fuzzy**, nên khi đáp án không nằm trong top-5 thì LLM **không thể** đúng, dù
+   LLM có giỏi đến đâu. Ở lần chạy mô phỏng có cặp đúng nằm ngoài top-5. Đây là
+   giới hạn kiến trúc đã biết, phải nói thẳng khi trình bày: LLM được phép phá
+   thế, không được vượt thế.
+5. **CSV đọc bằng `split(',')` cắt cụt tên hàng** (D-019) — cùng loại lỗi P4.
+
+### BLOCKER-HUMAN của P7
+
+| # | Việc | Bước | Lệnh | Thời gian |
+|---|---|---|---|---|
+| 1 | **Gán nhãn khớp SKU** (2 người, 120 cặp) | Đọc hướng dẫn, mỗi người điền cột của mình, đối chiếu, người thứ 3 phân xử | `npm run llm:labels` → `npm run llm:eval` | ~2 giờ (2 người) |
+| 2 | **Chạy đo LLM thật** | Đặt key, xem hạn mức thật trong AI Studio, rồi chạy `live` | xem `notes/gemini-free-tier.md` §5 | ~30 phút |
+| 3 | **`check:humangate`** (còn tồn tọt từ P6) | Khởi động backend rồi chạy | `npm run check:humangate` | ~10 phút |

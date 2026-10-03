@@ -141,6 +141,18 @@ async function main() {
       && realAfter.totalVnd === SIGNED.totalVnd,
     realAfter ? `${realAfter.orders} đơn / ${realAfter.items} dòng / ${realAfter.totalVnd.toLocaleString('vi-VN')} VND` : 'không tìm thấy tenant');
 
+  // ── D9 — chế độ không-LLM chạy TRỌN luồng demo (T14) ───────────────────
+  // Đây là khẳng định của NIGHT-PROMPT T14: tắt LLM thì luồng vẫn chạy, lời giải
+  // thích là MẪU (có nhãn), và tin nhắn NCC chỉ được SOẠN — không gửi.
+  const llmMode = require('../src/config/llm-policy').resolveMode();
+  ok('D9 vai trò LLM #2 chạy được khi LLM TẮT (dùng mẫu, không giả vờ là LLM viết)',
+    run1.explain.source === (llmMode === 'off' ? 'template' : run1.explain.source)
+      && Boolean(run1.explain.explanation)
+      && (llmMode !== 'off' || run1.explain.notice !== null),
+    `mode=${llmMode} · source=${run1.explain.source} · vendor=${run1.explain.vendorSource}`);
+  ok('D9 tin nhắn NCC chỉ SOẠN, không gửi',
+    run1.explain.vendorMessageSent === false);
+
   console.log(`\n[smoke] KẾT QUẢ: ${pass} pass / ${fail} fail (DB THẬT)`);
   if (fail) process.exit(1);
 }
