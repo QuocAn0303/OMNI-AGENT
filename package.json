@@ -39,7 +39,9 @@
     "dataset:names": "node --max-old-space-size=8192 scripts/dataset/build-sku-names.js",
     "dataset:marketplace": "node scripts/dataset/gen-marketplace-orders.js",
     "data:import": "node scripts/dataset/import-erp-demo.js",
-    "smoke:import-demo": "node scripts/smoke-import-demo.js"
+    "smoke:import-demo": "node scripts/smoke-import-demo.js",
+    "smoke:demo-flow": "node scripts/smoke-demo-flow.js",
+    "demo:run": "node scripts/demo/run-demo.js"
   },
   "dependencies": {
     "@ai-sdk/openai": "^3.0.67",

@@ -305,4 +305,19 @@ function stopCDC() {
   logger.info('[CDC] Stopped');
 }
 
-module.exports = { startCDC, stopCDC, EVENT_HANDLERS };
+/**
+ * Xoá bộ nhớ debounce của LOW_STOCK.
+ *
+ * CHỈ dùng trong script kiểm chứng (`scripts/demo/demo-flow.js`) khi chạy luồng
+ * demo nhiều lần liên tiếp trong cùng một tiến trình: mỗi lần chạy lại cách nhau
+ * vài giây, còn `CDC_LOW_STOCK_DEBOUNCE_MS` mặc định 60 000 ms ⇒ lần thứ hai bị
+ * gộp im lặng và **không** sinh đề xuất, dù dữ liệu đã về trạng thái ban đầu.
+ *
+ * Đây là khe hởng có chủ đích của bộ debounce chứ không phải lỗi: trong sản phẩm
+ * thật thì gộp 60 giây là đúng (tránh spam đề xuất). Không có hàm này thì
+ * `smoke:demo-flow` phải chờ 60 giây cho mỗi lần chạy — không chấp nhận được.
+ * Không có đường nào trong mã sản phẩm gọi hàm này.
+ */
+const resetLowStockDebounce = () => lowStockTimers.clear();
+
+module.exports = { startCDC, stopCDC, EVENT_HANDLERS, resetLowStockDebounce };

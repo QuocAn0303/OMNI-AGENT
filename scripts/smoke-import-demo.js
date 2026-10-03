@@ -36,6 +36,7 @@ assertLocalDb('smoke-import-demo');
 const prisma = require('../src/config/prisma');
 const { SkuMatcher, MATCH_STATUS } = require('../src/modules/import/sku-matcher');
 const { listScopedTables } = require('./lib/teardown');
+const { DEMO_ORDER_PREFIX } = require('./demo/demo-flow');
 
 const ROOT = path.resolve(__dirname, '..');
 const DATA_DIR = path.join(ROOT, 'data', 'dataset');
@@ -52,6 +53,16 @@ const ok = (label, cond, extra = '') => {
   if (cond) pass += 1;
   else fail += 1;
 };
+
+/**
+ * `K4/K5`: mọi đơn trong DB phải có trong tệp xuất, và dòng hàng phải khớp đúng.
+ *
+ * Vì sao có `DEMO_ORDER_PREFIX`: luồng demo P6 (`scripts/demo/demo-flow.js`) tạo
+ * MỘT đơn thật trong chính tenant demo để chứng minh "đơn → CDC → đề xuất". Đơn đó
+ * cố Ý **không** nằm trong tệp xuất sàn ⇒ nếu K4 không loại nó thì smoke sẽ báo
+ * "đơn bịa" và mỗi lần chạy luồng demo lại FAIL một lần. Ta loại theo MÃ ĐƠN có
+ * tiền tố hằng số, không theo điều kiện mơ hồ.
+ */
 
 const csvLines = (f) => fs.readFileSync(f, 'utf8').split('\n').filter(Boolean);
 const parseCsvLine = (line) => {
@@ -128,17 +139,23 @@ async function main() {
   const rowTruth = new Map();
   for (let i = 0; i < lines.length - 1; i += 1) rowTruth.set(i, truthRows[i]?.split(',') ?? []);
 
-  const dbOrders = await prisma.order.findMany({
+  const allOrders = await prisma.order.findMany({
     where: { tenantId: tid },
     select: {
-      orderCode: true, subtotal: true,
+      orderCode: true, subtotal: true, note: true,
       items: { select: { quantity: true, price: true, product: { select: { sku: true } } } },
     },
   });
+  // Đơn của luồng demo P6 được tạo CỐ Ý ngoài tệp xuất (note có tiền tố
+  // DEMO_ORDER_PREFIX) — loại khỏi K4/K5, KHÔNG phải vì "bỏ qua lỗi": nó được
+  // nhận diện bằng mã đặt biệt do chính `demo-flow.js` ghi vào.
+  const isDemoFlow = (o) => String(o.note || '').startsWith(DEMO_ORDER_PREFIX);
+  const demoFlowOrders = allOrders.filter(isDemoFlow);
+  const dbOrders = allOrders.filter((o) => !isDemoFlow(o));
   const fileOrders = new Set([...lines.slice(1)].map((l) => parseCsvLine(l)[ix['Order ID']]));
   const invented = dbOrders.filter((o) => !fileOrders.has(o.orderCode));
   ok('K4 không có đơn nào ngoài tệp xuất (không bịa đơn)', invented.length === 0,
-    `db=${dbOrders.length} đơn, tệp=${fileOrders.size} đơn, bịa=${invented.length}`);
+    `db=${dbOrders.length} đơn (cộng ${demoFlowOrders.length} đơn luồng demo P6), tệp=${fileOrders.size} đơn, bịa=${invented.length}`);
 
   // Mỗi đơn: so ĐA TẬP (multiset) dòng hàng, vì thứ tự dòng trong DB không bảo đảm
   // theo thứ tự tệp. Khoá so = sku|số lượng|giá.
