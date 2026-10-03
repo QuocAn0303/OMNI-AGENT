@@ -90,6 +90,12 @@ const TENANT_SCOPED_MODELS = new Set([
   // phát hiện lúc rò dữ liệu. `AiEmbedding` không có `tenantId` nên không cần.
   // `tests/tenant-scoped-models.contract.test.js` chặn tái phát.
   "AiDocument",
+  // T13 (2026-10-03): sổ ghi token LLM. CÓ `tenantId` nên bắt buộc phải khai báo ở
+  // đây — đây là lý do model này chưa thể tồn tại mà không có bước scope. Ghi vào
+  // bảng này KHÔNG phải quyết định nghiệp vụ: không đường mã nào đọc nó để tính
+  // ROP/đặt hàng (01-llm-role.md §1). `tenantId = NULL` vẫn ghi được (lần gọi ngoài
+  // tenant context) — cần để phân biệt "lỗi" với "không thuộc tenant nào".
+  "LlmUsageLog",
 ]);
 
 const READ_OPS = new Set([

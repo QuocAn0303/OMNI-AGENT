@@ -15,12 +15,22 @@
  * Hàm/Exports:
  *   - isConfigured(): có provider cloud dùng được không
  *   - describe(): thông tin provider (không lộ key)
- *   - generateText({ system, prompt, jsonMode }): trả về chuỗi trả lời
+ *   - generateText({ system, prompt, jsonMode, task }): trả về chuỗi trả lời
+ *   - getLastUsage(): token của lần gọi gần nhất (đọc `usageMetadata`)
  *   - listModels(): danh sách model của provider (chẩn đoán)
  *   - parseJsonLoose(text): parse JSON bỏ qua code fence
+ *
+ * T13 (2026-10-03) — SỔ GHI TOKEN:
+ *   `callModel` trước đây bỏ qua hoàn toàn `json.usageMetadata` ⇒ không biết tốn
+ *   bao nhiêu token. Nay đọc `promptTokenCount / candidatesTokenCount /
+ *   totalTokenCount`, giữ vào `lastUsage`, và ghi MỘT dòng `LlmUsageLog` cho mỗi
+ *   lần gọi (kể cả lần thất bại). Đây là đường LLM DUY NHẤT của hệ thống: mọi vai
+ *   trò LLM (khớp SKU, giải thích, soạn tin NCC) đều đi qua `generateText` nên
+ *   không có đường nào gọi model mà không ghi token.
  */
 const https = require("https");
 const logger = require("../utils/logger");
+const { getTenantId } = require("./tenantContext");
 
 const DEFAULT_GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta";
 
@@ -133,6 +143,67 @@ const fallbackModels = () => {
 // Model đã biết chạy được trong phiên này → bỏ qua thử các model trước đó.
 let activeModel = null;
 
+// ── T13: sổ ghi token ──────────────────────────────────────────────────────
+/** Token của lần gọi gần nhất. Đọc-sao để caller không sửa được giá trị đã ghi. */
+let lastUsage = null;
+const getLastUsage = () => (lastUsage ? { ...lastUsage } : null);
+const resetLastUsage = () => {
+  lastUsage = null;
+};
+
+/**
+ * Chuẩn hoá `usageMetadata` của Gemini. Trả về số nguyên ≥ 0, thiếu thì 0 —
+ * KHÔNG đoán: thiếu `usageMetadata` nghĩa là provider không báo, ghi 0 và để
+ * `succeeded` nói thật chuyện gì đã xảy ra.
+ */
+const readUsage = (json) => {
+  const u = json?.usageMetadata || {};
+  const n = (v) => (Number.isFinite(Number(v)) && Number(v) >= 0 ? Math.trunc(Number(v)) : 0);
+  return {
+    promptTokens: n(u.promptTokenCount),
+    completionTokens: n(u.candidatesTokenCount),
+    totalTokens: n(u.totalTokenCount) || n(u.promptTokenCount) + n(u.candidatesTokenCount),
+  };
+};
+
+/**
+ * Ghi 1 dòng `LlmUsageLog`.
+ *
+ * VÌ SAO KHÔNG NÉM LỖI: ghi token là SỔ ĐO, không phải luồng nghiệp vụ. Một lần gọi
+ * LLM đã thành công thì không được đổi thành lỗi 500 chỉ vì bảng sổ ghi lỗi. Vì vậy
+ * lỗi ở đây chỉ `logger.error` (không nuốt im lặng) — và chính vì thế mọi kiểm chứng
+ * về `LlmUsageLog` đều là smoke trên DB thật (`smoke:llm-usage`), không phải unit test.
+ *
+ * `tenantId` lấy từ AsyncLocalStorage (`getTenantId`). Ngoài tenant context thì ghi
+ * NULL — đúng như thiết kế bảng: phân biệt "lỗi" với "không thuộc tenant nào".
+ */
+const recordUsage = async ({ task, provider, model, mode, usage, latencyMs, succeeded, promptText, responseText }) => {
+  try {
+    if (process.env.LLM_USAGE_LOG === "0") return null;
+    // Lazy require: `config/prisma` nặng và không cần cho các call site chỉ đọc text.
+    const prisma = require("./prisma");
+    return await prisma.llmUsageLog.create({
+      data: {
+        tenantId: getTenantId(),
+        task: task || "OTHER",
+        provider: provider || "unknown",
+        model: model || "unknown",
+        mode: mode || "live",
+        promptTokens: usage?.promptTokens ?? 0,
+        completionTokens: usage?.completionTokens ?? 0,
+        totalTokens: usage?.totalTokens ?? 0,
+        latencyMs: Math.max(0, Math.trunc(Number(latencyMs) || 0)),
+        succeeded: succeeded === true,
+        ...(promptText ? { promptText: String(promptText) } : {}),
+        ...(responseText ? { responseText: String(responseText) } : {}),
+      },
+    });
+  } catch (e) {
+    logger.error(`[LLM] ghi LlmUsageLog THẤT BẠI (task=${task}, model=${model}): ${e.message}`);
+    return null;
+  }
+};
+
 const callModel = async (model, { system, prompt, jsonMode, temperature, maxOutputTokens }) => {
   const c = config();
   const url = `${c.baseUrl}/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(c.apiKey)}`;
@@ -152,7 +223,9 @@ const callModel = async (model, { system, prompt, jsonMode, temperature, maxOutp
     err.needsMoreTokens = reason === "MAX_TOKENS";
     throw err;
   }
-  return text;
+  // `usageMetadata` nằm cạnh `candidates`, không nằm trong candidate — đọc sai chỗ là
+  // mất toàn bộ số liệu token (đúng lỗi mà T13 sửa).
+  return { text, usage: readUsage(json) };
 };
 
 const generateText = async (opts = {}) => {
@@ -161,6 +234,8 @@ const generateText = async (opts = {}) => {
     throw new Error(`Chua cau hinh LLM cloud (LLM_PROVIDER=${c.provider}). Can GEMINI_API_KEY trong .env`);
   }
   const { system, prompt, jsonMode = false, temperature = 0.2, maxOutputTokens = 2048 } = opts;
+  const task = opts.task || "OTHER";
+  const startedAt = Date.now();
 
   const primary = activeModel || c.model;
   const chain = [primary, ...fallbackModels().filter((m) => m !== primary)];
@@ -170,16 +245,23 @@ const generateText = async (opts = {}) => {
     let budget = maxOutputTokens;
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
-        const text = await callModel(model, { system, prompt, jsonMode, temperature, maxOutputTokens: budget });
+        const { text, usage } = await callModel(model, { system, prompt, jsonMode, temperature, maxOutputTokens: budget });
         if (activeModel && activeModel !== model) {
           logger.warn(`[LLM] chuyen sang model ${model} (thay cho ${c.model})`);
         }
         activeModel = model;
         logger.debug(`[LLM] ${model} ok, ${text.length} ky tu`);
+        lastUsage = { task, provider: c.provider, model, ...usage, latencyMs: Date.now() - startedAt };
+        await recordUsage({ task, provider: c.provider, model, mode: opts.mode || "live", usage, latencyMs: lastUsage.latencyMs, succeeded: true });
         return text;
       } catch (e) {
         lastErr = e;
+        // Đơn vị ghi là MỘT lần gọi logic (một `generateText`), không phải mỗi HTTP
+        // attempt: retry cùng model không tạo dòng riêng, nếu không thì lần 503 rồi
+        // thành công sẽ ra 2 dòng cho 1 quyết định. Lần gọi cuối cùng thất bại thì vẫn
+        // ghi 1 dòng (token 0, latency thật) — không ghi thì "tiền đi không" không đo được.
         if (!e.retryable) {
+          await recordUsage({ task, provider: c.provider, model, mode: opts.mode || "live", usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 }, latencyMs: Date.now() - startedAt, succeeded: false, responseText: String(e.message).slice(0, 500) });
           throw new Error(`${e.message}${e.hint || ""}`);
         }
         if (e.needsMoreTokens) {
@@ -195,6 +277,7 @@ const generateText = async (opts = {}) => {
       }
     }
   }
+  await recordUsage({ task, provider: c.provider, model: primary, mode: opts.mode || "live", usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 }, latencyMs: Date.now() - startedAt, succeeded: false, responseText: String(lastErr?.message || "LLM that bai").slice(0, 500) });
   throw new Error(`${lastErr?.message || "LLM that bai"} (da thu: ${chain.join(", ")})`);
 };
 
@@ -217,5 +300,5 @@ const listModels = async () => {
   return (json.models || []).map((m) => m.name.replace(/^models\//, ""));
 };
 
-module.exports = { isConfigured, describe, generateText, listModels, parseJsonLoose, config };
+module.exports = { isConfigured, describe, generateText, listModels, parseJsonLoose, config, getLastUsage, resetLastUsage, readUsage };
 

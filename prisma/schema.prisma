@@ -3457,6 +3457,47 @@ model AgentFeedback {
   @@map("agent_feedback")
 }
 
+// T13 (docs/aisc26/NIGHT-PROMPT.md §6 T13) — Sổ ghi token LLM.
+//
+// VÌ SAO: `config/llm.js` đọc `candidates[0].content.parts` và BỎ QUA
+// `usageMetadata` ⇒ không biết một luần gọi tốn bao nhiêu token, không biết chi
+// phí LLM/tenant, và không đo được "chi phí LLM" như `03-evaluation-protocol.md`
+// §5.4 yêu cầu. Đây là bảng GHI TOKEN, không phải bảng quyết định: không model
+// nào đọc nó để ra quyết định nhập hàng (xem `01-llm-role.md` §1 — LLM không
+// được chạm vào số).
+//
+// THỎA THUẬN (giữ đúng, không tự đổi):
+//   - MỗI lần gọi LLM = 1 dòng, kể cả lần thất bại (succeeded=false) — cần đủ để
+//     biết tiền đi không và tiền đi vào việc gì.
+//   - `task` là tên tác vụ hằng số (SKU_MATCH / PROPOSAL_EXPLAIN / VENDOR_MESSAGE),
+//     KHÔNG tự do: để gom được chi phí theo vai trò LLM.
+//   - `promptText`/`responseText` chỉ ghi ở chế độ `record/replay` để tái lập
+//     kết quả; KHÔNG dùng để ghi dữ liệu khách hàng thật — đường dẫn `live` chỉ
+//     được chạy trên dữ liệu công khai/mô phỏng (hiến pháp §3).
+//   - Không có quan hệ tới User: chi phí gắn với TENANT là thứ cần đo, không với
+//     người gọi.
+model LlmUsageLog {
+  id               String   @id @default(uuid())
+  tenantId         String? // NULL = lần gọi ngoài tenant context (cron/script); vẫn ghi
+  task             String // tác vụ: SKU_MATCH | PROPOSAL_EXPLAIN | VENDOR_MESSAGE
+  provider         String // gemini | openai-compatible | local
+  model            String
+  mode             String // live | record | replay | fallback
+  promptTokens     Int      @default(0)
+  completionTokens Int      @default(0)
+  totalTokens      Int      @default(0)
+  latencyMs        Int      @default(0)
+  succeeded        Boolean  @default(false)
+  promptText       String?  @db.Text
+  responseText     String?  @db.Text
+  createdAt        DateTime @default(now())
+
+  @@index([tenantId, createdAt(sort: Desc)])
+  @@index([task, createdAt(sort: Desc)])
+  @@index([createdAt])
+  @@map("llm_usage_logs")
+}
+
 
 // ==================== F&B: MENU & MODIFIER (Phase 1) ====================
 
