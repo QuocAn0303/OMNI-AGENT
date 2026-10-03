@@ -197,9 +197,18 @@ phạm vi P1.
 
 ### Tiep theo — GÓI P2
 
-1. **T5** — sửa `03-evaluation-protocol.md` theo **S1–S12 trong MỘT commit** kèm
-   mục "Lịch sử sửa đổi trước lần chạy đầu". Commit phải tồn tại **trước** mọi
-   lần chạy backtest.
+> **LƯU Ý (quan trọng, quan sát lúc 09:40):** trong lúc P1 chạy, một phiên khác
+> trong **cùng worktree** đã commit `1f1a402` — "sửa giao thức backtest theo S1–S12
+> TRƯỚC lần chạy đầu". Nội dung `03-evaluation-protocol.md` hiện có §13 "Lịch sử
+> sửa đổi trước lần chạy đầu" và §14 "Trạng thái". Có worktree riêng cho
+> `round2/p2-data` (`D:/aduu-p2`) và `round2/p3-research` (`D:/aduu-p3`) — nhiều
+> phiên đang chạy song song. **Phiên sau phải `git log` kiểm tra lại trước khi làm
+> lại T5.**
+
+1. **T5** — commit `1f1a402` **đã có** trong lịch sử nhánh. P2 chỉ cần **xác nhận
+   lại** nó đủ S1–S12 và có "Lịch sử sửa đổi trước lần chạy đầu"; không viết lại.
 2. **T6** — chọn dataset (tối đa 8 lần fetch; ghi `notes/dataset-candidates.md`),
    script tải + sha256, viết `02-data.md`. Không tải được thì dùng bộ sinh tổng
    hợp có seed, ghi nhãn **TỔNG HỢP** + `BLOCKER-HUMAN`.
+3. Bundle D-009 **đã cũ**: dùng `aduu-round2-final-20261003-093927.bundle`
+   (đầu `f887d44`).

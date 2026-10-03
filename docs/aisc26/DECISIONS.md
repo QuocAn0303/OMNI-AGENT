@@ -113,9 +113,13 @@ chính lệnh D7, chọn phương án đảo ngược được thì dù. Bundle 
 lịch sử và 2 nhánh: đội cần đẩy lên remote chỉ cần `git bundle verify` rồi
 `git fetch <bundle> <nhánh>`.
 
-**Bundle:** `C:\Users\lengu\AppData\Local\Temp\opencode\erp-bundles\aduu-round2-20261003-093557.bundle` (11,04 MB), kiểm chứng bằng `git bundle list-heads`:
-- `1cd1956 refs/heads/round2/p0-hardening`
+**Bundle (bản CUỐI, dùng bản này):**
+`C:\Users\lengu\AppData\Local\Temp\opencode\erp-bundles\aduu-round2-final-20261003-093927.bundle`
+(11,05 MB), kiểm chứng bằng `git bundle list-heads`:
+- `f887d44 refs/heads/round2/p0-hardening`
 - `959ab30 refs/heads/hotfix/tenant-nested-write`
+
+Bản đầu `aduu-round2-20261003-093557.bundle` **đã cũ** (chỉ tới `1cd1956`) — bỏ.
 
 **Cách đảo ngược / làm tiếp:** `git push <remote> round2/p0-hardening` khi đội xác
 nhận deploy lấy từ `main` và xác nhận đúng remote nào.
