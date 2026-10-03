@@ -606,6 +606,77 @@ router.get('/human-gates', authorize('ADMIN', 'MANAGER'), async (req, res, next)
   }
 });
 
+/**
+ * @swagger
+ * /api/agent/human-gates/by-status:
+ *   get:
+ *     summary: Liệt kê human-gate theo trạng thái (chỉ đọc)
+ *     description: >
+ *       CHỈ ĐỌC. `GET /human-gates` cố tình chỉ trả PENDING, nên trạng thái "lơ lửng"
+ *       (APPROVED nhưng `resultRef` IS NULL ⇒ đã duyệt mà PO chưa tạo được) không đọc
+ *       được qua API. Route này là đường đọc cho trạng thái đó. Không có tác dụng phụ:
+ *       không ghi, không đổi trạng thái. Cách ly tenant do Prisma extension
+ *       (`AgentHumanGate` nằm trong `TENANT_SCOPED_MODELS`).
+ *     tags: [Agent]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: query
+ *         name: status
+ *         required: false
+ *         schema: { type: string, enum: [PENDING, APPROVED, REJECTED, EXPIRED, CANCELLED] }
+ *       - in: query
+ *         name: pendingResult
+ *         required: false
+ *         description: "1 = chỉ gate PO_PROPOSAL đã duyệt mà chưa có resultRef (trạng thái lơ lửng)"
+ *         schema: { type: string, enum: ["0", "1"] }
+ *       - in: query
+ *         name: limit
+ *         required: false
+ *         schema: { type: integer, default: 50, maximum: 200 }
+ *     responses:
+ *       200: { description: Danh sách gate }
+ *       400: { description: status/pendingResult không hợp lệ }
+ */
+router.get('/human-gates/by-status', authorize('ADMIN', 'MANAGER'), async (req, res, next) => {
+  try {
+    const ALLOWED = ['PENDING', 'APPROVED', 'REJECTED', 'EXPIRED', 'CANCELLED'];
+    const { status, pendingResult, limit } = req.query;
+
+    // Whitelist thay vì nội suy vào `where` — không nhét chuỗi tùy ý của người gọi
+    // vào truy vấn, và status sai thì báo 400 chứ không âm thầm trả rỗng.
+    if (status && !ALLOWED.includes(String(status))) {
+      throw { status: 400, message: `status phải là: ${ALLOWED.join(', ')}` };
+    }
+    const onlyPendingResult = String(pendingResult || '') === '1';
+    if (pendingResult !== undefined && !['0', '1'].includes(String(pendingResult))) {
+      throw { status: 400, message: 'pendingResult phải là 0 hoặc 1' };
+    }
+    const take = Math.min(Math.max(parseInt(limit, 10) || 50, 1), 200);
+
+    // Ba điều kiện phải khớp CÙNG LÚC (00b §4.2): resultRef null một mình không đủ,
+    // vì mọi gate DATA_REQUEST cũng có resultRef null.
+    const where = {
+      ...(status ? { status } : {}),
+      ...(onlyPendingResult ? { actionType: PO_PROPOSAL, resultRef: null } : {}),
+    };
+
+    const gates = await prisma.agentHumanGate.findMany({
+      where,
+      orderBy: { createdAt: 'desc' },
+      include: { session: { select: { userMessage: true, userId: true } } },
+      take,
+    });
+
+    res.json({
+      success: true,
+      data: gates,
+      meta: { count: gates.length, status: status || null, pendingResult: onlyPendingResult },
+    });
+  } catch (e) {
+    next(e);
+  }
+});
+
 router.post('/human-gates/:id/decide', authorize('ADMIN', 'MANAGER'), async (req, res, next) => {
   try {
     const { id } = req.params;

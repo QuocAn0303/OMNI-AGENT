@@ -149,6 +149,102 @@ beforeEach(() => {
   prisma.agentSession.update.mockResolvedValue({});
 });
 
+describe("GET /api/agent/human-gates/by-status (chỉ đọc, theo trạng thái)", () => {
+  const byStatus = async (qs = "") => {
+    const res = await fetch(`${baseUrl}/api/agent/human-gates/by-status${qs}`);
+    return { status: res.status, body: await res.json() };
+  };
+
+  it("trạng thái lơ lửng: APPROVED + PO_PROPOSAL + resultRef null — đủ 3 điều kiện", async () => {
+    prisma.agentHumanGate.findMany.mockResolvedValue([pendingGate({ status: "APPROVED", resultRef: null })]);
+    const { status, body } = await byStatus("?status=APPROVED&pendingResult=1");
+
+    expect(status).toBe(200);
+    expect(prisma.agentHumanGate.findMany.mock.calls[0][0].where).toEqual({
+      status: "APPROVED",
+      actionType: "PURCHASE_ORDER_PROPOSAL", // = PO_PROPOSAL trong agent.humangate.js
+      resultRef: null,
+    });
+    expect(body.meta).toMatchObject({ count: 1, status: "APPROVED", pendingResult: true });
+  });
+
+  it("chỉ lấy đúng một trạng thái khi có ?status (không trả lẫn PENDING)", async () => {
+    prisma.agentHumanGate.findMany.mockResolvedValue([]);
+    await byStatus("?status=REJECTED");
+    expect(prisma.agentHumanGate.findMany.mock.calls[0][0].where).toEqual({ status: "REJECTED" });
+  });
+
+  it("không truyền tham số → không lọc trạng thái (where rỗng, vẫn giới hạn take)", async () => {
+    prisma.agentHumanGate.findMany.mockResolvedValue([]);
+    await byStatus();
+    expect(prisma.agentHumanGate.findMany.mock.calls[0][0].where).toEqual({});
+  });
+
+  it("status không hợp lệ → 400 và KHÔNG chạm DB (không nội suy vào truy vấn)", async () => {
+    const { status, body } = await byStatus("?status=APPROVED%20OR%201=1");
+    expect(status).toBe(400);
+    expect(body.message).toMatch(/PENDING/);
+    expect(prisma.agentHumanGate.findMany).not.toHaveBeenCalled();
+  });
+
+  it("pendingResult sai giá trị → 400", async () => {
+    const { status } = await byStatus("?pendingResult=yes");
+    expect(status).toBe(400);
+    expect(prisma.agentHumanGate.findMany).not.toHaveBeenCalled();
+  });
+
+  it("take mặc định 50, chặn trên/dưới", async () => {
+    prisma.agentHumanGate.findMany.mockResolvedValue([]);
+    await byStatus();
+    expect(prisma.agentHumanGate.findMany.mock.calls[0][0].take).toBe(50);
+    jest.clearAllMocks();
+    prisma.agentHumanGate.findMany.mockResolvedValue([]);
+    await byStatus("?limit=99999");
+    expect(prisma.agentHumanGate.findMany.mock.calls[0][0].take).toBe(200);
+    jest.clearAllMocks();
+    prisma.agentHumanGate.findMany.mockResolvedValue([]);
+    await byStatus("?limit=abc");
+    expect(prisma.agentHumanGate.findMany.mock.calls[0][0].take).toBe(50);
+  });
+
+  it("CHỈ ĐỌC: không gọi bất kỳ hàm ghi nào của AgentHumanGate", async () => {
+    prisma.agentHumanGate.findMany.mockResolvedValue([pendingGate()]);
+    await byStatus("?status=APPROVED");
+
+    expect(prisma.agentHumanGate.update).not.toHaveBeenCalled();
+    expect(prisma.agentHumanGate.updateMany).not.toHaveBeenCalled();
+    expect(prisma.agentHumanGate.create).not.toHaveBeenCalled();
+    expect(prisma.agentSession.update).not.toHaveBeenCalled();
+  });
+
+  it("500 khi DB lỗi — không trả danh sách rỗng giả thành công", async () => {
+    prisma.agentHumanGate.findMany.mockRejectedValue(new Error("db down"));
+    const { status, body } = await byStatus("?status=APPROVED");
+    expect(status).toBe(500);
+    expect(body.success).toBe(false);
+  });
+
+  it("cách ly tenant: route KHÔNG tự lọc tenantId — do Prisma extension lo (model phải nằm trong TENANT_SCOPED_MODELS)", async () => {
+    prisma.agentHumanGate.findMany.mockResolvedValue([]);
+    await byStatus("?status=APPROVED");
+
+    // Nếu route tự thêm tenantId thì bypass được extension khi extension fail-open.
+    expect(prisma.agentHumanGate.findMany.mock.calls[0][0].where).not.toHaveProperty("tenantId");
+
+    const fs = require("fs");
+    const src = fs.readFileSync(require.resolve("../src/config/prisma.js"), "utf8");
+    expect(src).toMatch(/"AgentHumanGate"/);
+  });
+
+  it("route phải được gắn authorize('ADMIN','MANAGER') (chống hồi quy phân quyền)", () => {
+    const fs = require("fs");
+    const src = fs.readFileSync(
+      require.resolve("../src/modules/ai/agent.routes.js"), "utf8");
+    expect(src).toMatch(
+      /router\.get\('\/human-gates\/by-status',\s*authorize\('ADMIN',\s*'MANAGER'\)/);
+  });
+});
+
 describe("POST /api/agent/human-gates/:id/decide", () => {
   it("APPROVED ghi đúng tên field của schema + đóng AgentSession", async () => {
     prisma.agentHumanGate.findFirst.mockResolvedValue(pendingGate());
