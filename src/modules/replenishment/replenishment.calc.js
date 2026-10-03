@@ -61,6 +61,41 @@ const DRIFT_BLOCK = "DRIFT_BLOCK";
 const NO_LONGER_NEEDED = "NO_LONGER_NEEDED";
 
 /**
+ * Trạng thái khiếm khuyết dữ liệu: SKU CHƯA CÓ giá vốn dùng được.
+ *
+ * VÌ SAO phải là một trạng thái riêng, không phải `unitCost = 0`:
+ *   `costPrice` trong DB là `Decimal NOT NULL`, nhưng **0 là giá trị hợp lệ về mặt
+ *   kiểu dữ liệu** — tức đúng là trường hợp "chủ shop chưa nhập giá vốn". Gộp nó
+ *   vào phép tính như một giá thật thì PO được tạo với tổng tiền bằng 0 và người
+ *   duyệt thấy một con số **sai** chứ không phải "thiếu". Đó là kiểu lỗi tệ nhất:
+ *   sai mà nhìn vẫn hợp lý.
+ *
+ * Phân biệt "thiếu" với "bằng 0" là bắt buộc ở MỌI chuyển đổi số trên dữ liệu
+ * có thể null/rỗng — xem `classifyUnitCost` và `MISSING_COST` ở executor.
+ */
+const MISSING_COST = "MISSING_COST";
+
+/**
+ * Đọc giá vốn mà phân biệt "thiếu" với "bằng 0".
+ *
+ * `missing = true` khi: `null`, `undefined`, chuỗi rỗng, không ép được thành số,
+ * HOẶC số ≤ 0. Lý do gộp ≤ 0 vào "thiếu": giá vốn 0 hoặc âm không phải dữ liệu
+ * hợp lệ của bán lẻ (giá vốn âm = trả lại hàng, không phải giá nhập), và tổng
+ * tiền 0 là con số sai. Cả hai đều phải chặn trước khi tạo PO.
+ *
+ * @returns {{value: number, missing: boolean}} `value` luôn là số hữu hạn ≥ 0
+ *   để mọi phép tính phía sau không nhận NaN; `missing` là tín hiệu để CHẶN.
+ */
+const classifyUnitCost = (v) => {
+  const isBlank = v === null || v === undefined || v === "";
+  if (isBlank) return { value: 0, missing: true };
+  const n = Number(v);
+  if (!Number.isFinite(n)) return { value: 0, missing: true };
+  if (n <= 0) return { value: n, missing: true };
+  return { value: n, missing: false };
+};
+
+/**
  * Ép về số hữu hạn. Mọi giá trị không phải số (NaN, undefined, chuỗi vô nghĩa,
  * object, array rỗng...) đều thành `fallback`.
  *
@@ -481,28 +516,60 @@ const evaluateProposalFreshness = ({ proposed = {}, current = {}, acknowledgeDri
 
   const pQty = nonNeg(p.orderQty);
   const cQty = nonNeg(c.orderQty);
-  const pCost = nonNeg(p.unitCost);
-  const cCost = nonNeg(c.unitCost);
+  // Giá vốn: dùng `classifyUnitCost` để "thiếu" KHÔNG bị coi như "bằng 0".
+  //
+  // Nếu một trong hai vế bị thiếu thì KHÔNG so lệch giá được — so sánh 0 với 0
+  // cho `relCost = 0` (không cảnh báo) hoặc 0 với giá mới (chặn vô lý). Đúng hơn
+  // là nói thẳng `missingCost` để executor chặn 409 trước khi tạo PO.
+  const pCost = classifyUnitCost(p.unitCost);
+  const cCost = classifyUnitCost(c.unitCost);
+  const costMissing = pCost.missing || cCost.missing;
+  const pCostValue = pCost.value;
+  const cCostValue = cCost.value;
 
   // Lệch tương đối so với giá trị CŨ (proposed). Tránh chia cho 0.
   const relQty = pQty > 0 ? Math.abs(cQty - pQty) / pQty : cQty > 0 ? 1 : 0;
-  const relCost = pCost > 0 ? Math.abs(cCost - pCost) / pCost : cCost > 0 ? 1 : 0;
+  // Khi một vế thiếu, KHÔNG kết luận "lệch giá" — nhưng `anyDrift` vẫn phải đúng
+  // để UI không báo "không lệch" trong khi thực ra là không đo được.
+  const relCost =
+    costMissing ? 0 : pCostValue > 0 ? Math.abs(cCostValue - pCostValue) / pCostValue : cCostValue > 0 ? 1 : 0;
 
   const diff = {
     orderQty: { proposed: pQty, current: cQty, relDrift: round(relQty, 4) },
-    unitCost: { proposed: pCost, current: cCost, relDrift: round(relCost, 4) },
+    unitCost: {
+      proposed: pCost.missing ? null : pCostValue,
+      current: cCost.missing ? null : cCostValue,
+      relDrift: round(relCost, 4),
+      missingCost: costMissing,
+    },
     atp: { proposed: pAtp, current: cAtp },
     rop: { proposed: pRop, current: cRop },
   };
 
   const qtyBlocked = relQty > QTY_DRIFT_TOL;
-  const costBlocked = relCost > COST_DRIFT_TOL;
+  const costBlocked = !costMissing && relCost > COST_DRIFT_TOL;
   const anyDrift = relQty > 0 || relCost > 0;
+
+  // THIẾU GIÁ VỐN: trả trạng thái riêng, KHÔNG gộp vào DRIFT_*.
+  // `canApprove: false` ở đây chỉ mang tính thông tin cho UI — quyết định chặn
+  // thật (409 MISSING_COST) thuộc executor, nơi biết cả trạng thái gate.
+  if (costMissing) {
+    return {
+      status: MISSING_COST,
+      canApprove: false,
+      canAcknowledge: false,
+      acknowledged: false,
+      message:
+        "SKU chua co gia von dung duoc (thieu hoac <= 0) o luc nay hoac luc de xuat. " +
+        "Khong tao PO: tong tien se sai. Them gia von cho SKU truoc khi duyet.",
+      diff,
+    };
+  }
 
   if ((qtyBlocked || costBlocked) && !acknowledgeDrift) {
     const parts = [];
     if (qtyBlocked) parts.push(`so luong ${pQty} -> ${cQty} (lech ${Math.round(relQty * 100)}%)`);
-    if (costBlocked) parts.push(`don gia ${pCost} -> ${cCost} (lech ${Math.round(relCost * 100)}%)`);
+    if (costBlocked) parts.push(`don gia ${pCostValue} -> ${cCostValue} (lech ${Math.round(relCost * 100)}%)`);
     return {
       status: DRIFT_BLOCK,
       canApprove: false,
@@ -521,7 +588,7 @@ const evaluateProposalFreshness = ({ proposed = {}, current = {}, acknowledgeDri
   if (qtyBlocked || costBlocked) {
     const parts = [];
     if (qtyBlocked) parts.push(`so luong ${pQty} -> ${cQty}`);
-    if (costBlocked) parts.push(`don gia ${pCost} -> ${cCost}`);
+    if (costBlocked) parts.push(`don gia ${pCostValue} -> ${cCostValue}`);
     return {
       status: DRIFT_BLOCK,
       canApprove: true,
@@ -541,7 +608,7 @@ const evaluateProposalFreshness = ({ proposed = {}, current = {}, acknowledgeDri
       canAcknowledge: false,
       acknowledged: false,
       message:
-        `Du lieu da doi nhe: so luong ${pQty} -> ${cQty}, don gia ${pCost} -> ${cCost}. ` +
+        `Du lieu da doi nhe: so luong ${pQty} -> ${cQty}, don gia ${pCostValue} -> ${cCostValue}. ` +
         `Duoi nguong chan (${Math.round(QTY_DRIFT_TOL * 100)}% / ${Math.round(COST_DRIFT_TOL * 100)}%).`,
       diff,
     };
@@ -623,9 +690,14 @@ const planReplenishment = ({
   });
 
   const totalEstimate = qty.orderQty * nonNeg(unitCost);
+  // CỜ KHIẾM KHUYẾT: `missingCost` là thứ phân biệt "chưa có giá vốn" với
+  // "giá vốn = 0". Mọi nơi nhận `plan` đều phải kiểm tra cờ này trước khi dùng
+  // `totalEstimate` để tạo PO.
+  const cost = classifyUnitCost(unitCost);
 
   return {
     ...status,
+    missingCost: cost.missing,
     demand,
     lead,
     atp: { ...atp, onOrder: onOrderQty, position },
@@ -645,7 +717,8 @@ const planReplenishment = ({
       leadTimeEstimated: lead.estimated,
       daysOfCoverLeft: status.daysOfCover,
       orderQty: qty.orderQty,
-      unitCost: nonNeg(unitCost),
+      unitCost: cost.value,
+      missingCost: cost.missing,
       totalEstimate,
       demandMethod: demand.method,
       demandConfidence: demand.confidence,
@@ -669,7 +742,9 @@ module.exports = {
   DRIFT_WARN,
   DRIFT_BLOCK,
   NO_LONGER_NEEDED,
+  MISSING_COST,
   // hàm
+  classifyUnitCost,
   calcDemand,
   crostonDemandPerDay,
   calcLeadTime,

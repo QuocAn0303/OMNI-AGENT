@@ -23,6 +23,49 @@ const LOG = "[automation]";
  */
 const isAutoReorderProposalEnabled = () => process.env.AUTO_REORDER_PROPOSAL === '1';
 
+/**
+ * Trễ giữa lúc đơn vừa hoàn tất và lúc đánh giá SKU.
+ *
+ * Cần trễ vì `onOrderCompleted` bắn ra khi đơn vừa `COMPLETED`; nếu đánh giá tồn
+ * tại thời điểm đó thì số tồn và lịch sử bán có thể chưa phản ánh giao dịch vừa
+ * rồi (CDC/ghi tồn chạy ở request khác). Tên hằng số thay cho số `1000` rời.
+ */
+const AUTO_REORDER_DELAY_MS = 1000;
+
+/**
+ * Khoá chống đánh giá lặp theo cặp (tenant, SKU).
+ *
+ * VÌ SAO CẦN: một SKU bán thường xuyên sẽ kích hoạt `onOrderCompleted` liên tục.
+ * Không có khoá này, mỗi đơn hoàn tất lại chạy một vòng loader 28 ngày lịch sử
+ * cho SKU đó — tốn truy vấn mà **không đổi kết luận** (ngưỡng quyết định là
+ * ATP + onOrder so với ROP, không phải số đơn).
+ *
+ * HẠN CHẾ CẦN NÓI RÕ: khoá nằm trong bộ nhớ của tiến trình. Nhiều instance
+ * (hoặc restart) thì mỗi instance một bộ; đề xuất trùng vẫn bị chặn ở tầng DB
+ * bằng `proposalKey` + `pg_advisory_xact_lock` (`replenishment.suggest`), nên
+ * khoá này chỉ tiết kiệm việc đọc, KHÔNG phải chốt chặn duy nhất.
+ */
+const AUTO_REORDER_DEDUPE_WINDOW_MS = 60_000;
+const autoReorderSeen = new Map();
+
+/** Thử "chốt" một cặp (tenant, SKU) trong cửa sổ debounce. */
+const claimAutoReorderSlot = (tenantId, productId, now = Date.now()) => {
+  const key = `${tenantId}::${productId}`;
+  const last = autoReorderSeen.get(key) || 0;
+  if (now - last < AUTO_REORDER_DEDUPE_WINDOW_MS) return false;
+  autoReorderSeen.set(key, now);
+  // Giới hạn bản ghi trong bộ nhớ: xoá mốc cũ khi bản ghi quá lớn.
+  if (autoReorderSeen.size > 5000) {
+    for (const [k, t] of autoReorderSeen) {
+      if (now - t >= AUTO_REORDER_DEDUPE_WINDOW_MS) autoReorderSeen.delete(k);
+    }
+  }
+  return true;
+};
+
+/** Xoá khoá debounce. Chỉ dùng trong test — cùng dạng `hierarchy._resetCacheForTest()`. */
+const _resetAutoReorderDedupeForTest = () => autoReorderSeen.clear();
+
 const checkAutoReorder = async (productIds, warehouseId) => {
   if (!isAutoReorderProposalEnabled()) {
     logger.debug(
@@ -54,6 +97,16 @@ const checkAutoReorder = async (productIds, warehouseId) => {
 
       if (!inv.tenantId) {
         logger.error(`${LOG} auto-reorder: inventory ${inv.id} không có tenantId — bỏ qua ${inv.product.sku}`);
+        continue;
+      }
+
+      // Chống đánh giá lặp theo (tenant, SKU) — chỉ tiết kiệm việc đọc, chốt chặn
+      // trùng đề xuất vẫn nằm ở `proposalKey` + `pg_advisory_xact_lock`.
+      if (!claimAutoReorderSlot(inv.tenantId, inv.productId)) {
+        logger.debug(
+          `${LOG} auto-reorder: bo qua ${inv.product.sku} — da danh gia trong ` +
+          `${AUTO_REORDER_DEDUPE_WINDOW_MS / 1000}s qua (debounce theo tenant+SKU).`,
+        );
         continue;
       }
 
@@ -307,7 +360,7 @@ const onOrderCompleted = async (order, userId) => {
         checkAutoReorder(productIds, warehouseId).catch((e) =>
           logger.error(`${LOG} onOrderCompleted auto-reorder error:`, e.message)
         );
-      }, 1000);
+      }, AUTO_REORDER_DELAY_MS);
     }
 
     // Send Zalo notification to customer
@@ -571,6 +624,9 @@ const weeklyPnLEmail = async () => {
 
 module.exports = {
   checkAutoReorder,
+  AUTO_REORDER_DELAY_MS,
+  AUTO_REORDER_DEDUPE_WINDOW_MS,
+  _resetAutoReorderDedupeForTest,
   autoPayroll,
   debtAutoCollection,
   onOrderCompleted,

@@ -25,12 +25,14 @@ const {
   evaluateProposalFreshness,
   calcOrderQty,
   planReplenishment,
+  classifyUnitCost,
   QTY_DRIFT_TOL,
   COST_DRIFT_TOL,
   DRIFT_NONE,
   DRIFT_WARN,
   DRIFT_BLOCK,
   NO_LONGER_NEEDED,
+  MISSING_COST,
 } = calc;
 
 /** Mọi số trong object phải hữu hạn (không NaN, không Infinity). */
@@ -289,12 +291,62 @@ describe("BIÊN · evaluateProposalFreshness (mục 2.1)", () => {
     expect(r.message).toMatch(/Du lieu da doi nhe/);
   });
 
-  it("đơn giá proposed = 0, giờ khác 0 → coi là lệch 100%, chặn", () => {
+  it("đơn giá proposed = 0, giờ khác 0 → MISSING_COST (D6), KHÔNG phải 'lệch 100%'", () => {
+    // HỢP ĐỒNG ĐỔI (D6): `unitCost = 0` là **thiếu giá vốn**, không phải "giá bằng
+    // 0 rồi lệch 100%". Bản cũ trả DRIFT_BLOCK với thông điệp "lệch 100%", tức
+    // mời người duyệt bấm `acknowledgeDrift` — rồi PO đi tiếp với giá không đúng.
+    // Thiếu dữ liệu thì không có gì để so sánh, và không được "xác nhận" để đi qua.
     const r = evaluateProposalFreshness({
       proposed: { atp: 12, rop: 30, orderQty: 42, unitCost: 0 },
       current: { atp: 12, rop: 30, orderQty: 42, unitCost: 45000 },
     });
+    expect(r.status).toBe(MISSING_COST);
+    expect(r.canApprove).toBe(false);
+    expect(r.canAcknowledge).toBe(false);
+    expect(r.diff.unitCost.missingCost).toBe(true);
+  });
+
+  it(`lệch đơn giá VỪA QUÁ ${COST_DRIFT_TOL} → DRIFT_BLOCK (biên, đo được)`, () => {
+    const proposedCost = 100000;
+    // +11% > COST_DRIFT_TOL(10%) nhưng chỉ hơn 1 điểm phần trăm — chứng minh
+    // ngưỡng là so sánh TƯƠNG ĐỐI, không phải "khác nhau là chặn".
+    const currentCost = proposedCost * (1 + COST_DRIFT_TOL + 0.01);
+    const r = evaluateProposalFreshness({
+      proposed: { atp: 12, rop: 30, orderQty: 42, unitCost: proposedCost },
+      current: { atp: 12, rop: 30, orderQty: 42, unitCost: currentCost },
+    });
     expect(r.status).toBe(DRIFT_BLOCK);
+    expect(r.canAcknowledge).toBe(true);
+    expect(r.diff.unitCost.relDrift).toBeGreaterThan(COST_DRIFT_TOL);
+  });
+
+  it(`lệch đơn giá VỪA DƯỚI ${COST_DRIFT_TOL} → DRIFT_WARN, duyệt được`, () => {
+    const proposedCost = 100000;
+    const currentCost = proposedCost * (1 + COST_DRIFT_TOL - 0.01);
+    const r = evaluateProposalFreshness({
+      proposed: { atp: 12, rop: 30, orderQty: 42, unitCost: proposedCost },
+      current: { atp: 12, rop: 30, orderQty: 42, unitCost: currentCost },
+    });
+    expect(r.status).toBe(DRIFT_WARN);
+    expect(r.canApprove).toBe(true);
+  });
+
+  it("thiếu GIÁ VỐN ở một trong hai vế → MISSING_COST kể cả khi số lượng không đổi", () => {
+    for (const bad of [null, undefined, "", NaN, 0, -1]) {
+      const r = evaluateProposalFreshness({
+        proposed: { atp: 12, rop: 30, orderQty: 42, unitCost: bad },
+        current: { atp: 12, rop: 30, orderQty: 42, unitCost: 45000 },
+      });
+      expect(r.status).toBe(MISSING_COST);
+    }
+    const r2 = evaluateProposalFreshness({
+      proposed: { atp: 12, rop: 30, orderQty: 42, unitCost: 45000 },
+      current: { atp: 12, rop: 30, orderQty: 42, unitCost: null },
+    });
+    expect(r2.status).toBe(MISSING_COST);
+    // `relDrift` phải là số hữu hạn (không NaN) để UI/JSON không vỡ.
+    expect(Number.isFinite(r2.diff.unitCost.relDrift)).toBe(true);
+    expect(r2.diff.unitCost.current).toBeNull();
   });
 
   it("thiếu current → coi như không đổi, không crash", () => {
@@ -346,5 +398,43 @@ describe("BIÊN · planReplenishment với dữ liệu bẩn", () => {
       unitCost: 25000,
     };
     expect(JSON.stringify(planReplenishment(args))).toBe(JSON.stringify(planReplenishment(args)));
+  });
+});
+
+describe("D6 · phân biệt 'THIẾU giá vốn' với 'giá vốn = 0'", () => {
+  const SALES = Array.from({ length: 28 }, (_, i) => ({ date: `d${i}`, qty: 5, outOfStock: false }));
+
+  it("classifyUnitCost: null/rỗng/NaN/0/âm đều là 'thiếu', số 0 là số hữu hạn", () => {
+    for (const bad of [null, undefined, "", NaN, 0, -1, -0.01]) {
+      const r = classifyUnitCost(bad);
+      expect(r.missing).toBe(true);
+      expect(Number.isFinite(r.value)).toBe(true);
+    }
+    expect(classifyUnitCost(45000)).toEqual({ value: 45000, missing: false });
+    // Decimal từ Prisma là số → đi qua nguyên vẹn.
+    expect(classifyUnitCost(45000.5)).toEqual({ value: 45000.5, missing: false });
+  });
+
+  it("planReplenishment bật cờ missingCost, KHÔNG âm thầm coi giá = 0", () => {
+    const noCost = planReplenishment({ dailySales: SALES, inventories: [{ quantity: 1 }] });
+    expect(noCost.missingCost).toBe(true);
+    expect(noCost.rationale.missingCost).toBe(true);
+    // Vẫn có số để hiển thị, nhưng KHÔNG được bị hiểu là giá thật.
+    expect(noCost.rationale.unitCost).toBe(0);
+
+    const withCost = planReplenishment({
+      dailySales: SALES,
+      inventories: [{ quantity: 1 }],
+      unitCost: 30000,
+    });
+    expect(withCost.missingCost).toBe(false);
+    expect(withCost.rationale.missingCost).toBe(false);
+    expect(withCost.order.totalEstimate).toBe(withCost.order.orderQty * 30000);
+  });
+
+  it("giá vốn âm (trả hàng nhập nhầm) cũng bị coi là thiếu, không tạo tổng tiền âm", () => {
+    const p = planReplenishment({ dailySales: SALES, inventories: [{ quantity: 1 }], unitCost: -5000 });
+    expect(p.missingCost).toBe(true);
+    expect(p.order.totalEstimate).toBeGreaterThanOrEqual(0);
   });
 });

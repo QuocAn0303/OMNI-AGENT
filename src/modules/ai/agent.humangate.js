@@ -119,13 +119,14 @@ const buildPoProposalGate = ({
   rationale = {},
   leadTimeDays = null,
   leadTimeEstimated = null,
+  missingCost = false,
 }) => ({
   sessionId,
   actionType: PO_PROPOSAL,
   actionPayload: {
     kind: PO_PROPOSAL,
     proposalKey: proposalKey || poProposalKey(productId, vendorId),
-    // MỘT dòng hàng mỗi đề xuất (đơn giản hoá có chủ ý — xem 00b §6).
+    // MỘT dòng hàng mỗi đề xuất (đơn giản hoá cố ý - xem 00b §6).
     items: [{ productId, sku, productName, quantity, unitCost }],
     vendorId,
     vendorName,
@@ -135,6 +136,9 @@ const buildPoProposalGate = ({
     leadTimeDays,
     leadTimeEstimated,
     rationale,
+    // D6: đề xuất sinh lúc SKU CHƯA có giá vốn dùng được. Executor dùng cờ này
+    // để biết cần chặn 409 thay vì tạo PO với tổng tiền 0.
+    missingCost: missingCost === true,
   },
   actionSummary: clip(
     `De xuat nhap ${quantity} x ${productName || sku} tu ${vendorName || 'NCC'}` +

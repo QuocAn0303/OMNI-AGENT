@@ -252,6 +252,75 @@ test("số lượng lệch quá ngưỡng → 409 kèm diff, chưa acknowledge t
   });
 });
 
+describe("D6 · THIẾU GIÁ VỐN → 409 MISSING_COST, KHÔNG tạo PO giá 0", () => {
+  // Bối cảnh: `Product.costPrice` là Decimal và CÓ THỂ NULL. Trước D6,
+  // `recomputeCurrent` lấy đè bằng giá lúc đề xuất nên PO đi tiếp âm thầm; còn
+  // `suggestForProduct` ép `null` thành 0 nên tổng tiền đề xuất bằng 0 — hai
+  // đường đều cho ra một con số SAI mà nhìn vẫn hợp lý.
+  test("costPrice = NULL → 409 MISSING_COST, purchase.create KHÔNG được gọi", async () => {
+    mockAgentHumanGate.findFirst.mockResolvedValue(poGate({ status: "APPROVED" }));
+    mockProduct.findFirst.mockResolvedValue({ costPrice: null });
+
+    await expect(gateExec.executeGate("g1", "u1")).rejects.toMatchObject({
+      status: 409, code: "MISSING_COST", missingCost: true,
+    });
+    expect(mockPurchaseCreate).not.toHaveBeenCalled();
+  });
+
+  test("costPrice = 0 hoặc âm → 409 MISSING_COST (0 không phải giá vốn hợp lệ)", async () => {
+    for (const bad of [0, -1]) {
+      mockAgentHumanGate.findFirst.mockResolvedValue(poGate({ status: "APPROVED" }));
+      mockProduct.findFirst.mockResolvedValue({ costPrice: bad });
+      await expect(gateExec.executeGate("g1", "u1")).rejects.toMatchObject({
+        status: 409, code: "MISSING_COST",
+      });
+    }
+    expect(mockPurchaseCreate).not.toHaveBeenCalled();
+  });
+
+  test("acknowledgeDrift KHÔNG mở đường cho MISSING_COST (không có gì để so sánh)", async () => {
+    mockAgentHumanGate.findFirst.mockResolvedValue(poGate({ status: "APPROVED" }));
+    mockProduct.findFirst.mockResolvedValue({ costPrice: null });
+
+    await expect(
+      gateExec.executeGate("g1", "u1", { acknowledgeDrift: true }),
+    ).rejects.toMatchObject({ status: 409, code: "MISSING_COST" });
+    expect(mockPurchaseCreate).not.toHaveBeenCalled();
+  });
+
+  test("đề xuất sinh lúc SKU CHƯA có giá vốn, người dùng bổ sung sau → đi tiếp với GIÁ HIỆN TẠI", async () => {
+    const gate = poGate({ status: "APPROVED" });
+    // Đề xuất cũ không có giá vốn: payload mang cờ + đơn giá 0.
+    gate.actionPayload.missingCost = true;
+    gate.actionPayload.items[0].unitCost = 0;
+    mockAgentHumanGate.findFirst.mockResolvedValue(gate);
+    // Người dùng đã điền giá vốn 45.000 ⇒ KHÔNG chặn nữa.
+    mockProduct.findFirst.mockResolvedValue({ costPrice: 45000 });
+
+    const res = await gateExec.executeGate("g1", "u1");
+
+    expect(res.costSubstituted).toBe(true);
+    expect(res.po.id).toBe("po-1");
+    // PO phải mang giá 45.000, KHÔNG phải giá 0 của đề xuất.
+    expect(mockPurchaseCreate.mock.calls[0][0].items[0].unitCost).toBe(45000);
+  });
+
+  test("đề xuất có giá vốn hợp lệ → không thay số, PO dùng đúng giá người duyệt đã thấy", async () => {
+    mockAgentHumanGate.findFirst.mockResolvedValue(poGate({ status: "APPROVED" }));
+    mockProduct.findFirst.mockResolvedValue({ costPrice: 45000 });
+    const res = await gateExec.executeGate("g1", "u1");
+    expect(res.costSubstituted).toBe(false);
+    expect(mockPurchaseCreate.mock.calls[0][0].items[0].unitCost).toBe(45000);
+  });
+
+  test("giá vốn hợp lệ → đi tiếp bình thường (không chặn nhầm)", async () => {
+    mockAgentHumanGate.findFirst.mockResolvedValue(poGate({ status: "APPROVED" }));
+    mockProduct.findFirst.mockResolvedValue({ costPrice: 45000 });
+    const res = await gateExec.executeGate("g1", "u1");
+    expect(res.po.id).toBe("po-1");
+  });
+});
+
 describe("P0-3 · chống tạo PO TRÙNG (điều kiện quan trọng nhất của A′)", () => {
   test("ghi mốc gate vào note để tra ngược được", async () => {
     expect(gateExec.GATE_MARKER("gate-1")).toBe("[gate:gate-1]");

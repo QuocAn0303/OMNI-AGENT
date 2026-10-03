@@ -21,7 +21,7 @@ jest.mock("../src/modules/accounting/journal.service", () => ({ postEntry: jest.
 jest.mock("../src/modules/audit/audit.service", () => ({ log: jest.fn() }));
 
 const prisma = require("../src/config/prisma");
-const { checkAutoReorder, autoPayroll, debtAutoCollection, morningBriefing, anomalyDetection } = require("../src/modules/automation/automation.service");
+const { checkAutoReorder, _resetAutoReorderDedupeForTest, autoPayroll, debtAutoCollection, morningBriefing, anomalyDetection } = require("../src/modules/automation/automation.service");
 const mockSuggestForProductInTenant = jest.fn();
 jest.mock("../src/modules/replenishment/replenishment.suggest", () => ({
   suggestForProductInTenant: (...a) => mockSuggestForProductInTenant(...a),
@@ -67,6 +67,8 @@ describe("automation — advanced scenarios", () => {
     beforeEach(() => {
       process.env.AUTO_REORDER_PROPOSAL = "1";
       mockSuggestForProductInTenant.mockResolvedValue({ gate: { id: "g1" } });
+      // D6: xoá khoá debounce (tenant, SKU) để mỗi test là một lần chạy độc lập.
+      _resetAutoReorderDedupeForTest();
     });
     afterEach(() => { delete process.env.AUTO_REORDER_PROPOSAL; });
 

@@ -43,6 +43,7 @@ const { PO_PROPOSAL } = require("./agent.humangate");
 const {
   planReplenishment,
   evaluateProposalFreshness,
+  classifyUnitCost,
 } = require("../replenishment/replenishment.calc");
 
 /** Mốc ghi vào PurchaseOrder.note để tra ngược PO ← gate. */
@@ -140,20 +141,24 @@ const recomputeCurrent = async (item) => {
   // Giá vốn HIỆN TẠI phải đọc từ Product. Nếu dùng luôn `item.unitCost` (giá
   // lúc đề xuất) thì COST_DRIFT không bao giờ kích hoạt — nhánh này chết âm
   // thầm và người duyệt không được cảnh báo dù giá đã đổi.
+  //
+  // D6: khi `costPrice` không dùng được (0/âm — cột này `NOT NULL` nên 0 là trạng
+  // thái "thiếu" thật sự gặp được) thì KHÔNG lấy đè bằng giá lúc đề xuất — làm
+  // vậy là giấu mất dữ liệu và để PO đi tiếp với giá đã không còn đúng.
+  // Giữ giá cũ **để hiển thị cho người duyệt**, đồng thời bật `missingCost` để
+  // `revalidate` chặn 409.
   const product = await prisma.product.findFirst({
     where: { id: item.productId },
     select: { costPrice: true },
   });
-  const currentCost =
-    product && product.costPrice !== null && Number.isFinite(Number(product.costPrice))
-      ? Number(product.costPrice)
-      : Number(item.unitCost || 0);
+  const currentCost = classifyUnitCost(product?.costPrice);
+  const missingCost = currentCost.missing;
 
   const plan = planReplenishment({
     dailySales: input.dailySales,
     inventories: input.inventories,
     receipts,
-    unitCost: currentCost,
+    unitCost: currentCost.value,
     packMultiple: 1,
     onOrder: input.onOrder,
   });
@@ -164,8 +169,10 @@ const recomputeCurrent = async (item) => {
     inventoryPosition: plan.atp.position,
     rop: plan.rationale.rop,
     orderQty: plan.order.orderQty,
-    // Giá dùng để SO SÁNH với giá lúc đề xuất (để bắt COST_DRIFT).
-    unitCost: currentCost,
+    // Giá dùng để SO SÁNH với giá lúc đề xuất (để bắt COST_DRIFT). Khi thiếu,
+    // trả về giá lúc đề xuất **để hiển thị** nhưng kèm `missingCost: true`.
+    unitCost: missingCost ? Number(item.unitCost || 0) : currentCost.value,
+    missingCost,
     demandPerDay: plan.rationale.demandPerDay,
   };
 };
@@ -213,6 +220,33 @@ const revalidate = async (gate, { acknowledgeDrift = false, recompute = recomput
   };
   const freshness = evaluateProposalFreshness({ proposed, current, acknowledgeDrift });
 
+  // D6 — THIẾU GIÁ VỐN. Chặn theo trạng thái **HIỆN TẠI**, không theo trạng thái
+  // lúc đề xuất: người dùng có thể vừa bổ sung giá vốn cho SKU.
+  //
+  // Vì sao chặn riêng thay vì để `DRIFT_BLOCK`/xác nhận xử lý: `acknowledgeDrift`
+  // là xác nhận "dữ liệu đã đổi", còn "chưa có giá vốn" là **thiếu dữ liệu** —
+  // người duyệt không có gì để so. Cho phép xác nhận qua đó là tạo PO giá sai.
+  if (cur.missingCost === true) {
+    return {
+      ok: false,
+      status: 409,
+      code: 'MISSING_COST',
+      message:
+        `SKU chưa có giá vốn dùng được (thiếu hoặc ≤ 0). ` +
+        `Thêm giá vốn cho SKU trước khi duyệt — nếu không tổng tiền PO sẽ sai.`,
+      missingCost: true,
+      diff: freshness.diff,
+    };
+  }
+
+  // Đề xuất được sinh lúc SKU CHƯA có giá vốn (cờ `missingCost` trong payload),
+  // nhưng người dùng đã bổ sung giá vốn sau đó. Đây là đường thoát duy nhất,
+  // nếu không gate sẽ kẹt vĩnh viễn ở trạng thái lơ lửng. Số dùng cho PO là giá
+  // HIỆN TẠI (không phải giá 0 của đề xuất), và việc thay số này được ghi audit.
+  const proposedCost = classifyUnitCost(item.unitCost);
+  const costSubstituted = proposedCost.missing;
+  const effectiveUnitCost = costSubstituted ? cur.unitCost : proposedCost.value;
+
   if (freshness.status === 'NO_LONGER_NEEDED') {
     return { ok: false, status: 409, message: freshness.message, drift: freshness.status, diff: freshness.diff };
   }
@@ -223,7 +257,7 @@ const revalidate = async (gate, { acknowledgeDrift = false, recompute = recomput
     return { ok: false, status: 409, message: freshness.message, drift: freshness.status, diff: freshness.diff };
   }
 
-  return { ok: true, freshness, current };
+  return { ok: true, freshness, current, costSubstituted, effectiveUnitCost };
 };
 
 /**
@@ -279,11 +313,25 @@ const payload = gate.actionPayload || {};
 
   const check = await revalidate(gate, { acknowledgeDrift, recompute });
   if (!check.ok) {
-    throw { status: check.status, message: check.message, drift: check.drift, diff: check.diff };
+    // `code` + `missingCost` mang xuống HTTP layer để UI hiện đúng nút/lời nhắc
+    // thay vì một lỗi 409 chung chung. Giữ `drift` cho các nhánh cũ.
+    throw {
+      status: check.status,
+      message: check.message,
+      drift: check.drift,
+      code: check.code,
+      missingCost: check.missingCost,
+      diff: check.diff,
+    };
   }
 
   let po;
   try {
+    // Số đơn giá dùng cho PO: mặc định là số trong payload mà người duyệt đã nhìn
+    // thấy; CHỈ thay bằng giá hiện tại khi đề xuất được sinh lúc SKU chưa có giá
+    // vốn (D6) — trường hợp đó payload mang 0 và tạo PO sẽ sai.
+    const unitCostForPo =
+      check.costSubstituted ? check.effectiveUnitCost : Number(item.unitCost);
     po = await purchaseService.create(
       {
         vendorId: payload.vendorId,
@@ -293,7 +341,7 @@ const payload = gate.actionPayload || {};
           {
             productId: item.productId,
             quantity: item.quantity,
-            unitCost: item.unitCost,
+            unitCost: unitCostForPo,
             taxRateId: item.taxRateId || null,
           },
         ],
@@ -325,14 +373,30 @@ const payload = gate.actionPayload || {};
       entity: 'AgentHumanGate',
       entityId: gateId,
       before: { resultRef: null },
-      after: { resultRef: po.id, poCode: po.poCode, total: po.total, drift: check.freshness?.status },
+after: {
+        resultRef: po.id,
+        poCode: po.poCode,
+        total: po.total,
+        drift: check.freshness?.status,
+        // D6: ghi lại việc thay đơn giá để sau này tra được "PO này dùng giá nào,
+        // khác với cái đề xuất vì sao".
+        costSubstituted: check.costSubstituted === true,
+        unitCostUsed: check.costSubstituted ? check.effectiveUnitCost : undefined,
+      },
     })
     .catch((logErr) => logger.error(`[gate-exec] gate ${gateId}: khong ghi duoc audit thanh cong: ${logErr.message}`));
 
-  // Trả kèm `freshness` để HTTP layer hiện được cảnh báo DRIFT_WARN cho người
-  // duyệt — nếu im lặng thì "đã cảnh báo" chỉ nằm trong audit log, người dùng
+  // Tr? kèm `freshness` để HTTP layer hiện được cảnh báo DRIFT_WARN cho người
+  // duyệt - nếu im lặng thì "đã cảnh báo" chỉ nằm trong audit log, người dùng
   // không bao giờ thấy.
-  return { po, linked: false, freshness: check.freshness, current: check.current };
+  return {
+    po,
+    linked: false,
+    freshness: check.freshness,
+    current: check.current,
+    costSubstituted: check.costSubstituted === true,
+    missingCost: false,
+  };
 };
 
 /**

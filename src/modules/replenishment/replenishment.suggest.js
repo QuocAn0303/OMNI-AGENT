@@ -34,6 +34,7 @@ const {
   planReplenishment,
   proposalFingerprint,
   calcOnOrder,
+  classifyUnitCost,
   OPEN_PO_STATUSES,
   NEED_REPLENISHMENT,
   STOCKOUT,
@@ -221,13 +222,28 @@ const suggestForProduct = async ({
 
   // `Number(null)` là 0 và 0 cũng hữu hạn — nên phải loại null/rỗng TRƯỚC khi kiểm
   // tra, nếu không giá vốn sẽ mặc định thành 0 và tổng tiền đề xuất luôn bằng 0.
-  const hasUnitCost = unitCost !== null && unitCost !== undefined && unitCost !== "" && Number.isFinite(Number(unitCost));
-  const cost = hasUnitCost ? Number(unitCost) : Number(product.costPrice || 0);
+  //
+  // D6: `classifyUnitCost` giữ lại tín hiệu "thiếu" thay vì ép về 0.
+  //
+  // LƯU Ý ĐO ĐƯỢC: `products.costPrice` là `NOT NULL` trong DB (kiểm bằng
+  // information_schema.columns, 2026-10-03), nên trạng thái "thiếu" thật sự gặp
+  // được là **0** (chủ shop chưa nhập giá vốn) hoặc số âm. `null` vẫn được xử lý
+  // vì đây là ranh giới Decimal→JS và vì `unitCost` có thể được truyền tường minh.
+  // `cost` vẫn là số để phép tính không nhận NaN, nhưng `missingCost` đi theo tới
+  // gate và làm executor trả 409 thay vì tạo PO giá 0.
+  const hasUnitCost = unitCost !== null && unitCost !== undefined && unitCost !== "";
+  const cost = hasUnitCost ? classifyUnitCost(unitCost) : classifyUnitCost(product.costPrice);
+  if (cost.missing) {
+    logger.warn(
+      `[suggest] ${product.sku}: CHUA CO gia von (costPrice = ${product.costPrice ?? "NULL"}) ` +
+      `— de xuat se co co missingCost, duyet se bi chan 409 MISSING_COST.`,
+    );
+  }
   const plan = planReplenishment({
     dailySales: input.dailySales,
     inventories: input.inventories,
     receipts,
-    unitCost: cost,
+    unitCost: cost.value,
     packMultiple,
     reviewPeriodDays: REVIEW_PERIOD_DAYS,
     onOrder: input.onOrder,
@@ -259,7 +275,7 @@ const suggestForProduct = async ({
   const fingerprint = proposalFingerprint({
     atp: plan.atp.atp,
     rop: plan.rationale.rop,
-    unitCost: cost,
+    unitCost: cost.value,
     orderQty: plan.order.orderQty,
     vendorId: vendor.id,
   });
@@ -302,8 +318,11 @@ const suggestForProduct = async ({
         vendorId: vendor.id,
         vendorName: vendor.name,
         quantity: plan.order.orderQty,
-        unitCost: cost,
+        unitCost: cost.value,
         totalEstimate: plan.order.totalEstimate,
+        // D6: cờ "chưa có giá vốn" đi theo gate. Executor dùng cờ này để trả
+        // 409 thay vì tạo PO với tổng tiền bằng 0.
+        missingCost: cost.missing,
         proposalKey: key,
         fingerprint,
         rationale: plan.rationale,

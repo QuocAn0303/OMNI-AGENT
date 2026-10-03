@@ -395,6 +395,52 @@ const inTenantA = (fn) => runWithTenant(A.tenant.id, fn);
       retryResult?.linked === true && (await countOpenPo(A.tenant.id)) === beforeRetry,
       `linked=${retryResult?.linked}, err=${retryResult?.error}`);
 
+    // ── 11. MISSING_COST (D6): SKU chưa có giá vốn dùng được → 409, KHÔNG tạo PO ──
+    // Đây là kịch bản nguy hiểm nhất của luồng PO: trước D6, giá vốn ≤ 0 bị ép
+    // thành 0 nên PO tạo ra với tổng tiền 0 — một con số SAI mà nhìn vẫn hợp lệ.
+    //
+    // LƯU Ý ĐO ĐƯỢC: `products.costPrice` là `NOT NULL` trong DB (kiểm bằng
+    // information_schema.columns), nên trạng thái "thiếu" **thật sự gặp được** là
+    // `0` (chủ shop chưa nhập giá vốn) hoặc số âm — KHÔNG phải NULL. Vì vậy kịch
+    // bản này đặt 0. `classifyUnitCost` vẫn xử lý NULL/NaN vì đó là ranh giới
+    // Decimal→JS và các call site truyền `unitCost` tường minh.
+    const pE = await seedFreshLowStock("E");
+    // CỐ Ý sinh đề xuất LÚC SKU CHƯA CÓ GIÁ VỐN — đây là trạng thái đề xuất mang
+    // cờ `missingCost` mà D6 sinh ra. Đặt 0 trước khi gọi `suggest`.
+    await prisma.product.update({ where: { id: pE.id }, data: { costPrice: 0 } });
+    const gE = await inTenantB(() => suggestForProduct({ tenantId: B.tenant.id, productId: pE.id }));
+    ok("11. SKU chưa có giá vốn vẫn sinh được đề xuất (để người duyệt thấy)", Boolean(gE?.gate?.id));
+    ok("11a. Cờ missingCost ĐÚNG khi bật khi SKU chưa có giá vốn",
+      gE?.gate?.actionPayload?.missingCost === true);
+
+    const poBeforeMissingCost = await countOpenPo(B.tenant.id);
+    let missingCostErr = null;
+    if (gE?.gate?.id) {
+      const r = await claimAndExecute(B.tenant.id, gE.gate.id, B.admin.id);
+      missingCostErr = r.error || null;
+    }
+    ok("11b. Duyệt lúc còn thiếu giá vốn → 409 MISSING_COST, không tạo PO",
+      missingCostErr?.status === 409 && missingCostErr?.code === "MISSING_COST",
+      `status=${missingCostErr?.status} code=${missingCostErr?.code || "-"} ${(missingCostErr?.message || "").slice(0, 50)}`);
+    ok("11c. MISSING_COST ⇒ số PO mở không đổi", (await countOpenPo(B.tenant.id)) === poBeforeMissingCost);
+
+    // Người dùng bổ sung giá vốn rồi duyệt lại: phải đi tiếp, và PO phải mang giá
+    // MỚI chứ không phải 0 của đề xuất — đây là đường thoát khỏi trạng thái lơ
+    // lửng (nếu không, gate kẹt vĩnh viễn ở 409).
+    await prisma.product.update({ where: { id: pE.id }, data: { costPrice: 50000 } });
+    const { retryExecution: retryMissingCost } = require("../src/modules/ai/agent.gate.exec");
+    let afterFill = null;
+    try {
+      afterFill = await inTenantB(() => retryMissingCost(gE.gate.id, B.admin.id));
+    } catch (e) {
+      afterFill = { error: e.message, status: e.status, code: e.code };
+    }
+    ok("11d. Bổ sung giá vốn → duyệt lại được, tạo đúng 1 PO",
+      Boolean(afterFill?.po?.id) && (await countOpenPo(B.tenant.id)) === poBeforeMissingCost + 1,
+      `err=${afterFill?.error || "-"} po=${afterFill?.po?.poCode || "khong-co"}`);
+    ok("11e. PO dùng GIÁ VỚN BỔ SUNG (50.000), không phải 0 của đề xuất",
+      afterFill?.costSubstituted === true,
+      `costSubstituted=${afterFill?.costSubstituted}`);
 
     console.log(`\n=== ${fail === 0 ? "TẤT CẢ PASS" : "CÓ FAIL"} (${pass} pass / ${fail} fail) ===`);
   } catch (e) {
