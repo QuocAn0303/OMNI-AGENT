@@ -84,3 +84,38 @@ thất bại trên môi trường đang có dữ liệu trùng nên phải dọn
 **Ly do:** 72 dong log chien dich **nen tang** (`AdminCampaign` khong co `tenantId`; nguoi ghi la SUPER_ADMIN ngoai tenant context) — KHONG THEM gan tenant, dung thiet ke. 52 dong `REGISTER`/`VERIFY_EMAIL` la **loi quy thuoc tenant trong ma**: hai luong nay chay ngoai tenant context (getTenantId() = null) du tenant da biet. Sua (2) la sua nguyen nhan, kiem chung duoc bang unit test; (3) se **doan** tenant tu du lieu JSON — trai hieu "chi dung so da do duoc", nen khong lam. Do lai ngoai le theo `action` lam phat hien "action KHAC bi NULL" ngay thay vi chi dem tong.
 
 **Cach dao nguoc:** bo tham so `tenantId` khoi `audit.service.log` va hai call site trong `auth.service.js`; khoi ngoai le trong `scripts/lib/tenant-null-exceptions.js` tro lai dieu kien `"userId" IS NULL`. 52 dong du lieu cu KHONG bi dung vao.
+
+---
+
+## D-009 D7: KHÔNG đẩy 2 nhánh lên remote; dùng `git bundle` (điều kiện không xác minh được)
+
+**Bối cảnh (D7):** "đẩy CHỈ `round2/p0-hardening` và `hotfix/tenant-nested-write`
+nếu deploy chỉ chạy từ `main` và quét secret sạch; không thỏa thì `git bundle`".
+Repo có 3 remote: `origin` (gitlab aduu), `github` (QuocAn0303/OMNI-AGENT),
+`erp-system` (đường dẫn cục bộ).
+
+**Quét secret — PASS.** 70 file thay đổi so với `main`: quét
+`(api_key|secret|password|token)[:=] "…16+ ký tự"` ra **8 điều kiện**, tất cả đều
+là placeholder `"*-test-not-a-real-hash"` của script kiểm chứng; `.env.example` chỉ
+thêm giá trị rỗng. Không có secret thật.
+
+**Điều kiện 1 — "deploy chỉ chạy từ `main`": KHÔNG XÁC MINH ĐƯỢC.** Trong repo
+không tồn tại cấu hình CI/CD nào gắn nhánh (không có file pipeline ở root;
+`.travis.yml` tồn tại ở thư mục con, không phải của backend). Không có bằng
+chứng nào cho thấy deploy lấy từ `main` hay từ nhánh nào.
+
+**Lựa chọn:** không đẩy. Tạo `git bundle` ngoài repo thay thế.
+
+**Lý do:** đẩy lên remote là hành động không đảo ngược được (xoá remote xong
+commit đã push vẫn còn ở phía đối phương), và mặt tiêu chuẩn của hiến pháp là
+"không tạo repo công khai / không liên hệ". Khi không chạm minh điều kiện của
+chính lệnh D7, chọn phương án đảo ngược được thì dù. Bundle giữ nguyên toàn bộ
+lịch sử và 2 nhánh: đội cần đẩy lên remote chỉ cần `git bundle verify` rồi
+`git fetch <bundle> <nhánh>`.
+
+**Bundle:** `C:\Users\lengu\AppData\Local\Temp\opencode\erp-bundles\aduu-round2-20261003-093557.bundle` (11,04 MB), kiểm chứng bằng `git bundle list-heads`:
+- `1cd1956 refs/heads/round2/p0-hardening`
+- `959ab30 refs/heads/hotfix/tenant-nested-write`
+
+**Cách đảo ngược / làm tiếp:** `git push <remote> round2/p0-hardening` khi đội xác
+nhận deploy lấy từ `main` và xác nhận đúng remote nào.

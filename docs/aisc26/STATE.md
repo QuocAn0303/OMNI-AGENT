@@ -117,3 +117,89 @@ AI-HANDOVER.md.
 Ket qua hien tai: jest 4003/4008 | smoke:po-gate 18/18 | check:tenant PASS |
 check-tenant-aidocs 12/12 | check:modules 203 | 0 tenant rac | 0 dong mo coi |
 company_settings CANDORY = 1 dong | CANDORY 82 don / 158 dong / 89.862.000 VND (khong doi)
+
+---
+
+## Cap nhat 2026-10-03 (phien P1 — BUC 0 HOAN TAT)
+
+**RESUME HERE — viec tiep theo: GÓI P2 (T5 giao thuc S1-S12, roi T6 dataset).**
+
+Da xong P1 (4/4 muc). Commit moi theo thu tu: `af96079`, `3b0fba6`, `7a5df5d`,
+`1cd1956`. **Khong con viec nao cua BUC 0.**
+
+### 1. P1.1 — teardown dung chung (DONE-VERIFIED, DB that)
+
+`scripts/lib/teardown.js`: `captureBaseline` + `verifyTeardown` + `runWithTeardown`.
+Da ap dung cho 7 script (`smoke-po-gate`, `check-tenant-isolation`,
+`check-tenant-gaps`, `check-tenant-aidocs`, `smoke-crm-phase4-{campaign,hierarchy,
+send}`; 3 script CRM trước day KHONG co `assertLocalDb` — da them).
+
+**Bat duoc rac THAT chua ai biet:** `smoke-crm-phase4-hierarchy` ro 6 dong
+`audit_logs`, `smoke-crm-phase4-send` ro 2 dong, **moi lan chay**. Nguyen nhan:
+`audit_logs` khong co FK toi `tenants` => xoa tenant khong keo log. Da sua goc.
+**Bang chung rac co TRUOC P1:** `git stash` chay lai ban HEAD van ro 6 dong.
+Dong 22 dong rac do 2 lan chay do de lai bang
+`docs/aisc26/one-off/cleanup-orphan-auditlogs.js` (dry-run mac dinh, COUNT chay lai
+truoc khi ghi, 1 transaction). Dump truoc:
+`aduu-dev-before-orphan-auditlog-cleanup-20261003-085447.dump` (0,55 MB, ngoai repo).
+
+Tieu chi "2 lan lien tiep, 0 rac tang them": **DAT**.
+
+### 2. P1.2 — truy nguon 124 `audit_logs` NULL (DONE-VERIFIED, DB that)
+
+Dung 4 nhom `action`, tat ca `userId = NULL`:
+`CREATE_ADMIN_CAMPAIGN|AdminCampaign` 36 + `SEND_ADMIN_CAMPAIGN|AdminCampaign` 36
+= **72 dong ban nen tang** (khong co `tenantId` — dung thiet ke);
+`REGISTER|Tenant` 26 + `VERIFY_EMAIL|User` 26 = **52 dong LOI MA** (chay ngoai
+tenant context du tenant da biet) — da sua `audit.service.log` + 2 call site.
+Ngoai le doi sang **dieu kien theo `action`**, cap van 124. Chi tiet: D-008.
+
+### 3. P1.3 — T3 / D6 (DONE-VERIFIED, DB that)
+
+`classifyUnitCost` (thieu vs bang 0) -> co `missingCost` -> gate payload ->
+`executeGate` tra **409 `MISSING_COST`**; `acknowledgeDrift` KHONG mo duong nay.
+Duong thoat khoi trang thai lo lung: neu de xuat sinh luc chua co gia von va nguoi
+dung da bo sung, PO dung **gia moi** (`costSubstituted`, co audit).
+`checkAutoReorder` co `AUTO_REORDER_DELAY_MS` + debounce `(tenant, SKU)`.
+Smoke `MISSING_COST` = kich ban 11.
+
+**HIEU BIET SAI DA SUA (do duoc):** `products.costPrice` la `NOT NULL` — trang
+thai "thieu" that su gap duoc la **0**, khong phai NULL.
+
+### 4. P1.4 — T4 con lai (DONE-VERIFIED / PARTIAL-HUMAN)
+
+- Swagger: sua **4** khoi `@swagger` YAML hong (T4 ghi 1, thuc te 4 file). Them
+  `npm run check:swagger`: **4/115 hong -> 0/115**. `/api-docs` xac nhan phuc vu
+  duoc: `GET /api-docs/swagger-ui-init.js` HTTP 200, 185 KB, co ca 2 path vua sua.
+- Viet `review-hotfix-tenant.md` + `review-p0-3.md`.
+- **D7: KHONG day remote** (dieu kien "deploy chi chay tu main" khong xac minh duoc;
+  quet secret SACH). Da tao `git bundle` 11,04 MB o
+  `C:\Users\lengu\AppData\Local\Temp\opencode\erp-bundles\aduu-round2-20261003-093557.bundle`
+  chua 2 nhanh. Chi tiet: D-009.
+
+### Kiểm chứng P1 (2026-10-03)
+
+| Lệnh | Kết quả | Loại |
+|---|---|---|
+| `npx jest` | 4023/4028 pass (69 suite, 5 skip) | mock |
+| `npm run smoke:po-gate` | **24/24** | **DB thật** |
+| `npm run check:tenant` | 11/11 + 4/4 + 4/4 | **DB thật** |
+| `npm run check-tenant-aidocs` | 12/12 | **DB thật** |
+| `npm run check:modules` | 203 module | — |
+| `npm run check:swagger` | 115/115 | tĩnh |
+| `tenant-null.js --scan` | MỒ CÔI 0 · TRÙNG 0 · NULL 125 (ngoại lệ) | **DB thật** |
+
+### Lỗi có sẵn, KHÔNG do P1 (BLOCKED, để nguyên)
+
+`smoke-crm-phase4-hierarchy` 35 pass / **1 fail**: khẳng định cache cây quản lý.
+Đã xác nhận đỏ **ở HEAD** ⇒ không phải do P1. Sửa nó là sửa logic cache, ngoài
+phạm vi P1.
+
+### Tiep theo — GÓI P2
+
+1. **T5** — sửa `03-evaluation-protocol.md` theo **S1–S12 trong MỘT commit** kèm
+   mục "Lịch sử sửa đổi trước lần chạy đầu". Commit phải tồn tại **trước** mọi
+   lần chạy backtest.
+2. **T6** — chọn dataset (tối đa 8 lần fetch; ghi `notes/dataset-candidates.md`),
+   script tải + sha256, viết `02-data.md`. Không tải được thì dùng bộ sinh tổng
+   hợp có seed, ghi nhãn **TỔNG HỢP** + `BLOCKER-HUMAN`.

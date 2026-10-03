@@ -144,14 +144,106 @@ trước. **Không có công tắc tắt** — đó là chủ ý.
 
 Xem `DECISIONS.md`: D-001 (phân loại `audit_logs`), D-002 (ngoại lệ có điều kiện
 + trần thay vì danh sách bảng), D-003 (lệnh dọn rác theo tiền tố), D-004 (không
-sửa logic test để làm xanh).
+sửa logic test để làm xanh), D-006 (`poApprovalThreshold` NULL/≤0 → mặc định
+5.000.000), D-007 (`getOrCreate` đọc xác định **và** tự hội tụ về một dòng).
 
 ### 5.7 Nhánh và tài liệu
 
 Nhánh `round2/p0-hardening` (`hotfix/tenant-nested-write` giữ nguyên).
-**Chưa đẩy remote** — D7 chưa chạy (cần đội xác nhận remote).
+**Chưa đẩy remote** — D7 đã chạy nhưng **không đẩy**: điều kiện "deploy chỉ chạy
+từ `main`" **không xác minh được** trong repo, quét secret thì sạch. Đã tạo
+`git bundle` ngoài repo thay thế (xem D-009).
 
 Tài liệu: `docs/aisc26/` — `AI-HANDOVER.md` (**đọc file này trước**),
 `STATE.md`, `DECISIONS.md`, `MORNING-REPORT.md`, `corrections.md`,
-`runbook-tenant-null.md`, `00-scope.md`, `00b-gate-design.md`, `01-llm-role.md`,
+`runbook-tenant-null.md`, `review-hotfix-tenant.md`, `review-p0-3.md`,
+`00-scope.md`, `00b-gate-design.md`, `01-llm-role.md`,
 `03-evaluation-protocol.md`, `one-off/`.
+
+---
+
+## Phụ lục P1 — phiên tự hành 2026-10-03 (bậc 0, hoàn tất)
+
+### P1.1 — Teardown dùng chung + bắt rò thật
+
+| Việc | Kết quả |
+|---|---|
+| `scripts/lib/teardown.js` | `captureBaseline` (chụp mồ côi-tenant theo bảng TRƯỚC khi seed) + `verifyTeardown` (2 điều kiện: còn dòng của tenant thử / bảng nào tăng mồ côi) + `runWithTeardown` |
+| Áp dụng cho | `smoke-po-gate`, `check-tenant-isolation`, `check-tenant-gaps`, `check-tenant-aidocs`, `smoke-crm-phase4-{campaign,hierarchy,send}` (+ `assertLocalDb` cho 3 script CRM trước đây **không có**) |
+| **Phát hiện đáng chú ý** | `verifyTeardown` bắt được **rò thật chưa ai biết**: `smoke-crm-phase4-hierarchy` rò **6** dòng `audit_logs`, `smoke-crm-phase4-send` rò **2** dòng, **mỗi lần chạy**. Nguyên nhân: `audit_logs` không có FK tới `tenants` nên xoá tenant không kéo log. Đã sửa gốc (xoá `auditLog` trước tenant). Xác nhận rò có **trước P1** bằng `git stash` chạy lại bản HEAD (vẫn rò 6 dòng). |
+| Dọn 22 dòng rác do chính 2 lần chạy đó để lại | `docs/aisc26/one-off/cleanup-orphan-auditlogs.js` — dry-run mặc định, `COUNT` chạy lại ngay trước khi ghi (lệch ⇒ hủy toàn bộ), một transaction. Dump trước: `aduu-dev-before-orphan-auditlog-cleanup-20261003-085447.dump` |
+| Tiêu chí "2 lần liên tiếp, 0 rác tăng thêm" | **ĐẠT** — chạy 2× mỗi script, `TỔNG MỒ CÔI-TENANT = 0` sau mỗi vòng |
+| Snapshot 2 tenant thật | **GIỐNG HẸT** — `CANDORY SCENT` 82 đơn / 158 dòng / 89.862.000 VND / 201 audit log |
+| Commit | `af96079` |
+
+### P1.2 — Truy nguồn 124 `audit_logs` NULL
+
+Lệnh: `SELECT action, entity, count(*) FROM audit_logs WHERE "tenantId" IS NULL GROUP BY 1,2`
+→ **đúng 4 nhóm**, tất cả `userId = NULL`:
+
+| action | entity | n | Kết luận |
+|---|---|---|---|
+| `CREATE_ADMIN_CAMPAIGN` | AdminCampaign | 36 | **Bản nền tảng** — `AdminCampaign` không có `tenantId`; KHÔNG thể gán, đúng thiết kế |
+| `SEND_ADMIN_CAMPAIGN` | AdminCampaign | 36 | Như trên |
+| `REGISTER` | Tenant | 26 | **Lỗi mã** — đăng ký chạy ngoài tenant context dù tenant vừa tạo |
+| `VERIFY_EMAIL` | User | 26 | **Lỗi mã** — verify bằng token, không có context |
+
+Đã sửa `audit.service.log` nhận `tenantId` tường minh + 2 call site truyền tường
+minh (có test 5/5). Ngoại lệ chuyển từ "trần số lượng" sang **"điều kiện theo
+`action`"**, cap vẫn 124 làm lưới an toàn. Commit `3b0fba6`.
+
+### P1.3 — T3 / D6 (giá vốn + hiệu năng auto-reorder)
+
+- `classifyUnitCost()` phân biệt **thiếu** với **bằng 0** ở mọi chuyển đổi số
+  (`null`/`""`/`NaN`/**≤ 0**). Cờ `missingCost` đi từ `plan` → gate payload →
+  executor.
+- `evaluateProposalFreshness` có thêm trạng thái `MISSING_COST`; `executeGate` trả
+  **409 `MISSING_COST`** (`acknowledgeDrift` **không** mở đường này — thiếu dữ liệu
+  thì không có gì để so).
+- Đường thoát khỏi trạng thái lơ lửng: nếu đề xuất sinh lúc **chưa có giá vốn** và
+  người dùng đã bổ sung, PO dùng **giá mới** (`costSubstituted`, có ghi audit).
+- `checkAutoReorder`: `AUTO_REORDER_DELAY_MS` + `AUTO_REORDER_DEDUPE_WINDOW_MS`
+  (debounce theo cặp tenant+SKU, hằng số có tên) — có test chứng minh **không**
+  chặn tenant khác.
+- **Sửa hiểu biết quan trọng (đo được):** `products.costPrice` là `NOT NULL`
+  (kiểm bằng `information_schema.columns`), nên trạng thái "thiếu" thật sự gặp
+  được là **0**, không phải NULL. Smoke dùng 0.
+- Test `COST_DRIFT`: có ca **vừa vượt** (11% > 10% ⇒ `DRIFT_BLOCK`) và **vừa dưới**
+  (9% ⇒ `DRIFT_WARN`) — chứng minh ngưỡng là so sánh tương đối.
+- Smoke `MISSING_COST` thêm vào `smoke:po-gate`: **24/24** trên DB thật (kịch bản 11).
+- Commit `7a5df5d`.
+
+### P1.4 — T4 phần còn lại
+
+- Sửa **4 khối `@swagger` YAML không hợp lệ** (ghi trong T4 là 1, thực tế 4:
+  `analytics.routes.js`, `crm/dashboard`, `crm/deals`, `crm/hierarchy`) — nguyên nhân
+  giống nhau: `description` không nháy quanh chứa `[]`, `+`, `{ }`. Thêm
+  `npm run check:swagger` chặn hồi quy (trước: **4/115 hỏng**, sau: **0/115**).
+  Xác nhận `/api-docs` phục vụ được: `GET /api-docs/swagger-ui-init.js` → HTTP 200,
+  185 KB, **có** `/api/analytics/customer-insights` và `/api/crm/hierarchy`.
+  Commit `1cd1956`.
+- Viết `review-hotfix-tenant.md` và `review-p0-3.md`.
+- **D7:** quét secret **sạch**; điều kiện "deploy chỉ chạy từ `main`" **không xác
+  minh được** ⇒ **không đẩy**, tạo `git bundle` (11,04 MB, 2 nhánh) ngoài repo.
+  Chi tiết ở D-009.
+
+### Sổ kiểm chứng P1
+
+| Lệnh | Kết quả | Loại |
+|---|---|---|
+| `npx jest` | 4023 pass / 4028 (5 skip), 69 suite | mock |
+| `npm run check:modules` | 203 module, không export `undefined` | tĩnh |
+| `npm run check:swagger` | 115/115 khối YAML hợp lệ | tĩnh |
+| `npm run smoke:po-gate` | **24/24** (11 kịch bản, có MISSING_COST) | **DB thật** |
+| `npm run check:tenant` | 11/11 + 4/4 + 4/4 PASS | **DB thật** |
+| `npm run check-tenant-aidocs` | 12/12 | **DB thật** |
+| `node scripts/tenant-null.js --scan` | MỒ CÔI **0**; TRÙNG 1-1 **0**; NULL 125 (124+1 ngoại lệ) | **DB thật** |
+| `smoke-crm-phase4-{hierarchy,send,campaign}` ×2 | residue **0** sau mỗi vòng | **DB thật** |
+| `GET /api-docs/swagger-ui-init.js` | HTTP 200, 185 KB | **HTTP thật** |
+
+### Lỗi có sẵn KHÔNG do P1 (phát hiện lúc xác minh, chưa sửa — ngoài phạm vi gói)
+
+`smoke-crm-phase4-hierarchy` **35 pass / 1 fail** ở khẳng định cache cây quản lý
+("boss KHÔNG còn bậc dưới → null"). Đã xác nhận lỗi này có **ở HEAD** (chạy bản
+không có bản vá của P1 vẫn đỏ) ⇒ **không** phải do P1 gây ra. Để nguyên, ghi
+BLOCKED cho gói sau vì sửa nó là sửa logic cache ngoài phạm vi P1.
