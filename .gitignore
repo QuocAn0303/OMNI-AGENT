@@ -102,3 +102,6 @@ venv/
 
 # Tooling
 .gitnexus/
+
+# Dataset công khai tải về (T6) — chỉ commit mã + sha256, không commit tệp 45 MB
+/data/dataset/
