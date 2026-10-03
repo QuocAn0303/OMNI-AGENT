@@ -14,6 +14,7 @@ require("dotenv").config();
 const { assertLocalDb } = require("./lib/assert-local-db");
 assertLocalDb("check-tenant-gaps");
 const { track, cleanup, installSignalHandlers } = require("./lib/cleanup-registry");
+const { captureBaseline, verifyTeardown } = require("./lib/teardown");
 installSignalHandlers("check-tenant-gaps");
 const prisma = require("../src/config/prisma");
 const { runWithTenant } = require("../src/config/tenantContext");
@@ -36,6 +37,9 @@ const suffix = Date.now().toString(36);
   let tenantA, tenantB, userA, productA, productB, invA, invB;
 
   try {
+    // Chụp baseline mồ côi-tenant TRƯỚC khi tạo tenant thử (xem lib/teardown.js).
+    await captureBaseline(prisma);
+
     tenantA = await prisma.tenant.create({ data: { name: "GAP A", slug: suffixA } });
     track(() => prisma.tenant.deleteMany({ where: { id: tenantA.id } }));
     tenantB = await prisma.tenant.create({ data: { name: "GAP B", slug: suffixB } });
@@ -125,6 +129,13 @@ const suffix = Date.now().toString(36);
     fail += 1;
   } finally {
     await cleanup();
+    // "Đã gọi cleanup" KHÔNG phải bằng chứng "không còn rác" → verify bắt buộc.
+    try {
+      await verifyTeardown([tenantA?.id, tenantB?.id], prisma);
+    } catch (e) {
+      console.error("TEARDOWN BI PHAT:", e.message);
+      fail += 1;
+    }
     console.log("Da don dep du lieu test.");
     await prisma.$disconnect();
   }

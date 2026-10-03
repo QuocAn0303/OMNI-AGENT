@@ -15,6 +15,7 @@ require("dotenv").config();
 const { assertLocalDb } = require("./lib/assert-local-db");
 const assertLocalDbResult = assertLocalDb("check-tenant-isolation");
 const { track, cleanup, installSignalHandlers } = require("./lib/cleanup-registry");
+const { captureBaseline, verifyTeardown } = require("./lib/teardown");
 installSignalHandlers("check-tenant-isolation");
 const prisma = require("../src/config/prisma");
 const { runWithTenant } = require("../src/config/tenantContext");
@@ -42,6 +43,10 @@ const suffix = Date.now().toString(36);
   let gateA;
 
   try {
+    // Chụp baseline mồ côi-tenant TRƯỚC khi tạo tenant thử: teardown chỉ bị
+    // phạt về phần rác mới của lần chạy này.
+    await captureBaseline(prisma);
+
     // 2 tenant riêng, có user để gate tham chiếu (FK decidedById / session.userId)
     tenantA = await prisma.tenant.create({ data: { name: "ISO A", slug: suffixA } });
     track(() => prisma.tenant.deleteMany({ where: { id: tenantA.id } }));
@@ -182,17 +187,27 @@ role: "ADMIN",
       "=> cron sweep co the quet moi tenant mot luot; day la hanh vi dat biet, khong phai lo hong",
     );
 
-    console.log(`\n=== ${fail === 0 ? "TAT CA PASS" : "CO FAIL"} (${pass} pass / ${fail} fail) ===`);
-  } catch (e) {
+    } catch (e) {
     console.error("LOI:", e.message);
     fail += 1;
 } finally {
     // Dọn dẹp theo thứ tự ngược (con trước, cha sau) qua cleanup-registry, nên
     // dữ liệu vẫn bị xóa đúng kể cả khi tiến trình bị Ctrl+C giữa chừng.
     await cleanup();
+    // "Đã gọi cleanup" KHÔNG phải bằng chứng "không còn rác" → verify bắt buộc.
+    // Ném lỗi ở đây là cố ý: script phải đỏ khi nó tự rò dữ liệu.
+    try {
+      await verifyTeardown([tenantA?.id, tenantB?.id], prisma);
+    } catch (e) {
+      console.error("TEARDOWN BI PHAT:", e.message);
+      fail += 1;
+    }
     console.log("Da don dep du lieu test.");
     await prisma.$disconnect();
   }
+
+  // Tổng kết SAU teardown: số FAIL cuối cùng phải phản ánh cả lỗi rác dữ liệu.
+  console.log(`\n=== ${fail === 0 ? "TAT CA PASS" : "CO FAIL"} (${pass} pass / ${fail} fail) ===`);
 
   process.exit(fail === 0 ? 0 : 1);
 })();

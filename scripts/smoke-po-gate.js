@@ -26,6 +26,7 @@ require("dotenv").config();
 const { assertLocalDb } = require("./lib/assert-local-db");
 const dbInfo = assertLocalDb("smoke-po-gate");
 const { track, cleanup, installSignalHandlers } = require("./lib/cleanup-registry");
+const { captureBaseline, verifyTeardown } = require("./lib/teardown");
 installSignalHandlers("smoke-po-gate");
 
 const prisma = require("../src/config/prisma");
@@ -45,7 +46,7 @@ const ok = (label, cond, extra = "") => {
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 const suffix = Date.now().toString(36);
 // Chụp baseline mồ côi-tenant TRƯỚC khi seed: teardown chỉ bị phạt về phần rác mới.
-let orphanBaseline = null;
+// `captureBaseline`/`verifyTeardown` dùng chung ở `scripts/lib/teardown.js`.
 
 
 /**
@@ -88,62 +89,8 @@ const trackTenantTeardown = (tenantId) =>
 
     // Chốt chặn: dữ liệu của tenant thử phải SẠCH. Nếu không, báo tên bảng còn
     // sót thay vì âm thầm để lại rác (đây là nguyên nhân gốc của 40 kho mồ côi).
-    await verifyTeardown(tenantId);
+    await verifyTeardown([tenantId], prisma);
   });
-
-/** Mọi bảng có cột `tenantId`, lấy từ chính database. */
-const listScopedTables = async (client) => {
-  const rows = await client.$queryRawUnsafe(`
-    SELECT c.table_name AS t
-      FROM information_schema.columns c
-      JOIN information_schema.tables tb
-        ON tb.table_schema = c.table_schema AND tb.table_name = c.table_name
-     WHERE c.column_name = 'tenantId' AND tb.table_type = 'BASE TABLE'
-       AND c.table_schema = 'public' ORDER BY 1`);
-  return rows.map((r) => r.t);
-};
-
-/**
- * Mồ côi-tenant theo bảng, dùng để SO SÁNH trước/sau.
- *
- * Không dùng ngưỡng tuyệt đối: DB phát triển có thể còn rác của các lần chạy
- * trước, và đó không phải lỗi của lần chạy này. Chỉ phần TĂNG thêm mới là lỗi.
- */
-const orphanSnapshot = async () => {
-  const tables = await listScopedTables(prisma);
-  const out = {};
-  for (const t of tables) {
-    const res = await prisma.$queryRawUnsafe(
-      `SELECT count(*)::int AS n FROM "${t}"
-        WHERE "tenantId" IS NOT NULL AND NOT EXISTS (SELECT 1 FROM tenants x WHERE x.id = "${t}"."tenantId")`,
-    );
-    out[t] = res[0].n;
-  }
-  return out;
-};
-
-const verifyTeardown = async (tenantId) => {
-  const tables = await listScopedTables(prisma);
-  const leftovers = [];
-  for (const t of tables) {
-    const res = await prisma.$queryRawUnsafe(
-      `SELECT count(*)::int AS n FROM "${t}" WHERE "tenantId" = $1`,
-      tenantId,
-    );
-    if (res[0].n > 0) leftovers.push(`${t}=${res[0].n}`);
-  }
-  if (leftovers.length) {
-    throw new Error(`teardown KHÔNG sạch cho tenant ${tenantId}: ${leftovers.join(", ")}`);
-  }
-
-  const now = await orphanSnapshot();
-  const grew = Object.keys(now).filter((t) => now[t] > (orphanBaseline?.[t] ?? 0));
-  if (grew.length) {
-    throw new Error(
-      `lần chạy này TĂNG mồ côi-tenant: ${grew.map((t) => `${t} ${orphanBaseline?.[t] ?? 0}→${now[t]}`).join(", ")}`,
-    );
-  }
-};
 
 /** Seed tối thiểu: tenant + admin + kho + sản phẩm + tồn + lịch sử bán 28 ngày. */
 const seedTenant = async (label) => {
@@ -253,7 +200,7 @@ const raiseStock = async (t, product, quantity) => {
     // Seed PHẢI chạy trong tenant context: nếu không, Prisma extension không
     // gắn `tenantId` cho các dòng tạo ra (và chính loader của suggest cũng không
     // nhìn thấy chúng) — đó chính là lý do lần chạy đầu sinh đề xuất rỗng.
-    orphanBaseline = await orphanSnapshot();
+    await captureBaseline(prisma);
     const A = await seedTenant("A");
     const B = await seedTenant("B");
 

@@ -21,6 +21,7 @@
 require("dotenv").config();
 const { assertLocalDb } = require("./lib/assert-local-db");
 assertLocalDb("check-tenant-aidocs");
+const { captureBaseline, verifyTeardown } = require("./lib/teardown");
 
 const { PrismaClient } = require("@prisma/client");
 const { PrismaPg } = require("@prisma/adapter-pg");
@@ -90,6 +91,11 @@ const searchLike = (tenantId) =>
   const tB = "tenant-aidocs-B-" + suffix;
 
   try {
+    // Baseline mồ côi-tenant TRƯỚC khi ghi. `ai_documents` dùng cột `tenant_id`
+    // (snake_case) nên KHÔNG nằm trong 139 bảng scoped; phần rác của bảng này
+    // được verify riêng bằng `entity_type` (xem finally).
+    await captureBaseline(prisma);
+
     // ── 1. Hai tenant cùng ghi entity_id KHÁC NHAU ─────────────────────────
     await upsertDoc("eA", "kho-A", tA);
     await upsertDoc("eB", "kho-B", tB);
@@ -164,6 +170,21 @@ const searchLike = (tenantId) =>
     );
   } finally {
     await prisma.$executeRawUnsafe(`DELETE FROM ai_documents WHERE entity_type = $1`, ETYPE);
+    // "Đã gọi DELETE" KHÔNG phải bằng chứng "không còn rác" → verify bắt buộc.
+    const leftover = await prisma.$queryRawUnsafe(
+      `SELECT count(*)::int AS n FROM ai_documents WHERE entity_type = $1`,
+      ETYPE,
+    );
+    if (leftover[0].n > 0) {
+      console.error(`TEARDOWN BI PHAT: con ${leftover[0].n} dong ai_documents entity_type=${ETYPE}`);
+      fail += 1;
+    }
+    try {
+      await verifyTeardown([], prisma);
+    } catch (e) {
+      console.error("TEARDOWN BI PHAT:", e.message);
+      fail += 1;
+    }
     await prisma.$disconnect();
   }
 

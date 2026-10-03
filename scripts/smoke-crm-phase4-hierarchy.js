@@ -13,6 +13,9 @@
  * Giữ dữ liệu: -- --keep
  */
 require("dotenv").config();
+const { assertLocalDb } = require("./lib/assert-local-db");
+assertLocalDb("smoke-crm-phase4-hierarchy");
+const { captureBaseline, verifyTeardown } = require("./lib/teardown");
 const prisma = require("../src/config/prisma");
 const { runWithTenant } = require("../src/config/tenantContext");
 const hierarchy = require("../src/modules/crm/hierarchy.service");
@@ -34,6 +37,8 @@ const check = (label, cond, extra = "") => {
 const section = (t) => console.log(`\n${t}`);
 const TAG = `p4hier_${Date.now()}`;
 let cleanupRef = null;
+// Id tenant thử đã tạo — dùng để verify không còn dòng nào sót thuộc tenant này.
+const createdTenants = [];
 
 /**
  * Dọn dẹp — gọi cả khi script lỗi.
@@ -47,11 +52,16 @@ const cleanup = async () => {
   }
   try {
     hierarchy._resetCacheForTest();
+    // `hierarchy.setReportsTo` ghi audit log cho mỗi lần đổi cây quản lý. Xoá
+    // TRƯỚC tenant/user vì `audit_logs` không có FK tới `tenants` (134/139 bảng
+    // scoped không có khoá ngoại tới `tenants`) ⇒ xoá tenant đi thì 6 dòng log
+    // thành MỒ CÔI-TENANT. Đây là nguồn rò thật, đo được: 6 dòng mỗi lần chạy.
+    const da = await prisma.auditLog.deleteMany({ where: { tenantId: { in: createdTenants } } });
     const du = await prisma.user.deleteMany({ where: { email: { startsWith: TAG } } });
     const dt = await prisma.tenant.deleteMany({ where: { slug: { startsWith: TAG } } });
     const left = await prisma.tenant.count({ where: { slug: { startsWith: TAG } } });
     const leftUser = await prisma.user.count({ where: { email: { startsWith: TAG } } });
-    console.log(`  user xoá=${du.count} tenant xoá=${dt.count} · còn sót tenant=${left} user=${leftUser}`);
+    console.log(`  audit_log xoá=${da.count} · user xoá=${du.count} tenant xoá=${dt.count} · còn sót tenant=${left} user=${leftUser}`);
     if (left || leftUser) {
       fail += 1;
       console.log("  FAIL dọn dẹp chưa sạch");
@@ -63,13 +73,25 @@ const cleanup = async () => {
     fail += 1;
     console.log(`  FAIL dọn dẹp lỗi — ${e.message.split("\n")[0]}`);
   }
+
+  // Verify dùng chung: bắt cả bảng ngoài danh sách trên bị rò, và bắt
+  // mồ côi-tenant tăng thêm so với baseline lúc bắt đầu.
+  try {
+    await verifyTeardown(createdTenants, prisma);
+  } catch (e) {
+    fail += 1;
+    console.log(`  FAIL ${e.message}`);
+  }
 };
 
 (async () => {
   cleanupRef = cleanup;
+  // Baseline mồ côi-tenant TRƯỚC khi seed (xem scripts/lib/teardown.js).
+  await captureBaseline(prisma);
   section("1. Tạo user thật (2 tenant, cây 3 tầng)");
   const t1 = await prisma.tenant.create({ data: { name: `${TAG}-t1`, slug: TAG, isActive: true } });
   const t2 = await prisma.tenant.create({ data: { name: `${TAG}-t2`, slug: `${TAG}_2`, isActive: true } });
+  createdTenants.push(t1.id, t2.id);
 
   const mkUser = (tenantId, key, role = "CASHIER") =>
     prisma.user.create({
