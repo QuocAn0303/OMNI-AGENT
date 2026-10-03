@@ -71,8 +71,25 @@ Cần biết trước khi làm P6:
 
 | Việc | Vì sao không tự quyết được | Cách làm |
 |---|---|---|
-| Có **tiền-đăng ký** hàm mục tiêu có ràng buộc dịch vụ (ví dụ fill rate ≥ 95%) rồi chạy thí nghiệm mới không | Đổi hàm mục tiêu sau khi đã thấy số là vi phạm §10 mục 1; nhưng **đăng ký mới rồi chạy như thí nghiệm số 2** thì hợp lệ — cần người quyết định có làm hay không, vì nó tốn thêm một vòng chạy và một `run_id` | Ghi thêm §13.2 vào protocol, commit, rồi `BACKTEST_NOTE="thu nghiem 2 - muc dich vu toi thieu 95%" npm run backtest -- --slice=test` |
+| ~~Có **tiền-đăng ký** hàm mục tiêu có ràng buộc dịch vụ…~~ | **ĐÃ LÀM Ở P5b (2026-10-03)** — xem "P5b" bên dưới | `§13.2` commit `69a7ba2` → `npm run backtest:exp2` → `BT2-20261003065054` |
 | Duyệt CC BY 4.0 đủ cho mục đích trình bày | Quyết định pháp lý (đã ghi ở `02-data.md` §7) | https://creativecommons.org/licenses/by/4.0/ |
+| Có chạy **thí nghiệm 3 tiền-đăng ký** với lưới rộng hơn (`z` → 0,99, `DOC` → 42) để trả lời *"ở ≥ 95% thì sao?"* không | Tốn thêm một `run_id` + một vòng đăng ký; thí nghiệm 2 đã cho thấy ràng buộc 95% **không khả thi** với lưới hiện có | `03-evaluation-results.md` §5.7 |
+
+## P5b (2026-10-03) — thí nghiệm 2, post-hoc
+
+| Việc | Trạng thái | Bằng chứng |
+|---|---|---|
+| `§13.2` đăng ký **trước** lần chạy | **DONE-VERIFIED** | commit `69a7ba2` |
+| Mã thí nghiệm 2 (không ghi đè thí nghiệm 1) | **DONE-VERIFIED** | `scripts/backtest/run-exp2.js`, commit `60a2d84` |
+| Chạy đúng **một lần**, ghi sổ S11 | **DONE-VERIFIED** | `BT2-20261003065054` trong `notes/backtest-runs.md` + `.jsonl` |
+| Báo cáo 1 và 2 cạnh nhau | **DONE-VERIFIED** | `03-evaluation-results.md` §5 (mục 1–4 của thí nghiệm 1 **không sửa**) |
+| Đính chính `automation.service.js:49,209` + backlog `crostonDemandPerDay` | **DONE-VERIFIED** | `03-evaluation-protocol.md` §13.2.5 |
+| Thí nghiệm 1 không đổi hành vi | **DONE-VERIFIED** | chạy lại `--log=false`: mọi số tổng/mất bán/tồn dư **giống hệt**; `npx jest` 4058/4063 |
+
+**Kết quả cần nhớ:** ràng buộc fill rate ≥ 95% **không khả thi** với cả 4 phương án.
+Quy tắc dự phòng đã chọn mức dịch vụ cao nhất trong lưới. Ở cùng mức dịch vụ, ROP trói
+ít vốn hơn P1 (CI loại 0, 99,24% SKU thắng, n = 132/500) — nhưng đó là **khám phá
+post-hoc**, và câu hỏi "ở ≥ 95% thì sao" **vẫn chưa được trả lời**.
 
 ## Kiểm chứng P5 (2026-10-03)
 

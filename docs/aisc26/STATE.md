@@ -293,3 +293,70 @@ trước khi sua. Thay đổi cua phien khac **KHONG** commit.
    **444 SKU duoi `minStock`**.
 3. **P7 (T13, T14)** — `LlmUsageLog` va duong khop SKU lai (fuzzy xu ly ca de,
    LLM chi ca mo ho, nguoi xac nhan ca do tin cay thap).
+
+---
+
+## Cap nhat 2026-10-03 (phien P5b — THI NGHIEM 2, post-hoc)
+
+**RESUME HERE — gói tiếp theo van la P6 (T11 demo end-to-end + T12 giao dien duyet).
+P5b xong, khong con viec nao cua T10.**
+
+### Da lam (dung 1 lan chay giao thuc)
+
+1. **`69a7ba2`** — them `§13.2` vao `03-evaluation-protocol.md`: dang ky **truoc**
+   thí nghiệm 2 (post-hoc, kham pha). Ham muc tieu co **rang buoc fillRate(mid) >= 95%**,
+   chon `z`/`DOC` **nho nhat** dat rang buoc, quy tac du phong khi khong kha thi; P1 mo
+   luoi `DOC ∈ {7,14,21,28}` (diem lech duy nhat so voi §2.2); so sanh **gia tri ton
+   trung binh o cung muc dich vu** (khop ±2 diem pham tram theo SKU) + bootstrap S7;
+   luat ket luan: khong noi "ROP tot hon" tru khi CI loai 0 **va** ty le thang > 55%.
+2. **`60a2d84`** — ma thí nghiệm 2: `scripts/backtest/run-exp2.js` (tach rieng, **khong
+   bao gio ghi de** `03-evaluation-results.md`), `constrainedGrid` + `pickConstrained`
+   (policies), `avgAtp/avgValue` (simulate), `matchedServiceBootstrap` (metrics),
+   script npm `backtest:exp2`. Cac thay doi la **bo sung**, khong doi hanh vi T10.
+3. **Kiem chung truoc khi chay**: chay lai thí nghiệm 1 bang `--log=false` → **moi so
+   tong/mua ban/ton du giong het** (849.998 / 769.199 / 781.436 / 617.035).
+4. **Mot lan chay duy nhat**: `BT2-20261003065054` (mã `60a2d84`, giao thức `69a7ba2`),
+   ghi so S11 (`backtest-runs.md` + `.jsonl`) va bang sinh tu dong vao
+   `03-evaluation-results-exp2.md`. Ket qua thí nghiệm 1 **khong sua mot so nao**.
+
+### Ket qua thí nghiệm 2 (nhan post-hoc, khong thay ket luan thí nghiệm 1)
+
+- **Rang buoc 95% KHONG kha thi** voi ca 4 phuong an, o ca 3 cua so / ca 2 nhanh / ca
+  3 lead time. Cao nhat `fillRate(mid) = 88,66%`. Quy tac du phong da chot: moi phuong
+  an chon muc dich vu cao nhat trong luoi (P1 `DOC=28`, P2/P3 `z=0,95`, P4 `DOC=28`).
+- **O cung muc dich vu, ROP troi it von hon** P1: chenh −954,63/ngày trên tap SKU khop
+  (n = **132/500**), CI 95% [−1.209,95; −752,92] **loai 0**, **99,24%** SKU thang. Giu
+  dung o nhanh B (−981,81) va o LT = 14. P3 (Croston) **khong** vuot P2.
+- **Khong noi "ROP tot hon"**: ket luan chi dung trong pham vi thí nghiem 2, **co nhan
+  post-hoc**, va cau hoi "o 95% thi sao" **van chua duoc tra loi** (can luoi rong hon,
+  phai tien dang ky moi — xem §5.7 cua bao cao).
+- Phat hien dang ghi them: frontier cho thay **nguong co dinh khong phai phuong an tiet
+  kiem von** — P1 tu `DOC=14` (77,34%) len `DOC=28` (85,42%) phai nhan ton gap **2,4 lan**.
+
+### Dinh chinh + backlog da ghi (trong `§13.2.5`)
+
+1. Protocol §1 trich `automation.service.js:49,209` **da loi thoi** (dòng 49 =
+   `AUTO_REORDER_DEDUPE_WINDOW_MS`, dòng 209 trong `debtAutoCollection`; P0-4 da thay
+   bang ROP qua `planReplenishment`) ⇒ "hien trang" trong ma **da la ROP**; P1 la nguong
+   co dinh **khong con ton tai trong ma san pham**.
+2. Backlog: `crostonDemandPerDay` (`replenishment.calc.js:256`) **nhan `alpha` nhung khong
+   dung** (tu suy `a = 1/(k+1)` o dong 260). Ca hai thí nghiem deu khong dung ham nay cho
+   P3. **Sua o goi sau kem test** — khong sua trong T10.
+
+### Kiem chung P5b (2026-10-03)
+
+| Lenh | Ket qua | Loai |
+|---|---|---|
+| `npm run backtest:exp2` | `BT2-20261003065054` | du lieu cong khai, **khong DB** |
+| `node scripts/backtest/run.js --slice=test --log=false` | moi so **giong het** thí nghiem 1 | idem |
+| `npx jest tests/backtest-simulate.test.js` | 20/20 | mock |
+| `npx jest` | **4058/4063 pass** (71 suite, 5 skip) | mock |
+
+Khong cham DB, khong cham backend, khong dung cong 4000. Commit: `69a7ba2`, `60a2d84`,
++ commit ket qua (xem `git log --oneline -3`).
+
+### Con lai cho nguoi quyet (BLOCKED-HUMAN)
+
+1. Duyet **CC BY 4.0** cho muc dich trinh bay.
+2. Co chay **thí nghiem 3 tien dang ky** voi luoi rong hon (`z` toi 0,99, `DOC` toi 42)
+   de tra loi cau hoi "o >= 95% thi ROP so voi nguong co dinh the nao" hay khong.
