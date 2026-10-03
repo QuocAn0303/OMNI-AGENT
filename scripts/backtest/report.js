@@ -279,7 +279,7 @@ const appendRunLog = (out, { runId, command, note = "" }) => {
   const main = aggs.find((a) => a.leadTimeDays === out.opts.mainLeadTime && a.branch === "A");
 
   const line =
-    `| ${runId} | ${stamp} | ${codeCommit} | ${protocolCommit} | ${path.basename(out.source.csvPath)} \`${out.source.sha256.slice(0, 12)}\` | \`${command}\` | ${out.opts.positionMode} | ${out.seed} | test | ` +
+    `| ${runId} | ${stamp} | ${codeCommit} | ${protocolCommit} | ${path.basename(out.source.csvPath)} \`${out.source.sha256.slice(0, 12)}\` | \`${command}\` | ${out.opts.positionModes.join(",")} | ${out.seed} | test | ` +
     `P1=${num(main.policies.P1.mainMetric)} P2=${num(main.policies.P2.mainMetric)} P3=${num(main.policies.P3.mainMetric)} P4=${num(main.policies.P4.mainMetric)} | ${note || "chạy đầu theo giao thức"} |`;
 
   if (!fs.existsSync(RUNS_MD)) {
@@ -302,7 +302,7 @@ const appendRunLog = (out, { runId, command, note = "" }) => {
     protocol_commit: protocolCommit,
     dataset: { file: path.basename(out.source.csvPath), sha256: out.source.sha256 },
     command,
-    position_mode: out.opts.positionMode,
+    position_modes: out.opts.positionModes,
     seed: out.seed,
     resamples: out.resamples,
     slice: "test",
