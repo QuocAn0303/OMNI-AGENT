@@ -577,3 +577,131 @@ Studio ⇒ khong ghi so. Chi tiet + BLOCKER-HUMAN: `docs/aisc26/notes/gemini-fre
 3. **T18** chay lai toan bo, quet secret, hoan tat `MORNING-REPORT.md`.
 4. P6 de lai: `npm run check:humangate` (can backend dang chay).
 5. **Khong duoc** cong bo so LLM khi chua chay `live`: hien ghi **"chua do"**.
+
+---
+
+## Cap nhat 2026-10-04 (phien P8 - T15, T16, T17, T18 XONG)
+
+**RESUME HERE - Vong 2 DA KET THUC. Khong con viec nao cua agent. Viec tiep theo
+thuoc ve NGUOI: doc trang dau `MORNING-REPORT.md` roi chay theo `FILL-IN.md`.**
+
+Commit moi theo thu tu: `4194ce1` (endpoint by-status), `26096f3` (T15 bo cong cu nguoi
+thu), `91e82de` (T16+T17), `45ddc4b` (FILL-IN.md) + commit bao cao (xem `git log -3`).
+Nhanh van la `round2/p0-hardening`. **KHONG day remote.**
+
+### 1. Tinh nang da dong bang - chi them MOT thay doi ma nho
+
+`GET /api/agent/human-gates/by-status?status=&pendingResult=&limit=` trong
+`src/modules/ai/agent.routes.js`. Chi doc, `authorize('ADMIN','MANAGER')`, whitelist
+status (sai => 400), `take` kem 1..200, cach ly tenant boi Prisma extension
+(`AgentHumanGate` co san trong `TENANT_SCOPED_MODELS`; route KHONG tu gan `tenantId` -
+co test khang dinh). 10 test moi trong `tests/agent-humangate.route.test.js` =>
+**24/24**; Swagger **116/116**. D-021. Ly do: `GET /human-gates` co tinh chi tra
+`PENDING` nen trang thai lo lung (APPROVED + `resultRef` NULL) doc khong duoc tu API
+(P6 muc 6.3 ton doc). **Khong them tinh nang khac.**
+
+### 2. T15 - Bo cong cu 6 nguoi thu (DONE-UNVERIFIED: san xong, chua co ai thu)
+
+`docs/aisc26/usertest/`: README, `task-script.md` (chu doc nguyen van), `moderator-guide.md`
+(counterbalance AB/BA 3+3), `consent-form.md` (an danh), `timer-sheet.md`,
+`decision-sheet.md`, `sku-sets.md` + `sku-sets.json`, `grading.md`, `results/*.template.csv`,
+`sample/` (nhan **SAMPLE**). Script: `scripts/usertest/build-scenario.js` (chi doc),
+`print-sheets.js`, `summarize-results.js`; npm `usertest:scenario`, `usertest:summarize`.
+
+- **Hai bo SKU tuong duong**: 20/20, **trung ma SKU = 0**, Σ `orderQty` **5.243 vs 5.462**
+  (lech 4%), nhu cau/ngay 16,01 vs 16,65, `orderQty` trai **19..491** o ca hai bo. Cach
+  chia: loc dai tinh huong tap hoa nho (D-022) + lay mau **cach deu theo phan bo** roi
+  chia xen ke. `sha256 sku-sets.json` ghi trong `sku-sets.md`.
+- **Cham P4 bang `scripts/backtest/lib/simulate.js`** - CUNG bo mo phong voi backtest T10.
+  Ba bien the: `MANUAL` (mot lan tai ngay 0) / `REF` (ra soat hang ngay, `max(0, ROP - vị the)`)
+  / `NONE`. Bat loi da ghi: **REF duoc 14 lan ra soat, MANUAL mot lan** - la so "quy trinh"
+  voi "mot quyet dinh", khong phai so hai thuat toan (D-023).
+- **Quy tac bat buoc co trong script**: `n < 5` => in canh bao chi bao trung vi + khoang
+  min-max; **khong** co duong tinh p-value; moi dong output co nhan pham vi.
+- **Da chay thu bang du lieu mau**: `npm run usertest:summarize -- --make-sample` (3 nguoi
+  gia, 6 dong task, 120 dong quyet dinh) roi `--sample` => chay tron, in nhan **SAMPLE** +
+  canh bao `n = 3 < 5`. Bai SAMPLE **khong** duoc trich ra bao cao.
+- Chay thu kich ban tren DB that: `usertest:scenario` doc 500 SKU, 231 ung vien du dieu kien.
+
+### 3. T16/T17 - Trinh bay (DONE-UNVERIFIED: viet xong, chua dien tap tren may trinh bay)
+
+`04-demo-script.md` (kich ban 5 phut theo phut-giay, ai noi gi, man hinh nao; checklist 30
+phut; phuong an du phong A `demo:run` / B `check:humangate` / C ban in-snapshot /
+D **che do khong-LLM la mac dinh**; kich ban 90 giay) · `07-pitch-outline.md` (10 slide,
+co ghi chu noi, **co slide "KHONG lam gi o Vong 2"** va **slide han che da biet**, nhan
+UCI **CC BY 4.0** tren slide du lieu) · `07-qa-prep.md` (**16 cau**).
+
+**Quy tac noi dung da ap dung:** KHONG noi "ROP tot hon"; so thieu nghiem 1 duoc ke kem
+(ban it hon **9,5%**, mat ban nhieu hon **31,5%**, fill **69,51% vs 76,81%**); chi noi
+"o cung muc dich vu, ROP troi it von hon" (thi nghiem 2, **post-hoc**, rang buoc 95%
+**khong kha thi**, toi da **88,66%**); KHONG noi "chinh xac hon KiotViet/Sapo"; luận điểm
+khác biệt = **cong duyet bat buoc + sai so do duoc**; LLM / nguoi thu / phong van ghi
+**"CHUA CO DU LIEU"**.
+
+### 4. FILL-IN.md (moi)
+
+Moi cho can nguoi dien sau, moi muc co **tệp · vị trí · nguồn số liệu · lệnh**: nhan SKU
+tay (120 cap), LLM `live`, 6 nguoi thu, 5–10 phong van, gia PA/PB/PC, thieu khoa ngoai
+`tenants`, duyet CC BY 4.0, thieu nghiem 3, mat khau DB trong repo, trien khai hotfix.
+
+### 5. Phat hien lon nhat cua P8 (da sua, co bang chung)
+
+**Rac cua mot lan chay bi do lam hong script khac.** 3 `purchase_orders` DRAFT
+(`PO-20261003-0004/0005/0006`, note `[gate:...]`, gate APPROVED tuong ung, tao
+10:58–11:02 UTC 2026-10-03) lam bo sinh ma PO dem trung => `smoke:po-gate` **FAIL 21/24**
+voi `Unique constraint failed ("poCode")`. Da don bang
+`docs/aisc26/one-off/cleanup-p8-demo-po-residue.js` (dump truoc, dry-run mac dinh,
+`EXPECTED` co dinh, COUNT lai ngay truoc khi ghi, mot transaction) => **24/24** sau đó.
+Dump: `aduu-dev-before-p8-po-residue-20261004-013531.dump` (1,3 MB, ngoai repo).
+
+**Tu dau cam:** phiên này **tu gay** mot lan FAIL khi chay **song song** `smoke:po-gate`
+va `smoke:demo-flow` (cung tao ma PO trong ngay) - dung la nguyên nhan goc cua 3 dong
+rac kia. Bai hoc: chay script ghi du lieu **tuan tu**, va dung moi tien trinh nen truoc.
+
+### 6. Kiem chung P8 (2026-10-04, chay TUAN TU)
+
+| Lenh | Ket qua | Loai |
+|---|---|---|
+| `npx jest` | **4102/4107 pass** (73 suite, 5 skip) | mock |
+| `npm run check:modules` | 203 module | — |
+| `npm run check:swagger` | 116/116 | tinh |
+| `npm run check:tenant` | 11/11 + 4/4 + 4/4 | **DB that** |
+| `node scripts/check-tenant-aidocs.js` | 12/12 | **DB that** |
+| `npm run tenant:null -- --scan` | MO COI **0** · TRUNG **0** · NULL 125 (ngoai le) | **DB that** |
+| `npm run smoke:po-gate` | **24/24** (sau khi don rac) | **DB that** |
+| `npm run smoke:demo-flow` | **12/12**, don lan 1 va 2 deu 0 bang thay doi | **DB that** |
+| `npm run smoke:llm-usage` | 9/9 (replay) | **DB that** |
+| `npm run check:humangate` | **TAT CA PASS** (backend that 4000, **da tat**) | **HTTP that** |
+| `npm run demo:run` | 6 khoi, 0 bang thay doi, 3.089 ms | **DB that** |
+| `npm run usertest:scenario` | 20/20 + 20/20, trung ma = 0 | **DB that** |
+| `npm run usertest:summarize -- --sample` | chay tron, nhan SAMPLE, canh bao n<5 | may tinh |
+| `npm run llm:eval -- --mode live` | **BLOCKER-HUMAN** (chua co nhan tay) | — |
+| `frontend npm run lint` | **0 error** (61 warning co san) | — |
+| `frontend npm run build` | built, 218 entry PWA | — |
+
+### 7. Quet secret / du lieu that (sach, co bang chung)
+
+0 tep `.env`/khoa duoc track (chi `.env.example`); 0 mau khoa that (`sk-`, `AIza`, khoi
+PEM) trong noi dung track; 0 so CCCD; email chi la tai khoan seed da co san.
+**Phat hien khong phai cua P8:** mat khau DB local `uit` nam trong `README.md:177` va
+`docker-compose.yml:10` - da co tu truoc; dua vao `BLOCKED-HUMAN` H8 de nguoi quyet
+(D-025), **khong** tu sua. Khong con tien trinh nen (`Get-Process node` = 0 sau khi tat
+backend).
+
+### 8. Tu cham muc 11 cua NIGHT-PROMPT (trung thuc)
+
+| Muc | Trang thai | Bang chung |
+|---|---|---|
+| `check:tenant` PASS; hai tenant thu khong doi du lieu | **DONE-VERIFIED** | 11/11+4/4+4/4; `candory-scent` 82 don / 158 dong / 89.862.000 VND khong doi |
+| Hotfix cach ly tenant san trien khai doc lap | **PARTIAL-HUMAN** | runbook + 2 goi review co; **D7 chua day remote** ( dieu kien deploy chua xac minh) |
+| `smoke:po-gate` / `smoke:demo-flow` / `check:humangate` xanh; `demo:run` chay | **DONE-VERIFIED** | 24/24 · 12/12 · TAT CA PASS · 3.089 ms |
+| Giao thuc backtest commit **truoc** lan chay dau; ket qua co CI, 3 lead time, nhan | **DONE-VERIFIED** | `1f1a402` truoc `BT-20261003045045`; CI + LT 3/7/14 + nhan "MO PHONG" |
+| `05-differentiation.md` + `06-business.md` co nguon hoac nhan "chua xac minh" | **DONE-VERIFIED** | `[MO]/[TRICH]` + URL + ngay; 3 muc `[CHUA XAC MINH]` |
+| Che do khong-LLM chay tron luong demo; so LLM chi co neu da chay that | **DONE-VERIFIED** | `smoke:demo-flow` 12/12 voi LLM tat; moi noi ghi "**chua do**" |
+| Bo cong cu nguoi thu + phieu gan nhan san | **PARTIAL** | bo cong cu **san** (`usertest/`); **phieu gan nhan 120 cap van de trong** => chua co so do |
+| Kich ban demo + dan y + QA co han che that | **DONE-UNVERIFIED** | `04-demo-script.md`, `07-pitch-outline.md`, `07-qa-prep.md` (16 cau) — **chua dien tap tren may trinh bay** |
+| Khong tien trinh nen; khong secret/du lieu that trong commit; `STATE.md` + `MORNING-REPORT.md` moi nhat da commit | **DONE-VERIFIED** | node = 0; quet sach; commit cuoi gom ca hai tep |
+
+**Truc tiep cho 3 muc FAIL:** (1) `llm:eval` **tu choi** chay khi chua co nhan tay — dung
+theo hien phap, khong phai loi; (2) thieu khoa ngoai `tenants` o 135/140 bang la **han
+che da biet** chua sua (ngoai pham vi); (3) so LLM = "chua do" o **moi** noi.
