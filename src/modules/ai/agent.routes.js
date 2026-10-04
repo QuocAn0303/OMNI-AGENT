@@ -22,9 +22,10 @@
  */
 const express = require('express');
 const { authenticate, authorize } = require('../../middleware/auth.middleware');
+const { requireModule } = require('../../middleware/plan.middleware');
 
 const router = express.Router();
-router.use(authenticate);
+router.use(authenticate, requireModule("ai"));
 
 const prisma = require('../../config/prisma');
 const { processQuery, generateResponse, HANDLERS } = require('./db-agent.service');

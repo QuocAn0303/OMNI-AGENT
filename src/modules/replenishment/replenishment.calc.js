@@ -252,16 +252,39 @@ const calcDemand = ({ dailySales = [], method = "auto" } = {}) => {
  * Croston cho nhu cầu gián đoạn.
  * size = lượng bán mỗi lần, interval = số ngày giữa hai lần bán.
  * demandPerDay = size / interval.
+ *
+ * ============================================================================
+ * VỀ `alpha` (ghi nhận từ P5b, sửa 2026-10-04)
+ * ============================================================================
+ * Trước đây hàm nhận tham số `alpha = 0.1` nhưng KHÔNG dùng — nó tự suy
+ * `a = 1/(k+1)` ở dòng dưới ⇒ tham số người gọi truyền vào bị bỏ qua im lặng,
+ * một loại bug "đọc code thấy sai mà test vẫn xanh" (vì test gọi không tham số).
+ *
+ * Nay `alpha` là TÙY CHỌN có nghĩa:
+ *   - `alpha` truyền vào  → dùng đúng giá trị đó (đã kẹp vào (0, 0.99])
+ *   - `alpha` bỏ trống    → tự suy theo Snyder `1/(k+1)` như trước
+ *
+ * Hàm gọi trong sản phẩm (`calcDemand`) không truyền `alpha` ⇒ **hành vi tính
+ * toán của luồng demo và hai thí nghiệm KHÔNG đổi**. Thay đổi này chỉ làm cái
+ * tham số bị bỏ qua trở thành tham số có tác dụng.
+ *
+ * @param {number} [alpha] 0 < alpha <= 0.99. Bỏ trống = tự suy từ dữ liệu.
  */
-const crostonDemandPerDay = (qtySeries, alpha = 0.1) => {
+const crostonDemandPerDay = (qtySeries, alpha = null) => {
   const nonZero = qtySeries.map((q, i) => ({ q, i })).filter((x) => x.q > 0);
-  if (!nonZero.length) return { demandPerDay: 0, alpha };
 
   // Ước lượng tham số smoothing từ dữ liệu (Snyder): alpha = 1/(k+1),
   // k = độ dài trung bình của khoảng trống giữa các lần bán.
   const gaps = nonZero.slice(1).map((x, i) => x.i - nonZero[i].i);
   const k = gaps.length ? Math.max(1, round(mean(gaps), 2)) : 1;
-  const a = Math.min(0.99, 1 / (k + 1));
+  const explicit = Number(alpha);
+  const hasExplicit =
+    alpha !== null && alpha !== undefined && Number.isFinite(explicit) && explicit > 0;
+  const a = hasExplicit
+    ? Math.min(0.99, explicit)
+    : Math.min(0.99, 1 / (k + 1));
+
+  if (!nonZero.length) return { demandPerDay: 0, alpha: round(a, 3) };
 
   // Hạt giống phải lấy từ khoảng trống QUAN SÁT ĐƯỢC đầu tiên. Seed bằng 1
   // sẽ làm interval nhỏ lúc đầu và kéo nhu_cầu/ngày tăng vọt sai.

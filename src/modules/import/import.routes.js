@@ -34,7 +34,7 @@ const upload = multer({
   },
 });
 
-router.use(requireModule("import"));
+router.use(authenticate, requireModule("import"));
 
 // GET /api/import/template/:type — tải file mẫu
 router.get('/template/:type', authenticate, async (req, res, next) => {

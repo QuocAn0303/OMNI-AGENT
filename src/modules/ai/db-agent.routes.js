@@ -13,6 +13,7 @@
 
 const express = require('express');
 const { authenticate, authorize } = require('../../middleware/auth.middleware');
+const { requireModule } = require('../../middleware/plan.middleware');
 const { HANDLERS, processQuery, generateResponse, isWriteTool } = require('./db-agent.service');
 const { chat } = require('./llm-chat.service');
 
@@ -31,7 +32,7 @@ const READ_ROLES = [
 ];
 
 const router = express.Router();
-router.use(authenticate);
+router.use(authenticate, requireModule("ai"));
 
 router.post('/query', authorize(...READ_ROLES), async (req, res, next) => {
   try {

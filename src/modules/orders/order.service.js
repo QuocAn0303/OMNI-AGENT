@@ -602,7 +602,7 @@ const create = async (orderData, userId, options = {}) => {
       before: null,
       after: { orderCode: order.orderCode, total: order.total, items: order.items },
     })
-    .catch((err) => logger.error("Failed to write audit log for order:", err));
+    .catch((err) => logger.error(`Failed to write audit log for order: ${err?.message || err}`));
 
   // Auto-issue e-invoice + invoice PDF khi tạo đơn trực tiếp COMPLETED (POS)
   if (status === "COMPLETED") {

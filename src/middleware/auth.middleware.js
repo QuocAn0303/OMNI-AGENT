@@ -34,6 +34,11 @@ const requireSuperOmega = (req, res, next) => {
 };
 
 const authenticate = async (req, res, next) => {
+  // Idempotent: router-level `authenticate` + per-route `authenticate` là cách
+  // chuẩn (đặt `authenticate` TRƯỚC `requireModule` ở router.use). Không verify
+  // lần hai để không tốn thêm 1 query user mỗi request.
+  if (req.user && req.authVerified) return next();
+
   const authHeader = req.headers.authorization;
 
   if (!authHeader || !authHeader.startsWith("Bearer ")) {
@@ -61,6 +66,7 @@ const authenticate = async (req, res, next) => {
           return next({ status: 401, message: "Phiên hỗ trợ đã hết hạn hoặc bị thu hồi" });
         }
         req.user = decoded;
+        req.authVerified = true;
         runWithTenant(decoded.tenantId, () => next(), false);
         return;
       }
@@ -78,6 +84,7 @@ const authenticate = async (req, res, next) => {
       }
       // Token thường: refresh tenantId/role từ DB (tránh token cũ có giá trị sai)
       req.user = { ...decoded, tenantId: user.tenantId || null, role: user.role };
+      req.authVerified = true;
     } catch (dbErr) {
       logger.error("[auth] DB check failed — rejecting request:", dbErr.message);
       return next({ status: 503, message: "Không thể xác thực lúc này, vui lòng thử lại" });

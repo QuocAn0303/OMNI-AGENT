@@ -19,7 +19,7 @@ const { requireModule } = require("../../middleware/plan.middleware");
 const svc = require("./lot.service");
 const mgr = ["ADMIN", "MANAGER", "WAREHOUSE"];
 
-router.use(requireModule("production"));
+router.use(authenticate, requireModule("production"));
 
 router.get("/", authenticate, requireRole(mgr), async (req, res, next) => {
   try { res.json({ success: true, data: await svc.listLots(req.query) }); } catch (e) { next(e); }

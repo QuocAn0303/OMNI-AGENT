@@ -22,7 +22,7 @@ const analyticsService = require("./analytics.service");
  * Query params: from (YYYY-MM-DD), to (YYYY-MM-DD), groupBy (day|week|month)
  * Used by frontend Analytics.jsx
  */
-router.use(requireModule("analytics"));
+router.use(authenticate, requireModule("analytics"));
 
 router.get("/", authenticate, authorize("ADMIN", "MANAGER"), async (req, res, next) => {
   try {

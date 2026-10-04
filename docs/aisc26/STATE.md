@@ -705,3 +705,100 @@ backend).
 **Truc tiep cho 3 muc FAIL:** (1) `llm:eval` **tu choi** chay khi chua co nhan tay — dung
 theo hien phap, khong phai loi; (2) thieu khoa ngoai `tenants` o 135/140 bang la **han
 che da biet** chua sua (ngoai pham vi); (3) so LLM = "chua do" o **moi** noi.
+
+---
+
+## Cap nhat 2026-10-04 (phien P9 - sua bug chan cua thi, chua day remote)
+
+**RESUME HERE - Vong 2 dang chay trong `round2/p0-hardening`.** Phien nay khong
+them tinh nang ngoai pham vi; chi sua nhung loi lam CODE KHONG HOAT DONG tren san
+khuau, va day len GitHub.
+
+### 1. Xac minh LLM THAT (mo khoa H2 mot phan)
+
+`GEMINI_API_KEY` trong `.env` **trong** (dat 2026-10-04). `npm run check:llm`:
+provider `gemini`, model `gemini-3.8-flash` **co that trong danh sach 61 model**,
+va **1 request that tra loi duoc** ("Quan-ly"). Bai "chua xac minh ten model co
+ton tai that khong" (F7) **da duoc dong** bang bang chung, khong phai doan.
+
+`npm run llm:eval` van **tu choi chay** — ly do khac: thieu **nhan tay** 120 cap
+(FILL-IN A1), khong phai thieu key. Do la dung theo hien phap.
+
+### 2. Paywall fail-open — DA VA (F8/B1)
+
+`requireModule` doc `req.user.tenantId`; `plan.middleware.js:109` `if (!tenantId)
+return next()` ⇒ dat `requireModule` truoc `authenticate` là **vô hiệu hoàn toàn**.
+
+- **16 file route** chuyen sang `router.use(authenticate, requireModule("x"))`.
+- `authenticate` **idempotent** (`req.authVerified`) de `router-level` + `per-route`
+  khong ton 2 query user.
+- `ai` + `replenishment` **da duoc gate** (truoc do khong gate o dau ca).
+- **`tests/plan-gate-order.contract.test.js`** (5 test) — doc source, tim moi
+  `requireModule` dang truoc `authenticate`, co allowlist 2 route cong khai
+  (`delivery/:id/track`, `portal` — xac thuc OTP khong co `req.user`).
+
+### 3. ROP co route HTTP lan dau tien (quan trong nhat)
+
+`replenishment` (54 unit test + backtest + human-gate) **khong co route nao** — chi
+chay qua CDC `LOW_STOCK` va cron. **Them** `src/modules/replenishment/replenishment.routes.js`:
+
+| Endpoint | Tac dung |
+|---|---|
+| `GET /suggestions` | SKU duoi ROP + so de xuat (read-only) |
+| `GET /products/:id/preview` | xem truoc 1 SKU, khong ghi bang nao |
+| `POST /products/:id/propose` | TAO `AgentHumanGate` PENDING that |
+
+`previewForProduct` (moi trong `replenishment.suggest.js`) dung CHUNG
+`loadReplenishmentInput` + `planReplenishment` voi duong ghi ⇒ so xem truoc va so
+ghi vao gate la mot.
+
+### 4. Bug "thay khach thay khong dung thu" — DA VA
+
+`GET /smart-guide/reorder` la man hinh **duoc mo** cua khach, nhung no tu tinh
+bang cong thuc rieng `(minStock*2 - qty)*1.2` voi nguong **`10` hard-code** (bieu
+thuc `prisma.inventory.fields?.minStock ? undefined : 10` luon ra 10). Cung du
+lieu, hai ket qua khac nhau. Nay `getReorderSuggestions` da chuyen sang engine ROP
+(cot ten truong cho frontend giu nguyen, them `rop`/`leadTimeDays`/`leadTimeEstimated`).
+`summary.engine = "replenishment/planReplenishment"` de chung minh.
+
+### 5. Demo KHONG CHAY DUOC tren may — da giai
+
+Tenant demo co user mat khau `khong-dang-nhap-duoc` + **khong co subscription** ⇒
+(1) khong dang nhap duoc, (2) gate module se chan. Tenant CANDORY thi 20 SKU, khong
+SKU nao duoi ROP ⇒ man hinh nhap hang **trong**.
+
+`scripts/demo/ensure-demo-login.js` + `npm run demo:login -- --apply` (idempotent,
+dry-run mac dinh): bat mat khau + `emailVerified`, tao subscription ACTIVE `business`,
+va bo sung `replenishment` vao `allowedModules` cua plan. **Khong** sua
+`data:import` (co ky vong teardown nghiem ngat) va **khong** dung tenant CANDORY.
+
+### 6. Bug nho khac
+
+| Viec | Truoc | Sau |
+|---|---|---|
+| `purchase.service.js` | `PO_APPROVE_THRESHOLD = 50_000_000` hard-code **vs** `create()` doc `companySettings` | mot nguon duy nhat |
+| `hr.service.js:49` | bcrypt hard-code `10` | doc `BCRYPT_ROUNDS` (mac dinh 12) |
+| `crostonDemandPerDay` | nhan `alpha = 0.1` roi **bo qua** | `alpha` tuy chon co nghia; ham san pham khong truyen ⇒ **so tinh toan khong doi** |
+| `db-agent` patterns | `'po'` khop "ao **po**lo", `'don'` khop "**don** gia" | ho tro RegExp; `resolveIntent` phan biet string vs regex |
+| 7 cho `logger.error(msg, obj)` | winston splat ⇒ in `{"0":"\\n","1":"I",...}` khong doc duoc | noi vao template |
+
+### 7. Kiem chung P9 (2026-10-04, chay TUAN TU)
+
+| Lenh | Ket qua | Loai |
+|---|---|---|
+| `npx jest` | **4109/4114 pass** (74 suite, 5 skip) — +7 test moi | mock |
+| `npm run check:modules` | **204 module** | — |
+| `npm run check:swagger` | **117/117** khoi | tinh |
+| `npm run smoke:po-gate` | **24/24** | **DB that** |
+| `npm run smoke:demo-flow` | **12/12** | **DB that** |
+| `npm run check:llm` | 1 request that OK | **LLM that** |
+| HTTP that (server gioi han ~60s, tu tat) | login demo -> `/replenishment/suggestions` 200 (5 dong) -> `/smart-guide/reorder` 200 (**130 dong**) -> `status=BOGUS` 400 | **HTTP that** |
+
+Khong con tien trinh nen sau moi lan chay (`Get-Process node` = 0).
+
+### 8. Con lai (khong lam trong phien nay)
+
+- **A1 nhan tay 120 cap** → van la thu tu chay mau cho **MOI so ve AI**.
+- Portal + `delivery/:id/track` **van khong gate duoc** theo goi (khong co `req.user`).
+- `enterprise` `price: 0` ⇒ hien "Mien phi" tren trang gia (can sua hien thi, khong sua seed).
+- 135/140 bang scoped chua co FK toi `tenants`; `db:agent` viet 1 loi in khong doc duoc.

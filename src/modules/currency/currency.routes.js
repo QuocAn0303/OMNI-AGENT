@@ -17,7 +17,7 @@ const { authenticate, requireSuperOmega } = require("../../middleware/auth.middl
 const { requireModule } = require("../../middleware/plan.middleware");
 const svc = require("./currency.service");
 
-router.use(requireModule("currency"));
+router.use(authenticate, requireModule("currency"));
 
 // GET /api/currencies — list all with current rates
 router.get("/", authenticate, async (req, res, next) => {

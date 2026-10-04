@@ -341,7 +341,7 @@ async function main() {
           "production", "projects",
           "einvoice", "tax", "bank-reco", "fixed-assets", "currency",
           "marketplace", "report-builder", "workflows",
-          "integrations", "portal", "ai",
+          "integrations", "portal", "ai", "replenishment",
         ],
         hrPit: true, hrBhxh: true, hrViolations: true, hrPayrollLock: true,
         accountingBalanceSheet: true, accountingCashFlow: true, accountingAutopost: true,

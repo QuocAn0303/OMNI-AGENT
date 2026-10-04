@@ -57,7 +57,7 @@ erp-system/
 │   └── realtime/
 │       └── socket.js                             # Socket.IO + Redis adapter, mapping user-tenants, rooms
 ├── prisma/
-│   ├── schema.prisma                             # 133 models, 59 enums — Single source of truth
+│   ├── schema.prisma                             # 153 models, 71 enums — Single source of truth
 │   ├── startup.js                                # Unified startup (migrate + seed)
 │   ├── seed.js                                   # Seed: admin@candory.com / 123456 + dữ liệu mẫu
 │   ├── seed_accounting.js                        # Chart of Accounts (~33 TK VAS)
@@ -65,7 +65,7 @@ erp-system/
 ├── tests/
 │   ├── setup.js                                  # Jest setup — mock warehouse.helper, set env
 │   ├── accounting.test.js, agent-handlers.test.js, automation.service.test.js, ...
-│   └── (19 test files)
+│   └── (72 test files)
 ├── frontend/                                     # React + Vite
 │   ├── src/
 │   │   ├── main.jsx                              # Entry - init i18n + ErrorBoundary + Suspense
@@ -113,7 +113,7 @@ erp-system/
 
 ## Database Schema
 
-### Enums đầy đủ (59 enums, trích những cái quan trọng)
+### Enums đầy đủ (71 enums, trích những cái quan trọng)
 
 ```
 Role:              SUPER_OMEGA_ULTRA_ADMIN | SUPER_ADMIN | ADMIN | MANAGER | ACCOUNTANT | CASHIER | WAREHOUSE
@@ -194,7 +194,7 @@ Các model có `isActive`:
 
 ---
 
-## 54 Backend Modules
+## 59 Backend Modules
 
 | Nhóm | Module | Files | Mô tả |
 |------|--------|-------|-------|
@@ -455,10 +455,18 @@ npm run db:seed:accounting     # Chỉ seed accounting (CoA)
 npm run db:seed:accounting-demo# Chỉ seed accounting demo data
 npm run db:studio              # Prisma Studio GUI
 npm test                       # Jest (--runInBand)
-npm run check:modules          # Load 184 module bằng Node thật — bắt lỗi "app không boot được" (export trước khai báo, circular require)
+npm run check:modules          # Load 204 module bằng Node thật — bắt lỗi "app không boot được" (export trước khai báo, circular require)
 npm run check:humangate        # Human-gate qua HTTP THẬT (login → chat → gate → duyệt). Cần backend đang chạy + DB seed. -- --keep để giữ dữ liệu test
 npm run smoke:humangate        # Smoke test human-gate trên DB thật (tự dọn dẹp, KHÔNG cần server)
 npm run check:llm              # Gọi thật 1 request LLM provider + in provider/model/configured
+npm run llm:policy             # In chế độ LLM + có/không key (KHÔNG in giá trị key)
+npm run llm:eval               # Đo P/R/F1 khớp SKU — TỪ CHỐI chạy nếu chưa có nhãn tay
+npm run llm:labels             # Sinh bộ 120 cặp SKU chờ GÁN TAY (cột label_* để trống)
+
+# Luồng demo AISC26
+npm run demo:login             # Bật đăng nhập + gói `business` cho tenant MÔ PHỎNG (idempotent, dry-run mặc định)
+npm run smoke:demo-flow        # 12 assertion trên DB thật: chọn SKU → đơn → CDC → gate → duyệt → PO
+npm run demo:run               # Chạy luồng demo không cần giao diện (in 6 khối)
 
 # Frontend
 cd frontend

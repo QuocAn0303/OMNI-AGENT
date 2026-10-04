@@ -42,6 +42,7 @@
     "smoke:import-demo": "node scripts/smoke-import-demo.js",
     "smoke:demo-flow": "node scripts/smoke-demo-flow.js",
     "demo:run": "node scripts/demo/run-demo.js",
+    "demo:login": "node scripts/demo/ensure-demo-login.js",
     "llm:labels": "node scripts/llm/build-label-set.js",
     "llm:eval": "node scripts/llm/eval-sku-match.js",
     "llm:policy": "node scripts/check-llm-policy.js",

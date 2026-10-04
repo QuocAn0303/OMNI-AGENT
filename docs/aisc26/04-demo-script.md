@@ -26,6 +26,9 @@ npm run tenant:null -- --scan      # MỒ CÔI-TENANT 0 · TRÙNG 0
 npm run data:import -- --reset --apply --days 34 --max-orders 6000
 npm run smoke:import-demo          # 9/9
 
+# 1b. BẬT ĐĂNG NHẬP cho tenant MÔ PHỎNG (bắt buộc — mặc định user demo KHÔNG đăng nhập được)
+npm run demo:login -- --apply       # in ra email + mật khẩu dùng cho bước đăng nhập
+
 # 2. Luồng demo chạy được, và chạy lại được nhiều lần không rác
 npm run smoke:demo-flow            # 12/12, 2 lần liên tiếp: 0 bảng thay đổi
 
@@ -47,13 +50,32 @@ cd frontend && npm run lint && npm run build && cd ..
 | `smoke:demo-flow` 12/12 | ☐ | lệnh trên | đọc `STATE.md` giả định A4/A5 |
 | `check:humangate` 11/11 | ☐ | cần `npm run dev` | xem mục dự phòng B |
 | LLM **tắt** (mặc định) | ☐ | `npm run llm:policy` | không cần làm gì thêm |
-| Đăng nhập được vào tenant demo | ☐ | `/login` | xem `AGENTS.md` (tài khoản seed) |
-| Mở sẵn 2 tab: `/pos`, `/agent-approvals` | ☐ | trình duyệt | — |
+| Đăng nhập được vào tenant demo | ☐ | `/login` bằng tài khoản mà `npm run demo:login -- --apply` in ra | `npm run demo:login -- --apply` |
+| Tab "Nhập hàng" có dữ liệu | ☐ | `/smart-guide` → tab **Nhập hàng** (cần tenant demo, KHÔNG phải CANDORY) | xem mục 1b |
+| Mở sẵn 3 tab: `/smart-guide`, `/pos`, `/agent-approvals` | ☐ | trình duyệt | — |
 | **Chạy `npm run demo:run` 1 lần để có bản in dự phòng** | ☐ | xem mục 4 | — |
 | Câu hỏi dự phòng đã đọc | ☐ | `07-qa-prep.md` | — |
 
 **Sau buổi trình bày:** `Get-Process node | Stop-Process -Force` — **không** để lại
 tiến trình nền.
+
+### 1b. Tài khoản trình diễn — phải đúng tenant MÔ PHỎNG
+
+`data:import` cố tình tạo user demo với mật khẩu `khong-dang-nhap-duoc` (dữ liệu
+mô phỏng không được dùng để chứng minh đăng nhập). `npm run demo:login -- --apply`
+bật lại đúng hai thứ và in ra tài khoản:
+
+| | |
+|---|---|
+| Tenant | `OMNI DEMO (MÔ PHỎNG — dữ liệu UCI Online Retail II)` · gói `business` |
+| Email | `demo-mo-phong@local.invalid` |
+| Mật khẩu | in ra bởi lệnh trên (mặc định `Demo123456`) |
+
+> **Bắt buộc dùng tenant này, KHÔNG dùng `admin@candory.com`.** Tenant CANDORY chỉ có
+> 20 SKU và không SKU nào dưới ROP ⇒ tab "Nhập hàng" và màn hình đề xuất đều **trống**
+> khi trình bày. Tenant demo có 500 SKU, phần lớn dưới `minStock`.
+>
+> Không nói "khách hàng chúng tôi" — đây là dữ liệu công khai, đã dán nhãn ở đầu file.
 
 ---
 

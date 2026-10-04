@@ -18,7 +18,7 @@ const { requireModule } = require("../../middleware/plan.middleware");
 const svc = require("./routing.service");
 const mgr = ["ADMIN", "MANAGER"];
 
-router.use(requireModule("production"));
+router.use(authenticate, requireModule("production"));
 
 router.get("/", authenticate, async (req, res, next) => {
   try { res.json({ success: true, data: await svc.list(req.query) }); } catch (e) { next(e); }

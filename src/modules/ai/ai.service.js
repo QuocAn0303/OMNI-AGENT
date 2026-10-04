@@ -453,7 +453,7 @@ const chat = async (req, res) => {
       })),
     });
   } catch (error) {
-    logger.error("[ai] chat error:", error);
+    logger.error(`[ai] chat error: ${error?.message || error}`);
 
     let errorMsg = "Loi xu ly AI";
     if (error.cause?.code === "ECONNREFUSED" || error.message?.includes("ECONNREFUSED")) {
@@ -471,7 +471,7 @@ const triggerSync = async (req, res) => {
     const stats = await syncERPData();
     res.json({ success: true, message: "Dong bo dữ liệu AI thành công", stats });
   } catch (error) {
-    logger.error("[ai] sync error:", error);
+    logger.error(`[ai] sync error: ${error?.message || error}`);
 
     let errorMsg = "Loi dong bo dữ liệu AI";
     if (error.message?.includes("ECONNREFUSED")) {
@@ -542,7 +542,7 @@ const getSuggestions = async (req, res) => {
 
     res.json({ success: true, suggestions });
   } catch (error) {
-    logger.error("[ai] suggestions error:", error);
+    logger.error(`[ai] suggestions error: ${error?.message || error}`);
     res.status(500).json({ success: false, message: "Loi lay goi y" });
   }
 };

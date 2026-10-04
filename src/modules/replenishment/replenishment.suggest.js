@@ -357,6 +357,62 @@ const suggestForProduct = async ({
 };
 
 /**
+ * Tính TOÁN số đề xuất cho một SKU mà KHÔNG ghi gì.
+ *
+ * Vì sao cần: màn hình "đề xuất nhập hàng" phải xem được đề xuất trước khi quyết
+ * định có tạo hay không. `suggestForProduct` tạo `AgentHumanGate` + `AgentSession`
+ * ngay khi gọi ⇒ không dùng được cho màn hình xem trước.
+ *
+ * Ràng buộc: dùng CHUNG `loadReplenishmentInput` + `loadLeadTimeReceipts` +
+ * `planReplenishment` với đường ghi, để số xem trước và số ghi vào gate là một.
+ *
+ * @returns {object|null} `{ product, plan, vendor, needVendor }` hoặc null khi
+ *   không đủ dữ liệu (SPU không tồn tại / không hoạt động).
+ */
+const previewForProduct = async ({ productId, packMultiple = 1, unitCost = null } = {}) => {
+  const inputs = await loadReplenishmentInput([productId]);
+  const input = inputs.get(productId);
+  if (!input) return null;
+
+  const receipts = await loadLeadTimeReceipts(productId);
+  const product = await prisma.product.findFirst({
+    where: { id: productId },
+    select: { id: true, sku: true, name: true, unit: true, isActive: true, costPrice: true },
+  });
+  if (!product || product.isActive === false) return null;
+
+  const hasUnitCost = unitCost !== null && unitCost !== undefined && unitCost !== "";
+  const cost = hasUnitCost ? classifyUnitCost(unitCost) : classifyUnitCost(product.costPrice);
+
+  const plan = planReplenishment({
+    dailySales: input.dailySales,
+    inventories: input.inventories,
+    receipts,
+    unitCost: cost.value,
+    packMultiple,
+    reviewPeriodDays: REVIEW_PERIOD_DAYS,
+    onOrder: input.onOrder,
+  });
+
+  // NCC từ PO gần nhất còn hoạt động — cùng nguồn với đường ghi để preview khớp
+  // với những gì sẽ tạo. Không tự bịa NCC.
+  const lastPo = await prisma.purchaseItem.findFirst({
+    where: { productId },
+    orderBy: { purchaseOrder: { date: "desc" } },
+    select: {
+      purchaseOrder: { select: { vendorId: true, vendor: { select: { id: true, name: true, isActive: true } } } },
+    },
+  });
+  const vendor = lastPo?.purchaseOrder?.vendor || null;
+  const needVendor =
+    plan.status === NEED_REPLENISHMENT || plan.status === STOCKOUT
+      ? !vendor || vendor.isActive === false
+      : false;
+
+  return { product, plan, vendor, needVendor };
+};
+
+/**
  * Bọc `suggestForProduct` trong tenant context — dành cho cron/CDC chạy NGOÀI
  * request (nơi không có context nên Prisma extension không tiêm `tenantId`).
  */
@@ -372,6 +428,7 @@ module.exports = {
   withProposalLock,
   suggestForProduct,
   suggestForProductInTenant,
+  previewForProduct,
   findOpenProposalKeys,
   resolveSystemUserId,
 };

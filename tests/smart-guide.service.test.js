@@ -105,21 +105,53 @@ describe('Smart Guide Service', () => {
     });
   });
 
-  // ==================== GET REORDER SUGGESTIONS ====================
+// ==================== GET REORDER SUGGESTIONS ====================
+  //
+  // 2026-10-04: `getReorderSuggestions` chuyển sang dùng engine ROP của module
+  // `replenishment` (trước đây tự tính bằng `(minStock*2 - qty) * 1.2` với ngưỡng
+  // `10` hard-code). Test mock theo ĐÚNG nguồn dữ liệu mới — gồm cả lịch sử bán —
+  // vì bỏ lịch sử bán thì `planReplenishment` cho ROP = 0 và không có gì để đề
+  // xuất. Các khẳng định cũ (qty > 0, thứ tự ưu tiên, trường bắt buộc) GIỮ NGUYÊN.
   describe('getReorderSuggestions', () => {
-    const inventoryRow = (id, qty, minStock, productId) => ({
+    const daysAgo = (n) => new Date(Date.now() - n * 86400000);
+
+    /** 28 ngày bán đều đặn => nhu cầu > 0 => ROP > 0. */
+    const salesRows = (productId, perDay = 5) =>
+      Array.from({ length: 28 }, (_, i) => ({
+        productId,
+        quantity: perDay,
+        order: { createdAt: daysAgo(27 - i) },
+      }));
+
+    const candidate = (id, qty, minStock = 10, perDay = 5) => ({
       id,
-      productId,
-      quantity: qty,
-      minStock,
-      product: { id: productId, name: `SP${productId}`, sku: `SKU${productId}`, unit: 'cái', category: null },
-      warehouse: { id: 'wh1', name: 'Kho 1' },
+      sku: `SKU${id}`,
+      name: `SP${id}`,
+      unit: 'cái',
+      costPrice: 10000,
+      category: null,
+      inventories: [{ quantity: qty, minStock, warehouse: { name: 'Kho 1' } }],
     });
 
-    test('returns structured response with suggestions and summary', async () => {
-      prisma.inventory.findMany.mockResolvedValue([inventoryRow('inv1', 0, 10, 'p1')]);
-      prisma.orderItem.findMany.mockResolvedValue([]);
+    /** Mock trọn bộ đầu vào cho một danh sách SKU. */
+    const seed = (rows) => {
+      prisma.product.findMany.mockResolvedValue(rows);
+      prisma.inventory.findMany.mockResolvedValue(
+        rows.flatMap((r) =>
+          r.inventories.map((inv, i) => ({
+            id: `inv-${r.id}-${i}`,
+            productId: r.id,
+            quantity: inv.quantity,
+            reserved: 0,
+          }))
+        )
+      );
+      prisma.orderItem.findMany.mockResolvedValue(rows.flatMap((r) => salesRows(r.id)));
       prisma.purchaseItem.findMany.mockResolvedValue([]);
+    };
+
+    test('returns structured response with suggestions and summary', async () => {
+      seed([candidate('p1', 0)]);
 
       const result = await service.getReorderSuggestions();
 
@@ -132,58 +164,47 @@ describe('Smart Guide Service', () => {
       expect(result.summary).toHaveProperty('noVendorCount');
     });
 
+    test('ghi rõ engine đã dùng (không còn công thức riêng)', async () => {
+      seed([candidate('p1', 0)]);
+      const result = await service.getReorderSuggestions();
+      expect(result.summary.engine).toBe('replenishment/planReplenishment');
+    });
+
     test('each suggestion has required fields', async () => {
-      prisma.inventory.findMany.mockResolvedValue([inventoryRow('inv1', 0, 10, 'p1')]);
-      prisma.orderItem.findMany.mockResolvedValue([]);
-      prisma.purchaseItem.findMany.mockResolvedValue([]);
+      seed([candidate('p1', 0)]);
 
       const result = await service.getReorderSuggestions();
 
-      if (result.suggestions.length > 0) {
-        const s = result.suggestions[0];
-        expect(s).toHaveProperty('productId');
-        expect(s).toHaveProperty('productName');
-        expect(s).toHaveProperty('currentStock');
-        expect(s).toHaveProperty('minStock');
-        expect(s).toHaveProperty('suggestedReorderQty');
-        expect(s).toHaveProperty('priority');
-        expect(s).toHaveProperty('message');
-        expect(['URGENT', 'HIGH', 'MEDIUM', 'LOW']).toContain(s.priority);
-      }
+      expect(result.suggestions.length).toBeGreaterThan(0);
+      const s = result.suggestions[0];
+      expect(s).toHaveProperty('productId');
+      expect(s).toHaveProperty('productName');
+      expect(s).toHaveProperty('currentStock');
+      expect(s).toHaveProperty('minStock');
+      expect(s).toHaveProperty('suggestedReorderQty');
+      expect(s).toHaveProperty('priority');
+      expect(s).toHaveProperty('message');
+      // Bằng chứng để người dùng tin con số: ROP, lead time, cờ "ước lượng".
+      expect(s).toHaveProperty('rop');
+      expect(s).toHaveProperty('leadTimeDays');
+      expect(s).toHaveProperty('leadTimeEstimated');
+      expect(['URGENT', 'HIGH', 'MEDIUM', 'LOW']).toContain(s.priority);
     });
 
     test('suggestions are sorted by priority', async () => {
-      prisma.inventory.findMany.mockResolvedValue([
-        inventoryRow('inv2', 4, 10, 'p2'),
-        inventoryRow('inv1', 0, 10, 'p1'),
-      ]);
-      prisma.orderItem.findMany.mockResolvedValue([]);
-      prisma.purchaseItem.findMany.mockResolvedValue([]);
+      seed([candidate('p1', 0), candidate('p2', 4), candidate('p3', 60)]);
 
       const result = await service.getReorderSuggestions();
 
-      const priorities = result.suggestions.map((s) => {
-        switch (s.priority) {
-          case 'URGENT': return 0;
-          case 'HIGH': return 1;
-          case 'MEDIUM': return 2;
-          case 'LOW': return 3;
-          default: return 4;
-        }
-      });
-
+      const order = { URGENT: 0, HIGH: 1, MEDIUM: 2, LOW: 3 };
+      const priorities = result.suggestions.map((s) => order[s.priority] ?? 4);
       for (let i = 1; i < priorities.length; i++) {
         expect(priorities[i]).toBeGreaterThanOrEqual(priorities[i - 1]);
       }
     });
 
     test('suggested reorder quantity is positive', async () => {
-      prisma.inventory.findMany.mockResolvedValue([
-        inventoryRow('inv1', 0, 10, 'p1'),
-        inventoryRow('inv2', 4, 10, 'p2'),
-      ]);
-      prisma.orderItem.findMany.mockResolvedValue([]);
-      prisma.purchaseItem.findMany.mockResolvedValue([]);
+      seed([candidate('p1', 0), candidate('p2', 4)]);
 
       const result = await service.getReorderSuggestions();
 
@@ -191,6 +212,19 @@ describe('Smart Guide Service', () => {
       for (const s of result.suggestions) {
         expect(s.suggestedReorderQty).toBeGreaterThan(0);
       }
+    });
+
+    test('không đề xuất khi tồn còn dồn (ROP = 0 => không có nhu cầu)', async () => {
+      // Không lịch sử bán => nhu cầu 0 => ROP 0 => KHÔNG được bịa "cần nhập".
+      prisma.product.findMany.mockResolvedValue([candidate('p1', 0)]);
+      prisma.inventory.findMany.mockResolvedValue([{ productId: 'p1', quantity: 0, reserved: 0 }]);
+      prisma.orderItem.findMany.mockResolvedValue([]);
+      prisma.purchaseItem.findMany.mockResolvedValue([]);
+
+      const result = await service.getReorderSuggestions();
+
+      expect(result.suggestions).toEqual([]);
+      expect(result.summary.total).toBe(0);
     });
   });
 

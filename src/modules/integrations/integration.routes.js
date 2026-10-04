@@ -24,7 +24,7 @@ const { sendEmail, verifyEmail, resetTransporter } = require("../../utils/email"
 
 const adminOnly = authorize("SUPER_ADMIN", "ADMIN");
 
-router.use(requireModule("integrations"));
+router.use(authenticate, requireModule("integrations"));
 
 // GET /api/integrations — toàn bộ cấu hình (secrets bị che)
 router.get("/", authenticate, adminOnly, async (req, res, next) => {

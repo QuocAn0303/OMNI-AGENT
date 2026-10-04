@@ -43,8 +43,6 @@ const getPoApprovalThreshold = async () => {
 const toNum = (v) => Number(v || 0);
 const round2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
 
-const PO_APPROVE_THRESHOLD = 50_000_000;
-
 const generateCode = async (tx = prisma) => {
   const today = new Date().toISOString().slice(0, 10).replace(/-/g, "");
   const start = new Date();
@@ -241,8 +239,17 @@ const approve = async (id, approverRole, userId) => {
   if (!["PENDING", "PENDING_APPROVAL"].includes(po.status)) {
     throw { status: 400, message: "Chỉ PO chờ duyệt mới được duyệt" };
   }
-  if (toNum(po.total) >= PO_APPROVE_THRESHOLD && !["ADMIN", "MANAGER"].includes(approverRole)) {
-    throw { status: 403, message: `PO từ ${PO_APPROVE_THRESHOLD.toLocaleString("vi-VN")}đ cần MANAGER trở lên duyệt` };
+  // Ngưỡng PHẢI đọc cài đặt của tenant. Trước đây dòng này dùng hằng số
+// `PO_APPROVE_THRESHOLD = 50_000_000` hard-code, trong khi `create()` (`:128`)
+// lại đọc `companySettings.poApprovalThreshold` (mặc định 5tr) ⇒ HAI ngưỡng
+// trong cùng một module: PO 6tr bị `create` gắn cờ duyệt lần hai, nhưng nếu lọt
+// tới `approve()` thì lại được duyệt bởi CASHIER vì "chưa tới 50tr".
+const threshold = await getPoApprovalThreshold();
+if (toNum(po.total) >= threshold && !["ADMIN", "MANAGER"].includes(approverRole)) {
+    throw {
+      status: 403,
+      message: `PO từ ${threshold.toLocaleString("vi-VN")}đ cần MANAGER trở lên duyệt`,
+    };
   }
 
   const updated = await prisma.purchaseOrder.update({

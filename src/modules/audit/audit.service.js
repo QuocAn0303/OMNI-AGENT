@@ -65,7 +65,7 @@ const log = async ({
       },
     });
   } catch (err) {
-    logger.error("Audit log error:", err);
+    logger.error(`Audit log error: ${err?.message || err}`);
   }
 };
 

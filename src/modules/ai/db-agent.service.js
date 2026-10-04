@@ -851,7 +851,12 @@ const INTENT_MAP = [
   { patterns: ['work order', 'lệnh sản xuất', 'lệnh sx'], tool: 'search_production' },
   { patterns: ['bom', 'định mức', 'định mức nvl', 'định mức nguyên vật liệu'], tool: 'search_production' },
   { patterns: ['lô hàng', 'lô sắp hết', 'hạn sử dụng', 'hsd', 'gần hết hạn'], tool: 'search_production' },
-  { patterns: ['đơn nhập', 'po', 'purchase order', 'nhập hàng', 'mua hàng'], tool: 'search_purchase_orders' },
+  { patterns: ['đơn nhập', 'purchase order', 'nhập hàng', 'mua hàng'], tool: 'search_purchase_orders' },
+  // `resolveIntent` dùng `lower.includes(pattern)` — chuỗi TRẦN rất dễ khớp nhầm:
+  //   'po'  khớp "áo **po**lo", "**po**stcard"  ⇒ tra đơn nhập khi khách hỏi sản phẩm
+  //   'đơn' khớp "**đơn** giá", "đơn vị"       ⇒ tra đơn bán khi khách hỏi giá
+  // Vì vậy chỉ giữ cụm nhiều từ, và dùng `\b` cho mã PO có chữ bên cạnh.
+  { patterns: [/\bpo\b/, 'p/o', 'tờ po', 'po này', 'po đó'], tool: 'search_purchase_orders' },
   { patterns: ['đơn hàng', 'bán hàng', 'sale', 'đơn', 'order'], tool: 'search_orders' },
   { patterns: ['ca làm', 'chấm công', 'attendance', 'bảng lương', 'payroll', 'bang luong'], tool: 'search_hr' },
   { patterns: ['lương', 'nhân sự', 'nhân viên', 'employee', 'hr', 'hiệu suất', 'chấm công'], tool: 'search_hr' },
@@ -875,9 +880,13 @@ const INTENT_MAP = [
 function resolveIntent(text) {
   const lower = text.toLowerCase();
   for (const intent of INTENT_MAP) {
-    if (intent.patterns.some(p => lower.includes(p))) {
-      return intent.tool;
-    }
+    // `patterns` có thể là chuỗi (khớp `includes`) HOẶC RegExp (khớp theo ranh giới
+    // từ — cần cho mã `PO` để không khớp "áo polo"). String.search() trả về -1
+    // khi không khớp nên dùng được như một cách kiểm duy nhất cho cả hai.
+    const hit = intent.patterns.some((p) =>
+      typeof p === 'string' ? lower.includes(p) : p.test(lower)
+    );
+    if (hit) return intent.tool;
   }
   return null;
 }

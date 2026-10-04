@@ -25,7 +25,7 @@ const prisma = require("../../config/prisma");
 
 const ok = (res, data) => res.json({ success: true, data });
 
-router.use(requireModule("tax"));
+router.use(authenticate, requireModule("tax"));
 
 const parsePeriod = (req) => {
   const year  = parseInt(req.query.year  || new Date().getFullYear(), 10);

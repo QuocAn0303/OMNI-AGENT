@@ -86,7 +86,7 @@ if (!process.env.NODE_APP_INSTANCE || process.env.NODE_APP_INSTANCE === "0") {
     try {
       await sweepExpiredHumanGates();
     } catch (error) {
-      logger.error("[Cron Human-Gate Error] Lỗi khi quét human-gate quá hạn:", error);
+      logger.error(`[Cron Human-Gate Error] Lỗi khi quét human-gate quá hạn: ${error?.message || error}`);
     }
   });
   logger.info("[Cron Human-Gate] Đã đăng ký quét human-gate PENDING quá hạn → EXPIRED (mỗi 5 phút)");
