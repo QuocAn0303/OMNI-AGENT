@@ -12,6 +12,7 @@
  */
 const crypto = require('crypto');
 const ptService = require('../payment-transaction.service');
+const { safeEqual, webhookConfigured } = require('../../../utils/webhookSignature');
 
 const PARTNER_CODE = process.env.MOMO_PARTNER_CODE;
 const ACCESS_KEY = process.env.MOMO_ACCESS_KEY;
@@ -77,15 +78,13 @@ async function createPayment({ orderId, orderCode, amount, orderInfo }) {
 
 // Verify webhook từ Momo (gọi trong route POST /webhooks/payment/momo)
 function verifyWebhook(body, signature, rawBody) {
-  if (!isConfigured()) {
-    // Production: reject tất cả webhook khi chưa cấu hình (tránh forge)
-    if (process.env.NODE_ENV === 'production') return false;
-    // Dev: cho phép test mock webhook
-    return true;
-  }
+  // H3: thiếu cấu hình → TỪ CHỐI, không phụ thuộc NODE_ENV. Chỉ khi dev bật
+  // tường minh ALLOW_UNSIGNED_WEBHOOKS=true mới nhận (và cờ bị vô hiệu ở prod).
+  if (!webhookConfigured('MoMo', isConfigured() ? SECRET_KEY : '')) return false;
+  if (!isConfigured()) return true;
   if (!signature) return false;
-  const expected = sign(body);
-  return expected === signature;
+  // M8: so sánh constant-time thay vì `===`
+  return safeEqual(sign(body), signature);
 }
 
 // Xử lý webhook thành công

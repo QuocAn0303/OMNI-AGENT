@@ -68,7 +68,7 @@ router.get("/:id", async (req, res, next) => {
 router.post("/", checkFeature("maxUsers"), async (req, res, next) => {
   try {
     const data = createSchema.parse(req.body);
-    const user = await userService.create(data, req.user.id);
+    const user = await userService.create(data, req.user);
     created(res, user, "Tạo tài khoản thành công");
   } catch (err) {
     next(err);
@@ -78,7 +78,7 @@ router.post("/", checkFeature("maxUsers"), async (req, res, next) => {
 router.put("/:id", async (req, res, next) => {
   try {
     const data = updateSchema.parse(req.body);
-    const user = await userService.update(req.params.id, data, req.user.id);
+    const user = await userService.update(req.params.id, data, req.user);
     success(res, user, "Cập nhật thành công");
   } catch (err) {
     next(err);
@@ -87,7 +87,7 @@ router.put("/:id", async (req, res, next) => {
 
 router.delete("/:id", async (req, res, next) => {
   try {
-    await userService.remove(req.params.id, req.user.id);
+    await userService.remove(req.params.id, req.user);
     success(res, null, "Vô hiệu hóa tài khoản thành công");
   } catch (err) {
     next(err);

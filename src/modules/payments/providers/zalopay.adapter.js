@@ -6,6 +6,7 @@
  */
 const crypto = require('crypto');
 const ptService = require('../payment-transaction.service');
+const { safeEqual, webhookConfigured } = require('../../../utils/webhookSignature');
 
 const APP_ID = process.env.ZALOPAY_APP_ID;
 const KEY1 = process.env.ZALOPAY_KEY1;
@@ -43,16 +44,17 @@ async function createPayment({ orderId, orderCode, amount }) {
 }
 
 function verifyWebhook(body, rawBody) {
-  if (!isConfigured()) {
-    if (process.env.NODE_ENV === 'production') return false;
-    return true;
-  }
+  // H3: thiếu cấu hình → TỪ CHỐI (không phụ thuộc NODE_ENV). Chỉ dev bật tường
+  // minh ALLOW_UNSIGNED_WEBHOOKS=true mới nhận, và cờ bị vô hiệu ở production.
+  if (!webhookConfigured('ZaloPay', isConfigured() ? KEY2 : '')) return false;
+  if (!isConfigured()) return true;
   if (!body.mac) return false;
   // Dùng rawBody nếu có (chính xác hơn), fallback sang JSON.stringify
   const dataStr = rawBody ? Buffer.isBuffer(rawBody) ? rawBody.toString('utf8') : rawBody : JSON.stringify(body.data || '');
   // ZaloPay sign trên raw data field, không phải toàn body
   const dataField = body.data || '';
-  return hmacSha256(dataField, KEY2) === body.mac;
+  // M8: constant-time
+  return safeEqual(hmacSha256(dataField, KEY2), body.mac);
 }
 
 async function handleWebhook(body) {

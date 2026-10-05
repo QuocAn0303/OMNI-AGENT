@@ -6,6 +6,7 @@
  */
 const crypto = require('crypto');
 const ptService = require('../payment-transaction.service');
+const { safeEqual, webhookConfigured } = require('../../../utils/webhookSignature');
 
 const TMN_CODE = process.env.VNPAY_TMN_CODE;
 const HASH_SECRET = process.env.VNPAY_HASH_SECRET;
@@ -47,15 +48,16 @@ function createPaymentUrl({ orderId, orderCode, amount }) {
 }
 
 function verifyWebhook(query) {
-  if (!isConfigured()) {
-    if (process.env.NODE_ENV === 'production') return false;
-    return true;
-  }
+  // H3: thiếu cấu hình → TỪ CHỐI (không phụ thuộc NODE_ENV). Chỉ dev bật tường
+  // minh ALLOW_UNSIGNED_WEBHOOKS=true mới nhận, và cờ bị vô hiệu ở production.
+  if (!webhookConfigured('VNPay', HASH_SECRET || '')) return false;
+  if (!isConfigured()) return true;
   const secureHash = query.vnp_SecureHash;
   if (!secureHash) return false;
   delete query.vnp_SecureHash;
   delete query.vnp_SecureHashType;
-  return sign(query) === secureHash;
+  // M8: constant-time
+  return safeEqual(sign(query), secureHash);
 }
 
 async function handleWebhook(query) {
