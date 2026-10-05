@@ -70,6 +70,11 @@ AGENTS.md
 # Tài liệu thi AISC26: đội cần chung lịch sử quyết định, truy vết theo commit.
 !/docs/aisc26/
 !/docs/aisc26/**
+# Tài liệu các phase (AN.1 → AN.6): bảng số dòng đã kiểm chứng, danh sách trường
+# đã chốt, kết quả smoke — là BẰNG CHỨNG nộp kèm, phải track được để người
+# khác đối chiếu.
+!/docs/phase*/
+!/docs/phase*/**
 /plans/
 structure.txt
 /Demo Issue Triage*/
