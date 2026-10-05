@@ -70,7 +70,7 @@ const TARGET = {
   orders: 360,
   leads: 320,
   deals: 320,
-  communications: 320,
+  communications: 900,
   tasks: 320,
   // Không nằm trong danh sách 9 bảng kiểm chứng, nhưng CẦN để hồ sơ 360 (AN.2)
   // hiện được tương tác: `CrmCommunication` không có customerId, phải đi qua
@@ -674,9 +674,16 @@ const buildDeals = (n, leadCount) => {
 
 const buildCommunications = (n, leadCount, dealCount) => {
   const out = [];
+  // BẢO ĐẢM phủ: 320 tương tác đầu gán vòng tròn qua contact của từng khách
+  // (mỗi khách ≥ 1), phần còn lại phân bố ngẫu nhiên theo trọng số.
+  // Nếu chỉ bốc thăm ngẫu nhiên thì ~37% khách không có tương tác nào ⇒
+  // "mở khách bất kỳ" không đúng với phần lớn khách.
+  const guaranteedContacts = Math.min(n, 320);
   for (let i = 0; i < n; i += 1) {
     const type = pick(COMM_TYPES);
-    const attachToDeal = rnd() < 0.5;
+    // Cơ chế đi đường của hệ thống: `CrmCommunication` không có customerId,
+    // phải đi qua contact/deal/lead của khách.
+    const bucket = i < guaranteedContacts ? "contact" : weighted([["contact", 40], ["lead", 30], ["deal", 30]]);
     out.push({
       index: i,
       type,
@@ -684,8 +691,11 @@ const buildCommunications = (n, leadCount, dealCount) => {
       subject: `${type} — ${pick(["tư vấn sản phẩm", "chốt đơn", "hỗ trợ sau bán", "theo dõi đơn", "xác nhận thông tin"])}`,
       content: pick(COMM_TEMPLATES),
       durationSec: type === "CALL" ? rndInt(35, 480) : null,
-      leadIndex: attachToDeal ? null : rndInt(0, leadCount - 1),
-      dealIndex: attachToDeal ? rndInt(0, dealCount - 1) : null,
+      // Chỉ mốc index — map sang id thật ở lúc insert.
+      attachTo: bucket,
+      leadIndex: rndInt(0, leadCount - 1),
+      dealIndex: rndInt(0, dealCount - 1),
+      contactIndex: i < guaranteedContacts ? i : rndInt(0, 319),
       createdAt: daysAgo(rndInt(0, 88)),
     });
   }
@@ -694,12 +704,13 @@ const buildCommunications = (n, leadCount, dealCount) => {
 
 const buildTasks = (n, customerCount) => {
   const out = [];
+  // BẢO ĐẢM mỗi khách có ≥ 1 nhiệm vụ (vòng tròn), phần còn lại ngẫu nhiên.
   for (let i = 0; i < n; i += 1) {
     const status = weighted([["PENDING", 46], ["IN_PROGRESS", 24], ["DONE", 24], ["CANCELLED", 6]]);
     const dueDays = rndInt(-3, 10);
     out.push({
       index: i,
-      customerIndex: rndInt(0, customerCount - 1),
+      customerIndex: i < customerCount ? i : rndInt(0, customerCount - 1),
       title: `${pick(TASK_TITLES)} #${pad(i + 1, 3)}`,
       description: `Ghi chú CSKH: ${pick(COMM_TEMPLATES)}`,
       status,
@@ -1180,7 +1191,7 @@ const insertDeals = async (tenantId, deals, stages, leadIds, customerIds, userId
   return rows;
 };
 
-const insertCommunications = async (tenantId, comms, leadIds, dealIds, userId) => {
+const insertCommunications = async (tenantId, comms, leadIds, dealIds, userId, contactIds = []) => {
   for (const part of chunk(comms)) {
     await prisma.crmCommunication.createMany({
       data: part.map((c) => ({
@@ -1190,8 +1201,9 @@ const insertCommunications = async (tenantId, comms, leadIds, dealIds, userId) =
         subject: c.subject,
         content: c.content,
         durationSec: c.durationSec,
-        leadId: c.leadIndex != null ? leadIds[c.leadIndex] || null : null,
-        dealId: c.dealIndex != null ? dealIds[c.dealIndex] || null : null,
+        leadId: c.attachTo === "lead" ? leadIds[c.leadIndex] || null : null,
+        dealId: c.attachTo === "deal" ? dealIds[c.dealIndex] || null : null,
+        contactId: c.attachTo === "contact" ? contactIds[c.contactIndex] || null : null,
         createdById: userId,
         createdAt: c.createdAt,
       })),
@@ -1553,7 +1565,15 @@ async function main() {
     const dealIds = dealRows.map((d) => d.id);
 
     step(`nạp ${comms.length} tương tác...`);
-    const commCount = await insertCommunications(tenant.id, comms, leadIds, dealIds, users.MANAGER.id);
+    const contactIds = contactIdByCustomerIndex.filter(Boolean);
+    const commCount = await insertCommunications(
+      tenant.id,
+      comms,
+      leadIds,
+      dealIds,
+      users.MANAGER.id,
+      contactIds,
+    );
     step(`nạp ${TARGET.tasks} công việc CSKH...`);
     const taskCount = await insertTasks(tenant.id, tasks, byIndex, users.MANAGER.id, users.ADMIN.id);
 

@@ -17,6 +17,7 @@
     "check:an3": "node scripts/check-an3-rfm-reports.js",
     "check:an4": "node scripts/check-an4-churn-voucher.js",
     "check:kpi": "node scripts/check-an4-retention-kpi.js",
+    "backup:verify": "node scripts/verify-backup-restore.js",
     "ml:panel": "node scripts/ml/build-churn-panel.js",
     "ml:train": "node scripts/ml/train-churn-logreg.js",
     "db:seed:accounting-demo": "node prisma/seed_accounting_demo.js",
