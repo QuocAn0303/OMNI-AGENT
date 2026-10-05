@@ -60,6 +60,19 @@ const NOTE_TYPES = [
   { value: "ZALO", label: "Zalo", color: "cyan" },
 ];
 
+// AN.2: nhãn + màu cho `CrmCommunication.type` (enum CrmCommType trong schema).
+// SYSTEM = sự kiện do hệ thống ghi (đổi stage, nhận lead trùng...) — hiển thị
+// khác màu để không lẫn với tương tác người dùng tự nhập.
+const COMM_META = {
+  CALL: { label: "Gọi điện", color: "blue" },
+  EMAIL: { label: "Email", color: "green" },
+  MEETING: { label: "Gặp mặt", color: "purple" },
+  ZALO: { label: "Zalo", color: "cyan" },
+  WHATSAPP: { label: "WhatsApp", color: "green" },
+  NOTE: { label: "Ghi chú", color: "default" },
+  SYSTEM: { label: "Hệ thống", color: "gold" },
+};
+
 const TIER_COLOR = {
   BRONZE: "#a16207",
   SILVER: "#64748b",
@@ -276,9 +289,39 @@ export default function CustomerDetail() {
     return <Empty description="Không tìm thấy khách hàng" />;
   }
 
-  const { customer, recentOrders, debts, loyaltyTxs, notes, tags, rfm } = data;
+  // AN.2: hồ sơ 360 phải có đủ giao dịch + tương tác + ticket + 2 chỉ số.
+  // `communications`/`metrics`/`crm` mới thêm ở R2; `rfm` top-level giữ lại để
+  // các khối hiển thị cũ không phải sửa.
+  const {
+    customer,
+    recentOrders,
+    debts,
+    loyaltyTxs,
+    notes,
+    tags,
+    rfm,
+    communications = [],
+    metrics,
+    crm,
+  } = data;
   const assignedTagIds = new Set(tags.map((t) => t.id));
   const availableTags = allTags.filter((t) => !assignedTagIds.has(t.id));
+
+  // 2 chỉ số: RFM + CLV/churn. `metrics` có thể chưa có nếu backend cũ.
+  const rfmMetric = metrics?.rfm || rfm || null;
+  const valueMetric = metrics?.value || null;
+  const churnPct =
+    valueMetric?.churnProbability != null
+      ? Math.round(valueMetric.churnProbability * 100)
+      : null;
+  const churnColor =
+    churnPct == null
+      ? undefined
+      : churnPct >= 70
+        ? "var(--error, #dc2626)"
+        : churnPct >= 40
+          ? "var(--warning, #d97706)"
+          : "var(--success, #059669)";
 
   const orderColumns = [
     { title: "Mã đơn", dataIndex: "orderCode", width: 140 },
@@ -583,6 +626,67 @@ export default function CustomerDetail() {
             <MoneyDisplay value={customer.creditLimit || 0} />
           </div>
         </Card>
+
+        {/* AN.2 — chỉ số 1: phân khúc RFM (đã chấm, không phải tính tạm ở FE) */}
+        <Card size="small">
+          <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
+            Phân khúc RFM
+          </div>
+          <div style={{ fontSize: 20, fontWeight: 600 }}>
+            {rfmMetric?.segment || (
+              <span style={{ fontSize: 13, color: "var(--text-muted)" }}>
+                Chưa chấm
+              </span>
+            )}
+          </div>
+          {rfmMetric?.recencyDays != null && (
+            <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
+              Mua gần nhất {rfmMetric.recencyDays} ngày trước
+            </div>
+          )}
+        </Card>
+
+        {/* AN.2 — chỉ số 2: CLV dự báo + xác suất rời bỏ (churn) */}
+        <Card size="small">
+          <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
+            CLV dự báo
+          </div>
+          <div style={{ fontSize: 20, fontWeight: 600, color: "var(--primary)" }}>
+            {valueMetric && !valueMetric.insufficientData ? (
+              <MoneyDisplay value={valueMetric.clvPredicted} />
+            ) : (
+              <span style={{ fontSize: 13, color: "var(--text-muted)" }}>
+                Chưa đủ dữ liệu
+              </span>
+            )}
+          </div>
+          <div style={{ fontSize: 12, color: churnColor }}>
+            {churnPct == null
+              ? "Xác suất rời bỏ: chưa chấm"
+              : `Xác suất rời bỏ: ${churnPct}%`}
+          </div>
+        </Card>
+
+        {/* AN.2 — đếm nhanh tương tác / ticket / công nợ đang mở */}
+        <Card size="small">
+          <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
+            Tương tác & ticket
+          </div>
+          <div style={{ fontSize: 20, fontWeight: 600 }}>
+            {communications.length}
+            <span
+              style={{ fontSize: 13, color: "var(--text-muted)", fontWeight: 400 }}
+            >
+              {" "}
+              tương tác · {metrics?.totals?.openTasks ?? 0} ticket đang mở
+            </span>
+          </div>
+          {(crm?.deals?.length || 0) > 0 && (
+            <div style={{ fontSize: 12, color: "var(--text-muted)" }}>
+              {crm.deals.length} cơ hội bán hàng đã gắn
+            </div>
+          )}
+        </Card>
       </div>
 
       {/* Tags hiển thị */}
@@ -630,22 +734,102 @@ export default function CustomerDetail() {
             key: "interactions",
             label: (
               <span>
-                <MessageOutlined /> Tương tác
+                <MessageOutlined /> Tương tác ({communications.length + notes.length})
               </span>
             ),
             children: (
-              <Card
-                title={`Ghi chú & tương tác (${notes.length})`}
-                extra={
-                  <Button
-                    type="primary"
-                    icon={<PlusOutlined />}
-                    onClick={() => openNoteModal()}
-                  >
-                    Thêm ghi chú
-                  </Button>
-                }
-              >
+              <Space direction="vertical" size={16} style={{ width: "100%" }}>
+                {/* AN.2: tương tác CRM (CrmCommunication — cuộc gọi/email/Zalo/
+                    gặp mặt/sự kiện hệ thống) gắn với khách qua contact/deal/lead. */}
+                <Card
+                  size="small"
+                  title={`Tương tác CRM (${communications.length})`}
+                >
+                  {communications.length === 0 ? (
+                    <Empty description="Chưa có tương tác CRM ghi nhận" />
+                  ) : (
+                    <Timeline
+                      items={communications.map((c) => {
+                        const meta = COMM_META[c.type] || COMM_META.SYSTEM;
+                        return {
+                          color: meta.color,
+                          children: (
+                            <div>
+                              <div
+                                style={{
+                                  display: "flex",
+                                  gap: 8,
+                                  alignItems: "center",
+                                  marginBottom: 4,
+                                  flexWrap: "wrap",
+                                }}
+                              >
+                                <Tag color={meta.color}>{meta.label}</Tag>
+                                {c.direction && (
+                                  <Tag>
+                                    {c.direction === "INBOUND"
+                                      ? "Khách gửi"
+                                      : "Chúng tôi gửi"}
+                                  </Tag>
+                                )}
+                                {c.durationSec ? (
+                                  <span
+                                    style={{
+                                      fontSize: 12,
+                                      color: "var(--text-muted)",
+                                    }}
+                                  >
+                                    {Math.round(c.durationSec / 60)} phút
+                                  </span>
+                                ) : null}
+                                <span
+                                  style={{
+                                    fontSize: 12,
+                                    color: "var(--text-muted)",
+                                  }}
+                                >
+                                  {c.createdBy?.fullName || "Hệ thống"} ·{" "}
+                                  {dayjs(c.createdAt).format("DD/MM/YYYY HH:mm")}
+                                </span>
+                              </div>
+                              {c.subject && (
+                                <div style={{ fontWeight: 500 }}>{c.subject}</div>
+                              )}
+                              <div style={{ whiteSpace: "pre-wrap" }}>
+                                {c.content}
+                              </div>
+                              {(c.lead || c.deal) && (
+                                <div
+                                  style={{
+                                    fontSize: 12,
+                                    color: "var(--text-muted)",
+                                    marginTop: 2,
+                                  }}
+                                >
+                                  {c.lead ? `Lead: ${c.lead.leadName}` : ""}
+                                  {c.deal ? ` · Deal: ${c.deal.dealName}` : ""}
+                                </div>
+                              )}
+                            </div>
+                          ),
+                        };
+                      })}
+                    />
+                  )}
+                </Card>
+
+                <Card
+                  title={`Ghi chú nội bộ (${notes.length})`}
+                  extra={
+                    <Button
+                      type="primary"
+                      icon={<PlusOutlined />}
+                      onClick={() => openNoteModal()}
+                    >
+                      Thêm ghi chú
+                    </Button>
+                  }
+                >
                 {notes.length === 0 ? (
                   <Empty description="Chưa có ghi chú" />
                 ) : (
@@ -709,6 +893,7 @@ export default function CustomerDetail() {
                   />
                 )}
               </Card>
+              </Space>
             ),
           },
           {

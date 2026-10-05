@@ -58,6 +58,20 @@ const EXPLICIT_EXCEPTIONS = [
       "toàn: có action KHÁC xuất hiện NULL ⇒ phải điều tra, không tự động tha.",
     since: "2026-10-02 (điều kiện chuyển sang theo `action` ngày 2026-10-03)",
   },
+  {
+    table: "llm_usage_logs",
+    // Bảng sổ ghi token LLM (T13, 2026-10-03). `tenantId` CỐ Ý cho phép NULL:
+    // xem chú thích ở `src/config/prisma.js` (TENANT_SCOPED_MODELS, mục T13) —
+    // cần phân biệt "lỗi" với "lần gọi ngoài tenant context".
+    where: `"tenantId" IS NULL`,
+    cap: 1,
+    reason:
+      "Thiết kế có chủ đích: LLM provider có thể được gọi ngoài tenant context " +
+      "(ví dụ dự đoán chạy nền), `tenantId = NULL` là cách phân biệt lần gọi đó " +
+      "với lần gọi thuộc tenant chứ không phải dữ liệu hỏng. Ngoại lệ có trần: " +
+      "hơn 1 dòng ⇒ phải điều tra vì phần lớn lần gọi đều nên có tenant.",
+    since: "2026-10-03",
+  },
 ];
 
 /** Ngoại lệ áp dụng cho một bảng, hoặc null. */

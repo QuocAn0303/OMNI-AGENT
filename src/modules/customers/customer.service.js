@@ -225,7 +225,18 @@ const getCustomer360 = async (id) => {
     throw err;
   }
 
-  const [recentOrders, debts, loyaltyTxs, notes, tags, orderStats] =
+  const [
+    recentOrders,
+    debts,
+    loyaltyTxs,
+    notes,
+    tags,
+    orderStats,
+    tasks,
+    contacts,
+    deals,
+    relatedLeads,
+  ] =
     await Promise.all([
       prisma.order.findMany({
         where: { customerId: id },
@@ -285,14 +296,113 @@ const getCustomer360 = async (id) => {
         where: { customerId: id, status: { not: "CANCELLED" } },
         _count: { _all: true },
         _max: { createdAt: true },
+        _sum: { total: true },
+      }),
+      // Ticket / công việc CSKH (AN.2: hồ sơ 360 phải thấy ticket).
+      prisma.customerTask.findMany({
+        where: { customerId: id },
+        select: {
+          id: true,
+          title: true,
+          status: true,
+          priority: true,
+          dueAt: true,
+          completedAt: true,
+          createdAt: true,
+          assignedTo: { select: { id: true, fullName: true } },
+        },
+        orderBy: [{ status: "asc" }, { dueAt: "asc" }],
+        take: 20,
+      }),
+      prisma.crmContact.findMany({
+        where: { customerId: id },
+        select: { id: true, fullName: true, phone: true, jobTitle: true, isPrimary: true },
+      }),
+      prisma.crmDeal.findMany({
+        where: { customerId: id },
+        select: {
+          id: true,
+          dealName: true,
+          kind: true,
+          value: true,
+          stage: { select: { id: true, label: true } },
+          expectedCloseDate: true,
+          createdAt: true,
+        },
+        orderBy: { createdAt: "desc" },
+        take: 10,
+      }),
+      // Lead của khách = lead có contact trỏ tới khách này (CrmLead không có
+      // customerId — đúng mô hình Frappe CRM: Customer chỉ sinh khi Deal thắng).
+      prisma.crmLead.findMany({
+        where: { contact: { customerId: id } },
+        select: { id: true, leadName: true, status: true, source: true, stage: { select: { label: true } } },
+        orderBy: { createdAt: "desc" },
+        take: 10,
       }),
     ]);
+
+  // Tương tác: `CrmCommunication` không có customerId ⇒ phải đi qua 3 đường
+  // liên kết (contact của khách, deal của khách, lead của khách).
+  const commFilter = [];
+  if (contacts.length) commFilter.push({ contactId: { in: contacts.map((c) => c.id) } });
+  if (deals.length) commFilter.push({ dealId: { in: deals.map((d) => d.id) } });
+  if (relatedLeads.length) commFilter.push({ leadId: { in: relatedLeads.map((l) => l.id) } });
+  const communications = commFilter.length
+    ? await prisma.crmCommunication.findMany({
+        where: { OR: commFilter },
+        select: {
+          id: true,
+          type: true,
+          direction: true,
+          subject: true,
+          content: true,
+          durationSec: true,
+          createdAt: true,
+          createdBy: { select: { id: true, fullName: true } },
+          lead: { select: { id: true, leadName: true } },
+          deal: { select: { id: true, dealName: true } },
+        },
+        orderBy: { createdAt: "desc" },
+        take: 20,
+      })
+    : [];
 
   const orderCount = orderStats._count._all || 0;
   const lastOrderAt = orderStats._max.createdAt;
   const recencyDays = lastOrderAt
     ? Math.floor((Date.now() - new Date(lastOrderAt).getTime()) / 86400000)
     : null;
+  const openTasks = tasks.filter((t) => t.status !== "DONE" && t.status !== "CANCELLED").length;
+
+  // 2 chỉ số mà AN.2 yêu cầu nhìn ra được khi mở hồ sơ: (1) RFM, (2) CLV/churn.
+  const metrics = {
+    rfm: {
+      recencyDays,
+      frequency: orderCount,
+      monetary: Number(customer.totalSpent || 0),
+      lastOrderAt,
+      segment: customer.rfmSegment || null,
+      scoredAt: customer.rfmScoredAt || null,
+    },
+    value: {
+      clvPredicted: customer.clvPredicted == null ? null : Number(customer.clvPredicted),
+      churnProbability: customer.churnProbability == null ? null : Number(customer.churnProbability),
+      avgOrderValue: orderCount ? Number(orderStats._sum?.total || 0) / orderCount : 0,
+      scoredAt: customer.clvScoredAt || null,
+      // < 2 đơn COMPLETED thì clv-forecast trả null (không suy đoán) — nói thẳng
+      // ra để người đọc không tưởng là số 0.
+      insufficientData: customer.clvPredicted == null,
+    },
+    totals: {
+      orders: orderCount,
+      revenue: Number(orderStats._sum?.total || 0),
+      openDebts: debts.filter((d) => d.status !== "PAID" && d.status !== "CANCELLED").length,
+      tasks: tasks.length,
+      openTasks,
+      communications: communications.length,
+    },
+  };
 
   return {
     customer,
@@ -301,12 +411,13 @@ const getCustomer360 = async (id) => {
     loyaltyTxs,
     notes,
     tags: tags.map((t) => t.tag),
-    rfm: {
-      recencyDays,
-      frequency: orderCount,
-      monetary: Number(customer.totalSpent || 0),
-      lastOrderAt,
-    },
+    // AN.2 — ba khối mới: tương tác, ticket, và quan hệ CRM.
+    communications,
+    tasks,
+    crm: { contacts, deals, leads: relatedLeads },
+    metrics,
+    // Giữ `rfm` ở top-level: endpoint cũ và test cũ đang dựa vào đây.
+    rfm: metrics.rfm,
   };
 };
 

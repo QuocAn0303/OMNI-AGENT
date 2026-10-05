@@ -19,10 +19,11 @@ import { useCallback, useEffect, useState } from "react";
 import { useTranslation } from "react-i18next";
 import {
   Card, Spin, Empty, Tag, Progress, Table, Tooltip, Row, Col, Alert, message, Button,
+  Space, Typography,
 } from "antd";
 import {
   ReloadOutlined, WarningOutlined, CrownOutlined, HeartOutlined, TeamOutlined,
-  UserDeleteOutlined, DollarOutlined,
+  UserDeleteOutlined, DollarOutlined, GiftOutlined, AlertOutlined, LineChartOutlined,
 } from "@ant-design/icons";
 import {
   ResponsiveContainer, PieChart, Pie, Cell, BarChart, Bar, XAxis, YAxis, CartesianGrid, Tooltip as RTooltip,
@@ -64,6 +65,11 @@ export default function CustomerInsights() {
   const { t } = useTranslation();
   const [loading, setLoading] = useState(true);
   const [data, setData] = useState(null);
+  // AN.4: KPI giữ chân đọc từ endpoint riêng `/analytics/retention-kpi`.
+  // Tách khỏi `customer-insights` vì hai nguồn có nhịp cập nhật khác nhau và nếu
+  // gộp chung thì một lỗi của endpoint này làm mất luôn bảng kia.
+  const [kpi, setKpi] = useState(null);
+  const [kpiError, setKpiError] = useState(null);
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -79,7 +85,18 @@ export default function CustomerInsights() {
     }
   }, [t]);
 
+  const loadKpi = useCallback(async () => {
+    try {
+      const res = await axios.get("/analytics/retention-kpi");
+      setKpi(res.data?.data || null);
+      setKpiError(null);
+    } catch (err) {
+      setKpiError(err?.response?.data?.message || t("crmPipeline.insights.kpiLoadFailed"));
+    }
+  }, [t]);
+
   useEffect(() => { load(); }, [load]);
+  useEffect(() => { loadKpi(); }, [loadKpi]);
 
   const rfmData = (data?.rfmSegments || []).filter((s) => s.count > 0);
   const tierData = (data?.tiers || []).filter((x) => x.count > 0);
@@ -182,11 +199,112 @@ export default function CustomerInsights() {
           title={t("crmPipeline.insights.title")}
           subtitle={t("crmPipeline.insights.subtitle")}
           actions={
-            <Button icon={<ReloadOutlined />} onClick={load} loading={loading}>
-              {t("crmPipeline.insights.refresh")}
-            </Button>
+            <Space>
+              <Button icon={<ReloadOutlined />} onClick={() => { load(); loadKpi(); }} loading={loading}>
+                {t("crmPipeline.insights.refresh")}
+              </Button>
+            </Space>
           }
         />
+
+        {/* ── AN.4: KPI giữ chân ── */}
+        {kpiError ? (
+          <Alert type="warning" showIcon style={{ marginBottom: 16 }} message={kpiError} />
+        ) : null}
+        {kpi ? (
+          <>
+            <Row gutter={[16, 16]} style={{ marginBottom: 16 }}>
+              <Col xs={12} md={6}>
+                <StatCard
+                  title={t("crmPipeline.insights.kpiAtRisk")}
+                  value={`${kpi.customers.atRisk ?? 0}`}
+                  icon={<UserDeleteOutlined />}
+                  variant="danger"
+                  loading={loading}
+                />
+              </Col>
+              <Col xs={12} md={6}>
+                <StatCard
+                  title={t("crmPipeline.insights.kpiAtRiskRate")}
+                  value={`${kpi.customers.atRiskRate ?? 0}%`}
+                  icon={<LineChartOutlined />}
+                  variant="warning"
+                  loading={loading}
+                />
+              </Col>
+              <Col xs={12} md={6}>
+                <StatCard
+                  title={t("crmPipeline.insights.kpiAlerts")}
+                  value={`${kpi.winback.alertsTotal ?? 0}`}
+                  icon={<AlertOutlined />}
+                  variant="info"
+                  loading={loading}
+                />
+              </Col>
+              <Col xs={12} md={6}>
+                <StatCard
+                  title={t("crmPipeline.insights.kpiVoucherUsed")}
+                  // Chưa phát voucher thì `null` ≠ 0% — hiện "—" để không bị hiểu
+                  // là "đã gửi mà không ai dùng".
+                  value={kpi.winback.voucherRedemptionRate == null ? "—" : `${kpi.winback.voucherRedemptionRate}%`}
+                  icon={<GiftOutlined />}
+                  variant="success"
+                  loading={loading}
+                />
+              </Col>
+            </Row>
+
+            <Card
+              size="small"
+              style={{ marginBottom: 16 }}
+              title={t("crmPipeline.insights.kpiCohortTitle")}
+            >
+              <Table
+                size="small"
+                pagination={false}
+                rowKey="month"
+                dataSource={kpi.cohorts || []}
+                columns={[
+                  { title: t("crmPipeline.insights.kpiCohortMonth"), dataIndex: "month", width: 110 },
+                  {
+                    title: t("crmPipeline.insights.kpiCohortCustomers"),
+                    dataIndex: "customers",
+                    width: 110,
+                    align: "right",
+                  },
+                  {
+                    title: t("crmPipeline.insights.kpiCohortActive"),
+                    dataIndex: "active",
+                    width: 170,
+                    align: "right",
+                  },
+                  {
+                    title: t("crmPipeline.insights.kpiCohortRate"),
+                    dataIndex: "retentionRate",
+                    render: (v) =>
+                      v == null ? (
+                        <span style={{ color: "var(--text-muted)" }}>—</span>
+                      ) : (
+                        <Progress
+                          percent={Math.round(Number(v))}
+                          size="small"
+                          strokeColor={Number(v) >= 60 ? "#059669" : Number(v) >= 30 ? "#d97706" : "#dc2626"}
+                        />
+                      ),
+                  },
+                ]}
+              />
+              <Typography.Paragraph type="secondary" style={{ fontSize: 12, marginBottom: 0, marginTop: 8 }}>
+                {t("crmPipeline.insights.kpiThresholds", {
+                  screening: kpi.thresholds?.churnRisk,
+                  action: kpi.thresholds?.churnAction,
+                })}
+                {" · "}
+                {(kpi.caveats || []).join(" · ")}
+              </Typography.Paragraph>
+            </Card>
+          </>
+        ) : null}
 
         {nothingScored ? (
           <Alert

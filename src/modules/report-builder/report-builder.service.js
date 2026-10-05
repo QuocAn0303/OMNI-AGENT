@@ -147,7 +147,11 @@ const resolveCrmOwnerIds = async (table, user) => {
 
 const getTables = () => Object.entries(ALLOWED_TABLES).map(([key, v]) => ({ key, label: v.label, fields: v.fields }));
 
-const validateConfig = ({ table, fields, filters = [], groupBy, orderBy, aggregate }) => {
+// `fields` KHÔNG bắt buộc: báo cáo dạng tổng hợp (aggregate + groupBy) không có
+// danh sách cột — ví dụ R-02 "COUNT(id) GROUP BY rfmSegment". Trước đây thiếu
+// mặc định `= []` khiến `runQuery` ném `fields is not iterable` ⇒ 5 báo cáo mặc
+// định (R-02/04/05/06/08) chạy không được.
+const validateConfig = ({ table, fields = [], filters = [], groupBy, orderBy, aggregate }) => {
   if (!ALLOWED_TABLES[table]) throw { status: 400, message: `Bảng '${table}' không được phép` };
   const allowed = ALLOWED_TABLES[table].fields;
   for (const f of fields) {
@@ -163,7 +167,7 @@ const validateConfig = ({ table, fields, filters = [], groupBy, orderBy, aggrega
 
 // Execute a safe query via prisma.$queryRawUnsafe with parameterized values
 const runQuery = async (config, { limit = 100, user = null } = {}) => {
-  const { table, fields, filters = [], groupBy, orderBy, aggregate } = config;
+  const { table, fields = [], filters = [], groupBy, orderBy, aggregate } = config;
   validateConfig(config);
 
   // ---- Multi-tenant: luôn ép WHERE tenantId (trừ SUPER_OMEGA bypass) ----

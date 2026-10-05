@@ -1138,7 +1138,18 @@
       "clv": "CLV dự báo",
       "totalSpent": "Tổng chi tiêu",
       "churnAvg": "Xác suất churn trung bình của khách đã chấm: {{pct}}%",
-      "churnAvgHelp": "Xác suất trung bình trong số {{pct}}% khách hàng đã được chấm điểm churn. Ngưỡng xem là khách rủi ro: 50%."
+      "churnAvgHelp": "Xác suất trung bình trong số {{pct}}% khách hàng đã được chấm điểm churn. Ngưỡng xem là khách rủi ro: 50%.",
+      "kpiAtRisk": "Khách rủi ro (ngưỡng sàng lọc)",
+      "kpiAtRiskRate": "Tỷ lệ rủi ro",
+      "kpiAlerts": "Cảnh báo churn",
+      "kpiVoucherUsed": "Voucher win-back đã dùng",
+      "kpiCohortTitle": "Tỷ lệ giữ chân theo cohort (tháng khách đến)",
+      "kpiCohortMonth": "Tháng",
+      "kpiCohortCustomers": "Số khách",
+      "kpiCohortActive": "Còn hoạt động (90 ngày)",
+      "kpiCohortRate": "Tỷ lệ giữ chân",
+      "kpiThresholds": "Ngưỡng sàng lọc {{screening}} · ngưỡng gửi voucher {{action}}",
+      "kpiLoadFailed": "Không tải được KPI giữ chân"
     }
   }
 }

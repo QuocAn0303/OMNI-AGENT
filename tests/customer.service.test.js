@@ -19,6 +19,12 @@ jest.mock("../src/config/prisma", () => ({
   loyaltyTransaction: { findMany: jest.fn().mockResolvedValue([]) },
   customerNote: { findMany: jest.fn().mockResolvedValue([]) },
   customerTagOnCustomer: { findMany: jest.fn().mockResolvedValue([]) },
+  // AN.2: hồ sơ 360 đọc thêm ticket + timeline + quan hệ CRM.
+  customerTask: { findMany: jest.fn().mockResolvedValue([]) },
+  crmCommunication: { findMany: jest.fn().mockResolvedValue([]) },
+  crmContact: { findMany: jest.fn().mockResolvedValue([]) },
+  crmDeal: { findMany: jest.fn().mockResolvedValue([]) },
+  crmLead: { findMany: jest.fn().mockResolvedValue([]) },
   $transaction: jest.fn((fn) => fn({})),
 }));
 

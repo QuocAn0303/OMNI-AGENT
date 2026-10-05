@@ -1310,7 +1310,18 @@
       "clv": "Predicted CLV",
       "totalSpent": "Total spend",
       "churnAvg": "Average churn probability among scored customers: {{pct}}%",
-      "churnAvgHelp": "The average across scored customers is {{pct}}%. A customer counts as at-risk from 50%."
+      "churnAvgHelp": "The average across scored customers is {{pct}}%. A customer counts as at-risk from 50%.",
+      "kpiAtRisk": "At-risk customers (screening threshold)",
+      "kpiAtRiskRate": "At-risk rate",
+      "kpiAlerts": "Churn alerts",
+      "kpiVoucherUsed": "Win-back voucher redemption",
+      "kpiCohortTitle": "Retention rate by cohort (customer signup month)",
+      "kpiCohortMonth": "Month",
+      "kpiCohortCustomers": "Customers",
+      "kpiCohortActive": "Still active (90 days)",
+      "kpiCohortRate": "Retention rate",
+      "kpiThresholds": "Screening threshold {{screening}} · voucher action threshold {{action}}",
+      "kpiLoadFailed": "Failed to load retention KPI"
     }
   }
 }
