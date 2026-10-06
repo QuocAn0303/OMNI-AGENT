@@ -1,4 +1,5 @@
-const prisma = require("../../config/prisma");
+﻿const prisma = require("../../config/prisma");
+const { runWithTenant } = require("../../config/tenantContext");
 const logger = require('../../utils/logger');
 
 const LOG = "[automation]";
@@ -217,6 +218,13 @@ const debtAutoCollection = async () => {
     });
 
     for (const debt of upcomingDebts) {
+      // Cron chạy NGOÀI tenant context và các câu truy vấn ở trên cố tình quét
+      // TOÀN HỆ THỐNG (multi-tenant). Ghi thông báo ở đây sẽ tạo ra dòng
+      // `notification.tenantId = NULL` ⇒ không hiện trong UI của tenant nào và
+      // `emitToRole` bị bỏ qua. Vì vậy mọi ghi/notify phải bọc trong
+      // `runWithTenant(debt.tenantId)`.
+      if (!debt.tenantId) continue;
+      await runWithTenant(debt.tenantId, async () => {
       const remaining = Number(debt.amount) - Number(debt.paidAmount);
       const partyName = debt.customer?.name || debt.vendor?.name || "N/A";
       const daysLeft = Math.ceil((new Date(debt.dueDate) - now) / (24 * 60 * 60 * 1000));
@@ -228,7 +236,7 @@ const debtAutoCollection = async () => {
           meta: { path: ["debtId"], equals: debt.id },
         },
       });
-      if (recentNotif) continue;
+      if (recentNotif) return;
 
       await notif.notifyRoles(["MANAGER"], {
         type: "DEBT_OVERDUE",
@@ -262,6 +270,7 @@ const debtAutoCollection = async () => {
           },
         }).catch(() => {});
       }
+      });
     }
 
     const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
@@ -277,6 +286,8 @@ const debtAutoCollection = async () => {
     });
 
     for (const debt of overdueDebts7) {
+      if (!debt.tenantId) continue;
+      await runWithTenant(debt.tenantId, async () => {
       const remaining = Number(debt.amount) - Number(debt.paidAmount);
       const partyName = debt.customer?.name || debt.vendor?.name || "N/A";
       const daysOverdue = Math.ceil((now - new Date(debt.dueDate)) / (24 * 60 * 60 * 1000));
@@ -289,7 +300,7 @@ const debtAutoCollection = async () => {
           meta: { path: ["debtId"], equals: debt.id },
         },
       });
-      if (recentEscalation) continue;
+      if (recentEscalation) return;
 
       await prisma.debt.update({
         where: { id: debt.id },
@@ -304,6 +315,7 @@ const debtAutoCollection = async () => {
         link: "/debts",
         meta: { debtId: debt.id, level: "escalated", daysOverdue },
       });
+      });
     }
 
     const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
@@ -315,6 +327,8 @@ const debtAutoCollection = async () => {
     });
 
     for (const debt of overdueDebts30) {
+      if (!debt.tenantId) continue;
+      await runWithTenant(debt.tenantId, async () => {
       const recentFlag = await prisma.notification.findFirst({
         where: {
           type: "DEBT_OVERDUE",
@@ -322,7 +336,7 @@ const debtAutoCollection = async () => {
           meta: { path: ["debtId"], equals: debt.id, path: ["level"], equals: "critical_flag" },
         },
       });
-      if (recentFlag) continue;
+      if (recentFlag) return;
 
       await prisma.debt.update({
         where: { id: debt.id },
@@ -339,6 +353,7 @@ const debtAutoCollection = async () => {
         message: `Debt ${debt.id.slice(0, 8)}: ${(Number(debt.amount) - Number(debt.paidAmount)).toLocaleString()} VND. Da danh dau can xu ly dac biet.`,
         link: "/debts",
         meta: { debtId: debt.id, level: "critical_flag" },
+      });
       });
     }
 

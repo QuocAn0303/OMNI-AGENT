@@ -1,43 +1,25 @@
-const crypto = require("crypto");
 const express = require("express");
 const router = express.Router();
 const { authenticate } = require("../../middleware/auth.middleware");
 const vietqrService = require("./vietqr.service");
-const logger = require("../../utils/logger");
-
-const safeEqual = (a, b) => {
-  const ba = Buffer.from(String(a), "utf8");
-  const bb = Buffer.from(String(b), "utf8");
-  if (ba.length !== bb.length) return false;
-  return crypto.timingSafeEqual(ba, bb);
-};
+const { verifyHmacWebhook, verifyBearerWebhook } = require("../../utils/webhookSignature");
 
 // Casso: X-Casso-Signature = HMAC-SHA256(secret, rawBody)
-const verifyCasso = (rawBody, signature) => {
-  const secret = process.env.CASSO_WEBHOOK_SECRET || "";
-  if (!secret) {
-    if (process.env.NODE_ENV === "production") return false;
-    logger.warn("[vietqr] CASSO_WEBHOOK_SECRET chưa cấu hình — chấp nhận webhook ở môi trường dev (tránh forge khi production)");
-    return true;
-  }
-  if (!signature || !rawBody) return false;
-  const expected = crypto.createHmac("sha256", secret).update(rawBody).digest("hex");
-  return safeEqual(expected, signature);
-};
+const verifyCasso = (rawBody, signature) =>
+  verifyHmacWebhook({
+    provider: "Casso",
+    secret: process.env.CASSO_WEBHOOK_SECRET,
+    rawBody,
+    signature,
+  });
 
 // SePay: Authorization: Bearer <SEPAY_WEBHOOK_TOKEN>
-const verifySePay = (req) => {
-  const token = process.env.SEPAY_WEBHOOK_TOKEN || "";
-  if (!token) {
-    if (process.env.NODE_ENV === "production") return false;
-    logger.warn("[vietqr] SEPAY_WEBHOOK_TOKEN chưa cấu hình — chấp nhận webhook ở môi trường dev (tránh forge khi production)");
-    return true;
-  }
-  const auth = req.headers.authorization || "";
-  const provided = auth.startsWith("Bearer ") ? auth.slice(7) : "";
-  if (!provided) return false;
-  return safeEqual(token, provided);
-};
+const verifySePay = (req) =>
+  verifyBearerWebhook({
+    provider: "SePay",
+    token: process.env.SEPAY_WEBHOOK_TOKEN,
+    provided: (req.headers.authorization || "").replace(/^Bearer\s+/i, ""),
+  });
 
 // Casso webhook (public — verify HMAC-SHA256 qua X-Casso-Signature, raw body từ express.raw trong app.js)
 router.post("/webhook/casso", async (req, res, next) => {

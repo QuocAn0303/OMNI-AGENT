@@ -22,6 +22,7 @@
 
 const bcrypt = require('bcrypt');
 const prisma = require('../../config/prisma');
+const { runWithTenant } = require('../../config/tenantContext');
 const auditService = require('../audit/audit.service');
 
 // ============ PHÂN QUYỀN TẠO/SỬA USER (chống leo quyền) ============
@@ -37,8 +38,25 @@ const ROLE_RANK = {
   WAREHOUSE: 0,
 };
 
-const getActor = async (actorId) => {
+const getActor = async (actorUser) => {
+  // Nhận cả string id (tương thích ngược) lẫn object req.user
+  const isObj = actorUser && typeof actorUser === 'object';
+  const actorId = isObj ? actorUser.id : actorUser;
   if (!actorId) throw { status: 401, message: 'Chưa xác thực tài khoản' };
+
+  // Support impersonation: `id` là user id THẬT của SUPER_OMEGA (mượn để ghi log),
+  // nhưng quyền thực thi đã bị hạ xuống ADMIN của shop đang hỗ trợ. TUYỆT ĐỐI không
+  // đọc role/tenant từ DB ở nhánh này — DB trả về SUPER_OMEGA_ULTRA_ADMIN sẽ làm
+  // mọi guard chống leo quyền bên dưới bị bypass hoàn toàn.
+  if (isObj && actorUser.supportSessionId) {
+    return {
+      id: actorId,
+      role: actorUser.role,
+      tenantId: actorUser.tenantId || null,
+      supportSessionId: actorUser.supportSessionId,
+    };
+  }
+
   const actor = await prisma.user.findUnique({
     where: { id: actorId },
     select: { id: true, role: true, tenantId: true },
@@ -46,6 +64,37 @@ const getActor = async (actorId) => {
   if (!actor) throw { status: 401, message: 'Chưa xác thực tài khoản' };
   return actor;
 };
+
+// Chặn leo quyền: actor đang trong support session không bao giờ được tạo/gán
+// tài khoản cấp SUPER, kể cả khi token mang id của một SUPER_OMEGA.
+const assertNotSuperEscalation = (actor, targetRole) => {
+  if (actor.supportSessionId && SUPER_ROLES.includes(targetRole)) {
+    throw { status: 403, message: 'Phiên hỗ trợ không được phép thao tác tài khoản cấp SUPER' };
+  }
+};
+
+/**
+ * Thu hồi toàn bộ refresh token của một user (H4).
+ *
+ * Cố ý chạy trong `runWithTenant(null)` để Prisma extension KHÔNG inject
+ * `tenantId` vào `where`. Lý do: `auth.service.createRefreshToken` chạy ở login —
+ * TRƯỚC khi `authenticate` dựng tenant context — nên mọi dòng refresh_token hiện có
+ * đều mang `tenantId = NULL`, trong khi `RefreshToken` lại nằm trong
+ * TENANT_SCOPED_MODELS. Nếu để extension scope theo tenant của admin, `updateMany`
+ * sẽ lọc `tenantId = <tenant của admin>` và KHÔNG khớp dòng nào → refresh token
+ * của kẻ tấn công vẫn sống, tức là quy trình reset mật khẩu không thực sự đuổi họ.
+ *
+ * An toàn multi-tenant: `userId` là UUID duy nhất toàn cục, và caller đã được
+ * kiểm tra quyền sửa/xoá CHÍNH user này trước khi gọi (guard ở `update`/`remove`).
+ * Lọc theo `userId` không thể chạm tới tenant khác.
+ */
+const revokeAllSessions = async (userId) =>
+  runWithTenant(null, () =>
+    prisma.refreshToken.updateMany({
+      where: { userId, isRevoked: false },
+      data: { isRevoked: true },
+    }),
+  );
 
 const getAll = async ({ page: rawPage = 1, limit: rawLimit = 10, search = '', role }, actor) => {
   const page = Math.max(1, Number(rawPage) || 1);
@@ -97,13 +146,16 @@ const getById = async (id) => {
   return user;
 };
 
-const create = async ({ email, password, fullName, role }, actorId = null) => {
+const create = async ({ email, password, fullName, role }, actorUser = null) => {
   const hashed = await bcrypt.hash(password, Number(process.env.BCRYPT_ROUNDS) || 12);
 
   // ---- Chống leo quyền: actor phải có quyền gán role này ----
-  const actor = await getActor(actorId);
+  const actor = await getActor(actorUser);
+  const actorId = actor.id;
   const normalizedRole = role || 'CASHIER';
   let tenantId = null;
+
+  assertNotSuperEscalation(actor, normalizedRole);
 
   if (SUPER_ROLES.includes(normalizedRole)) {
     // Chỉ SUPER_OMEGA_ULTRA_ADMIN mới tạo được tài khoản nền tảng (SUPER_ADMIN)
@@ -148,11 +200,14 @@ const create = async ({ email, password, fullName, role }, actorId = null) => {
   return user;
 };
 
-const update = async (id, data, actorId = null) => {
+const update = async (id, data, actorUser = null) => {
   const { password, ...rest } = data;
-  const actor = await getActor(actorId);
+  const actor = await getActor(actorUser);
+  const actorId = actor.id;
   const before = await prisma.user.findUnique({ where: { id }, select: { id: true, email: true, fullName: true, role: true, isActive: true, tenantId: true } });
   if (!before) throw { status: 404, message: 'Không tìm thấy người dùng' };
+
+  if (rest.role) assertNotSuperEscalation(actor, rest.role);
 
   // ---- Chống leo quyền khi sửa ----
   if (actor.role !== 'SUPER_OMEGA_ULTRA_ADMIN') {
@@ -179,15 +234,24 @@ const update = async (id, data, actorId = null) => {
   }
 
   const updateData = { ...rest };
+  let sessionsRevoked = false;
   if (password) {
     updateData.password = await bcrypt.hash(password, Number(process.env.BCRYPT_ROUNDS) || 12);
     updateData.mustChangePassword = false;
+    // Đổi/reset mật khẩu = phải đuổi hết phiên cũ. `tokenVersion` bump làm mọi
+    // access token đã cấp bị authenticate() từ chối (auth.middleware.js:82), và
+    // revoke refresh token chặn việc tự xin token mới. Thiếu bước này thì quy trình
+    // "admin reset mật khẩu cho user bị xâm nhập" không thực sự loại kẻ tấn công.
+    updateData.tokenVersion = { increment: 1 };
+    sessionsRevoked = true;
   }
   const updated = await prisma.user.update({
     where: { id },
     data: updateData,
     select: { id: true, email: true, fullName: true, role: true, isActive: true },
   });
+
+  if (sessionsRevoked) await revokeAllSessions(id);
 
   auditService.log({
     userId: actorId,
@@ -201,9 +265,10 @@ const update = async (id, data, actorId = null) => {
   return updated;
 };
 
-const remove = async (id, actorId = null) => {
-  const actor = await getActor(actorId);
-  const user = await prisma.user.findUnique({ where: { id }, select: { email: true, fullName: true, role: true, tenantId: true } });
+const remove = async (id, actorUser = null) => {
+  const actor = await getActor(actorUser);
+  const actorId = actor.id;
+  const user = await prisma.user.findUnique({ where: { id }, select: { id: true, email: true, fullName: true, role: true, tenantId: true } });
   if (!user) throw { status: 404, message: 'Không tìm thấy người dùng' };
 
   // ---- Chống leo quyền khi khóa ----
@@ -220,6 +285,9 @@ const remove = async (id, actorId = null) => {
   }
 
   const result = await prisma.user.update({ where: { id }, data: { isActive: false } });
+
+  // Khoá tài khoản → thu hồi phiên để token đang cầm không dùng lại được
+  await revokeAllSessions(id);
 
   auditService.log({
     userId: actorId,

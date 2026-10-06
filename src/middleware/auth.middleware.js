@@ -18,6 +18,10 @@ const prisma = require("../config/prisma");
 const { runWithTenant } = require("../config/tenantContext");
 const logger = require('../utils/logger');
 
+// Quyền tối đa mà một support session được hưởng. Token hỗ trợ chỉ để admin
+// giả lập quyền ADMIN của MỘT shop cần hỗ trợ — không bao giờ là SUPER_*.
+const SUPPORT_IMPERSONATION_ROLE = "ADMIN";
+
 const requireSuperOmega = (req, res, next) => {
   if (!req.user) {
     return next({ status: 401, message: "Chưa xác thực tài khoản" });
@@ -60,14 +64,27 @@ const authenticate = async (req, res, next) => {
       if (decoded.supportSessionId) {
         const session = await prisma.supportAccessSession.findUnique({
           where: { id: decoded.supportSessionId },
-          select: { id: true, status: true, expiresAt: true },
+          select: { id: true, status: true, expiresAt: true, tenantId: true },
         });
         if (!session || session.status !== "ACTIVE" || new Date(session.expiresAt) < new Date()) {
           return next({ status: 401, message: "Phiên hỗ trợ đã hết hạn hoặc bị thu hồi" });
         }
-        req.user = decoded;
+        // Support impersonation: `decoded.id` là user id THẬT của SUPER_OMEGA (mượn
+        // để ghi log ai thực hiện), còn quyền thực thi chỉ là ADMIN của đúng shop
+        // được hỗ trợ. Vì vậy KHÔNG re-read role/tenant từ DB ở nhánh này — đọc DB
+        // sẽ khôi phục lại SUPER_OMEGA và bỏ qua mọi guard chống leo quyền.
+        // role bị ép cứng còn ADMIN và tenantId lấy từ bản ghi phiên (DB) chứ không
+        // tin giá trị trong token, để token cũ/sửa đổi không nâng được quyền.
+        req.user = {
+          ...decoded,
+          role: SUPPORT_IMPERSONATION_ROLE,
+          tenantId: session.tenantId,
+        };
         req.authVerified = true;
-        runWithTenant(decoded.tenantId, () => next(), false);
+        logger.warn(
+          `[auth] support impersonation active session=${session.id} admin=${decoded.id} tenant=${session.tenantId}`,
+        );
+        runWithTenant(session.tenantId, () => next(), false);
         return;
       }
       const user = await prisma.user.findUnique({

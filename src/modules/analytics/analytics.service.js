@@ -217,8 +217,14 @@ const getAnalytics = async (from, to, groupBy = "day") => {
 // không tự đặt tên mới (tránh 2 hệ thống tên cho cùng 1 phân khúc).
 const RFM_ORDER = ["Champions", "Loyal", "Potential", "At-Risk", "Hibernating"];
 
-// Khách bị coi là rủi ro khi churnProbability ≥ ngưỡng này.
+// Ngưỡng "rủi ro" của phân tích = ngưỡng SÀNG LỌC (xem danh sách theo dõi),
+// thấp hơn ngưỡng HÀNH ĐỘNG của automation (0.70) một cách có chủ đích: người
+// dùng cần thấy cả nhóm "sắp rời bỏ" trước khi automation kịp xử lý.
+//
+// HAI NGƯỠNG NÀY KHÁC NHAU VÀ PHẢI GIỮ RIÊNG — nhập nhằng là bug. Xem
+// `retentionKpi()` trả cả hai ra payload để UI không tự nhầm.
 const CHURN_RISK_THRESHOLD = 0.5;
+const CHURN_ACTION_THRESHOLD = Number(process.env.CHURN_THRESHOLD || 0.7);
 
 /**
  * Tổng hợp chỉ số CRM khách hàng từ dữ liệu ĐÃ TÍNH SẴN trên `Customer`.
@@ -362,4 +368,126 @@ const salesInsights = async () => {
   return getAnalytics(from, now, "day");
 };
 
-module.exports = { getAnalytics, getCustomerInsights, salesInsights };
+// ── KPI giữ chân (AN.4) ──────────────────────────────────────────────────────
+/**
+ * Bộ KPI mà đề bài R4 yêu cầu, gom về một chỗ để trả lời câu hỏi "giữ được
+ * khách không" thay vì chỉ nhìn doanh thu:
+ *   1. Tỷ lệ giữ chân theo cohort tháng mua đầu tiên.
+ *   2. Khách rủi ro theo ngưỡng cảnh báo.
+ *   3. Hiệu quả win-back: cảnh báo → voucher → đã dùng.
+ *
+ * Cohort dùng `customers.createdAt` (tháng tạo khách) vì đó là mốc duy nhất có
+ * ở mọi khách; cohort theo tháng mua đầu tiên cần dựng thêm bảng trung gian.
+ * Giới hạn này ghi rõ trong tài liệu 3.5 thay vì giấu.
+ *
+ * @param {{months?:number}} opts số tháng cohort (mặc định 6)
+ */
+const retentionKpi = async ({ months = 6 } = {}) => {
+  const now = new Date();
+  const from = new Date(Date.UTC(now.getUTCFullYear(), now.getUTCMonth() - (months - 1), 1));
+
+  // ---- 1. Cohort: nhóm theo tháng tạo khách, đo còn hoạt động sau N ngày
+  const cohortRows = [];
+  for (let i = 0; i < months; i += 1) {
+    const start = new Date(Date.UTC(from.getUTCFullYear(), from.getUTCMonth() + i, 1));
+    const end = new Date(Date.UTC(start.getUTCFullYear(), start.getUTCMonth() + 1, 1));
+    const [total, active] = await Promise.all([
+      prisma.customer.count({
+        where: { createdAt: { gte: start, lt: end }, isActive: true },
+      }),
+      prisma.customer.count({
+        where: {
+          createdAt: { gte: start, lt: end },
+          isActive: true,
+          rfmRecencyDays: { lte: 90 },
+        },
+      }),
+    ]);
+    cohortRows.push({
+      month: `${start.getUTCFullYear()}-${String(start.getUTCMonth() + 1).padStart(2, "0")}`,
+      customers: total,
+      // "Còn hoạt động" = có đơn trong 90 ngày gần nhất (rfmRecencyDays).
+      active,
+      retentionRate: total > 0 ? Number(((active / total) * 100).toFixed(1)) : null,
+    });
+  }
+
+  // ---- 2. Khách rủi ro
+  const [totalCustomers, scored, atRisk, avgChurn] = await Promise.all([
+    prisma.customer.count({ where: { isActive: true } }),
+    prisma.customer.count({ where: { churnProbability: { not: null } } }),
+    prisma.customer.count({ where: { churnProbability: { gte: CHURN_RISK_THRESHOLD } } }),
+    prisma.customer.aggregate({
+      where: { churnProbability: { not: null } },
+      _avg: { churnProbability: true },
+    }),
+  ]);
+
+  // ---- 3. Hiệu quả win-back
+  const alertsByStatus = await prisma.churnAlert.groupBy({
+    by: ["status"],
+    _count: { _all: true },
+  });
+  const statusMap = Object.fromEntries(alertsByStatus.map((r) => [r.status, r._count._all]));
+  const totalAlerts = alertsByStatus.reduce((s, r) => s + r._count._all, 0);
+
+  // Voucher được dùng: `PromotionUsage` nối promotion ↔ customer.
+  const voucherIds = (
+    await prisma.churnAlert.findMany({
+      where: { promotionId: { not: null } },
+      select: { promotionId: true },
+      distinct: ["promotionId"],
+    })
+  ).map((a) => a.promotionId);
+  const usageCount = voucherIds.length
+    ? await prisma.promotionUsage.count({ where: { promotionId: { in: voucherIds } } })
+    : 0;
+
+  const resolved = (statusMap.RETAINED ?? 0) + (statusMap.LOST ?? 0);
+  const resolvedAtRisk = atRisk > 0 ? Number(((resolved / atRisk) * 100).toFixed(1)) : null;
+
+  return {
+    generatedAt: now.toISOString(),
+    thresholds: {
+      // Ngưỡng SÀNG LỌC — dùng cho `customers.atRisk` và danh sách theo dõi.
+      churnRisk: CHURN_RISK_THRESHOLD,
+      // Ngưỡng HÀNH ĐỘNG — đúng ngưỡng `churn-automation` dùng để tạo cảnh báo
+      // + voucher. Nêu ra để không ai đọc KPI rủi ro rồi hỏi "sao chưa gửi
+      // voucher cho khách này".
+      churnAction: CHURN_ACTION_THRESHOLD,
+      recencyDays: 90,
+    },
+    customers: {
+      total: totalCustomers,
+      scored,
+      unscored: Math.max(0, totalCustomers - scored),
+      atRisk,
+      atRiskRate: totalCustomers > 0 ? Number(((atRisk / totalCustomers) * 100).toFixed(1)) : null,
+      avgChurnProbability:
+        avgChurn._avg?.churnProbability != null ? Number(avgChurn._avg.churnProbability) : null,
+    },
+    cohorts: cohortRows,
+    winback: {
+      alertsTotal: totalAlerts,
+      byStatus: statusMap,
+      resolved,
+      // Tỷ lệ khách rủi ro đã có kết quả (giữ lại hoặc mất) — đo được vì
+      // `churn_alerts.status` được automation cập nhật ở các lần chạy sau.
+      resolvedRate: resolvedAtRisk,
+      voucherIssued: voucherIds.length,
+      voucherUsed: usageCount,
+      // Hiệu quả voucher = số lượt dùng / số voucher đã phát. Chưa có lượt dùng
+      // thì null, KHÔNG phải 0 — "chưa ai dùng" và "chưa phát voucher" là 2 việc.
+      voucherRedemptionRate:
+        voucherIds.length > 0 ? Number(((usageCount / voucherIds.length) * 100).toFixed(1)) : null,
+    },
+    caveats: [
+      "Cohort tính theo tháng TẠO khách (customers.createdAt), không phải tháng mua đầu tiên.",
+      "Tỷ lệ giữ chân dùng quy ước 'còn mua trong 90 ngày' (rfmRecencyDays <= 90).",
+      "customers.atRisk dùng ngưỡng SÀNG LỌC (churnRisk); chỉ khách vượt ngưỡng HÀNH ĐỘNG (churnAction) mới được automation gửi voucher.",
+      "resolvedRate phụ thuộc automation đã chạy đủ một vòng để cập nhật trạng thái RETAINED/LOST.",
+    ],
+  };
+};
+
+module.exports = { getAnalytics, getCustomerInsights, salesInsights, retentionKpi };

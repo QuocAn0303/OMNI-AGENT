@@ -162,7 +162,7 @@ describe("automation — advanced scenarios", () => {
   describe("debtAutoCollection — edge cases", () => {
     test("30-day overdue flagged with special note", async () => {
       prisma.debt.findMany.mockResolvedValueOnce([]).mockResolvedValueOnce([]).mockResolvedValueOnce([
-        { id: "d-old", amount: 10000000, paidAmount: 0, status: "OPEN", type: "RECEIVABLE", dueDate: new Date(Date.now() - 45 * 86400000), customer: null, vendor: null, note: null },
+        { id: "d-old", tenantId: "t1", amount: 10000000, paidAmount: 0, status: "OPEN", type: "RECEIVABLE", dueDate: new Date(Date.now() - 45 * 86400000), customer: null, vendor: null, note: null },
       ]);
       prisma.notification.findFirst.mockResolvedValue(null);
       await debtAutoCollection();
@@ -173,8 +173,8 @@ describe("automation — advanced scenarios", () => {
 
     test("RECEIVABLE only gets customer notes", async () => {
       prisma.debt.findMany.mockResolvedValueOnce([
-        { id: "d-rec", amount: 1000000, paidAmount: 0, status: "OPEN", type: "RECEIVABLE", dueDate: new Date(Date.now() + 1 * 86400000), customer: { id: "c1", name: "C Rec" }, vendor: null },
-        { id: "d-pay", amount: 1000000, paidAmount: 0, status: "OPEN", type: "PAYABLE", dueDate: new Date(Date.now() + 1 * 86400000), customer: null, vendor: { id: "v1", name: "V Pay" } },
+        { id: "d-rec", tenantId: "t1", amount: 1000000, paidAmount: 0, status: "OPEN", type: "RECEIVABLE", dueDate: new Date(Date.now() + 1 * 86400000), customer: { id: "c1", name: "C Rec" }, vendor: null },
+        { id: "d-pay", tenantId: "t1", amount: 1000000, paidAmount: 0, status: "OPEN", type: "PAYABLE", dueDate: new Date(Date.now() + 1 * 86400000), customer: null, vendor: { id: "v1", name: "V Pay" } },
       ]).mockResolvedValueOnce([]).mockResolvedValueOnce([]);
       prisma.notification.findFirst.mockResolvedValue(null);
       await debtAutoCollection();

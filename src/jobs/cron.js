@@ -438,7 +438,9 @@ const startCrons = () => {
         });
         if (adminUser) await backupService.create(adminUser.id);
       } catch (err) {
-        logger.error("[cron] Daily backup error:", err.message);
+        // `logger.error(msg, err.message)` khiến winston coi chuỗi là object và
+        // in ra object {"0":"s","1":"p",...} — phải nội suy vào chuỗi một.
+        logger.error(`[cron] Daily backup error: ${err && err.message ? err.message : String(err)}`);
       }
     });
   }

@@ -81,6 +81,32 @@ router.get("/customer-insights", authenticate, authorize("ADMIN", "MANAGER"), as
 });
 
 /**
+ * @swagger
+ * /api/analytics/retention-kpi:
+ *   get:
+ *     summary: KPI giữ chân — cohort, khách rủi ro, hiệu quả win-back (AN.4)
+ *     tags: [Analytics]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: query
+ *         name: months
+ *         schema: { type: integer, default: 6 }
+ *     responses:
+ *       200: { description: "customers{}, cohorts[], winback{}, caveats[]" }
+ */
+router.get("/retention-kpi", authenticate, authorize("ADMIN", "MANAGER"), async (req, res, next) => {
+  try {
+    const months = Number(req.query.months);
+    const out = await analyticsService.retentionKpi({
+      months: Number.isFinite(months) && months > 0 ? Math.min(24, Math.floor(months)) : 6,
+    });
+    res.json({ success: true, data: out });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
  * GET /api/analytics/sales-insights
  * Legacy endpoint — kept for backward compatibility
  */

@@ -42,8 +42,10 @@ export default function Login() {
       const user = data.user || null;
       // M7: refresh token được set vào httpOnly cookie bởi backend — không cần xử lý ở đây
       login(user, token);
-      if (token)
-        axiosInstance.defaults.headers.common.Authorization = `Bearer ${token}`;
+      // KHÔNG ghi vào axiosInstance.defaults.headers.common: interceptor request đã
+      // gắn Authorization từ store cho mọi request (H2). Ghi thêm ở đây tạo một bản
+      // sao token tồn đọng trên instance, sống dai hơn store → sau khi logout, request
+      // kế tiếp vẫn tự động mang phiên của user vừa đăng xuất.
       if (user?.role === "SUPER_OMEGA_ULTRA_ADMIN") {
         navigate("/admin");
       } else {

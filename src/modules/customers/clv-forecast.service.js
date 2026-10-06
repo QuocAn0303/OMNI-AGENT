@@ -69,6 +69,44 @@ const forecastCustomer = ({ orders, now = new Date(), horizonDays = HORIZON_DAYS
   return { clvPredicted, churnProbability, pAlive: round4(pAlive), avgOrderValue, insufficientData: false };
 };
 
+/**
+ * Suy ra bộ ĐẶC TRƯNG từ lịch sử đơn — dùng chung cho công thức và mô hình.
+ *
+ * `churn-model.service.js` cần đúng những đại lượng này; nếu mỗi bên tự tính
+ * riêng thì đặc trưng của mô hình lệch với lúc huấn luyện ⇒ AUC đo được không
+ * còn ý nghĩa. Vì vậy hàm này là nguồn sự thật DUY NHẤT cho phép tính.
+ *
+ * @returns {null|{recencyDays:number, frequency:number, monetary:number,
+ *   avgGap:number, tenureDays:number, avgOrderValue:number, orders:Array}}
+ *   `null` khi chưa đủ 2 đơn COMPLETED (không suy đoán).
+ */
+const deriveMetrics = async (customerId, { now = new Date(), observationDays = HORIZON_DAYS } = {}) => {
+  if (!customerId) return null;
+  const since = new Date(now.getTime() - observationDays * DAY_MS);
+  const rows = await prisma.order.findMany({
+    where: { customerId, status: "COMPLETED", createdAt: { gte: since } },
+    select: { createdAt: true, total: true },
+    orderBy: { createdAt: "asc" },
+  });
+  if (rows.length < MIN_ORDERS) return null;
+
+  const firstT = new Date(rows[0].createdAt).getTime();
+  const lastT = new Date(rows[rows.length - 1].createdAt).getTime();
+  const n = rows.length;
+  const nowMs = now.getTime();
+  const monetary = rows.reduce((s, o) => s + Number(o.total ?? 0), 0);
+
+  return {
+    recencyDays: Math.max(0, Math.floor((nowMs - lastT) / DAY_MS)),
+    frequency: n,
+    monetary,
+    avgGap: Math.max(1, (nowMs - firstT) / DAY_MS / n),
+    tenureDays: Math.max(0, Math.floor((nowMs - firstT) / DAY_MS)),
+    avgOrderValue: monetary / n,
+    orders: rows,
+  };
+};
+
 // Chấm điểm 1 customer và persist kết quả
 const scoreCustomer = async (customerId, client = prisma, now = new Date()) => {
   if (!customerId) return null;
@@ -77,15 +115,63 @@ const scoreCustomer = async (customerId, client = prisma, now = new Date()) => {
     select: { status: true, createdAt: true, total: true },
   });
   const result = forecastCustomer({ orders, now });
+  // Đặc trưng cho mô hình: cùng công thức với `forecastCustomer` để hai cách
+  // suy luận nhìn cùng một dữ liệu.
+  const clvForecastMetrics = () => {
+    if (result.insufficientData) return null;
+    const completed = orders
+      .filter((o) => o.status === "COMPLETED")
+      .map((o) => new Date(o.createdAt).getTime())
+      .sort((a, b) => a - b);
+    const nowMs = now.getTime();
+    const firstT = completed[0];
+    const lastT = completed[completed.length - 1];
+    const n = completed.length;
+    const monetary = orders.reduce((s, o) => s + Number(o.total ?? 0), 0);
+    return {
+      recencyDays: Math.max(0, Math.floor((nowMs - lastT) / DAY_MS)),
+      frequency: n,
+      monetary,
+      avgGap: Math.max(1, (nowMs - firstT) / DAY_MS / n),
+      tenureDays: Math.max(0, Math.floor((nowMs - firstT) / DAY_MS)),
+      avgOrderValue: monetary / n,
+    };
+  };
+
+  // Ưu tiên MÔ HÌNH ĐÃ HUẤN LUYỆN như là BẰNG CHỨNG BỔ SUNG cho công thức.
+  // Hợp nhất bằng `max()`: khách công thức đã cảnh báo thì giữ nguyên; khách mà
+  // công thức bỏ sót nhưng mô hình thấy rủi ro thì được nâng lên ngưỡng hệ
+  // thống. Thiếu dữ liệu hoặc thiếu file mô hình ⇒ giữ kết quả công thức.
+  let engine = "bnbd-formula";
+  let churnProbability = result.churnProbability;
+  if (result.insufficientData === false) {
+    try {
+      const churnModel = require("./churn-model.service");
+      const metrics = await clvForecastMetrics(customerId, now);
+      if (metrics) {
+        const scored = churnModel.scoreCustomer({ id: customerId }, metrics);
+        if (scored) {
+          churnProbability = churnModel.combine(
+            result.churnProbability,
+            churnModel.mapToSystemScale(scored.p, scored.threshold),
+          );
+          engine = scored.engine;
+        }
+      }
+    } catch (e) {
+      logger.warn(`[clv] mô hình churn lỗi cho khách ${customerId}, dùng công thức: ${e.message}`);
+    }
+  }
+
   await client.customer.update({
     where: { id: customerId },
     data: {
       clvPredicted: result.clvPredicted,
-      churnProbability: result.churnProbability,
+      churnProbability,
       clvScoredAt: new Date(),
     },
   });
-  return { customerId, ...result };
+  return { customerId, ...result, churnProbability, engine };
 };
 
 // Chấm toàn bộ customer có đơn COMPLETED trong tenant hiện tại
@@ -122,4 +208,4 @@ const runAllTenants = async (now = new Date()) => {
   return { tenants: tenants.length, scored: total };
 };
 
-module.exports = { forecastCustomer, scoreCustomer, runForTenant, runAllTenants, MIN_ORDERS, HORIZON_DAYS };
+module.exports = { forecastCustomer, scoreCustomer, runForTenant, runAllTenants, deriveMetrics, MIN_ORDERS, HORIZON_DAYS };
