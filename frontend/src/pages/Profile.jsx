@@ -100,18 +100,34 @@ export default function Profile() {
       });
 
       message.success(
-        "Đổi mật khẩu thành công! Vui lòng dùng mật khẩu mới ở lần đăng nhập tới.",
+        "Đổi mật khẩu thành công! Hệ thống đang chuyển hướng tới trang đăng nhập...",
+        3,
       );
       passwordForm.resetFields();
-      // L3: gỡ cờ bắt buộc đổi mật khẩu trong store → ProtectedRoute hết redirect
       if (user?.mustChangePassword) {
         setUser({ ...user, mustChangePassword: false });
       }
+      setTimeout(() => {
+        useAuthStore.getState().logout();
+        window.location.href = "/login";
+      }, 1500);
     } catch (error) {
-      const errorMsg =
-        error.response?.data?.message ||
-        "Mật khẩu hiện tại không đúng hoặc có lỗi xảy ra.";
-      message.error(errorMsg);
+      const respData = error.response?.data;
+      if (respData?.errors && Array.isArray(respData.errors) && respData.errors.length > 0) {
+        const errorDetails = respData.errors.map((e) => e.message).join(", ");
+        message.error(`Dữ liệu không hợp lệ: ${errorDetails}`);
+
+        const fieldErrors = respData.errors.map((e) => ({
+          name: e.field,
+          errors: [e.message],
+        }));
+        passwordForm.setFields(fieldErrors);
+      } else {
+        const errorMsg =
+          respData?.message ||
+          "Mật khẩu hiện tại không đúng hoặc có lỗi xảy ra.";
+        message.error(errorMsg);
+      }
     } finally {
       setLoadingPassword(false);
     }
@@ -222,8 +238,8 @@ export default function Profile() {
               type="warning"
               showIcon
               style={{ marginBottom: 16 }}
-              message="Bạn đang dùng mật khẩu mặc định"
-              description="Vì lý do bảo mật, bạn phải đổi mật khẩu trước khi sử dụng các tính năng khác của hệ thống."
+              message="Bạn đang dùng mật khẩu mặc định (123456)"
+              description="Vì lý do bảo mật, bạn phải đổi mật khẩu trước khi sử dụng các tính năng khác của hệ thống. Mật khẩu mới cần tối thiểu 8 ký tự, có ít nhất 1 chữ hoa (A-Z) và 1 chữ số (0-9)."
             />
           )}
           <Form
@@ -239,19 +255,38 @@ export default function Profile() {
                 { required: true, message: "Vui lòng nhập mật khẩu hiện tại!" },
               ]}
             >
-              <Input.Password placeholder="Nhập mật khẩu đang sử dụng" />
+              <Input.Password placeholder="Nhập mật khẩu đang sử dụng (mặc định: 123456)" />
             </Form.Item>
 
             <Form.Item
               label="Mật khẩu mới"
               name="newPassword"
+              extra="Mật khẩu tối thiểu 8 ký tự, bao gồm ít nhất 1 chữ hoa (A-Z) và 1 chữ số (0-9)."
               rules={[
                 { required: true, message: "Vui lòng nhập mật khẩu mới!" },
-                { min: 6, message: "Mật khẩu phải có ít nhất 6 ký tự!" },
+                { min: 8, message: "Mật khẩu phải có ít nhất 8 ký tự!" },
+                {
+                  pattern: /[A-Z]/,
+                  message: "Mật khẩu phải có ít nhất 1 chữ hoa (A-Z)!",
+                },
+                {
+                  pattern: /[0-9]/,
+                  message: "Mật khẩu phải có ít nhất 1 chữ số (0-9)!",
+                },
+                ({ getFieldValue }) => ({
+                  validator(_, value) {
+                    if (value && value === getFieldValue("currentPassword")) {
+                      return Promise.reject(
+                        new Error("Mật khẩu mới phải khác mật khẩu hiện tại!"),
+                      );
+                    }
+                    return Promise.resolve();
+                  },
+                }),
               ]}
               hasFeedback
             >
-              <Input.Password placeholder="Nhập mật khẩu mới" />
+              <Input.Password placeholder="Nhập mật khẩu mới (VD: Candory@2026)" />
             </Form.Item>
 
             <Form.Item
