@@ -70,6 +70,13 @@ const grnRoutes = require("./modules/accounting/grn.routes");
 const purchaseInvoiceRoutes = require("./modules/accounting/purchase-invoice.routes");
 const churnRoutes = require("./modules/customers/churn.routes");
 const webhookLeadRoutes = require("./modules/crm/webhook-lead.routes");
+// PRM (2026-10): quản trị đối tác đầu ra. GOM ba nhóm dưới một tiền tố:
+//   /api/partners          hồ sơ đối tác
+//   /api/partner-referrals lượt giới thiệu
+//   /api/partner-roi       báo cáo hiệu quả
+// Tách khỏi `crm` vì đối tác là đối tượng khác khách hàng (khớp với `Vendor` ở
+// phía nhà cung cấp). Xem `src/modules/partners/index.js`.
+const partnerRoutes = require("./modules/partners");
 const promotionRoutes = require("./modules/promotions/promotion.routes");
 const invoiceRoutes = require("./modules/orders/invoice.routes");
 const storeCreditRoutes = require("./modules/customers/store-credit.routes");
@@ -384,6 +391,9 @@ app.use("/api/admin", adminRoutes);
 app.use("/api/admin", backupRoutes);
 app.use("/api/subscriptions", subscriptionRoutes);
 app.use("/api/crm", crmRoutes);
+// PRM: đặt SAU `/api/crm` và dùng đường dẫn không chồng lẫn, để thêm ba prefix
+// /api/partners, /api/partner-referrals, /api/partner-roi (gom trong index.js).
+app.use("/api/partners", partnerRoutes);
 app.use("/api/projects", projectRoutes);
 app.use("/api/production", productionRoutes);
 app.use("/api/einvoice", einvoiceRoutes);

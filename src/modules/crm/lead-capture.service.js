@@ -264,7 +264,29 @@ const captureLeadInTenant = async ({ source, fullName, phone, email, productInte
     })
     .catch((e) => logger.error("[lead-capture] notification failed:", e.message));
 
-  return { leadId: lead.id, isNew, assignedToId: assignee.id };
+  // PRM: nếu `source` là MÃ ĐỐI TÁC đang hoạt động thì ghi lượt giới thiệu, để sau
+  // này tính được hoa hồng và đo hiệu quả đối tác. Trước đây `source` chỉ là chuỗi
+  // tự do ghi vào `CrmLead.source`, không ai đọc để tính tiền.
+  //
+  // Bọc riêng: PRM lỗi không được làm hỏng việc nhận lead. Lead đã ghi xong thì
+  // coi như thành công, thiếu lượt giới thiệu thì nhập tay lại được.
+  let referralCode = null;
+  try {
+    const partnerService = require("../partners/partner.service");
+    const partner = await partnerService.findActiveByCode(source);
+    if (partner) {
+      const referralService = require("../partners/referral.service");
+      const referral = await referralService.attachToLead({
+        partnerCode: source,
+        lead: { id: lead.id, leadName: lead.leadName, mobileNo: phone, email: email || null },
+      });
+      referralCode = referral?.referralCode || null;
+    }
+  } catch (e) {
+    logger.warn(`[lead-capture] ghi lượt giới thiệu PRM thất bại cho source ${source}:`, e.message);
+  }
+
+  return { leadId: lead.id, isNew, assignedToId: assignee.id, referralCode };
 };
 
 module.exports = { generateApiKey, listApiKey, resolveTenant, captureLead, KEY_PREFIX, maskKey };

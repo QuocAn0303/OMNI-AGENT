@@ -81,6 +81,10 @@ const TENANT_SCOPED_MODELS = new Set([
   "RefreshToken",
   // CRM/SRM upgrade (2026-09): churn win-back + 3-way matching + GRN
   "ChurnAlert", "GoodsReceiptNote", "GoodsReceiptItem", "PurchaseInvoiceRecord",
+  // PRM (2026-10): quản trị đối tác đầu ra. KHÁC `Vendor` — đó là nhà cung cấp
+  // đầu vào phía SRM. Hai bảng này có `tenantId` nên bắt buộc phải khai báo ở
+  // đây, nếu không `tests/tenant-scoped-models.contract.test.js` chặn.
+  "Partner", "PartnerReferral",
   // CRM Sales Pipeline (2026-09): Lead / Deal / Organization / Contact
   "CrmPipelineStage", "CrmLead", "CrmOrganization", "CrmContact",
   "CrmDeal", "CrmDealItem", "CrmCommunication",

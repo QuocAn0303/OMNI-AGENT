@@ -66,6 +66,14 @@ const SENSITIVE_DB_TOOLS = new Set([
   'search_churn_alerts',
   'search_customer_rfm',
   'search_leads',
+  // PRM — hai tool này lấy dữ liệu từ `roi.service.js` và `referral.service.js`.
+  // `search_partner_performance` chỉ trả số liệu cấp đối tác (tên đối tác, lợi nhuận),
+  // không có PII khách — nhưng nó vẫn để trong danh sách nhạy cảm vì CÙNG đường với
+  // `search_partner_referrals`, mà cái sau TRẢ TÊN KHÁCH HÀNG. Tách ra thì mọi
+  // người đọc danh sách đều phải phân tích lại nội dung từng tool, và chỉ một
+  // người đã viết mới biết. Giữ cả hai trong danh sách là lựa chọn an toàn hơn.
+  'search_partner_performance',
+  'search_partner_referrals',
 ]);
 
 const SENSITIVE_ALLOWED_ROLES = [

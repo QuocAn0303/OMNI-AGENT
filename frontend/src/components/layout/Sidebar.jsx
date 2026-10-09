@@ -437,6 +437,21 @@ const MENU_GROUPS = [
         label: "Phân khúc & CLV",
         roles: CRM_MANAGER_ROLES,
       },
+      {
+        // PRM — đối tác đầu ra. Mở cho CASHIER vì nhân viên cần xem hiệu quả đối tác
+        // khi gọi khách lấn theo mã giới thiệu. Việc SỬA cấu hình đối tác (tỷ lệ hoa
+        // hồng) bị backend chặn — `PRM_MANAGE_ROLES` không có CASHIER.
+        key: "/prm/partners",
+        icon: <TeamOutlined />,
+        label: "Đối tác",
+        roles: CRM_PIPELINE_ROLES,
+      },
+      {
+        key: "/prm/roi",
+        icon: <RiseOutlined />,
+        label: "Lợi nhuận đối tác",
+        roles: CRM_PIPELINE_ROLES,
+      },
     ],
   },
   {

@@ -695,8 +695,18 @@ model Customer {
   loyaltyPoints Int          @default(0)
   // CRM: lead capture (Mục 2)
   leadStatus         LeadStatus? @default(NEW)
+  // Nguồn giới thiệu dạng VĂN BẢN tự do — giữ lại để dữ liệu cũ không mất hiệu
+  // lực. Từ khi có phân hệ PRM, nguồn có bản chuẩn hoá nằm ở `PartnerReferral`
+  // và liên kết qua `partnerReferralId` bên dưới. `referralSource` vẫn được ghi
+  // để báo cáo R-10 (nhóm theo nguồn) không phải đổi câu truy vấn.
   referralSource     String?
   zaloUserId         String?
+  // PRM: khoá mềm tới lượt giới thiệu (không khai báo @relation — xem PartnerReferral)
+  partnerReferralId  String?
+  // PRM: chi phí đã trả cho nguồn để có được khách này. Cho phép NULL vì nhiều
+  // khách đến tự nhiên; báo cáo lợi nhuận ròng đối tác dùng `commissionRate`
+  // của đối tác, còn cột này dành cho ngân sách CAC do chủ doanh nghiệp tự nhập.
+  acquiredCost       Decimal?    @db.Decimal(15, 2)
 
   // CRM: RFM động — tính lại bởi hook/cron sau mỗi đơn COMPLETED (Mục 3)
   rfmRecencyDays     Int?
@@ -2250,6 +2260,108 @@ model PurchaseItem {
   @@index([purchaseOrderId])
   @@map("purchase_items")
 @@index([tenantId])
+}
+
+// ==================== PRM: PARTNER & REFERRAL (Quản trị đối tác) ====================
+
+// Loại đối tác. Để tách bốn nhóm vì cách tính hoa hồng và cách đo hiệu quả khác nhau:
+// AFFILIATE giới thiệu bán hàng, MARKETING_CHANNEL là kênh quảng cáo trả theo lượt
+// mở rộng, REFERRER là khách giới thiệu khách, SALES_AGENT là nhân viên nội bộ.
+// Nhóm AFFILIATE và REFERRER mới có `partner_referrals`; nhóm kia đo bằng
+// `Customer.referralSource` và chiến dịch, xem `docs/PLAN_PRM_partner_module.md`.
+enum PartnerType {
+  AFFILIATE
+  MARKETING_CHANNEL
+  REFERRER
+  SALES_AGENT
+}
+
+// Cách tính hoa hồng. PERCENT_OF_CLV nhân tỷ lệ với giá trị vòng đời dự báo của
+// khách; FIXED_PER_CUSTOMER trả một số tiền cố định cho mỗi khách chuyển đổi.
+// Hai cách cùng tồn tại vì chương trình của nhiều đối tác Việt Nam trả theo lần
+// giới thiệu, không theo tỷ lệ doanh thu.
+enum CommissionType {
+  PERCENT_OF_CLV
+  FIXED_PER_CUSTOMER
+}
+
+model Partner {
+  id              String         @id @default(uuid())
+  tenantId        String?
+  code            String // ĐT-YYYYMM-XXXX
+  name            String
+  type            PartnerType    @default(AFFILIATE)
+  commissionType  CommissionType @default(PERCENT_OF_CLV)
+  // Lưu dạng THẬP PHÂN chứ không phải phần trăm số nguyên. Khi trả ra API thì nhân
+  // 100 và đặt tên trường là `commissionPercent` cho rõ đơn vị — xem
+  // partner.service.js::serialize. Lưu 0,10 nghĩa là 10%, lưu 10 sẽ sai 100 lần.
+  commissionRate  Decimal        @default(0) @db.Decimal(12, 2)
+  fixedCommission Decimal        @default(0) @db.Decimal(15, 2)
+  contactName     String?
+  phone           String?
+  email           String?
+  isActive        Boolean        @default(true)
+  notes           String?        @db.Text
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  referrals PartnerReferral[]
+
+  // Khoá duy nhất theo MÃ chứ không theo tên: tên đối tác có thể trùng (hai cửa
+  // hàng cùng tên ở hai tỉnh), mã thì do hệ thống sinh nên không trùng.
+  @@unique([code, tenantId])
+  @@index([tenantId, isActive])
+  @@map("partners")
+}
+
+model PartnerReferral {
+  id            String    @id @default(uuid())
+  tenantId      String?
+  partnerId     String
+  // FK tới `partners`, xoá đối tác thì mất lượt giới thiệu.
+  //
+  // onDelete: Cascade là CHỦ ĐÍCH, và phải khớp với migration SQL (hiện ghi
+  // `ON DELETE CASCADE`). Không có, Prisma mặc định Restrict: schema nói chặn xoá,
+  // DB lại cho xoá — hai nơi trái ý kiến thì `migrate dev` sinh ra diff giả và, tệ
+  // hơn, môi trường nào chạy theo schema sẽ chặn xoá trong khi DB thì không.
+  //
+  // Xoá cứng đối tác vốn đã bị chặn ở tầng nghiệp vụ (xoá mềm đặt `isActive=false`)
+  // vì mất lịch sử là mất chứng cứ tính hoa hồng. Cascade chỉ là lưới an toàn cho
+  // trường hợp admin xoá thẳng trong DB, và giữ cho hành vi xoá khớp với schema.
+  partner       Partner   @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+  // Hai cột dưới là KHOÁ MỀM: cố tình KHÔNG khai báo @relation.
+  //
+  // Vì sao: khách hàng trong hệ thống có thể bị xoá mền, còn lượt giới thiệu là
+  // chứng từ kinh doanh và không được mất theo khách. Khai báo quan hệ với
+  // onDelete: Cascade sẽ xoá lịch sử giới thiệu khi khách bị dọn — mất luôn
+  // chứng cứ để tính hoa hồng và đo hiệu quả đối tác. Đánh đổi ngược lại là mất
+  // ràng buộc toàn vẹn ở tầng cơ sở dữ liệu, chấp nhận được vì đây là dữ liệu
+  // lịch sử chứ không phải dữ liệu đang giao dịch.
+  leadId        String?
+  customerId    String?
+  // Mã lượt giới thiệu trả về cho đối tác, sinh ngẫu nhiên như mã ưu đãi win-back.
+  referralCode  String
+  referredName  String
+  referredPhone String?
+  referredEmail String?
+  referralDate  DateTime  @default(now())
+  converted     Boolean   @default(false)
+  convertedAt   DateTime?
+  // Giữ nguyên giá trị `Customer.referralSource` tại thời điểm ghi nhận, để truy
+  // ngược được dữ liệu cũ đã có trước khi có bảng này.
+  sourceSnapshot String?
+  createdAt      DateTime  @default(now())
+
+  // Chống gian lận phổ biến nhất trong chương trình giới thiệu: một đối tác báo
+  // cùng một số điện thoại nhiều lần để tính hoa hồng. Ràng buộc ở TẦNG DB như
+  // `CrmLead.mobileNo` — logic JavaScript không đủ vì import chạy `skipDuplicates`
+  // và hai phiên có thể chạy song song.
+  // Vẫn cho phép CÙNG một khách đến từ hai đối tác khác nhau (ràng buộc có partnerId).
+  @@unique([referralCode])
+  @@unique([partnerId, referredPhone])
+  @@index([tenantId, partnerId])
+  @@index([tenantId, converted])
+  @@map("partner_referrals")
 }
 
 // ==================== CRM: CHURN ALERT (Win-back automation — Mục 4) ====================

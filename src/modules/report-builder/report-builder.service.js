@@ -81,6 +81,22 @@ const ALLOWED_TABLES = {
     fields: ["id", "purchaseOrderId", "invoiceNumber", "invoiceAmount", "invoiceTax", "matchStatus", "varianceAmount", "variancePct", "createdAt"],
     label: "Hoá đơn NCC (3-way matching)",
   },
+  // ==================== PRM: đối tác đầu ra (giới thiệu khách, hoa hồng) ====================
+  // KHÁC `vendors`: đó là nhà cung cấp đầu vào (SRM). Ở đây là đối tác marketing.
+  //
+  // KHÔNG đưa `referredPhone`/`referredEmail` vào whitelist. Báo cáo xuất ra
+  // CSV/Excel cho người dùng cuối, đưa số điện thoại người được giới thiệu vào đó
+  // là mở rộng rủi ro dữ liệu cá nhân không cần thiết cho phép tính ROI.
+  partners: {
+    fields: ["id", "code", "name", "type", "commissionType", "commissionRate", "fixedCommission",
+      "contactName", "isActive", "createdAt"],
+    label: "Đối tác (PRM)",
+  },
+  partner_referrals: {
+    fields: ["id", "partnerId", "referralCode", "converted", "referralDate", "convertedAt",
+      "sourceSnapshot", "createdAt"],
+    label: "Lượt giới thiệu của đối tác (PRM)",
+  },
   // ==================== CRM Sales Pipeline (Lead / Deal / Organization) ====================
   crm_leads: {
     fields: ["id", "leadName", "email", "mobileNo", "jobTitle", "source", "status", "leadOwnerId",

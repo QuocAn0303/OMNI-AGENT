@@ -144,6 +144,10 @@ const CrmDashboard = lazy(() => import("./pages/crm/CrmDashboard"));
 const CrmSalesHierarchy = lazy(() => import("./pages/crm/SalesHierarchy"));
 // CRM Phase 4 — RFM/CLV/churn (mục 1)
 const CrmCustomerInsights = lazy(() => import("./pages/crm/CustomerInsights"));
+// PRM — quản trị đối tác đầu ra (giới thiệu khách, hoa hồng, lợi nhuận ròng)
+const Partners = lazy(() => import("./pages/partners/Partners"));
+const PartnerDetail = lazy(() => import("./pages/partners/PartnerDetail"));
+const PartnerRoi = lazy(() => import("./pages/partners/PartnerRoi"));
 
 /** Catch-all redirect: SUPER_OMEGA_ULTRA_ADMIN → /admin, others → /dashboard */
 function RoleRedirect() {
@@ -378,6 +382,13 @@ function App() {
                 <Route path="/crm/hierarchy" element={<CrmSalesHierarchy />} />
                 <Route path="/crm/insights" element={<CrmCustomerInsights />} />
                 <Route path="/crm/dashboard" element={<CrmDashboard />} />
+                {/* PRM — đối tác đầu ra. Nhóm route này đặt trong khối CRM vì dùng
+                    chung gói `crm` và cùng bộ dữ liệu khách hàng. Phân quyền chi tiết
+                    do backend chặn (`roles.js` của PRM) — route ở đây chỉ cần quyền
+                    đọc cơ bản, CASHIER cũng xem được báo cáo. */}
+                <Route path="/prm/partners" element={<Partners />} />
+                <Route path="/prm/partners/:id" element={<PartnerDetail />} />
+                <Route path="/prm/roi" element={<PartnerRoi />} />
                 <Route path="/tags" element={<TagManagement />} />
                 <Route path="/store-credits" element={<StoreCredits />} />
               </Route>

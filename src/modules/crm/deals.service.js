@@ -873,6 +873,7 @@ const convertToOrder = async (id, payload = {}, userId, user) => {
   let order;
   try {
     customerId = await resolveCustomer(deal, payload, userId);
+
     order = await orderService.create(
       {
         customerId,
@@ -904,6 +905,49 @@ const convertToOrder = async (id, payload = {}, userId, user) => {
         logger.error(`[crm] rollback claim deal ${id} thất bại:`, rollbackError.message),
       );
     throw e;
+  }
+
+  // ============================================================
+  // Bước 2b — PRM: đánh dấu lượt giới thiệu đã chuyển đổi
+  // ============================================================
+  // Đặt SAU `orderService.create`, không đặt trước. Đây là điểm duy nhất trong hệ
+  // thống mà ta biết chắc khách đã mua — deal thắng VÀ đơn đã tạo xong. Đặt trước
+  // sẽ tính hoa hồng cho một đơn không tồn tại nếu tạo đơn lỗi (hết kho, giá không
+  // hợp lệ...), tức trả tiền cho một lượt giới thiệu không sinh ra doanh thu.
+  //
+  // Bọc riêng để PRM lỗi KHÔNG làm hỏng kết quả chuyển deal: đơn đã tạo và kho đã
+  // trừ rồi, ném lỗi ở đây sẽ khiến người dùng tưởng đơn thất lạc rồi bấm lại và
+  // tạo đơn trùng. Tốt hơn là ghi log để cron quét lại được.
+  if (deal.leadId) {
+    // Chuyển trạng thái lead sang CONVERTED.
+    //
+    // Vì sao cần: `CrmLead` có sẵn hai trường `convertedAt` và `convertedDealId`
+    // mà không có dòng nào ghi vào. Nếu không chuyển trạng thái, mọi khách tiềm năng
+    // đã thành khách vẫn nằm ở trạng thái cũ, và phễu chuyển đổi theo đối tác báo
+    // mốc cuối bằng không với mọi đối tác — trông như chưa ai chuyển đổi được khách
+    // nào, dù dữ liệu chuyển đổi vẫn đúng ở chỗ khác.
+    //
+    // Bọc riêng với lý do giống hệt: đơn đã tạo và kho đã trừ rồi, ném lỗi ở đây
+    // sẽ khiến người dùng tưởng đơn thất lạc.
+    try {
+      await prisma.crmLead.update({
+        where: { id: deal.leadId },
+        data: {
+          status: "CONVERTED",
+          convertedAt: new Date(),
+          convertedDealId: id,
+        },
+      });
+    } catch (leadError) {
+      logger.error(`[crm] chuyển trạng thái lead ${deal.leadId} sang CONVERTED thất bại:`, leadError.message);
+    }
+
+    try {
+      const referralService = require("../partners/referral.service");
+      await referralService.markConverted(deal.leadId, customerId);
+    } catch (prmError) {
+      logger.error(`[crm] đánh dấu chuyển đổi PRM thất bại cho lead ${deal.leadId}:`, prmError.message);
+    }
   }
 
   // ============================================================
