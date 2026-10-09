@@ -27,6 +27,7 @@
 
 const prisma = require("../../config/prisma");
 const logger = require("../../utils/logger");
+const { stripDiacritics } = require("../../utils/vietnamese");
 
 /**
  * Tiền tố mã đối tác.
@@ -77,23 +78,35 @@ const serialize = (partner) => {
   return {
     ...rest,
     commissionPercent: Number(((Number(commissionRate) || 0) * 100).toFixed(4)),
-    commissionRate: undefined,
   };
 };
 
+const clampPage = (v) => {
+  const n = Number.parseInt(v, 10);
+  return Number.isFinite(n) && n > 0 ? n : 1;
+};
+
+const clampLimit = (v, def = 20, max = 100) => {
+  const n = Number.parseInt(v, 10);
+  if (!Number.isFinite(n) || n <= 0) return def;
+  return Math.min(n, max);
+};
+
 const list = async ({ page = 1, limit = 20, type, isActive, search } = {}) => {
+  const p = clampPage(page);
+  const l = clampLimit(limit);
   const where = {};
   if (type) where.type = type;
   if (isActive !== undefined && isActive !== null && isActive !== "") where.isActive = String(isActive) === "true";
   if (search) {
     where.OR = [{ name: { contains: search, mode: "insensitive" } }, { code: { contains: search, mode: "insensitive" } }];
   }
-  const skip = (Number(page) - 1) * Number(limit);
+  const skip = (p - 1) * l;
   const [items, total] = await Promise.all([
     prisma.partner.findMany({
       where,
       skip,
-      take: Number(limit),
+      take: l,
       orderBy: { createdAt: "desc" },
     }),
     prisma.partner.count({ where }),
@@ -101,10 +114,10 @@ const list = async ({ page = 1, limit = 20, type, isActive, search } = {}) => {
   return {
     partners: items.map(serialize),
     pagination: {
-      page: Number(page),
-      limit: Number(limit),
+      page: p,
+      limit: l,
       total,
-      totalPages: Math.ceil(total / Number(limit)),
+      totalPages: Math.ceil(total / l),
     },
   };
 };
@@ -119,24 +132,38 @@ const getById = async (id) => {
 };
 
 const create = async (data) => {
-  const code = data.code?.trim() || (await generateUniqueCode());
-  const partner = await prisma.partner.create({
-    data: {
-      code,
-      name: data.name.trim(),
-      type: data.type || "AFFILIATE",
-      commissionType: data.commissionType || "PERCENT_OF_CLV",
-      // Đầu vào là PHẦN TRĂM (10 = 10%), lưu xuống là thập phân (0,10). Chia 100
-      // ở đây một lần, thay vì bắt phía giao diện phải nhớ quy tắc.
-      commissionRate: Number(((Number(data.commissionPercent) || 0) / 100).toFixed(4)),
-      fixedCommission: Number(data.fixedCommission || 0),
-      contactName: data.contactName || null,
-      phone: data.phone || null,
-      email: data.email || null,
-      notes: data.notes || null,
-    },
-  });
-  return serialize(partner);
+  const wanted = data.code?.trim() || null;
+  // TOCTOU: generateUniqueCode chỉ đọc trước (count + findFirst), hai request song
+  // song vẫn có thể sinh cùng mã. Vòng retry bắt P2002 từ DB mới là chốt chặn thật.
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const code = wanted || (await generateUniqueCode());
+    try {
+      const partner = await prisma.partner.create({
+        data: {
+          code,
+          name: data.name.trim(),
+          type: data.type || "AFFILIATE",
+          commissionType: data.commissionType || "PERCENT_OF_CLV",
+          // Đầu vào là PHẦN TRĂM (10 = 10%), lưu xuống là thập phân (0,10). Chia 100
+          // ở đây một lần, thay vì bắt phía giao diện phải nhớ quy tắc.
+          commissionRate: Number(((Number(data.commissionPercent) || 0) / 100).toFixed(4)),
+          fixedCommission: Number(data.fixedCommission || 0),
+          contactName: data.contactName || null,
+          phone: data.phone || null,
+          email: data.email || null,
+          notes: data.notes || null,
+        },
+      });
+      return serialize(partner);
+    } catch (e) {
+      if (e?.code !== "P2002") throw e;
+      // Mã thủ công trùng thì báo 409 ngay, không sinh mã khác thay người dùng.
+      if (wanted) throw { status: 409, message: "Mã đối tác đã tồn tại — chọn mã khác" };
+      if (attempt === 4) throw { status: 500, message: "Trùng mã đối tác khi tạo đồng thời — thử lại sau" };
+      // Mã tự sinh trùng (race) → vòng sau sinh mã mới.
+    }
+  }
+  throw { status: 500, message: "Không tạo được đối tác — thử lại sau" };
 };
 
 const update = async (id, data) => {
@@ -187,7 +214,20 @@ const restore = async (id) => {
  */
 const findActiveByCode = async (code, client = prisma) => {
   if (!code) return null;
-  return client.partner.findFirst({ where: { code, isActive: true } });
+  const exact = await client.partner.findFirst({ where: { code, isActive: true } });
+  if (exact) return exact;
+  // Fallback không phân biệt hoa/dấu: webhook hay gửi `dt-202610-0001` trong khi
+  // DB lưu `ĐT-202610-0001`. So khớp byte-chính-xác sẽ bỏ lỡ và lượt giới thiệu
+  // không được ghi. Prefilter theo đuôi số để không quét toàn bảng.
+  const wanted = stripDiacritics(String(code)).toLowerCase().trim();
+  if (!wanted) return null;
+  const digits = String(code).replace(/\D/g, "");
+  const tail = digits.length >= 4 ? digits.slice(-4) : "";
+  const candidates = (await client.partner.findMany({
+    where: { ...(tail ? { code: { contains: tail } } : {}), isActive: true },
+    take: 20,
+  })) || [];
+  return candidates.find((p) => stripDiacritics(p.code).toLowerCase().trim() === wanted) || null;
 };
 
 const countActive = async () => prisma.partner.count({ where: { isActive: true } });

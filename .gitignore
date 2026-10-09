@@ -38,6 +38,8 @@ tmp*.txt
 *.bak
 *.orig
 *.old
+backups/
+_peek*.py
 $null
 ~$*
 

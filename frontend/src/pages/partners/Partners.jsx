@@ -14,6 +14,7 @@
  * Exports: Partners (default)
  */
 import { useCallback, useEffect, useMemo, useState } from "react";
+import { Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import {
   Table, Card, Button, Space, Input, Select, Tag, Modal, Form, InputNumber,
@@ -87,7 +88,7 @@ export default function Partners() {
       width: 140,
       render: (code, r) => (
         <Space direction="vertical" size={0}>
-          <a href={`/prm/partners/${r.id}`}>{code}</a>
+          <Link to={`/prm/partners/${r.id}`}>{code}</Link>
           {!r.isActive && <Tag color="default">{t("prm.inactive")}</Tag>}
         </Space>
       ),

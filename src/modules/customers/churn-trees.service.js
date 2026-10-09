@@ -132,12 +132,19 @@ const walkTree = (nodesById, rootId, row) => {
     // Cây có tối đa num_leaves lá nên số nút là hữu hạn; guard chỉ chống dữ liệu
     // hỏng tạo vòng lặp vô hạn làm treo tiến trình.
     guard += 1;
-    if (guard > 256) return 0;
+    if (guard > 256) {
+      logger.warn("[churn-trees] guard-trip: cây có thể hỏng (vòng lặp >256), trả 0 cho cây này");
+      return 0;
+    }
     const value = row[current.f];
     const next = value <= current.t ? current.l : current.r;
     current = nodesById[next];
   }
-  return current && typeof current.leaf === "number" ? current.leaf : 0;
+  if (!current || typeof current.leaf !== "number") {
+    logger.warn("[churn-trees] nút lá thiếu/không số, trả 0 cho cây này");
+    return 0;
+  }
+  return current.leaf;
 };
 
 /** Hàm logit nghịch đảo: chuỗi xác suất của LightGBM về xác suất. */

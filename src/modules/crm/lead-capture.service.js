@@ -140,7 +140,7 @@ const captureLead = async (tenantId, payload, idempotencyKey = null) => {
     const existing = await prisma.integrationConfig
       .findUnique({ where: { key: idemRowKey }, select: { valueEnc: true, createdAt: true } })
       .catch((e) => {
-        logger.error("[lead-capture] idempotency lookup failed (bỏ qua dedupe):", e.message);
+        logger.error("[lead-capture] idempotency lookup failed (bỏ qua dedupe):", { err: e });
         return null;
       });
     const isFresh =
@@ -262,7 +262,7 @@ const captureLeadInTenant = async ({ source, fullName, phone, email, productInte
       meta: { leadId: lead.id, source, campaignId: campaignId || null },
       userId: assignee.id,
     })
-    .catch((e) => logger.error("[lead-capture] notification failed:", e.message));
+    .catch((e) => logger.error("[lead-capture] notification failed:", { err: e }));
 
   // PRM: nếu `source` là MÃ ĐỐI TÁC đang hoạt động thì ghi lượt giới thiệu, để sau
   // này tính được hoa hồng và đo hiệu quả đối tác. Trước đây `source` chỉ là chuỗi
@@ -272,18 +272,24 @@ const captureLeadInTenant = async ({ source, fullName, phone, email, productInte
   // coi như thành công, thiếu lượt giới thiệu thì nhập tay lại được.
   let referralCode = null;
   try {
-    const partnerService = require("../partners/partner.service");
-    const partner = await partnerService.findActiveByCode(source);
-    if (partner) {
-      const referralService = require("../partners/referral.service");
-      const referral = await referralService.attachToLead({
-        partnerCode: source,
-        lead: { id: lead.id, leadName: lead.leadName, mobileNo: phone, email: email || null },
-      });
-      referralCode = referral?.referralCode || null;
+    // Short-circuit: chỉ tra đối tác khi source có dạng mã (ĐT-/DT-). Webhook
+    // facebook/zalo/tiktok chiếm đa số mà mỗi lần đều query partner là phí.
+    const { stripDiacritics } = require("../../utils/vietnamese");
+    const normSource = stripDiacritics(source || "").trim();
+    if (/^DT-/i.test(normSource)) {
+      const partnerService = require("../partners/partner.service");
+      const partner = await partnerService.findActiveByCode(source);
+      if (partner) {
+        const referralService = require("../partners/referral.service");
+        const referral = await referralService.attachToLead({
+          partnerCode: source,
+          lead: { id: lead.id, leadName: lead.leadName, mobileNo: phone, email: email || null },
+        });
+        referralCode = referral?.referralCode || null;
+      }
     }
   } catch (e) {
-    logger.warn(`[lead-capture] ghi lượt giới thiệu PRM thất bại cho source ${source}:`, e.message);
+    logger.warn(`[lead-capture] ghi lượt giới thiệu PRM thất bại cho source ${source}:`, { err: e, source });
   }
 
   return { leadId: lead.id, isNew, assignedToId: assignee.id, referralCode };

@@ -494,7 +494,7 @@ const notificationWon = async (deal, before, userId) => {
       meta: { dealId: deal.id, previousStageId: before.stageId },
     });
   } catch (e) {
-    logger.error("[crm] notify deal WON failed:", e.message);
+    logger.error("[crm] notify deal WON failed:", { err: e });
   }
 };
 
@@ -902,7 +902,7 @@ const convertToOrder = async (id, payload = {}, userId, user) => {
     await prisma.crmDeal
       .updateMany({ where: { id, orderId: CLAIM }, data: { orderId: null } })
       .catch((rollbackError) =>
-        logger.error(`[crm] rollback claim deal ${id} thất bại:`, rollbackError.message),
+        logger.error(`[crm] rollback claim deal ${id} thất bại:`, { err: rollbackError, dealId: id }),
       );
     throw e;
   }
@@ -939,14 +939,14 @@ const convertToOrder = async (id, payload = {}, userId, user) => {
         },
       });
     } catch (leadError) {
-      logger.error(`[crm] chuyển trạng thái lead ${deal.leadId} sang CONVERTED thất bại:`, leadError.message);
+      logger.error(`[crm] chuyển trạng thái lead ${deal.leadId} sang CONVERTED thất bại:`, { err: leadError, leadId: deal.leadId });
     }
 
     try {
       const referralService = require("../partners/referral.service");
       await referralService.markConverted(deal.leadId, customerId);
     } catch (prmError) {
-      logger.error(`[crm] đánh dấu chuyển đổi PRM thất bại cho lead ${deal.leadId}:`, prmError.message);
+      logger.error(`[crm] đánh dấu chuyển đổi PRM thất bại cho lead ${deal.leadId}:`, { err: prmError, leadId: deal.leadId });
     }
   }
 

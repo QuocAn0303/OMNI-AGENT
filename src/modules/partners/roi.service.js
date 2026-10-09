@@ -71,6 +71,8 @@ const ranking = async ({ metric = "predicted", limit = 20, offset = 0, sortBy = 
   // thực tế" MÀ KHÔNG BÁO LỖI — báo cáo ra số tiền khác nhau mà không ai biết.
   // `db-agent.service.js` cũng gọi thẳng hàm này, không đi qua route.
   const useMetric = METRICS.includes(metric) ? metric : "predicted";
+  const lim = Math.min(Math.max(Number.parseInt(limit, 10) || 20, 1), 200);
+  const off = Math.max(Number.parseInt(offset, 10) || 0, 0);
   const partnerWhere = activeOnly ? { isActive: true } : {};
 
   const partnerRows = await prisma.partner.findMany({
@@ -277,7 +279,7 @@ const ranking = async ({ metric = "predicted", limit = 20, offset = 0, sortBy = 
     metric: useMetric,
     metricLabel: useMetric === "predicted" ? "Giá trị vòng đời dự báo" : "Giá trị thực tế đã thu",
     sortBy: sorters[sortBy] ? sortBy : "profit",
-    partners: rows.slice(Number(offset), Number(offset) + Number(limit)),
+    partners: rows.slice(off, off + lim),
     total: rows.length,
     totals: {
       ...Object.fromEntries(Object.entries(totals).map(([k, v]) => [k, round2(v)])),

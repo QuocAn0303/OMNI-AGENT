@@ -25,6 +25,24 @@
 const prisma = require("../../config/prisma");
 const logger = require("../../utils/logger");
 const partnerService = require("./partner.service");
+const { stripDiacritics } = require("../../utils/vietnamese");
+
+const clampPage = (v) => {
+  const n = Number.parseInt(v, 10);
+  return Number.isFinite(n) && n > 0 ? n : 1;
+};
+
+const clampLimit = (v, def = 20, max = 100) => {
+  const n = Number.parseInt(v, 10);
+  if (!Number.isFinite(n) || n <= 0) return def;
+  return Math.min(n, max);
+};
+
+const normPhone = (v) => {
+  if (typeof v !== "string") return v || null;
+  const t = v.trim();
+  return t || null;
+};
 
 /** Mã lượt giới thiệu có trùng không. Ràng buộc duy nhất ở tầng DB, ở đây chỉ chặn lỗi hiển thị. */
 const generateUniqueReferralCode = async (client = prisma) => {
@@ -37,6 +55,8 @@ const generateUniqueReferralCode = async (client = prisma) => {
 };
 
 const list = async ({ page = 1, limit = 20, partnerId, converted, search } = {}) => {
+  const p = clampPage(page);
+  const l = clampLimit(limit);
   const where = {};
   if (partnerId) where.partnerId = partnerId;
   if (converted !== undefined && converted !== null && converted !== "") {
@@ -49,12 +69,12 @@ const list = async ({ page = 1, limit = 20, partnerId, converted, search } = {})
       { referralCode: { contains: search, mode: "insensitive" } },
     ];
   }
-  const skip = (Number(page) - 1) * Number(limit);
+  const skip = (p - 1) * l;
   const [items, total] = await Promise.all([
     prisma.partnerReferral.findMany({
       where,
       skip,
-      take: Number(limit),
+      take: l,
       orderBy: { referralDate: "desc" },
       include: {
         partner: { select: { id: true, code: true, name: true, type: true, isActive: true } },
@@ -65,10 +85,10 @@ const list = async ({ page = 1, limit = 20, partnerId, converted, search } = {})
   return {
     referrals: items,
     pagination: {
-      page: Number(page),
-      limit: Number(limit),
+      page: p,
+      limit: l,
       total,
-      totalPages: Math.ceil(total / Number(limit)),
+      totalPages: Math.ceil(total / l),
     },
   };
 };
@@ -139,10 +159,18 @@ const attachToLead = async ({ partnerCode, lead, customerId = null }) => {
     logger.warn(`[prm] mã đối tác không hợp lệ hoặc đã ngừng: ${partnerCode}`);
     return null;
   }
-const existing = await prisma.partnerReferral.findFirst({
-    where: { partnerId: partner.id, referredPhone: lead.mobileNo || null },
-    select: { id: true, referralCode: true, converted: true, leadId: true, customerId: true },
-  });
+  // NULL-phone: Postgres coi NULL là phân biệt trong @@unique nên DB cho nhiều
+  // dòng NULL-phone, nhưng findFirst({ referredPhone: null }) lại khớp BẤT KỲ dòng
+  // NULL nào của đối tác → hai lead không SĐT sẽ gắn nhầm vào nhau và markConverted
+  // tính hoa hồng sai dòng. Chỉ dedupe khi có SĐT thật, không thì luôn tạo mới.
+  const phone = normPhone(lead.mobileNo);
+  let existing = null;
+  if (phone) {
+    existing = await prisma.partnerReferral.findFirst({
+      where: { partnerId: partner.id, referredPhone: phone },
+      select: { id: true, referralCode: true, converted: true, leadId: true, customerId: true },
+    });
+  }
   if (existing) {
     // Dòng đã tồn tại nhưng CHƯA gắn lead ⇒ phải gắn bổ sung, không phải bỏ qua.
     //
@@ -181,7 +209,7 @@ const existing = await prisma.partnerReferral.findFirst({
         customerId,
         referralCode,
         referredName: lead.leadName,
-        referredPhone: lead.mobileNo || null,
+        referredPhone: phone,
         referredEmail: lead.email || null,
         sourceSnapshot: partner.code,
       },
@@ -216,7 +244,7 @@ const markConverted = async (leadId, customerId, client = prisma) => {
   if (customerId) {
     await client.customer
       .update({ where: { id: customerId }, data: { partnerReferralId: rows[0].id } })
-      .catch((e) => logger.warn(`[prm] ghi partnerReferralId lên khách thất bại: ${e.message}`));
+      .catch((e) => logger.warn("[prm] ghi partnerReferralId lên khách thất bại:", { err: e, customerId }));
   }
   logger.info(`[prm] đánh dấu chuyển đổi ${rows.length} lượt giới thiệu của lead ${leadId}`);
   return { updated: rows.length };
@@ -267,14 +295,33 @@ const funnel = async ({ partnerId } = {}) => {
 
   // Trạng thái lead theo đối tác: dùng sourceSnapshot chứa mã đối tác làm khoá nối,
   // vì `partner_referrals.leadId` có thể NULL (lượt nhập tay không qua webhook).
+  // So khớp KHÔNG phân biệt hoa/dấu: bàn phím không gõ được `ĐT` nên webhook hay
+  // gửi `dt-202610-0001`. So khớp byte-chính-xác làm phễu đếm thiếu. Chuẩn hoá cả
+  // hai vế bằng stripDiacritics + UPPER, và truy vấn đủ biến thể thường gặp để
+  // không phải quét toàn bảng lead.
+  const normCode = (s) => stripDiacritics(String(s || "")).toUpperCase().trim();
+  const byNorm = new Map(partners.map((p) => [normCode(p.code), p]));
+  const queryCodes = [
+    ...new Set(
+      partners.flatMap((p) => [
+        p.code,
+        p.code.toLowerCase(),
+        p.code.toUpperCase(),
+        stripDiacritics(p.code),
+        stripDiacritics(p.code).toLowerCase(),
+        stripDiacritics(p.code).toUpperCase(),
+      ]),
+    ),
+  ];
   const leadRows = await prisma.crmLead.findMany({
-    where: { source: { in: partners.length ? partners.map((p) => p.code) : ["__none__"] } },
+    where: { source: { in: partners.length ? queryCodes : ["__none__"] } },
     select: { source: true, status: true },
   });
   const stageCounts = new Map();
   for (const r of leadRows) {
-    if (!stageCounts.has(r.source)) stageCounts.set(r.source, {});
-    const slot = stageCounts.get(r.source);
+    const key = byNorm.get(normCode(r.source))?.code || r.source;
+    if (!stageCounts.has(key)) stageCounts.set(key, {});
+    const slot = stageCounts.get(key);
     slot[r.status] = (slot[r.status] || 0) + 1;
   }
 

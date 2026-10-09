@@ -589,9 +589,14 @@ const HANDLERS = {
       // "dt-202610-0001" (bàn phím không bật được dấu, hoặc chép lại từ báo cáo xuất
       // Excel) vẫn phải ra đúng đối tác. So khớp chính xác byte sẽ trả "không tìm
       // thấy" cho một đối tác có thật.
+      // Prefilter theo đuôi số để không nạp toàn bảng partners mỗi lần chat.
       const wanted = stripDiacritics(String(params.partnerCode)).toLowerCase();
+      const digits = String(params.partnerCode).replace(/\D/g, '');
+      const tail = digits.length >= 4 ? digits.slice(-4) : digits;
       const candidates = await prisma.partner.findMany({
+        where: tail ? { code: { contains: tail } } : {},
         select: { id: true, code: true },
+        take: 50,
       });
       const byCode = candidates.find((p) => stripDiacritics(p.code).toLowerCase() === wanted);
       if (!byCode) {
