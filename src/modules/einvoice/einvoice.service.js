@@ -25,11 +25,36 @@ const logger = require('../../utils/logger');
 const toNum = (v) => Number(v || 0);
 
 // Sinh số hóa đơn nội bộ: HDĐ-YYYYMMDD-XXXX
+/**
+ * Sinh số hóa đơn nội bộ: HDĐ-YYYYMMDD-XXXX
+ *
+ * CỐ Ý THỬ LẠI KHI TRÙNG: trước đây đếm số HĐĐT hôm nay rồi `+1` — đó là
+ * read-then-write, và `invoiceNo` là UNIQUE. Hai lần phát hành chạy song song (hoặc
+ * một lần phát hành thất bại giữa chừng khiến số bị chiếm) sẽ sinh **cùng một số**
+ * ⇒ `Unique constraint failed on the fields: ("invoiceNo")` và cả lần phát hành sau
+ * đó hỏng theo dây chuyền. Cùng lớp lỗi với `company_settings` đã dò ra ở P1.
+ *
+ * Sửa: bắt lỗi unique rồi **đếm lại** (tối đa 5 lần) thay vì để lỗi nổi lên.
+ * Không thêm khoá DB vì `generateInvoiceNo` còn được gọi với `tx` bên trong
+ * transaction; thử lại là đủ cho lỗi này và không đổi hợp đồng hàm.
+ */
 const generateInvoiceNo = async (tx = prisma) => {
   const today = new Date().toISOString().slice(0, 10).replace(/-/g, "");
   const start = new Date(); start.setHours(0, 0, 0, 0);
-  const count = await tx.electronicInvoice.count({ where: { createdAt: { gte: start } } });
-  return `HDD-${today}-${String(count + 1).padStart(4, "0")}`;
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const count = await tx.electronicInvoice.count({ where: { createdAt: { gte: start } } });
+    const candidate = `HDD-${today}-${String(count + 1).padStart(4, "0")}`;
+    const taken = await tx.electronicInvoice.findUnique({
+      where: { invoiceNo: candidate },
+      select: { id: true },
+    });
+    if (!taken) return candidate;
+  }
+  // 5 lần liên tiếp vẫn trùng ⇒ trả số cuối cùng để caller báo lỗi có nguyên nhân
+  // (đã ghi log), thay vì âm thầm dùng một số đã tồn tại.
+  return `HDD-${today}-${String(
+    (await tx.electronicInvoice.count({ where: { createdAt: { gte: start } } })) + 1,
+  ).padStart(4, "0")}`;
 };
 
 /**

@@ -97,8 +97,18 @@ const diffTenantCounts = (before, after) =>
  *   - `plan.status` = cần nhập và `orderQty > 0`;
  *   - còn tồn ≥ 1 để bước 2 bán được (đơn cần tồn để trừ kho);
  *   - chưa có đề xuất PENDING (nếu có thì `findOpenProposalKeys` sẽ chặn).
- * Chọn SKU có `orderQty` LỚN NHẤT (đề xuất nhìn được rõ), hoà thì theo sku tăng dần.
- */
+  * Chọn SKU theo thứ tự ưu tiên (mọi tiêu chí đều **tất định**, không random):
+  *   1. **lead time ĐO ĐƯỢC** (`leadEstimated = false`) — số của hệ thống do lịch sử
+  *      PO→GRN thật, không phải mặc định 7 ngày. `npm run demo:setup` tạo đúng dữ liệu
+  *      này cho 12 SKU trong dải tình huống.
+  *   2. `orderQty` **vừa đủ nhìn được** (1–500) và nhu cầu 0,5–50/ngày — tức trong
+  *      dải "tạp hoá nhỏ". KHÔNG dùng `orderQty` LỚN NHẤT nữa: tệp công khai có SKU
+  *      bán hàng loạn (mã 23843: 80.995 cái/ngày) ⇒ bản demo in ra ROP 1.421 và đề xuất
+  *      2.510 cái — đúng theo công thức nhưng **không giống cửa hàng nào**.
+  *   3. `orderQty` lớn nhất trong dải đó (đề xuất nhìn rõ nhất trong dải), rồi sku tăng dần.
+  * Nếu không SKU nào khớp tiêu chí 1–2 (chưa chạy `demo:setup`), lùi về tiêu chí cũ
+  * ⇒ `demo:run` vẫn chạy được như trước, chỉ là số kém thân thiện hơn.
+  */
 const pickDemoSku = async (tenantId) => {
   const inTenant = (fn) => runWithTenant(tenantId, fn);
   const vendorLinked = await inTenant(() =>
@@ -108,6 +118,7 @@ const pickDemoSku = async (tenantId) => {
         productId: true,
         product: { select: { id: true, sku: true, name: true, costPrice: true } },
       },
+      orderBy: { productId: 'asc' },
     }),
   );
   const seen = new Set();
@@ -117,6 +128,9 @@ const pickDemoSku = async (tenantId) => {
     seen.add(row.product.id);
     uniqueProducts.push(row.product);
   }
+  // `orderBy` ở trên là để thứ tự ứng viên **tất định**: `findMany` không có `orderBy`
+  // thì Postgres trả thứ tự tuỳ ý và `slice(0, MAX_CANDIDATES)` có thể chọn khác nhau
+  // giữa hai lần chạy ⇒ demo trước/sau nói về hai SKU khác nhau.
   const candidates = [];
   for (const product of uniqueProducts.slice(0, MAX_CANDIDATES)) {
     const input = (await inTenant(() => loadReplenishmentInput([product.id]))).get(product.id);
@@ -132,23 +146,42 @@ const pickDemoSku = async (tenantId) => {
       onOrder: input.onOrder,
     });
     const atp = num(plan.atp.atp);
-    candidates.push({ product, plan, atp });
+    candidates.push({ product, plan, atp, measuredLead: plan.lead.estimated !== true });
     if (atp < 1) continue;
     if (plan.status !== NEED_REPLENISHMENT && plan.status !== STOCKOUT) continue;
     if (!plan.order.orderQty || plan.order.orderQty <= 0) continue;
   }
   const openKeys = await inTenant(() => findOpenProposalKeys());
-  const usable = candidates
-    .filter((c) => c.atp >= 1 && c.plan.order.orderQty > 0)
-    .filter((c) => !openKeys.some((k) => k.startsWith(`PROPOSAL:${c.product.id}:`)))
-    .sort((a, b) => b.plan.order.orderQty - a.plan.order.orderQty || a.product.sku.localeCompare(b.product.sku));
+  const eligible = candidates.filter(
+    (c) => c.atp >= 1 && c.plan.order.orderQty > 0
+      && !openKeys.some((k) => k.startsWith(`PROPOSAL:${c.product.id}:`)),
+  );
+  const inScenarioBand = (c) => {
+    const q = num(c.plan.order.orderQty);
+    const d = num(c.plan.rationale.demandPerDay);
+    return q >= 1 && q <= 500 && d >= 0.5 && d <= 50;
+  };
+  const better = (a, b) =>
+    Number(a.measuredLead) - Number(b.measuredLead) || a.product.sku.localeCompare(b.product.sku);
+  const hero = eligible
+    .filter((c) => c.measuredLead && inScenarioBand(c))
+    .sort((a, b) => better(a, b) || num(b.plan.order.orderQty) - num(a.plan.order.orderQty) || a.product.sku.localeCompare(b.product.sku));
+  const fallback = eligible
+    .slice()
+    .sort((a, b) => num(b.plan.order.orderQty) - num(a.plan.order.orderQty) || a.product.sku.localeCompare(b.product.sku));
+  const usable = hero.length ? hero : fallback;
   if (!usable.length) {
     throw new Error(
       `KHÔNG có SKU nào đủ điều kiện chạy luồng demo (ứng viên ${candidates.length}). ` +
       `Kiểm tra giả định A5 (PO tiền sử) và A4 (cửa sổ ngày) trong 02-data.md §9.2.`,
     );
   }
-  return { ...usable[0], candidates: candidates.length, usable: usable.length };
+  return {
+    ...usable[0],
+    candidates: candidates.length,
+    usable: usable.length,
+    pickedFrom: hero.length ? 'hero (lead time đo được + dải tình huống)' : 'fallback (chưa chạy demo:setup?)',
+  };
 };
 
 /**
@@ -183,6 +216,7 @@ const runDemoFlow = async ({ tenantId, onEvent = () => {} } = {}) => {
       productId: r.product.id,
       candidates: r.candidates,
       usable: r.usable,
+      pickedFrom: r.pickedFrom,
       inventoryId: inv.id,
       quantity: num(inv.quantity),
       reserved: num(inv.reserved),
@@ -471,6 +505,13 @@ const runDemoFlow = async ({ tenantId, onEvent = () => {} } = {}) => {
     }
     deleted.orderItems = freshOrderIds.length
       ? (await inT(() => prisma.orderItem.deleteMany({ where: { orderId: { in: freshOrderIds } } }))).count
+      : 0;
+    // `invoices.orderId` là FK **RESTRICT** (không cascade) và bản cleanup cũ KHÔNG
+    // xoá bảng này. Mọi lần chạy luồng demo từ trước đã để lại dòng `invoices` ở đây
+    // ⇒ lần sau xoá đơn sẽ văng `violates RESTRICT setting of foreign key
+    // constraint "invoices_orderId_fkey"` và dọn dở dang. Xoá theo đơn con trước đơn.
+    deleted.invoices = freshOrderIds.length
+      ? (await inT(() => prisma.invoice.deleteMany({ where: { orderId: { in: freshOrderIds } } }))).count
       : 0;
     deleted.orders = (await inT(() =>
       prisma.order.deleteMany({ where: { createdAt: { gte: since } } }),

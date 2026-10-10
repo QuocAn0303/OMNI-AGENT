@@ -24,10 +24,14 @@ npm run tenant:null -- --scan      # MỒ CÔI-TENANT 0 · TRÙNG 0
 
 # 1. Dữ liệu demo đủ dùng
 npm run data:import -- --reset --apply --days 34 --max-orders 6000
-npm run smoke:import-demo          # 9/9
+npm run demo:setup                  # PO+GRN lịch sử cho 12 SKU "hero" ⇒ lead time ĐO ĐƯỢC
+npm run smoke:import-demo           # 9/9
 
 # 1b. BẬT ĐĂNG NHẬP cho tenant MÔ PHỎNG (bắt buộc — mặc định user demo KHÔNG đăng nhập được)
 npm run demo:login -- --apply       # in ra email + mật khẩu dùng cho bước đăng nhập
+
+# 1c. KIỂM CHỨNG TRƯỚC KHI LÊN (mới, 2026-10-10) — 13/13 là xem được
+npm run demo:check                  # chạy luồng 2 lần, in luôn phiếu từng màn hình
 
 # 2. Luồng demo chạy được, và chạy lại được nhiều lần không rác
 npm run smoke:demo-flow            # 12/12, 2 lần liên tiếp: 0 bảng thay đổi
@@ -177,3 +181,56 @@ Không được bật LLM lúc trình bày. Nếu bật, mọi con số LLM ph�
 2. **40s** — `npm run demo:run` in ra 6 bước, đọc thẳng ATP → ROP → đề xuất → gate → PO.
 3. **20s** — kết luận backtest trung thực (thí nghiệm 1 xấu + thí nghiệm 2 post-hoc).
 4. **15s** — "không làm gì ở Vòng 2" + ba chỗ chưa có dữ liệu.
+
+---
+
+## Cap nhat 2026-10-10: `demo:setup` + `demo:check` (so cua demo da "thien nhi" duoc)
+
+### Vay sao can hai lenh nay
+
+`data:import` (gia dinh A5) chi tao lich su PO+GRN cho **20 SKU ton thap nhat** — dung
+nhom SKU ban nhanh (`nhu cau/ngay` hang tram). `pickDemoSku` chon "SKU co `orderQty` lon
+nhat" ⇒ **rut sat** vao nhom do ⇒ ban demo in ra `ROP 1.421 · de xuat nhap 2.510 cai`.
+Dung theo cong thuc, nhung **khong giong cua hang nao** ⇒ kho giai thich khi trinh bay.
+
+| Lenh | Lam gi |
+|---|---|
+| `npm run demo:setup` | Bo sung **3 vong PO+GRN** cho 12 SKU trong **dai tinh huong tap hoa nho** (nhu cau 0,5–50/ngay, `orderQty` 1–500) ⇒ lead time **DO DUOC** (`sampleSize >= 3`) thay vi mac dinh 7 ngay, va co NCC that. Id tap dinh ⇒ chay lai khong nhan ban. `--reset-demo-hist` de go. |
+| `npm run demo:check` | **Kiem chung truoc khi len**: du lieu du? chay luong **hai lan** co ra cung mot SKU? lan hai co rac khong? so co "thien nhi" khong? — **13/13** — va in ra **phieu tung man hinh** voi so that cua chinh lan chay do. FAIL = khong duoc trinh bay. |
+
+`pickDemoSku` doi thu tu uu tien: **lead time do duoc → dai tinh huong → `orderQty` lon
+nhat trong dai → mã tang dan**. Neu chua chay `demo:setup` thi lui ve tieu chi cu va
+`demo:run` van chay duoc (chi la so kem than thien hon). Them `orderBy` khi doc ung vien
+de **hai lan chay luon chon cung mot SKU** (truoc do `findMany` khong `orderBy` ⇒ Postgres
+tra thu tu tuy y).
+
+### So cua demo sau khi chay `demo:check` (lay tu chinh DB local, 2026-10-10)
+
+| | |
+|---|---|
+| SKU được chọn | `20726` — nhu cau ~31,6/ngay, ATP về ~33 sau khi bán |
+| Lead time | **7 ngay, ĐO ĐƯỢC** (khong con la "uoc luong") |
+| De xuat nhap | ~484 cai (trong dai 1–500) |
+| PO | 39 PO + 39 GRN POSTED · 1.427 don ban |
+
+### Ba lo loi that, khong phai "nhieu an"
+
+1. **Race so HĐĐT mock** — `_mockInvoiceNo()` chi dem trong bo nho nen moi lan khoi dong
+   Node lai bat dau tu `0000001` ⇒ `Unique constraint (invoiceNo)` ⇒ don demo khong don
+   duoc. Da sua: so gia co `MOCK-<ngay>-<seq>-<random6>` (dung de khong bao gio nham so that)
+   va `generateInvoiceNo` thu lai khi trung.
+2. **Cleanup cua luong demo thieu bang `invoices`** — `invoices.orderId` la FK **RESTRICT**
+   ⇒ la chay sau do vo khong xoa duoc don. Da them vao `cleanupDemoArtifacts()`.
+3. **`data:import --reset` de lai dong mo coi** — danh sach xoa thieu `invoice`,
+   `electronicInvoice`, `refreshToken`, `agent_*`, `debt`, `journal_*`, `promotion`, …
+   ⇒ `reset` chet hoac de lai 427 dong `promotions` tro toi tenant da xoa. Da bo sung
+   vao ca hai danh sach; rac con lai da don bang
+   `docs/aisc26/one-off/cleanup-orphan-rows.js` (521 dong, con 0).
+
+### Mot sua them o smoke (khong doi so da ky)
+
+`smoke:import-demo` K8 **do so dong hang cua MOI tenant khac demo** roi so voi so da ky
+cua `candory-scent` ⇒ FAIL oan khi chi can mot tenant khac (vd tenant seed
+`crm-phase1-demo`) co don. Da sua **pham vi do** cho dung tenant da ky; so da ky
+82 don / 158 dong / 89.862.000 VND **khong doi**. `candory-scent` do la kiem chung:
+82 don / 158 dong — dung chu ky.

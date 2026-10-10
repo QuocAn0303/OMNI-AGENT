@@ -247,6 +247,40 @@ function readMarketplace(file, days, shiftMs = 0) {
 async function resetTenant(tenantId) {
   const order = [
     ['orderItem', { order: { tenantId } }],
+    // `invoices.orderId` là FK **RESTRICT** (không cascade). Bảng này KHÔNG có trong
+    // danh sách cũ ⇒ chỉ cần một dòng `invoices` sinh ra ngoài luồng import (ví dụ
+    // `order.service.create` ghi hoá đơn khi demo chạy) là `data:import --reset` chết
+    // với `violates RESTRICT ... invoices_orderId_fkey` và **không nạp lại được** tenant
+    // demo. Xoá trước `order`, sau `orderItem` và trước mọi bảng con khác của đơn.
+    ['invoice', { tenantId }],
+    ['electronicInvoice', { tenantId }],
+    // Bảng con của `user`/`order`/`vendor` phải xoá TRƯỚC khi xoá chúng — FK đều
+    // RESTRICT. Danh sách này bổ sung sau khi gặp lỗi thật: `refresh_tokens` chặn
+    // `user`, `agent_*` chặn `user`, `debt`/`journal_*` chặn `order`.
+    ['refreshToken', { user: { tenantId } }],
+    ['portalOtp', { tenantId }],
+    ['portalSession', { tenantId }],
+    ['supportAccessSession', { tenantId }],
+    ['agentFeedback', { tenantId }],
+    ['agentStep', { tenantId }],
+    ['agentHumanGate', { tenantId }],
+    ['agentSession', { tenantId }],
+    ['notification', { tenantId }],
+    ['journalPostingError', { tenantId }],
+    ['journalLine', { tenantId }],
+    ['journalEntry', { tenantId }],
+    ['debtPayment', { debt: { tenantId } }],
+    ['debt', { tenantId }],
+    ['purchaseInvoiceRecord', { tenantId }],
+    // Bảng con của product/customer: xoá TRƯỚC bảng cha (FK RESTRICT). Thiếu chúng thì
+    // `data:import --reset` xoá được tenant nhưng để lại dòng mồ côi trỏ tới tenant
+    // vừa bị xoá (đã quan sát: 427 dòng `promotions` mồ côi sau một lần reset).
+    ['promotionUsage', { promotion: { tenantId } }],
+    ['promotion', { tenantId }],
+    ['serialNumber', { product: { tenantId } }],
+    ['inventoryLot', { product: { tenantId } }],
+    ['productVariant', { product: { tenantId } }],
+    ['customerTagOnCustomer', { customer: { tenantId } }],
     ['order', { tenantId }],
     ['goodsReceiptItem', { grn: { tenantId } }],
     ['goodsReceiptNote', { tenantId }],
@@ -377,6 +411,34 @@ async function main() {
     await prisma.$transaction(async (tx) => {
       for (const [model, where] of [
         ['orderItem', { order: { tenantId: tid } }],
+        // FK RESTRICT: phải xoá `invoices`/`electronicInvoices` TRƯỚC `order`, nếu không
+        // một dòng hoá đơn sinh ra ngoài luồng import (đơn của `demo:run`) làm cả
+        // `data:import --reset` chết và tenant demo không nạp lại được. Xem `resetTenant`.
+        ['invoice', { tenantId: tid }],
+        ['electronicInvoice', { tenantId: tid }],
+        // Bảng con của `user`/`order` phải xoá trước (FK RESTRICT) — cùng lý do và
+        // cùng danh sách với `resetTenant` ở trên.
+        ['refreshToken', { user: { tenantId: tid } }],
+        ['portalOtp', { tenantId: tid }],
+        ['portalSession', { tenantId: tid }],
+        ['supportAccessSession', { tenantId: tid }],
+        ['agentFeedback', { tenantId: tid }],
+        ['agentStep', { tenantId: tid }],
+        ['agentHumanGate', { tenantId: tid }],
+        ['agentSession', { tenantId: tid }],
+        ['notification', { tenantId: tid }],
+        ['journalPostingError', { tenantId: tid }],
+        ['journalLine', { tenantId: tid }],
+        ['journalEntry', { tenantId: tid }],
+        ['debtPayment', { debt: { tenantId: tid } }],
+        ['debt', { tenantId: tid }],
+        ['purchaseInvoiceRecord', { tenantId: tid }],
+        ['promotionUsage', { promotion: { tenantId: tid } }],
+        ['promotion', { tenantId: tid }],
+        ['serialNumber', { product: { tenantId: tid } }],
+        ['inventoryLot', { product: { tenantId: tid } }],
+        ['productVariant', { product: { tenantId: tid } }],
+        ['customerTagOnCustomer', { customer: { tenantId: tid } }],
         ['order', { tenantId: tid }],
         ['goodsReceiptItem', { grn: { tenantId: tid } }],
         ['goodsReceiptNote', { tenantId: tid }],

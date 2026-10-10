@@ -208,7 +208,14 @@ async function main() {
 
   // K8 — hai tenant thật giữ nguyên số đã ký.
   const real = await prisma.order.findMany({ where: { tenantId: { not: tid } }, select: { tenantId: true, total: true } });
-  const realItems = await prisma.orderItem.count({ where: { order: { tenantId: { not: tid } } } });
+  const signedTenant = await prisma.tenant.findUnique({ where: { slug: SIGNED.slug } });
+  // Đếm dòng hàng **của đúng tenant đã ký**. Trước đây đếm MỌI tenant khác demo rồi
+  // so với số đã ký của `candory-scent` ⇒ K8 FAIL oan khi chỉ cần một tenant khác có
+  // đơn (ví dụ tenant seed `crm-phase1-demo`), dù `candory-scent` hoàn toàn không đổi.
+  // Số đã ký KHÔNG đổi; chỉ sửa **phạm vi đo** cho khớp với điều K8 nói.
+  const realItems = signedTenant
+    ? await prisma.orderItem.count({ where: { order: { tenantId: signedTenant.id } } })
+    : 0;
   const byTenant = new Map();
   for (const o of real) {
     const e = byTenant.get(o.tenantId) ?? { orders: 0, total: 0 };
@@ -216,7 +223,6 @@ async function main() {
     e.total += Number(o.total);
     byTenant.set(o.tenantId, e);
   }
-  const signedTenant = await prisma.tenant.findUnique({ where: { slug: SIGNED.slug } });
   const s = byTenant.get(signedTenant?.id);
   ok('K8 tenant thật giữ nguyên số đã ký', Boolean(s) && s.orders === SIGNED.orders && realItems === SIGNED.items && Math.round(s.total) === SIGNED.totalVnd,
     `${SIGNED.slug}: ${s?.orders ?? '?'} đơn / ${realItems} dòng / ${Math.round(s?.total ?? 0).toLocaleString('vi-VN')} VND`);

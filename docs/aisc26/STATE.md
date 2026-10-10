@@ -855,3 +855,31 @@ co ca 1 nguoi dung KiotViet (CH07).
 4. **13 cap nhan con lai + 2 nguoi gan doc lap** de co kappa va day du 120.
 5. Ba muc da nen dinh danh o `FILL-IN.md` (duyet CC BY 4.0, thieu khoa ngoai `tenants`,
    mat khau DB trong repo, trien khai hotfix len moi truong that).
+
+---
+
+## Cap nhat 2026-10-10 (phien "lam cho luong demo hoan chinh")
+
+**RESUME HERE. Vong 2 van ket thuc. Bai lon nhat con la cua NGUOI: 6 nguoi thu + phong van that.**
+
+Da thay doi (deu da kiem chung bang lenh, khong phai do noi):
+1. `scripts/demo/demo-setup.js` + `npm run demo:setup` — them 3 vong PO+GRN cho 12 SKU
+   trong dai tinh huong tap hoa nho => lead time **DO DUOC** + NCC that.
+2. `scripts/demo/demo-check.js` + `npm run demo:check` — **13/13**: chay luong 2 lan,
+   kiem tinh dinh (cung mot SKU), kiem rac (0 bang thay doi), kiem so "thien nhi", va
+   in **phieu tung man hinh** voi so that. FAIL = khong duoc trinh bay.
+3. `pickDemoSku` doi thu tu uu tien + them `orderBy` de chon 1 SKU **tinh dinh** va
+   khong rut vao nhom SKU ban hang loan cua tep cong khai (truoc: ROP 1.421 · 2.510 cai).
+4. Ba lo loi that da sua (xem `04-demo-script.md` cap nhat cuoi): race so HĐĐT mock,
+   cleanup thieu bang `invoices`, `data:import --reset` de lai dong mo coi.
+5. `smoke:import-demo` K8 sua **pham vi do** (khong doi so da ky).
+
+Kiem chung: `npx jest` **4338 pass** · `check:modules` 203 · `check:tenant` 11/11+4/4 ·
+`smoke:po-gate` 24/24 · `smoke:demo-flow` 12/12 · `smoke:import-demo` 9/9 ·
+`demo:check` 13/13 · `demo:login --apply` da tao subscription `business`.
+
+Kich ban nguoi thu da sinh lai theo du lieu moi: **as-of 2026-09-19**,
+`sha256 sku-sets.json 8408c73…`. Phai chay lai `usertest:scenario` **truoc** khi in phieu
+cho nguoi thu, va phai dung dung file nay de cham.
+
+Vac: `aduu-dev-before-demo-reset-20261011-005332.dump` (1,94 MB, ngoai repo).
