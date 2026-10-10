@@ -1,19 +1,19 @@
 {
-  "runId": "S10-20261003164952",
-  "at": "2026-10-03T16:49:52.689Z",
-  "labelSource": "MO PHONG (dap an cua bo sinh tep xuat don) — KHONG phai nhan nguoi",
+  "runId": "S10-20261010172155",
+  "at": "2026-10-10T17:21:55.329Z",
+  "labelSource": "nhan tay (label_sku do nguoi dien)",
   "dataset": {
     "labelSheet": "data\\aisc26\\skus\\labels\\label-sheet.csv",
     "catalog": "data\\dataset\\sku_names.csv",
     "totalPairs": 120,
-    "labelled": 120,
-    "nhanLaMoPhong": true
+    "labelled": 107,
+    "nhanLaMoPhong": false
   },
   "mode": "off",
   "llm": {
     "mode": "off",
     "enabled": false,
-    "configured": false,
+    "configured": true,
     "provider": "gemini",
     "model": "gemini-3.8-flash",
     "throttleMs": 1200,
@@ -34,30 +34,30 @@
   "kappa": {
     "kappa": null,
     "n": 0,
-    "reason": "nhan MO PHONG - khong tinh Cohen kappa duoc"
+    "reason": "chua co cap nao ca hai nguoi gan cung mot nhan"
   },
   "test": {
     "fuzzy": {
       "n": 60,
-      "labelled": 60,
-      "tp": 32,
-      "fp": 20,
-      "fn": 8,
-      "precision": 0.6154,
-      "recall": 0.8,
-      "f1": 0.6957,
+      "labelled": 56,
+      "tp": 43,
+      "fp": 9,
+      "fn": 6,
+      "precision": 0.8269,
+      "recall": 0.8776,
+      "f1": 0.8515,
       "escalated": 8,
       "fallbackRate": 0.1333
     },
     "hybrid": {
       "n": 60,
-      "labelled": 60,
-      "tp": 32,
-      "fp": 20,
-      "fn": 8,
-      "precision": 0.6154,
-      "recall": 0.8,
-      "f1": 0.6957,
+      "labelled": 56,
+      "tp": 43,
+      "fp": 9,
+      "fn": 6,
+      "precision": 0.8269,
+      "recall": 0.8776,
+      "f1": 0.8515,
       "escalated": 8,
       "fallbackRate": 0.1333
     }
@@ -65,25 +65,25 @@
   "dev": {
     "fuzzy": {
       "n": 60,
-      "labelled": 60,
-      "tp": 24,
-      "fp": 31,
-      "fn": 5,
-      "precision": 0.4364,
-      "recall": 0.8276,
-      "f1": 0.5714,
+      "labelled": 51,
+      "tp": 39,
+      "fp": 16,
+      "fn": 2,
+      "precision": 0.7091,
+      "recall": 0.9512,
+      "f1": 0.8125,
       "escalated": 5,
       "fallbackRate": 0.0833
     },
     "hybrid": {
       "n": 60,
-      "labelled": 60,
-      "tp": 24,
-      "fp": 31,
-      "fn": 5,
-      "precision": 0.4364,
-      "recall": 0.8276,
-      "f1": 0.5714,
+      "labelled": 51,
+      "tp": 39,
+      "fp": 16,
+      "fn": 2,
+      "precision": 0.7091,
+      "recall": 0.9512,
+      "f1": 0.8125,
       "escalated": 5,
       "fallbackRate": 0.0833
     }
@@ -98,10 +98,10 @@
     "excludesZero": false
   },
   "throughput": {
-    "fuzzyMs": 352,
-    "hybridMs": 382,
-    "msPerPairFuzzy": 5.87,
-    "msPerPairHybrid": 6.37
+    "fuzzyMs": 364,
+    "hybridMs": 418,
+    "msPerPairFuzzy": 6.07,
+    "msPerPairHybrid": 6.97
   },
   "llmCalls": 0,
   "llmUsable": 0,

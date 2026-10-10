@@ -72,6 +72,15 @@ khi được phép; không bịa. **Hiện trạng: chưa phỏng vấn ai** ⇒
 
 Câu 8 là câu quyết định luận điểm khác biệt ở `05-differentiation.md` §4.
 
+> **Cập nhật 2026-10-10 — đã có công cụ, chưa có người thật.** Bộ **10 phiếu × 24 câu**
+> nằm trong `docs/AISC_10_Cua_Hang_Da_Dien_Gia_Dien (1).xlsx`, có sẵn cột "điều cần xác
+> minh / hỏi sâu" và cột "nhận định / trích dẫn được phép". **Nhưng mọi câu trả lời trong
+> tệp là GIẢ ĐỊNH** (tệp tự ghi ở từng dòng: *"GIẢ ĐỊNH – CHƯA KHẢO SÁT"*, *"TOÀN BỘ NỘI
+> DUNG TRONG SHEET LÀ TÌNH HUỐNG GIẢ LẬP"*) ⇒ **số người phỏng vấn thật vẫn là 0**, và
+> **không** đưa con số như "99.000đ/tháng" hay "trên 200.000đ là đắt" vào tài liệu trình
+> bày. Cách dùng lại: xoá cột *"Trả lời thực tế"* rồi điền lại với người thật. Chi tiết:
+> `notes/labeling-and-interview-status.md` §2.
+
 ## 5. Mô hình giá — bám cơ chế gói **đang có trong code**
 
 ### 5.1 Bối cảnh thật (đọc từ mã, 2026-10-03)

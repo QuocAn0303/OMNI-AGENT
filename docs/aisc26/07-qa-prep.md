@@ -122,9 +122,15 @@
 > bịa mã ngoài danh sách thì coi như không khớp.
 >
 > **Giới hạn phải nói:** ứng viên cho AI là **top-K theo điểm fuzzy**, nên khi đáp án nằm
-> ngoài top-5 thì AI **không** dùng được. Và **độ đúng thì chưa đo**: bộ nhãn tay 120 cặp
-> đã sinh (`npm run llm:labels`) nhưng **đang để trống**. Script tự in `BLOCKER-HUMAN` và
-> **từ chối** ra số nếu chưa có nhãn.
+> ngoài top-5 thì AI **không** dùng được.
+>
+> **Đã đo được một phần (2026-10-10) — nhưng KHÔNG phải số của AI.** Bộ 120 cặp đã có
+> **107 nhãn tay**; `npm run llm:eval` (`run_id S10-20261010172155`, `mode=off`) ra
+> **P=0,8269 · R=0,8776 · F1=0,8515** trên tập kiểm định 60 cặp (56 có nhãn), **13,33%** ca
+> phải chuyển người xác nhận. Bốn giới hạn nói ngay: (1) LLM **không được gọi** ⇒ hybrid
+> **y hệt** fuzzy, `CI95 = [0;0]`; (2) token/cặp **chưa đo**; (3) **không** có hai người
+> gán độc lập ⇒ **không** có Cohen kappa; (4) 13/120 cặp chưa nhãn, mẫu nhỏ, không suy ra
+> ngoài tập này.
 
 ## 10. "Trạng thái lơ lửng của A′ là gì? Có phải lỗi không?"
 

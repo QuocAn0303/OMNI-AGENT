@@ -201,7 +201,10 @@ nguồn đã đọc** (không phải chắc chắn không có) · — chưa xác
 | Cần đo | Vì sao chưa có | Lệnh/đường đi |
 |---|---|---|
 | Chi phí LLM thật | Chưa đặt key; `LlmUsageLog` mới chỉ có dữ liệu `replay` | đặt key → `npm run check:llm`, `npm run llm:eval` |
-| Độ đúng khớp SKU | Bộ nhãn tay 120 cặp **đang để trống** | `npm run llm:labels` → gán nhãn → `npm run llm:eval` |
+| Khớp SKU — đường **không LLM** | **F1 0,8515** (P 0,8269 · R 0,8776) trên **107** cặp có nhãn tay; 13,33% ca chuyển người | **nhãn tay** + `mode=off` ⇒ **không phải số AI**, không so sánh được với ai |
+| Khớp SKU — **phần AI** | **CHƯA CÓ DỮ LIỆU** | chưa có key, chưa chạy `live`; token/cặp **chưa đo** |
+| Độ tin cậy giữa người gán | **CHƯA CÓ DỮ LIỆU** | chỉ 1 người gán ⇒ Cohen kappa chưa đo được |
+| Độ đúng khớp SKU trên dữ liệu thật | **CHƯA CÓ DỮ LIỆU** | cần tệp xuất sàn thật; tệp UCI chỉ dùng để dựng bộ nhãn |
 | Thời gian người thử | Bộ công cụ đã sẵn, **chưa có ai thử** | `docs/aisc26/usertest/README.md` |
 | Nhu cầu khách hàng, mức giá | **Chưa phỏng vấn ai** | bộ 8 câu ở `06-business.md` §4 |
 | Thí nghiệm có ràng buộc ≥ 95% | post-hoc chưa đủ; cần lưới rộng hơn, tiền đăng ký mới | `03-evaluation-protocol.md` §13.2 |

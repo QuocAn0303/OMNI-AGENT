@@ -802,3 +802,56 @@ Khong con tien trinh nen sau moi lan chay (`Get-Process node` = 0).
 - Portal + `delivery/:id/track` **van khong gate duoc** theo goi (khong co `req.user`).
 - `enterprise` `price: 0` ⇒ hien "Mien phi" tren trang gia (can sua hien thi, khong sua seed).
 - 135/140 bang scoped chua co FK toi `tenants`; `db:agent` viet 1 loi in khong doc duoc.
+---
+
+## Cap nhat 2026-10-10 (phien sau P8 - nhan tay da co, chay duoc llm:eval)
+
+**RESUME HERE - Vong 2 van ket thuc. Khong con viec nao cua agent.**
+
+### 1. Nhan tay SKU: da chay duoc `llm:eval` (BLOCKER A1-A3 mot phan giai theo)
+
+Tep nguoi dien `docs/label-sheet1.csv` -> chep vao `data/aisc26/skus/labels/label-sheet.csv`.
+**107/120** co nhan (13 trong: `SKU-016/017/018/019/021/029/041/042/043/064/079/080/114`),
+tat ca **nam trong 5 ung vien** (khong co nhan bia). `label_confidence`: cao 46 · trung
+binh 54 · thap 20. `labeler_b` chi 2 dong => **khong do duoc Cohen kappa**.
+
+Ket qua (`run_id S10-20261010172155`, `mode=off`, nguong 0,85, seed 20261003), tap kiem
+dinh 60 cap (56 co nhan):
+
+| Chi so | Fuzzy khong-LLM | Hybrid |
+|---|---:|---:|
+| Precision | **0,8269** | 0,8269 |
+| Recall | **0,8776** | 0,8776 |
+| F1 | **0,8515** | 0,8515 |
+| Chuyen nguoi | 8/60 = **13,33%** | 13,33% |
+
+**KHONG cong bo nhu so cua AI**: LLM goi 0 · token/cap **CHUA DO** · hybrid == fuzzy nen
+`CI95 [0;0]`. Chi tiet + 4 gioi han: `docs/aisc26/notes/labeling-and-interview-status.md` §1.
+
+### 2. Phong van: **so nguoi that van = 0** (phat hien can noi ngay)
+
+`docs/AISC_10_Cua_Hang_Da_Dien_Gia_Dinh (1).xlsx` (11 sheet, 10 phieu × 24 cau) **tu dan
+nhan gia dinh o TUNG dong**: `Ngay khao sat: GIA DINH - CHUA KHAO SAT` · `MAU-01…MAU-10` ·
+`TOAN BO NOI DUNG TRONG SHEET LA TINH HUONG GIA LAP` · dong 13 sheet TONG HOP:
+`DU LIEU GIA DINH / MO PHONG - KHONG PHAI KET QUA PHONG VAN THUC TE`.
+=> **khong** dua "99.000d/thang", " tren 200.000d la dat" hay bat ky cau tra loi nao
+vao tai lieu trinh bay nhu phat hien thuc te (hien phap muc 3).
+**Gia tri con lai cua tep**: (a) cong cu phong van 24 cau da xong, co cot "can xac minh" va
+cot "trich dan duoc phep" -> mang ra hoi that, xoa cot "Tra loi thuc te" roi dien lai;
+(b) bo gia thuyet + 4 cau "chot" tim rao can mua; (c) khung so sanh 10 ho so 65-520 SKU,
+co ca 1 nguoi dung KiotViet (CH07).
+
+### 3. Da cap nhat
+
+`FILL-IN.md` (A co so + canh bao D), `06-business.md` §4, `07-pitch-outline.md` slide 10,
+`07-qa-prep.md` muc 9, ghi chu moi `notes/labeling-and-interview-status.md`.
+
+### 4. Con lai (xep theo gia tri)
+
+1. **6 nguoi thu** theo `usertest/` - cong cu san, chua ai thu.
+2. **5-10 phong van THAT** - mang bo phieu 24 cau ra hoi; day la thu tu dat nhat cho
+   `06-business.md` §2 va cho quyet dinh gia PA/PB/PC.
+3. **Dat key + `--mode live`** - token/cap + do that cua AI.
+4. **13 cap nhan con lai + 2 nguoi gan doc lap** de co kappa va day du 120.
+5. Ba muc da nen dinh danh o `FILL-IN.md` (duyet CC BY 4.0, thieu khoa ngoai `tenants`,
+   mat khau DB trong repo, trien khai hotfix len moi truong that).

@@ -21,6 +21,17 @@ Mỗi mục có: **tệp cần sửa · vị trí · nguồn số liệu · lệ
 
 ---
 
+## A. Cập nhật 2026-10-10 — nhãn tay ĐÃ CÓ, đã chạy được `llm:eval`
+
+> **A1–A2: XONG (107/120 nhãn).** Kết quả thật: fuzzy không-LLM **P=0,8269 · R=0,8776 ·
+> F1=0,8515** (tập kiểm định 60 cặp, 56 có nhãn), chuyển người **13,33%**. Nhưng
+> `mode=off` ⇒ **KHÔNG công bố như kết quả AI**; hybrid ≡ fuzzy nên CI = [0; 0];
+> token/cặp **CHƯA ĐO**. Bốn giới hạn: `notes/labeling-and-interview-status.md` §1.
+>
+> **Còn lại trong nhóm A:** (A3a) gán nhãn **13 cặp** còn trống · (A3b) **hai người gán
+> độc lập** để đo Cohen kappa (hiện `labeler_b` mới có 2 dòng) · (A3c) chạy `--mode live`
+> sau khi có key.
+
 ## B. Số LLM thật (chưa có key, chưa chạy `live`)
 
 | # | Việc | Tệp · vị trí | Nguồn số liệu | Lệnh |
@@ -50,7 +61,13 @@ Mỗi mục có: **tệp cần sửa · vị trí · nguồn số liệu · lệ
 
 ---
 
-## D. Phỏng vấn khách hàng (chưa phỏng vấn ai)
+## D. Phỏng vấn khách hàng — số người thật vẫn bằng **0**
+
+> **Đã có công cụ, chưa có người thật.** `docs/AISC_10_Cua_Hang_Da_Dien_Gia_Dinh (1).xlsx`
+> gồm 10 phiếu × 24 câu, nhưng **mọi dòng** đều ghi *"GIẢ ĐỊNH – CHƯA KHẢO SÁT"* /
+> *"TOÀN BỘ NỘI DUNG TRONG SHEET LÀ TÌNH HUỐNG GIẢ LẬP"* ⇒ **MÔ PHỎNG, không phải phỏng vấn
+> thật**. Dùng để mang đi hỏi: xoá cột *"Trả lời thực tế"* rồi điền lại. Chi tiết:
+> `notes/labeling-and-interview-status.md` §2.
 
 | # | Việc | Tệp · vị trí | Nguồn số liệu | Lệnh / cách làm |
 |---|---|---|---|---|
