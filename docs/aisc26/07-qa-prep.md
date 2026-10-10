@@ -172,16 +172,15 @@
 
 ## 13. "Paywall của các bạn có thật không?"
 
-> **Hiện chưa đáng tin — tôi đo được và nói thẳng.** Ba sự thật:
-> - Có **30** module key được gate.
-> - `requireModule`/`checkFeature` **fail-open** khi chưa có `req.user`, và **18/92** file
->   route đặt `requireModule` **trước** `authenticate` ⇒ các module đó thực tế **không bị
->   chặn theo gói**.
-> - `ai` và `replenishment` **không được gate ở bất kỳ đâu**, dù `allowedModules` của gói
->   Business có khoá `"ai"`.
+> **Đã vá phần lớn; còn 6/96 file sai thứ tự middleware.** Đo lại 2026-10-10:
+> - **33** module key được gate (trước 30).
+> - `ai` và `replenishment` **đã** được gate đúng như `allowedModules` khai báo.
+> - `requireModule`/`checkFeature` **vẫn fail-open** khi chưa có `req.user`, và **còn 6/96**
+>   file route đặt `requireModule` **trước** `authenticate`: `partners`, `portal`,
+>   `production/lot`, `production/routing`, `production/work-center`, `projects/timesheet`.
 >
-> ⇒ Luồng demo **mở cho mọi gói, kể cả Free**. Không được nói "AI chỉ ở gói Business".
-> Sửa 18 file + gate hai module là **việc đầu tiên** trước khi bán bất kỳ gói nào.
+> ⇒ 6 module đó **thực tế chưa bị chặn theo gói**. Vì vậy tôi **không** nói "AI chỉ ở gói
+> Business" như một điều đã bảo đảm; sửa nốt 6 file là việc đầu tiên trước khi bán gói.
 
 ## 14. "Bao lâu để triển khai cho một cửa hàng? Mất bao nhiêu tiền?"
 

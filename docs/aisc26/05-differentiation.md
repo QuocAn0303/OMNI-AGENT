@@ -54,10 +54,14 @@ Legend: **✅** = có bằng chứng đọc được · **◐** = có một ph�
 5. **Hạ tầng đa tenant khác hẳn.** VietPOS.AI công bố "1 KH = 1 PostgreSQL DB riêng"
    (tách DB vật lý); ta cách ly bằng scoping cấp truy vấn + AsyncLocalStorage. Hai mô
    hình khác nhau, không so được bằng điểm số.
-6. **Gating theo gói hiện chưa đáng tin.** Đo được **18/92** file route đặt
-   `requireModule` **trước** `authenticate`, mà `requireModule` **fail-open** khi chưa
-   có `req.user` (`src/middleware/plan.middleware.js:109`) ⇒ các module đó thực tế
-   **không bị chặn theo gói**. Chưa sửa (không thuộc gói P3).
+6. **Gating theo gói: đã vá phần lớn, còn 6/96** *(đo lại 2026-10-10)*. Trước đây
+   **18/92** file route đặt `requireModule` **trước** `authenticate`, mà `requireModule`
+   **fail-open** khi chưa có `req.user` (`src/middleware/plan.middleware.js:109`). Nay
+   quét 96 file route: còn **6** file sai thứ tự — `partners`, `portal`,
+   `production/lot`, `production/routing`, `production/work-center`,
+   `projects/timesheet` ⇒ 6 module đó **thực tế chưa bị chặn theo gói**. Và `ai` +
+   `replenishment` **đã** được gate. Không nói "AI chỉ ở gói Business" cho tới khi sửa
+   nốt 6 file.
 
 ## 4. Chốt **một** luận điểm khác biệt bảo vệ được
 

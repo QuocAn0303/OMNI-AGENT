@@ -186,11 +186,11 @@ nguồn đã đọc** (không phải chắc chắn không có) · — chưa xác
 | Nhận tiền, đăng ký dịch vụ | Chưa tới giai đoạn đó |
 
 **Ghi chú nói**
-> "Tôi liệt kê cái này trước khi giám khảo kịp hỏi. Có một ô trong bảng giá của chúng tôi
-> ghi `AI` là của gói Business — nhưng **đo được** là `ai` và `replenishment` **chưa được
-> gate ở đâu cả**, và 18/92 file route đặt middleware kiểm tra gói **trước** middleware
-> xác thực nên kiểm tra đó **fail-open**. Nói thẳng: **paywall hiện chưa đáng tin.** Sửa nó
-> là việc đầu tiên trước khi bán bất kỳ gói nào."
+> "Tôi liệt kê cái này trước khi giám khảo kịp hỏi. `ai` và `replenishment` **đã** được
+> gate đúng như bảng giá khai báo — nhưng còn **6/96** file route đặt middleware kiểm tra
+> gói **trước** middleware xác thực, nên 6 module đó **chưa thực sự bị chặn theo gói**.
+> Tôi không nói 'AI chỉ ở gói Business' như một điều đã bảo đảm, và sửa nốt 6 file đó là
+> việc đầu tiên trước khi bán bất kỳ gói nào."
 
 ---
 

@@ -95,13 +95,14 @@ Câu 8 là câu quyết định luận điểm khác biệt ở `05-differentiat
 
 | # | Sự thật | Bằng chứng |
 |---|---|---|
-| 1 | Có **30** module key được gate | `requireModule("…")` trong `src/modules/**/*.routes.js` → 30 key khác nhau |
-| 2 | `requireModule`/`checkFeature` **fail-open**: `if (!tenantId) return next()`; **18/92** file routes đặt `requireModule` **trước** `authenticate` | `plan.middleware.js:68,109`; quét 92 file routes (đo ở worktree `D:\erp-system`, commit `1f1a402`; `plan.middleware.js` và các file routes không nằm trong tệp P1 đang sửa) |
-| 3 | **`ai` và `replenishment` không được gate ở bất kỳ đâu** | `grep requireModule("ai")` và `requireModule("replenishment")` → **0 kết quả** |
+| 1 | **33** module key được gate *(đo lại 2026-10-10; trước đây 30)* | `requireModule("…")` trong `src/modules/**/*.routes.js` |
+| 2 | `requireModule`/`checkFeature` **fail-open**: `if (!tenantId) return next()`; ~~18/92~~ → **còn 6/96** file routes đặt `requireModule` **trước** `authenticate` | `plan.middleware.js:68,109`; quét 96 file routes 2026-10-10: `partners`, `portal`, `production/lot`, `production/routing`, `production/work-center`, `projects/timesheet` |
+| 3 | **`ai` và `replenishment` đã được gate** *(trước đây: 0 kết quả ⇒ không gate ở đâu cả)* | `grep requireModule("ai")` và `requireModule("replenishment")` → có mặt (2026-10-10) |
 
-⇒ **Kết luận thẳng:** luồng demo hiện **mở cho mọi gói, kể cả Free**, dù `allowedModules` của
-gói `business` có khoá `"ai"`. Không được nói "AI chỉ ở gói Business" như một điều đã được
-bảo đảm — đó là tuyên bố sai tại thời điểm này.
+⇒ **Kết luận thẳng (cập nhật 2026-10-10):** `ai`/`replenishment` **đã** bị gate đúng như
+`allowedModules` khai báo — nhưng còn **6/96** file route đặt middleware sai thứ tự, nên 6
+module đó **chưa** thực sự bị chặn theo gói. Không nói "AI chỉ ở gói Business" như một điều
+đã được bảo đảm cho tới khi sửa nốt 6 file đó.
 
 ### 5.3 Ba phương án giá
 
