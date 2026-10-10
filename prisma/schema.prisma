@@ -3592,7 +3592,7 @@ model LlmUsageLog {
   id               String   @id @default(uuid())
   tenantId         String? // NULL = lần gọi ngoài tenant context (cron/script); vẫn ghi
   task             String // tác vụ: SKU_MATCH | PROPOSAL_EXPLAIN | VENDOR_MESSAGE
-  provider         String // gemini | openai-compatible | local
+  provider         String // gemini | openai-compatible | uit | local
   model            String
   mode             String // live | record | replay | fallback
   promptTokens     Int      @default(0)

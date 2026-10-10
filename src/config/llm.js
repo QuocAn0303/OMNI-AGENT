@@ -6,11 +6,24 @@
  * https.request với `family: 4` để cưỡng chế IPv4, không phụ thuộc DNS/OS.
  *
  * Biến môi trường (xem .env / .env.example):
- *   LLM_PROVIDER     gemini | openai-compatible | local   (mặc định: gemini nếu có key)
+ *   LLM_PROVIDER     gemini | openai-compatible | uit | local   (mặc định: gemini nếu có key)
  *   GEMINI_API_KEY   API key của Google AI Studio
  *   LLM_MODEL        model id, ví dụ gemini-3.8-flash
  *   LLM_BASE_URL     ghi đè endpoint (dùng cho gateway OpenAI-compatible)
  *   LLM_TIMEOUT_MS   timeout mỗi request (mặc định 60000)
+ *
+ * UIT (Trường ĐH Công nghệ Thông tin — xem docs/llm_uit.md, API tương thích OpenAI):
+ *   LLM_PROVIDER=uit dùng key riêng, KHÔNG dùng GEMINI_API_KEY.
+ *   LLM_UIT_API_KEY  Bearer key của trường (bắt buộc; có thể dùng LLM_API_KEY thay thế)
+ *   LLM_UIT_GEMMA_URL  mặc định https://llm.uit.edu.vn/gemma/v1 (model gemma-4-26b, nhanh)
+ *   LLM_UIT_QWEN_URL   mặc định https://llm.uit.edu.vn/qwen/v1  (model qwen3.8-27b, suy luận sâu)
+ *   LLM_UIT_MODEL            model nhanh mặc định (mặc định gemma-4-26b)
+ *   LLM_UIT_REASONING_MODEL  model suy luận (mặc định qwen3.8-27b, dùng khi opts.reasoning=true)
+ *   LLM_UIT_THINKING=1  giữ chế độ suy nghĩ của Qwen (mặc định TẮT để nhanh; bật thì
+ *     max_tokens tự nâng tối thiểu 2000 theo khuyến cáo của trường).
+ *   LƯU Ý MẠNG: API UIT chỉ reachable trong mạng nội bộ trường. Ngoài mạng, mọi
+ *   request bị redirect 302 về www.uit.edu.vn (không phải lỗi key). Kiểm tra bằng
+ *   `npm run check:llm` khi đã vào mạng trường + có key.
  *
  * Hàm/Exports:
  *   - isConfigured(): có provider cloud dùng được không
@@ -33,16 +46,39 @@ const logger = require("../utils/logger");
 const { getTenantId } = require("./tenantContext");
 
 const DEFAULT_GEMINI_BASE = "https://generativelanguage.googleapis.com/v1beta";
+const DEFAULT_UIT_GEMMA_URL = "https://llm.uit.edu.vn/gemma/v1";
+const DEFAULT_UIT_QWEN_URL = "https://llm.uit.edu.vn/qwen/v1";
+const DEFAULT_UIT_MODEL = "gemma-4-26b";
+const DEFAULT_UIT_REASONING_MODEL = "qwen3.8-27b";
 
 const config = () => {
-  const key = process.env.GEMINI_API_KEY || "";
-  const provider = (process.env.LLM_PROVIDER || (key ? "gemini" : "local")).toLowerCase();
+  const provider = (process.env.LLM_PROVIDER || (process.env.GEMINI_API_KEY ? "gemini" : "local")).toLowerCase();
+  // Key theo provider: UIT có key riêng của trường, không dùng chung key Google.
+  const apiKey =
+    provider === "uit"
+      ? process.env.LLM_UIT_API_KEY || process.env.LLM_API_KEY || ""
+      : provider === "openai-compatible"
+        ? process.env.LLM_API_KEY || process.env.GEMINI_API_KEY || ""
+        : process.env.GEMINI_API_KEY || "";
+  const model =
+    process.env.LLM_MODEL ||
+    (provider === "uit" ? process.env.LLM_UIT_MODEL || DEFAULT_UIT_MODEL : "gemini-3.8-flash");
+  const baseUrl = (
+    provider === "uit" ? DEFAULT_UIT_GEMMA_URL : process.env.LLM_BASE_URL || DEFAULT_GEMINI_BASE
+  ).replace(/\/$/, "");
   return {
     provider,
-    apiKey: key,
-    model: process.env.LLM_MODEL || "gemini-3.8-flash",
-    baseUrl: (process.env.LLM_BASE_URL || DEFAULT_GEMINI_BASE).replace(/\/$/, ""),
+    apiKey,
+    model,
+    baseUrl,
     timeoutMs: Number(process.env.LLM_TIMEOUT_MS) || 60000,
+    uit: {
+      gemmaUrl: (process.env.LLM_UIT_GEMMA_URL || DEFAULT_UIT_GEMMA_URL).replace(/\/$/, ""),
+      qwenUrl: (process.env.LLM_UIT_QWEN_URL || DEFAULT_UIT_QWEN_URL).replace(/\/$/, ""),
+      model: process.env.LLM_UIT_MODEL || DEFAULT_UIT_MODEL,
+      reasoningModel: process.env.LLM_UIT_REASONING_MODEL || DEFAULT_UIT_REASONING_MODEL,
+      thinking: process.env.LLM_UIT_THINKING === "1",
+    },
   };
 };
 
@@ -57,7 +93,7 @@ const describe = () => {
 };
 
 /** POST JSON ép IPv4, có timeout. Không dùng fetch (xem giải thích đầu file). */
-const requestJson = (url, body, headers = {}) =>
+const requestJson = (url, body, headers = {}, label = "Gemini") =>
   new Promise((resolve, reject) => {
     const target = new URL(url);
     const payload = JSON.stringify(body);
@@ -77,8 +113,18 @@ const requestJson = (url, body, headers = {}) =>
           let json = null;
           try { json = JSON.parse(raw); } catch { /* giữ raw */ }
           if (res.statusCode >= 200 && res.statusCode < 300) return resolve(json);
-          const apiMsg = json?.error?.message || raw.slice(0, 300);
-          const err = new Error(`Gemini HTTP ${res.statusCode}: ${apiMsg}`);
+          // Ngoài mạng UIT, gateway trường redirect 302 về www.uit.edu.vn thay vì
+          // trả JSON — báo rõ để không nhầm với "key sai".
+          if (res.statusCode >= 300 && res.statusCode < 400) {
+            const err = new Error(
+              `${label} HTTP ${res.statusCode}: bị chuyển hướng về ${res.headers?.location || "?"} — ` +
+              "thường là chưa vào mạng nội bộ UIT (API UIT chỉ dùng được trong mạng trường)",
+            );
+            err.retryable = false;
+            return reject(err);
+          }
+          const apiMsg = json?.error?.message || json?.message || raw.slice(0, 300);
+          const err = new Error(`${label} HTTP ${res.statusCode}: ${apiMsg}`);
           err.status = res.statusCode;
           // 503 = quá tải tạm thời (model đông người) → thử lại hoặc đổi model.
           // 429 = hết quota/rate-limit → cần chờ lâu hơn, không đổi model cũng vô ích.
@@ -152,13 +198,21 @@ const resetLastUsage = () => {
 };
 
 /**
- * Chuẩn hoá `usageMetadata` của Gemini. Trả về số nguyên ≥ 0, thiếu thì 0 —
- * KHÔNG đoán: thiếu `usageMetadata` nghĩa là provider không báo, ghi 0 và để
- * `succeeded` nói thật chuyện gì đã xảy ra.
+ * Chuẩn hoá `usageMetadata` của Gemini HOẶC `usage` của API OpenAI-compatible.
+ * Trả về số nguyên ≥ 0, thiếu thì 0 — KHÔNG đoán: thiếu nghĩa là provider không
+ * báo, ghi 0 và để `succeeded` nói thật chuyện gì đã xảy ra.
  */
 const readUsage = (json) => {
-  const u = json?.usageMetadata || {};
   const n = (v) => (Number.isFinite(Number(v)) && Number(v) >= 0 ? Math.trunc(Number(v)) : 0);
+  const ou = json?.usage;
+  if (ou && (ou.prompt_tokens != null || ou.completion_tokens != null || ou.total_tokens != null)) {
+    return {
+      promptTokens: n(ou.prompt_tokens),
+      completionTokens: n(ou.completion_tokens),
+      totalTokens: n(ou.total_tokens) || n(ou.prompt_tokens) + n(ou.completion_tokens),
+    };
+  }
+  const u = json?.usageMetadata || {};
   return {
     promptTokens: n(u.promptTokenCount),
     completionTokens: n(u.candidatesTokenCount),
@@ -228,24 +282,127 @@ const callModel = async (model, { system, prompt, jsonMode, temperature, maxOutp
   return { text, usage: readUsage(json) };
 };
 
+// ── OpenAI-compatible (/chat/completions): UIT + gateway chung ──────────────
+// Sửa bug B6 (`docs/aisc26/00-scope.md`): trước đây provider openai-compatible vẫn
+// đi URL Gemini nên không bao giờ chạy được. Nay có đường chat thật.
+
+/**
+ * Dựng body `/chat/completions` (thuần, không mạng — để unit test được).
+ *
+ * Qwen của UIT bật thinking sẵn, tốn ~15s cho câu ngắn. Mặc định TẮT để nhanh
+ * (`LLM_UIT_THINKING=1` để giữ). Bật thinking thì max_tokens tối thiểu 2000,
+ * nếu không model hết token trước khi kịp trả lời (theo docs/llm_uit.md).
+ */
+const buildChatBody = ({ model, system, prompt, jsonMode, temperature, maxTokens, thinking }) => {
+  const messages = [];
+  if (system) messages.push({ role: "system", content: system });
+  messages.push({ role: "user", content: prompt });
+  const body = {
+    model,
+    messages,
+    temperature,
+    max_tokens: thinking ? Math.max(maxTokens, 2000) : maxTokens,
+    ...(jsonMode ? { response_format: { type: "json_object" } } : {}),
+    // `extra_body` là passthrough của gateway OpenAI-compatible; server không hiểu
+    // thì bỏ qua. Chỉ gửi khi TẮT thinking (mặc định), vì mặc định server đã bật.
+    ...(thinking ? {} : { extra_body: { chat_template_kwargs: { enable_thinking: false } } }),
+  };
+  return body;
+};
+
+/**
+ * Đọc text từ response `/chat/completions` (thuần, không mạng).
+ * `reasoning_content` (suy nghĩ của Qwen) KHÔNG trộn vào đáp án — caller log riêng.
+ * `finish_reason=length` tương đương MAX_TOKENS của Gemini: cần budget lớn hơn.
+ */
+const parseChatResponse = (json) => {
+  const choice = json?.choices?.[0] || {};
+  const text = choice?.message?.content ?? "";
+  const reasoning = choice?.message?.reasoning_content || "";
+  if (!text) {
+    const err = new Error(`UIT khong tra ve noi dung (finish_reason=${choice?.finish_reason || "khong ro"})`);
+    err.retryable = choice?.finish_reason === "length";
+    err.needsMoreTokens = choice?.finish_reason === "length";
+    throw err;
+  }
+  return { text, reasoning };
+};
+
+const callOpenAIChat = async ({ baseUrl, apiKey, model, system, prompt, jsonMode, temperature, maxTokens, thinking, label }) => {
+  const url = `${baseUrl}/chat/completions`;
+  const body = buildChatBody({ model, system, prompt, jsonMode, temperature, maxTokens, thinking });
+  const json = await requestJson(url, body, { Authorization: `Bearer ${apiKey}` }, label || "OpenAI");
+  const { text, reasoning } = parseChatResponse(json);
+  if (reasoning) logger.debug(`[LLM] reasoning (${model}, ${reasoning.length} ky tu, khong tron vao dap an)`);
+  return { text, usage: readUsage(json) };
+};
+
+/**
+ * Chọn endpoint UIT theo nhiệm vụ: Gemma nhanh cho việc hàng loạt, Qwen cho suy
+ * luận nhiều bước (theo bảng đo trong docs/llm_uit.md). Trả về { baseUrl, model }.
+ * Hai model nằm ở hai base URL khác nhau nên phải chọn cặp đúng — gửi model Qwen
+ * vào endpoint Gemma sẽ 404.
+ */
+const selectUitTarget = ({ reasoning = false } = {}) => {
+  const c = config();
+  const explicit = (process.env.LLM_MODEL || "").trim();
+  const endpointFor = (name) => (/qwen/i.test(name) ? c.uit.qwenUrl : c.uit.gemmaUrl);
+  if (explicit) return { baseUrl: endpointFor(explicit), model: explicit };
+  if (reasoning) return { baseUrl: c.uit.qwenUrl, model: c.uit.reasoningModel };
+  return { baseUrl: c.uit.gemmaUrl, model: c.uit.model };
+};
+
 const generateText = async (opts = {}) => {
   const c = config();
   if (!isConfigured()) {
-    throw new Error(`Chua cau hinh LLM cloud (LLM_PROVIDER=${c.provider}). Can GEMINI_API_KEY trong .env`);
+    const hint =
+      c.provider === "uit"
+        ? "Can LLM_UIT_API_KEY trong .env (xin key tu truong; API chi dung duoc trong mang UIT)"
+        : "Can GEMINI_API_KEY trong .env";
+    throw new Error(`Chua cau hinh LLM cloud (LLM_PROVIDER=${c.provider}). ${hint}`);
   }
   const { system, prompt, jsonMode = false, temperature = 0.2, maxOutputTokens = 2048 } = opts;
   const task = opts.task || "OTHER";
   const startedAt = Date.now();
 
-  const primary = activeModel || c.model;
-  const chain = [primary, ...fallbackModels().filter((m) => m !== primary)];
+  // Chuỗi mục tiêu gọi theo thứ tự. Gemini: chỉ tên model (chung baseUrl).
+  // UIT/openai-compatible: mang baseUrl riêng vì mỗi model có thể ở endpoint khác.
+  let chain;
+  if (c.provider === "uit") {
+    const first = selectUitTarget({ reasoning: opts.reasoning === true });
+    const other = /qwen/i.test(first.model) ? selectUitTarget({}) : selectUitTarget({ reasoning: true });
+    const extra = (process.env.LLM_FALLBACK_MODELS || "")
+      .split(",").map((s) => s.trim()).filter(Boolean)
+      .filter((m) => m !== first.model && m !== other.model)
+      .map((m) => ({ model: m, baseUrl: /qwen/i.test(m) ? c.uit.qwenUrl : c.uit.gemmaUrl }));
+    chain = [first, ...(first.model === other.model ? [] : [other]), ...extra].map((t) => ({
+      kind: "openai",
+      label: "UIT",
+      thinking: c.uit.thinking && /qwen/i.test(t.model),
+      ...t,
+    }));
+  } else if (c.provider === "openai-compatible") {
+    const model = activeModel || c.model;
+    chain = [{ kind: "openai", label: "OpenAI", baseUrl: c.baseUrl, model, thinking: false }];
+  } else {
+    const primary = activeModel || c.model;
+    chain = [primary, ...fallbackModels().filter((m) => m !== primary)].map((model) => ({ kind: "gemini", label: "Gemini", model }));
+  }
   let lastErr = null;
 
-  for (const model of chain) {
+  for (const target of chain) {
+    const model = target.model;
     let budget = maxOutputTokens;
     for (let attempt = 0; attempt < 2; attempt++) {
       try {
-        const { text, usage } = await callModel(model, { system, prompt, jsonMode, temperature, maxOutputTokens: budget });
+        const { text, usage } =
+          target.kind === "gemini"
+            ? await callModel(model, { system, prompt, jsonMode, temperature, maxOutputTokens: budget })
+            : await callOpenAIChat({
+                baseUrl: target.baseUrl, apiKey: c.apiKey, model,
+                system, prompt, jsonMode, temperature, maxTokens: budget,
+                thinking: target.thinking, label: target.label,
+              });
         if (activeModel && activeModel !== model) {
           logger.warn(`[LLM] chuyen sang model ${model} (thay cho ${c.model})`);
         }
@@ -277,8 +434,8 @@ const generateText = async (opts = {}) => {
       }
     }
   }
-  await recordUsage({ task, provider: c.provider, model: primary, mode: opts.mode || "live", usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 }, latencyMs: Date.now() - startedAt, succeeded: false, responseText: String(lastErr?.message || "LLM that bai").slice(0, 500) });
-  throw new Error(`${lastErr?.message || "LLM that bai"} (da thu: ${chain.join(", ")})`);
+  await recordUsage({ task, provider: c.provider, model: chain[0]?.model || "unknown", mode: opts.mode || "live", usage: { promptTokens: 0, completionTokens: 0, totalTokens: 0 }, latencyMs: Date.now() - startedAt, succeeded: false, responseText: String(lastErr?.message || "LLM that bai").slice(0, 500) });
+  throw new Error(`${lastErr?.message || "LLM that bai"} (da thu: ${chain.map((t) => t.model).join(", ")})`);
 };
 
 /** Bo code fence + parse JSON, chiu duoc model tra them text thua. */
@@ -295,10 +452,34 @@ const parseJsonLoose = (text) => {
 
 const listModels = async () => {
   const c = config();
-  if (!isConfigured()) throw new Error("Chua cau hinh LLM cloud (thieu GEMINI_API_KEY)");
-  const json = await getJson(`${c.baseUrl}/models?key=${encodeURIComponent(c.apiKey)}&pageSize=100`);
-  return (json.models || []).map((m) => m.name.replace(/^models\//, ""));
+  if (!isConfigured()) throw new Error("Chua cau hinh LLM cloud (thieu API key)");
+  if (c.provider === "gemini") {
+    const json = await getJson(`${c.baseUrl}/models?key=${encodeURIComponent(c.apiKey)}&pageSize=100`);
+    return (json.models || []).map((m) => m.name.replace(/^models\//, ""));
+  }
+  // OpenAI-compatible (gồm UIT): GET {baseUrl}/models với Bearer key.
+  const target = c.provider === "uit" ? selectUitTarget({}) : { baseUrl: c.baseUrl };
+  const json = await new Promise((resolve, reject) => {
+    const u = new URL(`${target.baseUrl}/models`);
+    const req = https.request(
+      { hostname: u.hostname, path: `${u.pathname}${u.search}`, method: "GET", family: 4, timeout: c.timeoutMs, headers: { Authorization: `Bearer ${c.apiKey}` } },
+      (res) => {
+        let raw = "";
+        res.on("data", (d) => { raw += d; });
+        res.on("end", () => {
+          let parsed = null;
+          try { parsed = JSON.parse(raw); } catch { /* ignore */ }
+          if (res.statusCode >= 200 && res.statusCode < 300) return resolve(parsed);
+          return reject(new Error(`HTTP ${res.statusCode}: ${parsed?.error?.message || raw.slice(0, 200)}`));
+        });
+      },
+    );
+    req.on("timeout", () => req.destroy(new Error("UIT timeout")));
+    req.on("error", reject);
+    req.end();
+  });
+  return ((json && json.data) || []).map((m) => m.id).filter(Boolean);
 };
 
-module.exports = { isConfigured, describe, generateText, listModels, parseJsonLoose, config, getLastUsage, resetLastUsage, readUsage };
+module.exports = { isConfigured, describe, generateText, listModels, parseJsonLoose, config, getLastUsage, resetLastUsage, readUsage, buildChatBody, parseChatResponse, selectUitTarget };
 

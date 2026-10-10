@@ -57,6 +57,35 @@ describe("config/llm — cấu hình provider", () => {
     restore = r.restore;
     expect(JSON.stringify(r.mod.describe())).not.toContain("super-secret-key");
   });
+
+  test("LLM_PROVIDER=uit + LLM_UIT_API_KEY thì configured, model mặc định gemma-4-26b", () => {
+    const r = loadWith({
+      GEMINI_API_KEY: undefined, LLM_PROVIDER: "uit", LLM_UIT_API_KEY: "uit-key",
+      LLM_MODEL: undefined, LLM_UIT_MODEL: undefined, LLM_UIT_GEMMA_URL: undefined, LLM_UIT_QWEN_URL: undefined,
+    });
+    restore = r.restore;
+    expect(r.mod.config().provider).toBe("uit");
+    expect(r.mod.isConfigured()).toBe(true);
+    expect(r.mod.config().model).toBe("gemma-4-26b");
+    expect(r.mod.config().uit.gemmaUrl).toBe("https://llm.uit.edu.vn/gemma/v1");
+    expect(r.mod.config().uit.qwenUrl).toBe("https://llm.uit.edu.vn/qwen/v1");
+    expect(JSON.stringify(r.mod.describe())).not.toContain("uit-key");
+  });
+
+  test("UIT không dùng ké GEMINI_API_KEY (key Google gọi UIT sẽ 401 khó hiểu)", () => {
+    const r = loadWith({
+      GEMINI_API_KEY: "google-key", LLM_PROVIDER: "uit",
+      LLM_UIT_API_KEY: undefined, LLM_API_KEY: undefined,
+    });
+    restore = r.restore;
+    expect(r.mod.isConfigured()).toBe(false);
+  });
+
+  test("LLM_API_KEY là fallback cho UIT key", () => {
+    const r = loadWith({ GEMINI_API_KEY: undefined, LLM_PROVIDER: "uit", LLM_API_KEY: "shared-key" });
+    restore = r.restore;
+    expect(r.mod.isConfigured()).toBe(true);
+  });
 });
 
 describe("config/llm — parseJsonLoose", () => {
@@ -80,5 +109,92 @@ describe("config/llm — parseJsonLoose", () => {
 
   test("trả null khi không có JSON nào", () => {
     expect(mod.parseJsonLoose("không có JSON ở đây")).toBeNull();
+  });
+});
+
+describe("config/llm — provider UIT (docs/llm_uit.md)", () => {
+  // Mỗi test nạp module mới với env riêng: describe khác có afterAll restore env
+  // collection-time (kèm LLM_MODEL từ .env) nên KHÔNG dùng chung module ở đây.
+  let restore;
+  afterEach(() => restore && restore());
+  const loadUit = (extra = {}) => {
+    const r = loadWith({
+      GEMINI_API_KEY: undefined, LLM_PROVIDER: "uit", LLM_UIT_API_KEY: "k",
+      LLM_MODEL: undefined, LLM_UIT_MODEL: undefined,
+      LLM_UIT_REASONING_MODEL: undefined, LLM_UIT_GEMMA_URL: undefined, LLM_UIT_QWEN_URL: undefined,
+      ...extra,
+    });
+    restore = r.restore;
+    return r.mod;
+  };
+
+  test("readUsage đọc usage kiểu OpenAI (prompt_tokens/completion_tokens/total_tokens)", () => {
+    const mod = loadUit();
+    expect(mod.readUsage({ usage: { prompt_tokens: 10, completion_tokens: 5, total_tokens: 15 } }))
+      .toEqual({ promptTokens: 10, completionTokens: 5, totalTokens: 15 });
+  });
+
+  test("readUsage vẫn đọc usageMetadata kiểu Gemini", () => {
+    const mod = loadUit();
+    expect(mod.readUsage({ usageMetadata: { promptTokenCount: 7, candidatesTokenCount: 3, totalTokenCount: 10 } }))
+      .toEqual({ promptTokens: 7, completionTokens: 3, totalTokens: 10 });
+  });
+
+  test("selectUitTarget: mặc định Gemma, reasoning=true thì Qwen + đúng endpoint", () => {
+    const mod = loadUit();
+    const fast = mod.selectUitTarget({});
+    expect(fast.model).toBe("gemma-4-26b");
+    expect(fast.baseUrl).toBe("https://llm.uit.edu.vn/gemma/v1");
+    const deep = mod.selectUitTarget({ reasoning: true });
+    expect(deep.model).toBe("qwen3.8-27b");
+    expect(deep.baseUrl).toBe("https://llm.uit.edu.vn/qwen/v1");
+  });
+
+  test("buildChatBody: tắt thinking thì kèm extra_body + giữ max_tokens", () => {
+    const mod = loadUit();
+    const body = mod.buildChatBody({ model: "qwen3.8-27b", prompt: "hi", temperature: 0, maxTokens: 1024, thinking: false });
+    expect(body.extra_body).toEqual({ chat_template_kwargs: { enable_thinking: false } });
+    expect(body.max_tokens).toBe(1024);
+    expect(body.messages.at(-1)).toEqual({ role: "user", content: "hi" });
+  });
+
+  test("buildChatBody: bật thinking thì max_tokens tối thiểu 2000 (kẻo model hết token trước khi trả lời)", () => {
+    const mod = loadUit();
+    const body = mod.buildChatBody({ model: "qwen3.8-27b", prompt: "hi", temperature: 0, maxTokens: 500, thinking: true });
+    expect(body.max_tokens).toBe(2000);
+    expect(body.extra_body).toBeUndefined();
+  });
+
+  test("buildChatBody: jsonMode thì response_format json_object + system message đầu tiên", () => {
+    const mod = loadUit();
+    const body = mod.buildChatBody({ model: "gemma-4-26b", system: "sys", prompt: "p", jsonMode: true, temperature: 0, maxTokens: 100, thinking: false });
+    expect(body.response_format).toEqual({ type: "json_object" });
+    expect(body.messages[0]).toEqual({ role: "system", content: "sys" });
+  });
+
+  test("parseChatResponse: tách reasoning_content, không trộn vào đáp án", () => {
+    const mod = loadUit();
+    const out = mod.parseChatResponse({
+      choices: [{ message: { content: "đáp án", reasoning_content: "suy nghĩ dài..." }, finish_reason: "stop" }],
+    });
+    expect(out.text).toBe("đáp án");
+    expect(out.reasoning).toBe("suy nghĩ dài...");
+  });
+
+  test("parseChatResponse: finish_reason=length thì retryable + cần thêm token (như MAX_TOKENS Gemini)", () => {
+    const mod = loadUit();
+    try {
+      mod.parseChatResponse({ choices: [{ message: { content: "", reasoning_content: "..." }, finish_reason: "length" }] });
+      throw new Error("phải ném lỗi khi không có content");
+    } catch (e) {
+      expect(e.retryable).toBe(true);
+      expect(e.needsMoreTokens).toBe(true);
+    }
+  });
+
+  test("đường UIT dùng /chat/completions, không dùng URL generateContent của Gemini", () => {
+    loadUit();
+    const src = require("fs").readFileSync(MODULE, "utf8");
+    expect(src).toContain("/chat/completions");
   });
 });
