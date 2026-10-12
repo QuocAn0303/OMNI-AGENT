@@ -28,6 +28,11 @@
  *   - Mọi PO/GRN tạo ra đều `RECEIVED`/`POSTED`, **nằm ngoài cửa sổ 28 ngày** mà
  *     `loadReplenishmentInput` dùng ⇒ **không** làm đổi `onOrder` của bất kỳ SKU nào.
  *   - Đây là dữ liệu MÔ PHỎNG: PO ghi rõ trong `note`.
+ *   - GRN ghi thẳng `POSTED` nên KHÔNG đi qua `grn.service.post`. Vì vậy script
+ *     phải TỰ ghi bút toán (Nợ 156 / Có 331) cho từng GRN, nếu không mỗi lần dựng
+ *     demo lại lại tạo ra sổ cái lệch — đúng lỗi đã gặp và đã vá ngày 2026-10-12
+ *     (`scripts/backfill-grn-journal.js`). Script cố tình KHÔNG cộng tồn kho:
+ *     `data:import` đã dựng sẵn tồn kho, cộng thêm sẽ nhân đôi.
  *
  *   npm run demo:setup                      # bổ sung (idempotent)
  *   npm run demo:setup -- --reset-demo-hist # gỡ đúng dòng do script này tạo
@@ -43,6 +48,7 @@ assertLocalDb('demo:setup');
 
 const prisma = require(path.join(ROOT, 'src/config/prisma'));
 const { runWithTenant } = require(path.join(ROOT, 'src/config/tenantContext'));
+const autopostService = require(path.join(ROOT, 'src/modules/accounting/autopost.service'));
 const {
   loadReplenishmentInput,
   loadLeadTimeReceipts,
@@ -58,6 +64,25 @@ const {
 } = require(path.join(ROOT, 'src/modules/replenishment/replenishment.calc'));
 
 const DEMO_SLUG = 'omni-demo-mo-phong';
+
+/**
+ * Ghi bút toán cho một GRN do script tự tạo.
+ *
+ * Script ghi GRN thẳng ở trạng thái `POSTED` (không đi qua `grn.service.post`) để
+ * không đụng tồn kho — `data:import` đã dựng sẵn. Hệ quả là mất bước ghi sổ cái,
+ * nên phải bù lại ở đây, dùng CHÍNH công thức của đường chạy thật
+ * (`buildGoodsReceiptEntry`) để hai nơi không lệch nhau.
+ *
+ * Idempotent: `journal.service.postEntry` chặn ghi trùng theo
+ * `(source, sourceId, operation)`, mà `operation = GRN:<id>` là tất định.
+ */
+async function postGrnJournal({ grn, purchaseOrder, vendor }) {
+  const payload = autopostService.buildGoodsReceiptEntry({ grn, purchaseOrder, vendor, userId: null });
+  if (!payload) return false;
+  const { goodsReceiptValue, ...entry } = payload;
+  await autopostService.postBuiltEntry(entry);
+  return true;
+}
 const HIST_ID = 'po-demo-hist';
 /** Số vòng PO+GRN. Phải ≥ `LEAD_TIME_MIN_SAMPLES` (3) để lead time là ĐO ĐƯỢC. */
 const ROUNDS = [{ daysAgo: 75 }, { daysAgo: 60 }, { daysAgo: 45 }];
@@ -250,6 +275,15 @@ async function main() {
           receivedQty: h.orderQty, passQty: h.orderQty,
         },
       }));
+
+      // Ghi bút toán cho GRN vừa tạo — bù cho việc bypass `grn.service.post`.
+      // Idempotent theo `operation = GRN:<id>` nên chạy lại không nhân đôi.
+      await postGrnJournal({
+        grn: { ...grn, items: [{ passQty: h.orderQty, purchaseItem: { quantity: h.orderQty, unitCost: h.unitCost, taxAmount: 0 } }] },
+        purchaseOrder: po,
+        vendor,
+      });
+
       created += 1;
     }
   }

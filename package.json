@@ -41,6 +41,7 @@
     "smoke:humangate": "node scripts/smoke-humangate.js",
     "smoke:po-gate": "node scripts/smoke-po-gate.js",
     "smoke:grn-posting": "node scripts/smoke-grn-posting.js",
+    "backfill:grn-journal": "node scripts/backfill-grn-journal.js",
     "check:accounting": "node scripts/check-accounting-integrity.js",
     "tenant:cleanup:orphans": "node scripts/cleanup-orphan-null-rows.js",
     "db:shadow": "node scripts/ensure-shadow-db.js",
