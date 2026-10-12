@@ -76,7 +76,7 @@ const { classifyNullRows } = require("./lib/tenant-null-exceptions");
       : 0;
     if (n > 0 || orphan > 0 || dup > 0) {
       const cls = await classifyNullRows(prisma, t.schema, t.table, n);
-      rows.push({ table: t.table, n, orphan, dup, covered: cls.covered, overCap: cls.overCap, ex: cls.exception });
+      rows.push({ table: t.table, n, orphan, dup, covered: cls.covered, overCap: cls.overCap, ex: cls.exception, exs: cls.exceptions });
     }
   }
 
@@ -97,8 +97,11 @@ const { classifyNullRows } = require("./lib/tenant-null-exceptions");
             ? "CO Y (ngoai le)"
             : "DA XU LY"
           : "LOI";
+    // Một bảng có thể có nhiều ngoại lệ (mỗi `action` một quy tắc) — hiển thị TỔNG
+    // trần của các quy tắc, không chỉ ngoại lệ đầu tiên.
+    const capTotal = (r.exs || []).reduce((s, e) => s + e.cap, 0);
     console.log(
-      `     [${g}] ${r.table}: NULL=${r.n} ngoaiLe=${r.covered}/${r.ex ? r.ex.cap : 0} ` +
+      `     [${g}] ${r.table}: NULL=${r.n} ngoaiLe=${r.covered}/${capTotal} ` +
         `vuotTran=${r.overCap} mo-coi=${r.orphan} trung=${r.dup}`,
     );
   }

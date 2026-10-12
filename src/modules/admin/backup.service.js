@@ -87,7 +87,11 @@ const create = async (userId) => {
     },
   });
 
-  auditService.log({ userId, action: 'CREATE_BACKUP', entity: 'AdminBackup', entityId: record.id, after: { filename, sizeBytes: stats.size, encrypted: true } });
+  // `tenantId` truyền `null` TƯỜNG MINH: `AdminBackup` là bảng NỀN TẢNG (không có
+  // `tenantId`), người chạy backup có thể là `SUPER_ADMIN` đa tenant ⇒ không thể gán
+  // một tenant duy nhất mà không bịa dữ liệu. Xem ngoại lệ có điều kiện trong
+  // `scripts/lib/tenant-null-exceptions.js`.
+  auditService.log({ userId, tenantId: null, action: 'CREATE_BACKUP', entity: 'AdminBackup', entityId: record.id, after: { filename, sizeBytes: stats.size, encrypted: true } });
   return record;
 };
 

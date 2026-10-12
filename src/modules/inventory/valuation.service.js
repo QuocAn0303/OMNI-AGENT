@@ -34,7 +34,7 @@ const calculateFifoCost = async (productId, warehouseId, quantity, tx = prisma) 
 };
 
 const recordFifoConsumption = async (tx, productId, warehouseId, quantity, options = {}) => {
-  const { note, orderId } = options;
+  const { orderId } = options;
   const { costItems, totalCost } = await calculateFifoCost(productId, warehouseId, quantity, tx);
   for (const item of costItems) {
     if (item.lotId) {
@@ -48,7 +48,11 @@ const recordFifoConsumption = async (tx, productId, warehouseId, quantity, optio
           type: 'CONSUME',
           quantity: item.quantity,
           orderId: orderId || null,
-          note: note || '',
+          // KHÔNG ghi `note`: `LotTransaction` không có cột này (schema chỉ có
+          // lotId, txId, orderId, workOrderId, quantity, type, createdAt).
+          // Truyền nó vào khiến mọi lần xuất kho theo FIFO ném
+          // PrismaClientValidationError ⇒ bán hàng hàng có lot là hỏng.
+          // Mốc liên kết là `orderId`; lý do xuất nằm ở `InventoryTransaction.note`.
         },
       });
     }

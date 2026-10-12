@@ -104,6 +104,11 @@ const login = async ({ email, password }) => {
   // 7. Ghi audit: ai đăng nhập, lúc nào
   auditService.log({
     userId: user.id,
+    // `tenantId` truyền TƯỜNG MINH: `login` chạy trước `authenticate` nên
+    // `getTenantId()` = null. Không truyền thì mọi dòng `LOGIN` ghi ra đều
+    // `tenantId = NULL` ⇒ màn hình Audit của tenant không thấy ai đã đăng nhập,
+    // và `check:tenant` báo đỏ. Tài khoản nền tảng có `tenantId = null` → vẫn null.
+    tenantId: user.tenantId ?? null,
     action: "LOGIN",
     entity: "User",
     entityId: user.id,
@@ -253,7 +258,13 @@ const generateTokens = async (userId) => {
   const days = Number(process.env.REFRESH_TOKEN_EXPIRES_DAYS) || 7;
   const expiresAt = new Date(Date.now() + days * 24 * 60 * 60 * 1000);
   await prisma.refreshToken.create({
-    data: { token: hashRefreshToken(tokenStr), userId, expiresAt },
+    // `tenantId` truyền TƯỜNG MINH, không để extension lo: đăng nhập chạy TRƯỚC
+    // `authenticate` nên `getTenantId()` = null, trong khi tenant đã biết từ `user`.
+    // Bỏ trống thì dòng token ghi ra có `tenantId = NULL` ⇒ token của tenant A lẫn
+    // tenant B nằm chung bảng không tenant, mọi truy vấn theo tenant đều bỏ sót.
+    // Tài khoản nền tảng (`SUPER_OMEGA_ULTRA_ADMIN`) có `tenantId = null` thì vẫn
+    // để null — có ý, xem `scripts/lib/tenant-null-exceptions.js`.
+    data: { token: hashRefreshToken(tokenStr), userId, tenantId: user.tenantId ?? null, expiresAt },
   });
 
   const { password: _p, twoFactorSecret: _s, ...safeUser } = user;
@@ -296,7 +307,9 @@ const refreshAccessToken = async (providedToken) => {
   const days = Number(process.env.REFRESH_TOKEN_EXPIRES_DAYS) || 7;
   const expiresAt = new Date(Date.now() + days * 24 * 60 * 60 * 1000);
   await prisma.refreshToken.create({
-    data: { token: hashRefreshToken(newRefresh), userId: user.id, expiresAt },
+    // Xem `generateTokens`: truyền `tenantId` tường minh vì rotate token cũngngay
+    // ngoài tenant context (client chỉ có refresh token, chưa qua `authenticate`).
+    data: { token: hashRefreshToken(newRefresh), userId: user.id, tenantId: user.tenantId ?? null, expiresAt },
   });
 
   const newAccess = createAccessToken(user);

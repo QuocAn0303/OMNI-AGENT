@@ -59,6 +59,23 @@ const EXPLICIT_EXCEPTIONS = [
     since: "2026-10-02 (điều kiện chuyển sang theo `action` ngày 2026-10-03)",
   },
   {
+    table: "audit_logs",
+    // `CREATE_BACKUP` (2026-10-12): hành động NỀN TẢNG. `AdminBackup` không có
+    // `tenantId` (schema: dùng chung cho mọi tenant), và người chạy backup có thể
+    // là `SUPER_ADMIN` đa tenant ⇒ không thể gán một tenant duy nhất mà không bịa
+    // dữ liệu. Code đã truyền `tenantId: null` TƯỜNG MINH tại
+    // `src/modules/admin/backup.service.js` để "cố ý" khác hẳn với "quên truyền".
+    // Điều kiện theo `action` — KHÔNG phải "bảng này được phép NULL".
+    where: `"tenantId" IS NULL AND "action" = 'CREATE_BACKUP' AND "entity" = 'AdminBackup'`,
+    cap: 1,
+    reason:
+      "Sao lưu DB là hành động nền tảng, không thuộc một tenant cụ thể: " +
+      "`AdminBackup` không có cột `tenantId` và `SUPER_ADMIN` quản lý nhiều " +
+      "tenant cùng lúc. Gán tenant sẽ bịa dữ liệu ⇒ để NULL là đúng. " +
+      "Đếm 2026-10-12: 1 dòng. Cap 1 giữ làm lưới an toàn.",
+    since: "2026-10-12",
+  },
+  {
     table: "llm_usage_logs",
     // Bảng sổ ghi token LLM (T13, 2026-10-03). `tenantId` CỐ Ý cho phép NULL:
     // xem chú thích ở `src/config/prisma.js` (TENANT_SCOPED_MODELS, mục T13) —
@@ -74,26 +91,45 @@ const EXPLICIT_EXCEPTIONS = [
   },
 ];
 
-/** Ngoại lệ áp dụng cho một bảng, hoặc null. */
+/**
+ * Ngoại lệ áp dụng cho một bảng, hoặc null.
+ *
+ * MỘT bảng có thể có NHIỀU ngoại lệ (mỗi `action` một quy tắc riêng). `find` chỉ
+ * lấy ngoại lệ ĐẦU TIÊN nên sẽ bỏ sót các dòng NULL mà quy tắc sau mới bao phủ —
+ * đã xảy ra với `audit_logs` (ngoại lệ `CREATE_BACKUP` không bao giờ chạy).
+ * `classifyNullRows` mới là hàm dùng thật và gộp TẤT CẢ ngoại lệ của bảng.
+ */
 const exceptionFor = (table) => EXPLICIT_EXCEPTIONS.find((e) => e.table === table) || null;
+
+/** Tất cả ngoại lệ của một bảng (thứ tự khai báo). */
+const exceptionsFor = (table) => EXPLICIT_EXCEPTIONS.filter((e) => e.table === table);
 
 /**
  * Với một bảng, trả về số dòng NULL đã được ngoại lệ **bao phủ** và số dòng
  * NULL **vượt trần** (phải báo động).
  *
- * @returns {{covered: number, overCap: number, exception: object|null}}
+ * Nhiều ngoại lệ ⇒ `covered` là TỔNG các quy tắc không loại trừ nhau, `overCap` là
+ * tổng phần vượt trần của từng quy tắc. Các điều kiện được OR với nhau.
+ *
+ * @returns {{covered: number, overCap: number, exception: object|null, exceptions: object[]}}
  */
 const classifyNullRows = async (client, schema, table, totalNull) => {
-  const ex = exceptionFor(table);
-  if (!ex || totalNull === 0) return { covered: 0, overCap: 0, exception: ex };
-  const r = (
-    await client.$queryRawUnsafe(
-      `SELECT count(*)::int AS n FROM "${schema}"."${table}" WHERE ${ex.where}`,
-    )
-  )[0];
-  const covered = r.n;
-  const overCap = Math.max(0, covered - ex.cap);
-  return { covered, overCap, exception: ex };
+  const list = exceptionsFor(table);
+  if (list.length === 0 || totalNull === 0)
+    return { covered: 0, overCap: 0, exception: list[0] || null, exceptions: list };
+
+  let covered = 0;
+  let overCap = 0;
+  for (const ex of list) {
+    const r = (
+      await client.$queryRawUnsafe(
+        `SELECT count(*)::int AS n FROM "${schema}"."${table}" WHERE ${ex.where}`,
+      )
+    )[0];
+    covered += r.n;
+    overCap += Math.max(0, r.n - ex.cap);
+  }
+  return { covered, overCap, exception: list[0], exceptions: list };
 };
 
-module.exports = { EXPLICIT_EXCEPTIONS, exceptionFor, classifyNullRows };
+module.exports = { EXPLICIT_EXCEPTIONS, exceptionFor, exceptionsFor, classifyNullRows };

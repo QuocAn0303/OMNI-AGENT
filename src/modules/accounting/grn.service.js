@@ -23,6 +23,12 @@ const { getDefaultWarehouseId, findInventory } = require("../../utils/warehouse.
 const { withCodeRetry } = require("./journal.service");
 const auditService = require("../audit/audit.service");
 const logger = require("../../utils/logger");
+// Nối kế toán: GRN POSTED phải ghi Nợ 156 / Có 331, nếu không hàng vào kho mà
+// sổ cái không có tài sản. KHÔNG có vòng require: `autopost` chỉ cần
+// `journal.service`, `debt.service` không cần `grn.service`.
+const autopostService = require("./autopost.service");
+const debtService = require("../debt/debt.service");
+const postingErrorService = require("./posting-error.service");
 
 const toNum = (v) => Number(v || 0);
 const round2 = (v) => Math.round(v * 100) / 100;
@@ -164,15 +170,60 @@ const recordQc = async (id, qcItems = [], userId, client = prisma) => {
 };
 
 /**
+ * Tổng giá trị hàng ĐÃ NHẬN (đạt) của PO, tính trên TẤT CẢ GRN đã POSTED.
+ *
+ * Cần cho công nợ: PO nhập từng phần thì mỗi lần gọi chỉ biết giá trị lần này,
+ * còn sổ công nợ phải phản ánh TỔNG đã nhận. Dùng `passQty` (hàng đạt QC) ×
+ * `unitCost`, cộng thuế theo tỷ lệ nhận/đặt — cùng công thức với
+ * `buildGoodsReceiptEntry` để bút toán và công nợ không lệch nhau.
+ *
+ * Gọi TRONG transaction sau khi `status = POSTED` đã được ghi, nên GRN vừa post
+ * đã nằm trong tập tính.
+ */
+const totalPostedReceiptValue = async (client, purchaseOrderId) => {
+  const posted = await client.goodsReceiptNote.findMany({
+    where: { purchaseOrderId, status: "POSTED" },
+    select: {
+      items: {
+        select: {
+          passQty: true,
+          purchaseItem: { select: { quantity: true, unitCost: true, taxAmount: true } },
+        },
+      },
+    },
+  });
+  let subtotal = 0;
+  let tax = 0;
+  for (const g of posted) {
+    for (const i of g.items) {
+      const qty = Number(i.passQty || 0);
+      if (qty <= 0) continue;
+      subtotal += qty * Number(i.purchaseItem?.unitCost || 0);
+      const ordered = Number(i.purchaseItem?.quantity || 0);
+      if (ordered > 0) tax += Number(i.purchaseItem?.taxAmount || 0) * (qty / ordered);
+    }
+  }
+  return round2(subtotal + tax);
+};
+
+/**
  * POSTED: nhập kho (bình quân gia quyền + lot), tính onTime vs expectedAt,
- * chuyển PO sang RECEIVED khi tổng nhận đủ. KHÔNG tạo Debt (xem header).
+ * chuyển PO sang RECEIVED khi tổng nhận đủ, và GHI BÚT TOÁN + CÔNG NỢ.
+ *
+ * BÚT TOÁN (thêm 2026-10-12): trước đây `post` chỉ cộng tồn kho mà không ghi
+ * sổ cái. Đo trên DB phát triển 2026-10-12: **39 PO của tenant demo nhập kho qua
+ * GRN mà 0 bút toán** — tồn kho thật có hàng, sổ cái không có tài sản. Đây là
+ * lệch dữ liệu, không phải thiếu tính năng. Bút toán ghi SAU transaction (như
+ * `purchase.service.receive`) vì `postingErrorService` và `journal.service` dùng
+ * `prisma` ngoài transaction; nếu ghi bên trong, lỗi hạch kế toán sẽ rollback
+ * cả phần kho đã nhập.
  */
 const post = async (id, userId, client = prisma) => {
   const grn = await client.goodsReceiptNote.findUnique({
     where: { id },
     include: {
       items: { include: { product: true, purchaseItem: true } },
-      purchaseOrder: { include: { vendor: true } },
+      purchaseOrder: { include: { vendor: true, items: true } },
     },
   });
   if (!grn) throw { status: 404, message: "Không tìm thấy GRN" };
@@ -180,6 +231,10 @@ const post = async (id, userId, client = prisma) => {
   if (grn.status !== "QC_DONE") {
     throw { status: 400, message: "GRN phải ở trạng thái QC_DONE trước khi POSTED" };
   }
+
+  // Hoản cảnh báo lỗi hạch kế toán ra khỏi transaction: giữ cho phần kho đã nhập
+  // không bị rollback, rồi `tryPostOrQueue` ghi hoặc xếp hàng ghi lại.
+  let postingPayload = null;
 
   const updated = await client.$transaction(async (tx) => {
     for (const item of grn.items) {
@@ -223,9 +278,12 @@ const post = async (id, userId, client = prisma) => {
         where: { lotCode, productId: item.productId, warehouseId: grn.warehouseId },
       });
       if (existingLot) {
+        // Cùng mã lot nhưng giá nhập mới có thể khác (NCC tăng giá). Ghi đè
+        // `unitCost` theo giá vừa nhập để FIFO lấy đúng giá vốn của lô hàng mới,
+        // thay vì giữ giá của lần nhập đầu tiên mãi mãi.
         await tx.inventoryLot.update({
           where: { id: existingLot.id },
-          data: { quantity: { increment: addQty } },
+          data: { quantity: { increment: addQty }, unitCost: round2(unitCost) },
         });
       } else {
         await tx.inventoryLot.create({
@@ -235,7 +293,11 @@ const post = async (id, userId, client = prisma) => {
             warehouseId: grn.warehouseId,
             quantity: addQty,
             originalQty: addQty,
-            expiryDate: item.expiryDate || null,
+            unitCost: round2(unitCost),
+            // `GoodsReceiptItem` dùng `expiryDate` nhưng `InventoryLot` dùng
+            // `expDate` — gộp nhầm tên làm nhánh "tạo lot mới" luôn ném
+            // PrismaClientValidationError, tức GRN chỉ chạy được khi lot đã tồn tại.
+            expDate: item.expiryDate || null,
             poId: grn.purchaseOrder.id,
           },
         });
@@ -264,8 +326,45 @@ const post = async (id, userId, client = prisma) => {
         data: { status: "RECEIVED", receivedAt: new Date() },
       });
     }
+
+    // ---- ĐÓNG VÒNG MUA HÀNG: công nợ + bút toán ----------------------------
+    // Giá trị hàng THỰC NHẬN (chỉ `passQty`) — GRN cho phép nhập từng phần và QC
+    // loại hàng, nên không thể dùng tổng PO.
+    postingPayload = autopostService.buildGoodsReceiptEntry({
+      grn,
+      purchaseOrder: grn.purchaseOrder,
+      vendor: grn.purchaseOrder.vendor,
+      userId,
+    });
+    if (postingPayload) {
+      // Công nợ phải trả theo TỔNG giá trị đã nhận TÍCH LUỮY của PO (mọi GRN
+      // POSTED), không phải riêng lần nhận này — `createPayableForPoInTx` tự
+      // nới công nợ tới mức đó và idempotent theo `poId`.
+      const receivedValue = await totalPostedReceiptValue(tx, grn.purchaseOrderId);
+      await debtService.createPayableForPoInTx(tx, {
+        po: grn.purchaseOrder,
+        userId,
+        amount: receivedValue,
+      });
+    }
     return posted;
   });
+
+  // Ghi bút toán SAU transaction (xem chú thích hàm).
+  if (postingPayload) {
+    // `postGoodsReceipt` nhận `{grn, purchaseOrder, vendor}` rồi TỰ dựng lại
+    // payload — ở đây đã dựng xong trong transaction nên gọi thẳng
+    // `postBuiltEntry(payload)`. Gọi nhầm `postGoodsReceipt(payload)` khiến nó
+    // coi payload là input và đọc `undefined.items` → lỗi bị `tryPostOrQueue`
+    // nuốt, kho vẫn tăng nhưng SỔ CÁI KHÔNG CÓ GÌ.
+    const { goodsReceiptValue, ...entryPayload } = postingPayload;
+    await postingErrorService.tryPostOrQueue(() => autopostService.postBuiltEntry(entryPayload), {
+      source: "PURCHASE",
+      sourceId: grn.purchaseOrderId,
+      operation: `GRN:${id}`,
+      payload: entryPayload,
+    });
+  }
 
   auditService.log({
     userId,

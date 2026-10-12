@@ -212,6 +212,10 @@ const verify2fa = async (req, res, next) => {
 
     auditService.log({
       userId,
+      // `tenantId` lấy từ `tokens.user.tenantId` — `generateTokens` đã trả về
+      // user an toàn. Xác thực 2FA chạy ngoài `authenticate` nên `getTenantId()`
+      // = null; thiếu dòng này thì audit log login-2FA không thuộc tenant nào.
+      tenantId: tokens?.user?.tenantId ?? null,
       action: 'LOGIN',
       entity: 'User',
       entityId: userId,

@@ -354,6 +354,10 @@ const receive = async (id, userId) => {
               warehouseId: whId,
               quantity: addQty,
               originalQty: addQty,
+              // Lot phải mang giá vốn: `calculateFifoCost` đọc `unitCost` từ lot,
+              // thiếu nó thì giá vốn FIFO rơi về `Product.costPrice` trung bình
+              // và sai ngay khi giá các lần nhập khác nhau.
+              unitCost: Math.round(unitCost * 100) / 100,
               poId: po.id,
             },
           });
