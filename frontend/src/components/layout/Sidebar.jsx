@@ -266,6 +266,13 @@ const MENU_GROUPS = [
         label: "Duyệt đề xuất nhập",
         roles: ["ADMIN", "MANAGER"],
       },
+      {
+        // Bằng chứng backtest: ROP vs ngưỡng cố định, kèm nguồn + giới hạn.
+        key: "/evidence",
+        icon: <ExperimentOutlined />,
+        label: "Bằng chứng thực nghiệm",
+        roles: ["ADMIN", "MANAGER"],
+      },
     ],
   },
   {

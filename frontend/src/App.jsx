@@ -115,6 +115,7 @@ const AgentApprovals = lazy(() => import("./pages/AgentApprovals"));
 const StoreCredits = lazy(() => import("./pages/StoreCredits"));
 const SerialNumbers = lazy(() => import("./pages/SerialNumbers"));
 const SmartGuide = lazy(() => import("./pages/SmartGuide"));
+const EvidenceBacktest = lazy(() => import("./pages/EvidenceBacktest"));
 const Sessions = lazy(() => import("./pages/Sessions"));
 const Promotions = lazy(() => import("./pages/Promotions"));
 const ModifierGroups = lazy(() => import("./pages/ModifierGroups"));
@@ -426,6 +427,7 @@ function App() {
                 <Route path="/agent-analytics" element={<AgentAnalytics />} />
                 <Route path="/agent-approvals" element={<AgentApprovals />} />
                 <Route path="/smart-guide" element={<SmartGuide />} />
+                <Route path="/evidence" element={<EvidenceBacktest />} />
                 <Route path="/projects" element={<Projects />} />
                 <Route path="/projects/:id" element={<ProjectDetail />} />
                 <Route path="/analytics" element={<Analytics />} />
