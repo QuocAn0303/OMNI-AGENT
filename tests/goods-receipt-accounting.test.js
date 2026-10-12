@@ -15,7 +15,10 @@
  */
 
 jest.mock("../src/config/prisma", () => ({
-  goodsReceiptNote: { findUnique: jest.fn() },
+  goodsReceiptNote: { findUnique: jest.fn(), findMany: jest.fn(async () => []) },
+  goodsReceiptItem: { aggregate: jest.fn(async () => ({ _sum: { receivedQty: 0, passQty: 0 } })) },
+  purchaseOrder: { findUnique: jest.fn() },
+  debt: { findFirst: jest.fn() },
   $transaction: jest.fn(),
   $disconnect: jest.fn(),
 }));
@@ -31,6 +34,9 @@ jest.mock("../src/utils/warehouse.helper", () => ({
 
 jest.mock("../src/modules/accounting/autopost.service", () => ({
   buildGoodsReceiptEntry: jest.fn(),
+  // `grn.service.post` gọi `postBuiltEntry` (payload đã dựng sẵn), không gọi
+  // `postGoodsReceipt` — xem chú thích tại chỗ gọi trong service.
+  postBuiltEntry: jest.fn(async () => ({ id: "je-1", entryCode: "JE-1", totalDebit: 0 })),
   postGoodsReceipt: jest.fn(async () => ({ id: "je-1" })),
 }));
 
@@ -136,6 +142,19 @@ beforeEach(() => {
   // `clearAllMocks` xoá cả implementation ⇒ mỗi test bắt đầu ở trạng thái hạch
   // thành công. Test nào muốn hạch lỗi thì tự dựng lại.
   autopost.postGoodsReceipt.mockImplementation(async () => ({ id: "je-1" }));
+  autopost.postBuiltEntry.mockImplementation(async () => ({
+    entryCode: "JE-20261012-0001",
+    totalDebit: 2600,
+  }));
+  // Đọc lại PO + công nợ ở phần TỔNG KẾT vòng đã đóng.
+  prisma.purchaseOrder.findUnique.mockResolvedValue({
+    id: "po-1",
+    poCode: "PO-1",
+    status: "APPROVED",
+    expectedAt: null,
+  });
+  prisma.debt.findFirst.mockResolvedValue(null);
+  prisma.goodsReceiptItem.aggregate.mockResolvedValue({ _sum: { receivedQty: 0, passQty: 0 } });
 });
 
 describe("GRN POSTED đóng vòng mua hàng (bút toán + công nợ)", () => {
@@ -216,23 +235,68 @@ describe("GRN POSTED đóng vòng mua hàng (bút toán + công nợ)", () => {
   });
 
   test("PO nhận đủ mới chuyển RECEIVED; nhận thiếu thì giữ nguyên (backorder)", async () => {
+    // Trong transaction `aggregate` đọc trên `tx`; ở phần TỔNG KẾT lại đọc trên
+    // `client` (mặc định `prisma`). Vì vậy mock CẢ HAI để dữ liệu khớp.
     // aggregate trả 160/200 ⇒ chưa đủ ⇒ KHÔNG chuyển RECEIVED.
     const txPartial = makeTx();
-    txPartial.goodsReceiptItem.aggregate.mockResolvedValue({ _sum: { receivedQty: 160 } });
+    const agg160 = { _sum: { receivedQty: 160, passQty: 160 } };
+    txPartial.goodsReceiptItem.aggregate.mockResolvedValue(agg160);
+    prisma.goodsReceiptItem.aggregate.mockResolvedValue(agg160);
     prisma.goodsReceiptNote.findUnique.mockResolvedValue(makeGrn());
     prisma.$transaction.mockImplementation((fn) => fn(txPartial));
 
-    await grnService.post("grn-1", "u1");
+    const outPartial = await grnService.post("grn-1", "u1");
     expect(txPartial.purchaseOrder.update).not.toHaveBeenCalled();
+    expect(outPartial.fullyReceived).toBe(false);
+    expect(outPartial.remainingQty).toBe(40);
 
     // aggregate trả 200/200 ⇒ đủ ⇒ chuyển RECEIVED.
     const txFull = makeTx();
-    txFull.goodsReceiptItem.aggregate.mockResolvedValue({ _sum: { receivedQty: 200 } });
+    const agg200 = { _sum: { receivedQty: 200, passQty: 200 } };
+    txFull.goodsReceiptItem.aggregate.mockResolvedValue(agg200);
+    prisma.goodsReceiptItem.aggregate.mockResolvedValue(agg200);
     prisma.$transaction.mockImplementation((fn) => fn(txFull));
 
     await grnService.post("grn-1", "u1");
     expect(txFull.purchaseOrder.update).toHaveBeenCalledWith(
       expect.objectContaining({ where: { id: "po-1" }, data: expect.objectContaining({ status: "RECEIVED" }) }),
     );
+  });
+
+  test("trả về TỔNG KẾT vòng đã đóng để UI hiện được hệ quả", async () => {
+    const tx = makeTx();
+    const agg = { _sum: { receivedQty: 160, passQty: 160 } };
+    tx.goodsReceiptItem.aggregate.mockResolvedValue(agg);
+    prisma.goodsReceiptItem.aggregate.mockResolvedValue(agg);
+    prisma.goodsReceiptNote.findUnique.mockResolvedValue(makeGrn());
+    prisma.$transaction.mockImplementation((fn) => fn(tx));
+    prisma.purchaseOrder.findUnique.mockResolvedValue({ id: "po-1", poCode: "PO-1", status: "APPROVED", expectedAt: null });
+    prisma.debt.findFirst.mockResolvedValue({ id: "d1", amount: 2600, paidAmount: 0, dueDate: new Date() });
+    autopost.postBuiltEntry.mockResolvedValue({ entryCode: "JE-20261012-0001", totalDebit: 2600 });
+
+    const out = await grnService.post("grn-1", "u1");
+
+    expect(out.acceptedQty).toBe(160);            // hàng ĐẠT của riêng lần này
+    expect(out.receivedValue).toBe(2600);
+    expect(out.orderedQty).toBe(200);
+    expect(out.receivedQty).toBe(160);
+    expect(out.fullyReceived).toBe(false);
+    expect(out.remainingQty).toBe(40);            // backorder còn thiếu
+    expect(out.journalEntry.entryCode).toBe("JE-20261012-0001");
+    expect(out.payable.amount).toBe(2600);
+  });
+
+test("báo TRUNG THỰC khi bút toán lỗi: journalEntry = null, không báo thành công giả", async () => {
+    const tx = makeTx();
+    tx.goodsReceiptItem.aggregate.mockResolvedValue({ _sum: { receivedQty: 160, passQty: 160 } });
+    prisma.goodsReceiptNote.findUnique.mockResolvedValue(makeGrn());
+    prisma.$transaction.mockImplementation((fn) => fn(tx));
+    autopost.postBuiltEntry.mockRejectedValue(new Error("kỳ kế toán đã đóng"));
+
+    const out = await grnService.post("grn-1", "u1");
+
+    // Kho vẫn nhập (đúng), nhưng phải nói rõ sổ cái CHƯA ghi.
+    expect(out.status).toBe("POSTED");
+    expect(out.journalEntry).toBeNull();
   });
 });

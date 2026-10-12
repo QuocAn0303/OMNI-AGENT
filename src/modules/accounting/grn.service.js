@@ -351,6 +351,7 @@ const post = async (id, userId, client = prisma) => {
   });
 
   // Ghi bút toán SAU transaction (xem chú thích hàm).
+  let postedEntry = null;
   if (postingPayload) {
     // `postGoodsReceipt` nhận `{grn, purchaseOrder, vendor}` rồi TỰ dựng lại
     // payload — ở đây đã dựng xong trong transaction nên gọi thẳng
@@ -358,7 +359,7 @@ const post = async (id, userId, client = prisma) => {
     // coi payload là input và đọc `undefined.items` → lỗi bị `tryPostOrQueue`
     // nuốt, kho vẫn tăng nhưng SỔ CÁI KHÔNG CÓ GÌ.
     const { goodsReceiptValue, ...entryPayload } = postingPayload;
-    await postingErrorService.tryPostOrQueue(() => autopostService.postBuiltEntry(entryPayload), {
+    postedEntry = await postingErrorService.tryPostOrQueue(() => autopostService.postBuiltEntry(entryPayload), {
       source: "PURCHASE",
       sourceId: grn.purchaseOrderId,
       operation: `GRN:${id}`,
@@ -375,7 +376,52 @@ const post = async (id, userId, client = prisma) => {
     after: { status: "POSTED" },
   }).catch(() => {});
 
-  return updated;
+  // ---- TỔNG KẾT VÒNG ĐÃ ĐÓNG ---------------------------------------------
+  // Trả về cho UI để người dùng THẤY được chuỗi hệ quả thay vì chỉ "Đã nhập kho":
+  // hàng vào kho bao nhiêu, còn thiếu bao nhiêu, bút toán và công nợ ra sao.
+  // Đây cũng là bằng chứng máy đọc được cho "vòng mua hàng đóng kín".
+  const [poNow, debtNow, acceptedLines] = await Promise.all([
+    client.purchaseOrder.findUnique({
+      where: { id: grn.purchaseOrderId },
+      select: { id: true, poCode: true, status: true, expectedAt: true },
+    }),
+    client.debt.findFirst({ where: { poId: grn.purchaseOrderId } }),
+    client.goodsReceiptItem.aggregate({
+      where: { grn: { purchaseOrderId: grn.purchaseOrderId, status: "POSTED" } },
+      _sum: { receivedQty: true, passQty: true },
+    }),
+  ]);
+
+  const orderedQty = grn.purchaseOrder.items.reduce((s, i) => s + i.quantity, 0);
+  const receivedQty = acceptedLines._sum.receivedQty ?? 0;
+  const fullyReceived = receivedQty >= orderedQty;
+
+  return {
+    ...updated,
+    // Số liệu của RIÊNG lần nhập này.
+    acceptedQty: grn.items.reduce((s, i) => s + (Number(i.passQty) || 0), 0),
+    receivedValue: postingPayload ? postingPayload.goodsReceiptValue : 0,
+    // Số liệu TÍCH LUỸ của cả PO.
+    purchaseOrder: poNow,
+    orderedQty,
+    receivedQty,
+    fullyReceived,
+    remainingQty: Math.max(0, orderedQty - receivedQty),
+    onTime: updated.onTime,
+    // Bút toán + công nợ: có thể `null` nếu hạch lỗi (đã vào outbox) hoặc không
+    // có hàng đạt. Trả null TRUNG THỰC thay vì báo thành công giả.
+    journalEntry: postedEntry
+      ? { entryCode: postedEntry.entryCode, totalDebit: toNum(postedEntry.totalDebit) }
+      : null,
+    payable: debtNow
+      ? {
+          id: debtNow.id,
+          amount: toNum(debtNow.amount),
+          paidAmount: toNum(debtNow.paidAmount),
+          dueDate: debtNow.dueDate,
+        }
+      : null,
+  };
 };
 
 // Danh sách GRN (filter poId/status)
