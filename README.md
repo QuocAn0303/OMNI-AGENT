@@ -12,7 +12,7 @@
 | Thành phần | Công nghệ |
 | --- | --- |
 | **Backend** | Node.js 20, Express 4 (CommonJS), Zod validation, Helmet/HPP/rate-limit |
-| **Database** | PostgreSQL 15/16, Prisma 7 (multi-tenant auto-scoping qua `$extends` + AsyncLocalStorage), 18 migrations |
+| **Database** | PostgreSQL 15/16, Prisma 7 (multi-tenant auto-scoping qua `$extends` + AsyncLocalStorage), 35 migrations |
 | **Real-time** | Socket.IO 4 + Redis adapter (fallback in-memory), Web Push (PWA) |
 | **Frontend** | React 19 + Vite 8, Ant Design 6, Zustand, React Router 7, Recharts, i18next (vi/en), PWA (Workbox) |
 | **AI** | OpenAI SDK / Ollama (LLM local), AI agent 20+ tool, RAG, dự báo bán hàng |
@@ -27,6 +27,7 @@
 - **Bán hàng & POS**: POS đa chế độ (tại bàn / mang đi / giao hàng), quét barcode, in bill nhiệt Bluetooth (ESC/POS), bán ngoại tuyến (hàng chờ IndexedDB tự đồng bộ khi online), tách hóa đơn 3 chế độ (chia đều / theo món / tùy chỉnh), trả hàng & hoàn tiền, khuyến mãi (giảm % / giảm tiền / mua X tặng Y / giảm theo danh mục / theo sản phẩm / happy-hour), combo & modifier.
 - **F&B**: sơ đồ bàn kéo-thả (Floor canvas, zoom/fit), KDS (station + ticket bump/recall/void), QR self-ordering cho khách không cần đăng nhập, menu modifier/variant/combo, công thức món (Recipe/COGS tự trừ kho), thẻ tích điểm (stamp card), tích hợp GrabFood / ShopeeFood / BeFood.
 - **Kho & sản xuất**: đa kho, nhập–xuất–điều chỉnh, kiểm kê theo kho, chuyển kho, serial/lot/hạn dùng, BOM đa cấp (resolver chống vòng lặp), lệnh sản xuất, Work Center, Routing, Quality Check.
+- **Quản trị chuỗi cung ứng** *(mới)*: **cây vị trí kho** (`stock.location` — vị trí thật / góc nhìn / vị trí trung gian, đệ quy nhiều cấp), **quy tắc nhập hàng** theo SKU × kho (tồn tối thiểu/tối đa, thời gian nhập, quy cách đóng gói, mức phục vụ — Odoo *Reordering Rules*), **RFQ & so sánh báo giá NCC** (hỏi giá nhiều NCC → xếp hạng → chốt → sinh PO), **vòng mua hàng khép kín** (phiếu nhập kho ghi bút toán Nợ 156 / Nợ 1331 / Có 331 + cộng dồn công nợ NCC), **dashboard KPI chuỗi cung ứng**, **màn hình bằng chứng thực nghiệm** (`/evidence` — kết quả backtest kèm nguồn `sha256` và giới hạn, kết luận sinh từ số liệu chứ không viết sẵn).
 - **CRM & marketing**: khách hàng 360°, hạng tier, tích điểm loyalty, store credit, phân khúc, chiến dịch Email + Zalo OA, webhook bắt lead, dự báo churn / CLV / RFM.
 - **Kế toán kép (double-entry)**: Chart of Accounts, autopost tự động cho 12 sự kiện nghiệp vụ, sổ nhật ký / sổ cái / bảng CĐSPS, báo cáo B01–B03, báo cáo thuế HTKK (01/GTGT, 05/TNCN, D02), hóa đơn điện tử VNPT, khấu hao TSCĐ, đối soát ngân hàng (import sao kê VCB/TCB + auto-match), kết chuyển cuối kỳ, đa tiền tệ, quỹ tiền mặt nhỏ (HKD).
 - **Nhân sự**: nhân viên, chấm công 3 ca, tính lương (PIT/BHXH), nghỉ phép, làm thêm giờ, vi phạm nội bộ.
@@ -38,19 +39,22 @@
 
 ## Số liệu hiện tại
 
-> Đếm trực tiếp từ source ngày **2026-09-27**.
+> Đếm trực tiếp từ source ngày **2026-10-13**.
 
 | Hạng mục | Số lượng | Nguồn |
 | --- | --- | --- |
-| Model Prisma / Enum | **145 / 65** | `prisma/schema.prisma` |
-| Migration | **18** | `prisma/migrations/` |
-| Module backend | **58** | `src/modules/` |
-| Prefix API `/api/*` | **70** | `src/app.js` |
-| File test Jest | **42** (39 trong `tests/`, 3 trong `src/`) | `tests/`, `src/**/*.test.js` |
-| Trang frontend | **108** | `frontend/src/pages/` |
-| Route React (lazy) | ~101 route / 96 trang lazy | `frontend/src/App.jsx` |
+| Model Prisma / Enum | **159 / 75** | `prisma/schema.prisma` |
+| Migration | **35** | `prisma/migrations/` |
+| Module backend | **63** | `src/modules/` |
+| Prefix API `/api/*` | **81** | `src/app.js` |
+| File test Jest | **91** (88 trong `tests/`, 3 trong `src/`) | `tests/`, `src/**/*.test.js` |
+| Assertion Jest | **4488 pass / 4493** (5 skip, 90 suite) | `npx jest` |
+| Trang frontend | **127** | `frontend/src/pages/` |
+| File API client | **28** | `frontend/src/api/` |
+| Route React | lazy-load, 4 nhóm phân quyền | `frontend/src/App.jsx` |
 | Cron jobs | **29** | `src/jobs/cron.js` |
-| Model tự scoping theo tenant | **132** | `TENANT_SCOPED_MODELS` trong `src/config/prisma.js` |
+| Model tự scoping theo tenant | **147** | `TENANT_SCOPED_MODELS` trong `src/config/prisma.js` |
+| Khối Swagger | **135/135** parse được | `npm run check:swagger` |
 | Ngôn ngữ i18n | 2 (vi, en) | `frontend/src/locales/` |
 
 **Cổng mặc định**: backend `4000` (tự tăng khi bị chiếm, tối đa 10 lần) · frontend `5173` · PostgreSQL `5432` · Redis `6379` · Prisma Studio `5555` · Swagger `/api-docs`.
@@ -62,10 +66,10 @@
 ```
 erp-system/
 ├── src/                          # Backend Express
-│   ├── app.js                    # Entry point — 70 prefix /api, rate-limit, Swagger, Socket.IO, cron, CDC
-│   ├── config/                   # prisma (auto-scope tenant), tenantContext, swagger, cloudinary, payos, redis, business-templates
+│   ├── app.js                    # Entry point — 81 prefix /api, rate-limit, Swagger, Socket.IO, cron, CDC
+│   ├── config/                   # prisma (auto-scope tenant), tenantContext, swagger, cloudinary, payos, redis, llm, llm-policy, business-templates
 │   ├── middleware/               # auth (authenticate/authorize/requireSuperOmega), error, plan, tenant, sanitize, permission
-│   ├── modules/                  # 58 module (xem danh sách bên dưới)
+│   ├── modules/                  # 63 module (xem danh sách bên dưới)
 │   ├── jobs/
 │   │   ├── cron.js               # 29 cron jobs: hủy đơn, nhắc nợ, payroll, backup 02:00, kết chuyển...
 │   │   └── agent.cdc.js          # CDC PostgreSQL LISTEN/NOTIFY → cảnh báo tồn kho / đơn COMPLETED / thanh toán
@@ -73,26 +77,31 @@ erp-system/
 │   └── utils/                    # response, logger (Winston), apiError, email, sms, zalo, piiMask, vietqr,
 │                                 # warehouse.helper, thermalPrinter, offlineQueue, vietnameseMoneyWords, exporter
 ├── prisma/
-│   ├── schema.prisma             # 145 models, 65 enums — single source of truth
-│   ├── migrations/               # 18 migrations (deployable từ DB sạch lẫn drifted)
+│   ├── schema.prisma             # 159 models, 75 enums — single source of truth
+│   ├── migrations/               # 35 migrations (deployable từ DB sạch lẫn drifted)
 │   ├── startup.js                # start production: migrate deploy + seed (nếu SEED_ON_START=1) + chạy app
-│   ├── seed.js                   # 11 tài khoản mẫu (mật khẩu 123456) + SP/KH/đơn hàng demo
-│   ├── seed_accounting.js        # Chart of Accounts ~40 TK + thuế VAT + danh mục chi phí
+│   ├── seed.js                   # tài khoản mẫu (mật khẩu 123456) + SP/KH/đơn hàng demo
+│   ├── seed_accounting.js        # Chart of Accounts ~33 TK + thuế VAT + danh mục chi phí
 │   ├── seed_accounting_demo.js   # Dữ liệu kế toán demo (12 kỳ, NCC, PO, bút toán lương...)
+│   ├── seed_phase1_crm.js        # CRM tenant demo (≥300 dòng/bảng)
+│   ├── seed_prm.js               # PRM — 5 đối tác, 455 lượt giới thiệu, 83 khách chuyển đổi
 │   ├── seed_permissions.js       # RBAC Permission/RolePermission
+│   ├── seed_comprehensive.js     # dữ liệu tổng hợp cho môi trường demo
 │   └── sql/fulltext_search.sql   # GIN/pg_trgm index cho Customer/Product/Vendor
-├── tests/                        # 39 file test + setup.js (mock warehouse.helper, env test)
+├── scripts/                      # smoke/check/demo/backtest/usertest — kiểm chứng trên DB thật (xem "Lệnh kiểm chứng")
+├── tests/                        # 88 file test + setup.js (mock warehouse.helper, env test)
 ├── frontend/
 │   └── src/
-│       ├── App.jsx               # ~101 route, lazy load 96 trang, ProtectedRoute + RequireRole + HkdGate
-│       ├── api/                  # 21 file API (axios instance + interceptor refresh token)
+│       ├── App.jsx               # route lazy-load, 4 nhóm phân quyền, ProtectedRoute + RequireRole + HkdGate
+│       ├── api/                  # 28 file API (axios instance + interceptor refresh token)
 │       ├── stores/authStore.js   # Zustand: user/token/theme/beginnerMode/businessTemplate/support-mode
 │       ├── components/           # layout (AppShell/Sidebar/TopBar), shared, pos, agent-ui, camera scanner
-│       ├── pages/                # 108 trang — admin/, fnb/, hr/, production/, projects/, onboarding/
+│       ├── pages/                # 127 trang — admin/, fnb/, hr/, production/, projects/, onboarding/
 │       ├── locales/              # vi.json, en.json
 │       ├── sw.js                 # Service Worker (PWA injectManifest) + utils/offlineQueue.js
 │       └── styles/               # variable.css (design tokens), global.css (dark mode)
-├── docs/, plans/                 # tài liệu nội bộ (được gitignore, không push)
+├── docs/aisc26/, docs/phase*/    # tài liệu thi AISC26 (STATE.md, giao thức backtest, kịch bản demo) + tài liệu các phase
+├── plans/                        # tài liệu nội bộ (gitignore, không push)
 ├── Dockerfile                    # backend image (node:20-alpine, migrate deploy + start)
 ├── docker-compose.yml            # PostgreSQL 15 cho dev
 ├── docker-compose.prod.yml       # db + redis + ollama + app + frontend (nginx 80/443)
@@ -101,17 +110,17 @@ erp-system/
 └── railway.json                  # Railway start command
 ```
 
-**58 module backend** (`src/modules/`):
+**63 module backend** (`src/modules/`):
 
 ```
 accounting, admin, ai, ai-forecast, analytics, audit, auth, automation, bank-reco,
 bulk, categories, crm, currency, customers, dashboard, debt, delivery, documents,
-einvoice, fixed-assets, food-delivery, hr, import, integrations, inventory, kds,
-loyalty, marketplace, menu, notifications, orders, payment-gateway, payments,
-petty-cash, portal, pos, printers, production, products, projects, promotions,
-push, qr-ordering, recipe, report-builder, reports, returns, search, settings,
-smart-guide, stamp-card, subscriptions, tables, tax-report, users, vietqr,
-warehouses, workflow
+einvoice, evidence, fixed-assets, food-delivery, hr, import, integrations,
+inventory, kds, loyalty, marketplace, menu, notifications, orders, partners,
+payment-gateway, payments, petty-cash, portal, pos, printers, production, products,
+projects, promotions, push, qr-ordering, recipe, replenishment, report-builder,
+reports, returns, rfq, search, settings, smart-guide, stamp-card, subscriptions,
+supply, tables, tax-report, users, vietqr, warehouses, workflow
 ```
 
 ---
@@ -257,7 +266,7 @@ docker ps
 ### Bước 4 — Migrate database & seed dữ liệu mẫu
 
 ```bash
-# Áp 18 migration — an toàn cho cả DB sạch lẫn DB đã có dữ liệu/bảng RAG
+# Áp 35 migration — an toàn cho cả DB sạch lẫn DB đã có dữ liệu/bảng RAG
 npm run db:migrate:deploy
 
 # Tạo dữ liệu mẫu: tài khoản + sản phẩm + đơn hàng + kế toán demo
@@ -346,11 +355,11 @@ npm test
 npx jest tests/debt.service.test.js
 ```
 
-Ngoài Jest, có 3 script kiểm tra nhanh tình trạng hệ thống:
+Ngoài Jest, có 3 script kiểm tra nhanh tình trạng hệ thống (danh sách **đầy đủ** ở mục [✅ Lệnh kiểm chứng](#-lệnh-kiểm-chứng-chạy-trên-db-thật)):
 
 | Lệnh | Kiểm tra | Cần gì |
 | --- | --- | --- |
-| `npm run check:modules` | Load 184 module để chắc app boot được (bắt lỗi "export trước khai báo", circular require) | Không |
+| `npm run check:modules` | Load 212 module để chắc app boot được (bắt lỗi "export trước khai báo", circular require) | Không |
 | `npm run check:humangate` | Vòng đời **human-in-the-loop gate** qua HTTP thật: CASHIER hỏi dữ liệu nhạy cảm → bị chặn → tạo gate PENDING → ADMIN duyệt/từ chối | Backend đang chạy + DB đã seed |
 | `npm run check:llm` | Gọi thật 1 request tới LLM provider, in provider/model/`configured` | `GEMINI_API_KEY` (xem mục [🔑 Thiết lập API key](#-thiết-lập-api-key)) |
 
@@ -445,7 +454,7 @@ LLM_MODEL=ten-model
 
 ```bash
 npm run check:llm     # gọi thật 1 request tới provider + in provider/model/configured
-npm run check:modules # load 184 module để chắc app boot được
+npm run check:modules # load 212 module để chắc app boot được
 npm test              # toàn bộ test
 ```
 
@@ -519,7 +528,8 @@ npm run db:studio           # mở Prisma Studio (GUI cho DB, port 5555)
 npm test                    # chạy Jest (--runInBand)
 
 # Script kiểm tra nhanh
-npm run check:modules       # load 184 module, chắc app boot được
+npm run check:modules       # load 212 module, chắc app boot được
+npm run check:swagger       # parse mọi khối @swagger
 npm run check:humangate     # human-in-the-loop gate qua HTTP (cần backend chạy)
 npm run smoke:humangate     # vòng đời gate tầng DB (tự dọn)
 npm run check:llm           # gọi thật LLM provider (cần GEMINI_API_KEY)
@@ -585,7 +595,11 @@ docker compose -f docker-compose.prod.yml up -d
 /api/inventory                    # tồn kho, giao dịch, định giá hàng tồn kho
 /api/inventory/cycle-counts       # kiểm kê (từng kho)
 /api/serial-numbers               # tracking số sê-ri
+# --- Kho & vị trí ---
 /api/warehouses, /api/stock-transfers
+/api/warehouses/tree/flat, /api/warehouses/:id/tree   # cây vị trí (Odoo location)
+/api/warehouses/:id/locations                            # tạo vị trí con
+/api/warehouses/:id/location-type                        # đổi PHYSICAL/VIEW/INTERNAL
 /api/deliveries                   # GHTK / GHN / VNPOST / Viettel / J&T + webhook
 
 # --- CRM & loyalty ---
@@ -602,9 +616,19 @@ docker compose -f docker-compose.prod.yml up -d
 /api/accounting                   # CoA, journal, autopost, sổ cái/B01–B03, kết chuyển, khấu hao, CIT
 /api/accounting/expenses          # chi phí (duyệt theo workflow)
 /api/purchase-orders, /api/grn, /api/purchase-invoices
+/api/rfq                         # yêu cầu báo giá + so sánh NCC + chốt NCC
 /api/debts, /api/bank-reco, /api/bank-accounts, /api/petty-cash
 /api/tax-reports, /api/einvoice, /api/fixed-assets, /api/currencies
 /api/vietqr                       # VietQR + webhook Casso / SePay / PayOS
+
+# --- Chuỗi cung ứng (SRM / replenishment) ---
+/api/inventory/rules              # quy tắc nhập hàng theo SKU × kho (GET/PUT)
+/api/replenishment/suggestions    # SKU dưới ROP + số đề xuất (read-only)
+/api/replenishment/products/:id/preview   # xem trước 1 SKU, không ghi bảng nào
+/api/replenishment/products/:id/propose   # tạo AgentHumanGate PENDING thật
+/api/supply/kpis                  # dashboard KPI chuỗi cung ứng
+/api/evidence                     # kết quả backtest + số đo thật của tenant
+/api/partners                     # PRM — đối tác đầu ra, lượt giới thiệu, ROI
 
 # --- F&B (hiện khi businessTemplate là F&B) ---
 /api/menu, /api/tables, /api/kds, /api/printers
@@ -679,10 +703,12 @@ Dockerfile có sẵn — chỉ cần push lên GitHub, Railway tự build & depl
 Hệ thống đã được hardening đầy đủ cho production với dữ liệu doanh nghiệp:
 
 ### Multi-tenant Isolation (CRITICAL)
-- **Prisma `$extends` + AsyncLocalStorage**: tự động inject `tenantId` vào mọi query (findMany, create, update, delete) — **132 model** được auto-scope (`TENANT_SCOPED_MODELS` trong `config/prisma.js`)
+- **Prisma `$extends` + AsyncLocalStorage**: tự động inject `tenantId` vào mọi query (findMany, create, update, delete) — **147 model** được auto-scope (`TENANT_SCOPED_MODELS` trong `config/prisma.js`)
 - Tenant A **không thể** xem/sửa dữ liệu Tenant B qua API
 - `SUPER_OMEGA_ULTRA_ADMIN` bypass scoping (xem tất cả tenant)
 - Public routes (QR ordering) set tenant context thủ công từ resource's tenantId
+- Ràng buộc tầng DB cho quan hệ cha–con: trigger chặn gắn vị trí kho của tenant A vào kho cha của tenant B
+- Kiểm tra định kỳ: `npm run check:tenant` (11 + 4 + 4 assertion trên DB thật)
 - File: `config/prisma.js`, `config/tenantContext.js`, `middleware/auth.middleware.js`
 
 ### Auth & Session
@@ -1366,6 +1392,159 @@ Khi tạo Order F&B, thêm các field:
 
 ---
 
+## 📦 16. Quản trị chuỗi cung ứng (SRM / replenishment / evidence)
+
+> Nhóm tính năng bổ sung sau. Xây theo tham khảu Odoo cho phần mua hàng & tồn kho:
+> `stock.location`, `Reordering Rules`, `purchase.order` ở trạng thái RFQ.
+
+### 🗺️ 16.1 Cây vị trí kho (`stock.location`)
+
+Mỗi kho vẫn là một **kho thật** (mọi quan hệ cũ giữ nguyên), bên trong có cây vị trí để chia khu vực nhập / lưu / xuất / lấy hàng.
+
+| `locationType` | Ý nghĩa | Chứa hàng? |
+|---|---|---|
+| `PHYSICAL` (mặc định) | Nơi hàng thật nằm | ✅ |
+| `VIEW` | Góc nhìn gộp nhiều vị trí | ❌ |
+| `INTERNAL` | Vị trí trung gian của luồng nhập/xuất nhiều bước | ❌ |
+
+```http
+GET   /api/warehouses/tree/flat?warehouseId=   # cây dạng phẳng + đường dẫn + tồn
+GET   /api/warehouses/:id/tree                 # cây đệ quy, tự cộng dồn tổng tồn
+POST  /api/warehouses/:id/locations            # { code, name, locationType }
+PATCH /api/warehouses/:id/location-type        # { locationType }
+```
+
+**Ba luật được giữ ở tầng DB** (vi phạm là mất tiền hoặc lộ dữ liệu):
+
+1. `ON DELETE RESTRICT` — không xoá được kho cha còn kho con.
+2. CHECK — không tự làm cha của chính mình (duyệt đệ quy gặp vòng là treo request).
+3. Trigger — không gắn vị trí con của tenant A vào kho cha của tenant B.
+
+Ngoài ra: **chỉ `PHYSICAL` mới chứa hàng** — đổi vị trí đang có hàng sang `VIEW`/`INTERNAL` sẽ bị chặn, vì tổng tồn trong báo cáo sẽ sai.
+
+### ⚙️ 16.2 Quy tắc nhập hàng (`Reordering Rules`)
+
+Cấu hình theo **(sản phẩm × kho)** — cùng một SKU có thể tồn ở nhiều kho.
+
+```http
+GET  /api/inventory/rules?productId=&warehouseId=
+PUT  /api/inventory/rules   # { inventoryId, minStock, maxStock, leadTimeDays, packMultiple, serviceLevel }
+```
+
+| Trường | Ý nghĩa | Mặc định khi để trống (`null`) |
+|---|---|---|
+| `minStock` | Tồn tối thiểu | `10` |
+| `maxStock` | Trần tồn — **chỉ để cảnh báo tồn quá cao** | không giới hạn |
+| `leadTimeDays` | Thời gian nhập của riêng SKU này | đo từ lịch sử PO→GRN, rồi về 7 ngày |
+| `packMultiple` | Quy cách đóng gói (bán theo thùng/hộp) | `1` (bán lẻ) |
+| `serviceLevel` | Mức phục vụ mong muốn | `0,95` |
+
+**`maxStock` KHÔNG ép vào công thức đặt hàng.** ROP là *ngưỡng đề xuất*, không phải trần cứng — ép trần vào sẽ cho `orderQty = 0` và hệ thống im lặng, tức mất luôn cảnh báo thiếu hàng. Nó chỉ dùng cho cảnh báo tồn quá cao (`rules.overStock`).
+
+Kết quả tính ghi rõ nguồn gốc: `lead.source = CONFIGURED | MEASURED | ESTIMATED` — không ai nhầm "ước lượng" là "đo được" nữa.
+
+### 🏷️ 16.3 RFQ — so sánh báo giá NCC
+
+Trước đây chuỗi mua hàng là `Vendor → PurchaseOrder` thẳng: hệ thống tự chọn NCC từ PO gần nhất, **không hỏi giá, không có bằng chứng vì sao chọn NCC đó**.
+
+```http
+GET  /api/rfq?status=OPEN                  # danh sách
+POST /api/rfq                             # { vendorIds[], deadlineAt, note, items[] }
+GET  /api/rfq/:id/comparison              # bảng so sánh + xếp hạng
+POST /api/rfq/:id/quotes                  # { vendorId, lines[], promisedAt, note }
+POST /api/rfq/:id/quotes/decline          # { vendorId, declineReason }
+POST /api/rfq/:id/award                   # { vendorId } → tạo PO
+POST /api/rfq/:id/cancel
+```
+
+**Hai quy tắc quan trọng:**
+
+- **Báo giá thiếu dòng không được xếp hạng.** Tổng tiền thiếu dòng nhỏ đi và làm NCC đó trông rẻ giả. Báo giá thiếu được đánh dấu `incomplete`.
+- **NCC báo thiếu hàng ⇒ PO chỉ tạo phần NCC thực sự có** (`availableQty`). Đặt phần vượt khả năng giao là tạo nợ mà không có hàng.
+
+PO sinh ra đi qua `purchaseService.create` như mọi PO khác ⇒ vẫn qua đúng ngưỡng duyệt, workflow `PO_ABOVE`, audit log. **RFQ chỉ là bước chọn NCC, không phải đường vòng duyệt.**
+
+> Hệ thống **không** tự gửi cho NCC (không có API gửi). `POST /api/rfq` trả `requiresHumanSend: true, sentCount: 0` để không ai tưởng đã gửi.
+
+### 📊 16.4 Dashboard KPI chuỗi cung ứng
+
+```http
+GET /api/supply/kpis?days=30
+```
+
+Nhóm chỉ số: giá trị tồn & tồn khả dụng · số ngày phủ tồn & vòng quay/năm · tồn chết (90 ngày không bán) · SKU đang hết hàng · PO đang mở & PO quá hạn (kèm số ngày trễ) · tỷ lệ giao đúng hạn (OTIF) của NCC · vốn tiền theo từng kho.
+
+**Chỉ số không tính được trả `null` + lý do, KHÔNG trả 0.** `"0 vòng quay"` đọc ra như vòng quay bằng không — sai hoàn toàn, trong khi sự thật là chưa có dữ liệu. Mỗi nhóm kèm `note` giải thích cách tính và giới hạn.
+
+### 📈 16.5 Màn hình bằng chứng (`/evidence`)
+
+Kết quả backtest định kỳ + `sha256` nguồn + 5 dòng giới hạn, đặt cạnh số đo **thật** của tenant. Kết luận **sinh từ số liệu, không viết sẵn**: ở lead time 7 ngày, ROP giảm 51,4% chi phí nhưng **mất 11,46 điểm mức phục vụ** ⇒ màn hình hiện *"không có lợi thế rõ ràng"*, không biến thành "tốt hơn".
+
+```http
+GET /api/evidence/backtest?leadTime=7&branch=A
+GET /api/evidence/live-snapshot
+```
+
+### 🛒 16.6 PRM — quản trị đối tác đầu ra
+
+Chương trình giới thiệu: hồ sơ đối tác, lượt giới thiệu, phễu chuyển đổi, tính hoa hồng và lợi nhuận ròng (ROI).
+
+```http
+GET  /api/partners            # hồ sơ đối tác
+GET  /api/partners/referrals  # lượt giới thiệu
+GET  /api/partners/roi        # hoa hồng + ROI
+```
+
+> **Cấu hình dùng chung khoá gói `"crm"`** — tạo khoá mới sẽ khoá module với toàn bộ khách hàng cũ đã mua gói đó.
+
+---
+
+## ✅ Lệnh kiểm chứng (chạy trên DB thật)
+
+> **Quy tắc của dự án**: unit test với mock **KHÔNG phải** bằng chứng thay đổi an toàn với DB thật. Mọi thay đổi nghiệp vụ đều phải có script `smoke:*` hoặc `check:*` chạy trên Postgres thật.
+>
+> **Chạy TUẦN TỰ, không chạy song song** — hai script ghi dữ liệu cùng lúc sẽ tranh nhau sinh mã và làm nhau FAIL.
+
+```bash
+# Tĩnh / mock (không chạm DB)
+npm test                          # 4488/4493 assertion
+npm run check:modules             # 212 module load được
+npm run check:swagger             # 135/135 khối @swagger
+
+# DB thật — tự dọn dữ liệu, chạy 2 lần cho cùng kết quả
+npm run check:tenant              # cách ly multi-tenant — PASS 11/11 + 4/4 + 4/4
+npm run check:accounting          # PO có GRN mà thiếu bút toán — phải = 0
+npm run smoke:grn-posting        # 16/16 — vòng mua hàng khép kín
+npm run smoke:replenishment-rules # 16/16 — quy tắc nhập hàng thật sự đổi kết quả
+npm run smoke:rfq                 # 20/20 — so sánh báo giá + chốt NCC → PO
+npm run smoke:warehouse-tree     # 18/18 — cây vị trí + 4 ràng buộc ở tầng DB
+npm run smoke:po-gate            # 24/24 — human-gate tạo PO
+npm run smoke:demo-flow          # 12/12 — luồng demo end-to-end
+npm run demo:check               # 13/13 — tính định + không rác + phục vụ số thật
+
+# HTTP thật — CẦN BACKEND ĐANG CHẠY (npm run dev ở terminal khác)
+npm run check:humangate          # 11/11
+npm run check:replenishment-rules # 12/12
+npm run check:supply              # 12/12
+npm run check:evidence            # 14/14
+
+# Luồng demo không cần giao diện
+npm run demo:setup               # nạp PO + GRN để có lead time đo được
+npm run demo:login -- --apply    # bật đăng nhập + gói `business` cho tenant demo
+npm run demo:run                 # in 6 khối của luồng đầy đủ
+```
+
+Sau mỗi lần chạy script ghi dữ liệu, **dừng mọi tiến trình nền**:
+
+```powershell
+# Windows
+Get-Process node | Stop-Process -Force
+```
+
+> ⚠️ PowerShell `Add-Content`/`Set-Content` làm hỏng ký tự tiếng Việt trong file Markdown — dùng thẻ `edit`/`write` thay thế.
+
+---
+
 ## 🧪 Quy trình test nhanh các tính năng mới
 
 ```bash
@@ -1399,10 +1578,31 @@ npm run dev
 #    - /qr-ordering → quét QR bàn → đặt món (public, không cần login)
 #    - /order-inbox → test nhận đơn GrabFood mock
 #    - /ai-forecast → xem dự báo + menu engineering
+# 5. Test chuỗi cung ứng (xem mục 16 ở trên):
+#    - /supply → xem KPI; chỉ số chưa đủ dữ liệu hiện "chưa đủ dữ liệu" (KHÔNG phải 0)
+#    - /replenishment-rules → đặt thời gian nhập 21 ngày cho 1 SKU → lưu
+#      → /replenishment → xem điểm giao dịch của SKU đó tăng (kiểm chứng quy tắc có tác dụng)
+#    - /rfq → tạo RFQ hỏi 3 NCC → nhập báo giá (thử nhập thiếu 1 dòng để xem cờ "thiếu giá")
+#      → chốt NCC có đủ giá → PO sinh ra; thử chốt 1 NCC báo thiếu hàng để xem cảnh báo
+#    - Kho → cây vị trí: tạo 1 vị trí con, gán tồn, xem tổng tồn gốc cộng dồn
+#      → thử đổi vị trí đang có hàng sang VIEW (phải bị chặn)
+#    - /evidence → xem kết luận sinh từ số liệu thật
+```
+
+### Kiểm chứng nhanh sau khi sửa code
+
+```bash
+npm test && npm run check:modules          # tĩnh, ~2 phút
+
+npm run check:tenant                       # cách ly tenant (DB thật)
+npm run smoke:grn-posting                 # vòng mua hàng
+npm run smoke:replenishment-rules          # quy tắc nhập hàng
+npm run smoke:rfq                          # RFQ + chốt NCC
+npm run smoke:warehouse-tree              # cây vị trí + ràng buộc DB
 ```
 
 ---
 
 > **Lịch sử thay đổi, báo cáo bảo mật và các phase phát triển**: xem [CHANGELOG.md](./CHANGELOG.md).
 
-_Tài liệu cập nhật: 2026-09-27_
+_Tài liệu cập nhật: 2026-10-13_
