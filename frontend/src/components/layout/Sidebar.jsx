@@ -267,6 +267,13 @@ const MENU_GROUPS = [
         roles: ["ADMIN", "MANAGER"],
       },
       {
+        // Quy tắc nhập hàng theo SKU×kho (Odoo Reordering Rules).
+        key: "/replenishment-rules",
+        icon: <SettingOutlined />,
+        label: "Quy tắc nhập hàng",
+        roles: ["ADMIN", "MANAGER", "WAREHOUSE"],
+      },
+      {
         // Bằng chứng backtest: ROP vs ngưỡng cố định, kèm nguồn + giới hạn.
         key: "/evidence",
         icon: <ExperimentOutlined />,

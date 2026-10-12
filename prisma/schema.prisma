@@ -520,6 +520,20 @@ model Inventory {
   quantity  Int      @default(0)
   reserved  Int      @default(0)
   minStock  Int      @default(10)
+  // Quy tắc nhập hàng (mô phỏng Odoo `reordering_min_qty`/`_max_qty`) — cấu hình
+  // theo (sản phẩm × kho) vì cùng một SKU có thể tồn ở nhiều kho.
+  //   maxStock        > 0 ⇒ trần tồn; <= 0 hoặc null ⇒ KHÔNG đặt trần (vô hạn).
+  //                   Dùng cho cảnh báo tồn quá cao, không ép vào công thức ROP
+  //                   (ROP là NGƯỠNG ĐỀ XUẤT, không phải trần cứng).
+  //   leadTimeDays    > 0 ⇒ định dạng của riêng SKU này; null ⇒ dùng median từ
+  //                   lịch sử PO→GRN, rồi mới về mặc định 7 ngày.
+  //   packMultiple    > 1 ⇒ làm tròn số lượng đặt lên bội số của nhà cung cấp
+  //                   (bán lẻ VN thường bán theo thùng/hộp, không bán lẻ cái).
+  //   serviceLevel    0 < x < 1 ⇒ mức phục vụ mong muốn cho SKU này; null ⇒ 0,95.
+  maxStock     Int?
+  leadTimeDays Int?
+  packMultiple Int      @default(1)
+  serviceLevel Float?
   updatedAt DateTime @updatedAt
 
   productId   String

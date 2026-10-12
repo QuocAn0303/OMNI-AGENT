@@ -116,6 +116,7 @@ const StoreCredits = lazy(() => import("./pages/StoreCredits"));
 const SerialNumbers = lazy(() => import("./pages/SerialNumbers"));
 const SmartGuide = lazy(() => import("./pages/SmartGuide"));
 const EvidenceBacktest = lazy(() => import("./pages/EvidenceBacktest"));
+const ReplenishmentRules = lazy(() => import("./pages/ReplenishmentRules"));
 const Sessions = lazy(() => import("./pages/Sessions"));
 const Promotions = lazy(() => import("./pages/Promotions"));
 const ModifierGroups = lazy(() => import("./pages/ModifierGroups"));
@@ -478,6 +479,7 @@ function App() {
                 }
               >
                 <Route path="/inventory" element={<Inventory />} />
+                <Route path="/replenishment-rules" element={<ReplenishmentRules />} />
                 <Route path="/cycle-count" element={<CycleCount />} />
                 <Route path="/serial-numbers" element={<SerialNumbers />} />
                 <Route path="/production" element={<Production />} />

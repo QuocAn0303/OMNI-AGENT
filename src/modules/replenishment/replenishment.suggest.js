@@ -30,6 +30,7 @@
 const prisma = require("../../config/prisma");
 const logger = require("../../utils/logger");
 const { runWithTenant } = require("../../config/tenantContext");
+const { getDefaultWarehouseId } = require("../../utils/warehouse.helper");
 const {
   planReplenishment,
   proposalFingerprint,
@@ -98,7 +99,15 @@ const loadReplenishmentInput = async (productIds = []) => {
     }),
     prisma.inventory.findMany({
       where: { productId: { in: ids } },
-      select: { productId: true, quantity: true, reserved: true },
+      // Đọc kèm QUY TẮC NHẬP HÀNG của từng kho (Odoo reordering rules).
+      // `leadTimeDays`/`packMultiple`/`serviceLevel`/`maxStock` cho phép NULL =
+      // chưa cấu hình ⇒ động cơ dùng mặc định của hệ thống. Quy tắc lấy từ kho
+      // ĐANG TÍNH ATP (kho mặc định) vì đó là kho quyết định tồn.
+      select: {
+        productId: true, quantity: true, reserved: true,
+        minStock: true, maxStock: true, leadTimeDays: true,
+        packMultiple: true, serviceLevel: true,
+      },
     }),
   ]);
 
@@ -134,19 +143,77 @@ const loadReplenishmentInput = async (productIds = []) => {
   }
 
   const invAcc = new Map();
+  // Quy tắc nhập hàng: gom theo sản phẩm, ưu tiên dòng của KHO MẶC ĐỊNH.
+  // `planReplenishment` chạy trên ATP đã gộp mọi kho, nhưng quy tắc phải thuộc một
+  // kho cụ thể — lấy kho có `minStock`/`leadTimeDays` đã cấu hình, ưu tiên kho mặc
+  // định, không có thì lấy dòng đầu tiên. Không tự bịa giá trị khi chưa cấu hình.
+  const rulesAcc = new Map();
+  const defaultWarehouseId = await getDefaultWarehouseId(prisma).catch(() => null);
   for (const inv of inventories) {
     const cur = invAcc.get(inv.productId) || [];
     cur.push({ quantity: inv.quantity, reserved: inv.reserved });
     invAcc.set(inv.productId, cur);
+
+    const rule = {
+      warehouseId: inv.warehouseId,
+      isDefaultWarehouse: defaultWarehouseId != null && inv.warehouseId === defaultWarehouseId,
+      minStock: inv.minStock,
+      maxStock: inv.maxStock,
+      leadTimeDays: inv.leadTimeDays,
+      packMultiple: inv.packMultiple,
+      serviceLevel: inv.serviceLevel,
+      // Đã cấu hình gì khác mặc định? Dùng để biết có cần cảnh báo "chưa cấu hình".
+      hasOverrides:
+        inv.maxStock != null ||
+        inv.leadTimeDays != null ||
+        inv.packMultiple > 1 ||
+        inv.serviceLevel != null,
+    };
+    const curRules = rulesAcc.get(inv.productId) || [];
+    curRules.push(rule);
+    rulesAcc.set(inv.productId, curRules);
   }
 
   for (const id of ids) {
     const acc = byProduct.get(id);
     acc.onOrder = calcOnOrder({ lines: [{ quantity: onOrderAcc.get(id) || 0 }] });
     acc.inventories = invAcc.get(id) || [];
+    // Ưu tiên kho mặc định; không có thì lấy dòng đã cấu hình; cuối cùng là dòng đầu.
+    const rules = rulesAcc.get(id) || [];
+    acc.rule =
+      rules.find((r) => r.isDefaultWarehouse) ||
+      rules.find((r) => r.hasOverrides) ||
+      rules[0] ||
+      null;
   }
 
   return byProduct;
+};
+
+/**
+ * Chuyển quy tắc nhập hàng (theo kho) thành tham số cho `planReplenishment`.
+ *
+ * CHỈ trả về tham số người dùng THẬT SỰ cấu hình. Không cấu hình ⇒ không trả về,
+ * để `planReplenishment` dùng đúng mặc định của engine. Nếu trả về `undefined`
+ * cho `leadTimeDays`, engine sẽ coi là "đã cấu hình" rồi đưa vào công thức với
+ * giá trị rỗng — đó là loại lỗi âm thầm đã xảy ra với `poDate` (xem
+ * `loadLeadTimeReceipts`).
+ *
+ * `maxStock` KHÔNG đưa vào `planReplenishment`: ROP là ngưỡng đề xuất, ép trần cứng
+ * vào công thức sẽ khiến `orderQty = 0` và im lặng không đề xuất. Nó dùng cho
+ * cảnh báo tồn quá cao, xem `overStockWarning` trong `planReplenishment`.
+ */
+const ruleOverrides = (rule) => {
+  if (!rule) return {};
+  const out = {};
+  if (rule.leadTimeDays != null && Number(rule.leadTimeDays) > 0) {
+    out.configuredLeadTimeDays = Number(rule.leadTimeDays);
+  }
+  if (rule.serviceLevel != null && Number(rule.serviceLevel) > 0 && Number(rule.serviceLevel) < 1) {
+    out.serviceLevel = Number(rule.serviceLevel);
+  }
+  if (Number(rule.packMultiple) > 1) out.packMultiple = Number(rule.packMultiple);
+  return out;
 };
 
 /**
@@ -262,6 +329,7 @@ const suggestForProduct = async ({
     packMultiple,
     reviewPeriodDays: REVIEW_PERIOD_DAYS,
     onOrder: input.onOrder,
+    ...ruleOverrides(input.rule),
   });
 
   if (plan.status === NEED_REPLENISHMENT || plan.status === STOCKOUT) {
@@ -392,6 +460,7 @@ const previewForProduct = async ({ productId, packMultiple = 1, unitCost = null 
     packMultiple,
     reviewPeriodDays: REVIEW_PERIOD_DAYS,
     onOrder: input.onOrder,
+    ...ruleOverrides(input.rule),
   });
 
   // NCC từ PO gần nhất còn hoạt động — cùng nguồn với đường ghi để preview khớp

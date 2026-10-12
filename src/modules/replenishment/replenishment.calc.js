@@ -692,9 +692,21 @@ const planReplenishment = ({
   defaultLeadTimeDays = DEFAULT_LEAD_TIME_DAYS,
   demandMethod = "auto",
   onOrder = 0,
+  /** Lead time do người dùng CẤU HÌNH cho riêng SKU/kho (Odoo days-to-purchase). */
+  configuredLeadTimeDays = null,
+  /** Trần tồn cấu hình — CHỈ để cảnh báo tồn quá cao, KHÔNG ép vào ROP. */
+  maxStock = null,
 } = {}) => {
   const demand = calcDemand({ dailySales, method: demandMethod });
-  const lead = calcLeadTime({ receipts, defaultDays: defaultLeadTimeDays });
+  // Ưu tiên thứ tự: cấu hình của người dùng → đo được từ lịch sử PO→GRN →
+  // mặc định 7 ngày. `configuredLeadTimeDays = null` nghĩa là chưa cấu hình.
+  const lead = calcLeadTime({
+    receipts,
+    defaultDays: configuredLeadTimeDays || defaultLeadTimeDays,
+  });
+  const leadSource = configuredLeadTimeDays > 0
+    ? "CONFIGURED"
+    : lead.estimated ? "ESTIMATED" : "MEASURED";
   const atp = calcAtp({ inventories });
   // Inventory position = tồn khả dụng + hàng đang trên đường. Dùng vị thế này
   // để quyết định, còn ATP giữ nguyên để hiển thị cho người duyệt.
@@ -729,15 +741,33 @@ const planReplenishment = ({
   // `totalEstimate` để tạo PO.
   const cost = classifyUnitCost(unitCost);
 
+  // Tồn quá cao so với trần cấu hình — dùng để cảnh báo vận hành (tồn quá cao
+  // vốn tiền và chiếm chỗ). KHÔNG đưa vào `orderQty`: ép trần vào công thức đặt
+  // sẽ cho `orderQty = 0` và hệ thống im lặng không đề xuất, tức mất cảnh báo
+  // thiếu hàng. `maxStock = null` (chưa cấu hình) ⇒ không cảnh báo, không bịa.
+  const maxStockQty = maxStock != null && Number(maxStock) > 0 ? Number(maxStock) : null;
+  const overStock = maxStockQty != null && position > maxStockQty;
+
   return {
     ...status,
     missingCost: cost.missing,
     demand,
-    lead,
+    lead: { ...lead, source: leadSource },
     atp: { ...atp, onOrder: onOrderQty, position },
     safety,
     rop,
     order: { ...qty, totalEstimate },
+    // Quy tắc nhập hàng đang áp dụng (để UI hiện "này là CẤU HÌNH của bạn").
+    rules: {
+      configured: configuredLeadTimeDays != null || maxStockQty != null,
+      leadTimeDays: configuredLeadTimeDays != null ? configuredLeadTimeDays : null,
+      leadTimeSource: leadSource,
+      serviceLevel,
+      packMultiple,
+      maxStock: maxStockQty,
+      overStock,
+      excessQty: overStock ? Math.max(0, position - maxStockQty) : 0,
+    },
     // LLM chỉ được nhận khối này. Không được suy ra số khác.
     rationale: {
       atp: atp.atp,
@@ -749,6 +779,7 @@ const planReplenishment = ({
       sigmaDaily: demand.sigmaDaily,
       leadTimeDays: lead.leadTimeDays,
       leadTimeEstimated: lead.estimated,
+      leadTimeSource: leadSource,
       daysOfCoverLeft: status.daysOfCover,
       orderQty: qty.orderQty,
       unitCost: cost.value,
