@@ -277,12 +277,15 @@ async function main() {
       }));
 
       // Ghi bút toán cho GRN vừa tạo — bù cho việc bypass `grn.service.post`.
-      // Idempotent theo `operation = GRN:<id>` nên chạy lại không nhân đôi.
-      await postGrnJournal({
+      // PHẢI bọc trong `inT`: ngoài tenant context thì `journal_entries.tenantId`
+      // ghi NULL, và vì `entryCode` unique toàn cục, 18 dòng NULL đó đã chiếm mã
+      // `JE-...-0040..0057` khiến mọi bút toán của tenant demo trong ngày đó đụng
+      // P2002 (đã xảy ra 2026-10-12, vá bằng scripts/fix-null-journal-tenant.js).
+      await inT(() => postGrnJournal({
         grn: { ...grn, items: [{ passQty: h.orderQty, purchaseItem: { quantity: h.orderQty, unitCost: h.unitCost, taxAmount: 0 } }] },
         purchaseOrder: po,
         vendor,
-      });
+      }));
 
       created += 1;
     }
