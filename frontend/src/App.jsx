@@ -118,6 +118,7 @@ const SmartGuide = lazy(() => import("./pages/SmartGuide"));
 const EvidenceBacktest = lazy(() => import("./pages/EvidenceBacktest"));
 const ReplenishmentRules = lazy(() => import("./pages/ReplenishmentRules"));
 const RfqQuotation = lazy(() => import("./pages/RfqQuotation"));
+const SupplyDashboard = lazy(() => import("./pages/SupplyDashboard"));
 const Sessions = lazy(() => import("./pages/Sessions"));
 const Promotions = lazy(() => import("./pages/Promotions"));
 const ModifierGroups = lazy(() => import("./pages/ModifierGroups"));
@@ -422,6 +423,13 @@ function App() {
                 <Route path="/report-builder" element={<ReportBuilder />} />
                 <Route path="/reports" element={<Reports />} />
                 <Route path="/marketplace" element={<Marketplace />} />
+              </Route>
+
+              {/* ADMIN + MANAGER + WAREHOUSE + ACCOUNTANT — chỉ số chuỗi cung ứng.
+                  Kế toán cần xem tồn kho/tồn chết, kho cần xem PO quá hạn, nên cả bốn
+                  role đều xem được; nhưng KHÔNG có nút thao tác nào trên màn này. */}
+              <Route element={<RequireRole roles={["ADMIN", "MANAGER", "WAREHOUSE", "ACCOUNTANT"]} />}>
+                <Route path="/supply" element={<SupplyDashboard />} />
               </Route>
 
               {/* ADMIN + MANAGER — Management features (ACCOUNTANT excluded) */}

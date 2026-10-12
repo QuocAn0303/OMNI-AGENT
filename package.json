@@ -48,6 +48,7 @@
     "fix:journal-tenant": "node scripts/fix-null-journal-tenant.js",
     "check:evidence": "node scripts/check-evidence-http.js",
     "check:replenishment-rules": "node scripts/check-replenishment-rules-http.js",
+    "check:supply": "node scripts/check-supply-http.js",
     "check:accounting": "node scripts/check-accounting-integrity.js",
     "tenant:cleanup:orphans": "node scripts/cleanup-orphan-null-rows.js",
     "db:shadow": "node scripts/ensure-shadow-db.js",

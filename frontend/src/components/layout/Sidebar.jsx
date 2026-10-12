@@ -267,6 +267,13 @@ const MENU_GROUPS = [
         roles: ["ADMIN", "MANAGER"],
       },
       {
+        // KPI chuỗi cung ứng: tồn kho, vòng quay, tồn chết, giao hàng NCC.
+        key: "/supply",
+        icon: <DashboardOutlined />,
+        label: "Chỉ số chuỗi cung ứng",
+        roles: ["ADMIN", "MANAGER", "WAREHOUSE", "ACCOUNTANT"],
+      },
+      {
         // RFQ: hỏi giá nhiều NCC rồi so sánh chốt (Odoo Request for Quotation).
         key: "/rfq",
         icon: <FileTextOutlined />,
