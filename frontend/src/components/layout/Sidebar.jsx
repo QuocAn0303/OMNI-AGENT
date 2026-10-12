@@ -267,6 +267,13 @@ const MENU_GROUPS = [
         roles: ["ADMIN", "MANAGER"],
       },
       {
+        // RFQ: hỏi giá nhiều NCC rồi so sánh chốt (Odoo Request for Quotation).
+        key: "/rfq",
+        icon: <FileTextOutlined />,
+        label: "So sánh báo giá NCC",
+        roles: ["ADMIN", "MANAGER"],
+      },
+      {
         // Quy tắc nhập hàng theo SKU×kho (Odoo Reordering Rules).
         key: "/replenishment-rules",
         icon: <SettingOutlined />,

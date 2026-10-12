@@ -291,6 +291,8 @@ model User {
   expenses               Expense[]              @relation("ExpenseCreatedBy")
   expensesApproved       Expense[]              @relation("ExpenseApprovedBy")
   purchaseOrders         PurchaseOrder[]        @relation("PurchaseCreatedBy")
+  rfqsCreated           Rfq[]                 @relation("RfqCreatedBy")
+  rfqsAwarded           Rfq[]                 @relation("RfqAwardedBy")
   bankTxs                BankTransaction[]      @relation("BankTxCreatedBy")
   closedPeriods          FiscalPeriod[]         @relation("PeriodClosedBy")
   purchaseOrdersApproved PurchaseOrder[]        @relation("PurchaseApprovedBy")
@@ -466,6 +468,7 @@ model Product {
   combo           Combo?
   comboItems      ComboItem[]
   recipe          Recipe?
+  rfqItems        RfqItem[]
 
   bomsAsProduct             Bom[]                @relation("BomProduct")
   bomItemsAsComponent       BomItem[]            @relation("BomComponent")
@@ -2088,6 +2091,7 @@ model Vendor {
 
   expenses       Expense[]
   purchaseOrders PurchaseOrder[]
+  rfqQuotes      RfqQuote[]
   debts          Debt[]
 
   @@unique([code, tenantId])
@@ -2417,6 +2421,117 @@ model ChurnAlert {
 }
 
 // ==================== SRM: GOODS RECEIPT NOTE (Nhận hàng PO + QC — Mục 6) ====================
+
+// Trạng thái yêu cầu báo giá (RFQ — Request for Quotation của Odoo).
+// `OPEN` = đang chờ NCC trả lời; `AWARDED` = đã chọn NCC và tạo PO;
+// `CANCELLED` = huỷ. KHÔNG có trạng thái "đã đóng không nhận được báo giá" vì
+// cần lưu kết quả đối chiếu để giải thích vì sao chọn NCC này.
+enum RfqStatus {
+  OPEN
+  AWARDED
+  CANCELLED
+}
+
+// Báo giá của MỘT nhà cung cấp cho một RFQ.
+enum RfqQuoteStatus {
+  PENDING // chưa trả lời
+  QUOTED // đã có báo giá
+  DECLINED // NCC từ chối
+  SELECTED // được chọn
+}
+
+model Rfq {
+  id            String    @id @default(uuid())
+  tenantId      String?
+  rfqCode       String    @unique // RFQ-YYYYMMDD-XXXX
+  status        RfqStatus @default(OPEN)
+  // Hạn chót nhận báo giá — Odoo có `date_deadline`; không có thì không biết
+  // khi nào đóng được, và quy trình sẽ treo.
+  deadlineAt    DateTime?
+  note          String?   @db.Text
+  // NCC được chọn sau khi so sánh. Khoá mềm (không FK) để giữ lịch sử ngay cả
+  // khi NCC bị xoá mềm — cùng nguyên tắc với `PurchaseOrder.vendorId`.
+  awardedVendorId String?
+  awardedAt    DateTime?
+  awardedById  String?
+  awardedBy    User?     @relation("RfqAwardedBy", fields: [awardedById], references: [id], onDelete: SetNull)
+  purchaseOrderId String? @unique // PO sinh ra từ RFQ này — 1 RFQ ⇒ tối đa 1 PO
+  createdById   String
+  createdBy     User      @relation("RfqCreatedBy", fields: [createdById], references: [id])
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  quotes RfqQuote[]
+  items  RfqItem[]
+
+  @@index([tenantId, status])
+  @@map("rfqs")
+}
+
+// Một dòng hàng cần mua, dùng chung cho mọi báo giá.
+model RfqItem {
+  id       String  @id @default(uuid())
+  tenantId String?
+  rfqId    String
+  rfq      Rfq     @relation(fields: [rfqId], references: [id], onDelete: Cascade)
+  productId String?
+  product  Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+  // Tên tự do khi không gắn sản phẩm có sẵn (mua mới, chưa nhập ký mã).
+  description String?
+  quantity    Int
+  unit        String?
+  sortOrder   Int     @default(0)
+
+  quotes RfqQuoteLine[]
+
+  @@index([rfqId])
+  @@map("rfq_items")
+}
+
+// Báo giá của một NCC cho một RFQ (Odoo: `purchase.order` ở trạng thái
+// `RFQ`/`sent` với một NCC mỗi lần — ở đây gộp nhiều NCC vào một RFQ để so
+// sánh cùng lúc, vì mục tiêu là CHỌN được chứ không phải gửi cho từng NCC).
+model RfqQuote {
+  id       String         @id @default(uuid())
+  tenantId String?
+  rfqId    String
+  rfq      Rfq            @relation(fields: [rfqId], references: [id], onDelete: Cascade)
+  vendorId String
+  vendor   Vendor         @relation(fields: [vendorId], references: [id])
+  status   RfqQuoteStatus @default(PENDING)
+  // Ngày NCC cam kết giao — đầu vào để ước lượng lead time THỰC của nhà cung cấp
+  // (Odoo: `days_to_purchase` trên dòng đơn mua). CHƯA dùng để tính ROP, chỉ để
+  // so sánh và hiển thị.
+  promisedAt      DateTime?
+  // Lý do không chọn — bắt buộc để sau này giải thích được quyết định.
+  declineReason   String?
+  note            String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  lines RfqQuoteLine[]
+
+  @@unique([rfqId, vendorId]) // một NCC chỉ có một báo giá cho một RFQ
+  @@index([tenantId])
+  @@map("rfq_quotes")
+}
+
+/// Giá của từng dòng hàng trong một báo giá.
+model RfqQuoteLine {
+  id       String   @id @default(uuid())
+  tenantId String?
+  quoteId  String
+  quote    RfqQuote @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+  rfqItemId String
+  rfqItem  RfqItem  @relation(fields: [rfqItemId], references: [id], onDelete: Cascade)
+  unitCost Decimal  @db.Decimal(15, 2)
+  // NCC có thể báo không đủ số lượng yêu cầu — `RfqItem.quantity` là số cần mua.
+  availableQty Int?
+
+  @@unique([quoteId, rfqItemId])
+  @@index([rfqItemId])
+  @@map("rfq_quote_lines")
+}
 
 enum GrnStatus {
   DRAFT
