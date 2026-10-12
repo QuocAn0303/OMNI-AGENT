@@ -1,4 +1,4 @@
-# STATE — tiến độ AISC26 (Space Bunny)
+﻿# STATE — tiến độ AISC26 (Space Bunny)
 
 Cập nhật sau mỗi việc xong để phiên sau không mất ngữ cảnh.
 
@@ -883,3 +883,128 @@ Kich ban nguoi thu da sinh lai theo du lieu moi: **as-of 2026-09-19**,
 cho nguoi thu, va phai dung dung file nay de cham.
 
 Vac: `aduu-dev-before-demo-reset-20261011-005332.dump` (1,94 MB, ngoai repo).
+
+---
+
+## Cập nhật 2026-10-12/13 (phiên "hoàn thiện theo Odoo — vòng mua hàng + bằng chứng")
+
+**RESUME HERE.** Vòng mua hàng đã **đóng kín** và có bằng chứng trên DB thật.
+Việc còn lại của AI: Replenishment Rules, RFQ, cây kho vị trí, dashboard KPI —
+đều **chưa** làm. **KHÔNG** thêm tính năng mới trước khi chạy lại đầy đủ các
+lệnh kiểm chứng ở mục 6.
+
+> **Sai lầm đã mắc phải ở phiên này:** dùng `Add-Content`/`Set-Content` của
+> PowerShell để ghi `STATE.md` đã làm hỏng ký tự tiếng Việt — đúng như Mục 9 đã
+> cảnh báo. Sửa bằng cách cắt phần hỏng rồi dùng `edit`. **Lần sau dùng `edit`/`write`.**
+
+### 1. VÒNG MUA HÀNG: GRN không ghi bút toán — 39 PO lệch sổ cái
+
+Phát hiện bằng lệnh mới `npm run check:accounting` (trước đó không tồn tại):
+
+| Đo lúc | Sau khi sửa |
+|---|---|
+| PO có GRN POSTED mà KHÔNG có bút toán | **0** |
+| `journal_entries` `tenantId` NULL | 18 → **0** |
+| `check:tenant` | **FAIL (133 dòng)** → **PASS 11/11+4/4+4/4** |
+
+Nguyên nhân gốc và cách sửa:
+- `grn.service.post` chỉ cộng tồn kho, không ghi Nợ 156 / Có 331, không tạo công nợ.
+- Thêm `buildGoodsReceiptEntry`: tính trên **`passQty` × `unitCost`** (giá trị
+  hàng **thực nhận**) + VAT theo tỷ lệ nhận/đặt — KHÔNG dùng tổng PO, vì GRN cho
+  phép nhận từng phần và QC loại hàng. Ghi **sau** transaction để lỗi hạch không
+  rollback phần kho đã nhận.
+- `createPayableForPoInTx` đổi sang nghĩa "TỔNG đã nhận **tích luỹ**" (trước đó so
+  giá trị lần này với tổng công nợ ⇒ nhập từng phần không bao giờ cộng thêm),
+  bỏ hard-code 30 ngày → lấy `paymentTerms` của NCC.
+- `GRN.post` trả **TỔNG KẾT vòng đã đóng** cho UI: `acceptedQty`, `receivedValue`,
+  `remainingQty`, `journalEntry`, `payable`. `journalEntry = null` khi hạch lỗi —
+  báo trung thực, không báo thành công giả.
+
+### 2. HAI BUG BỘ ĐẾM MÃ BÚT TOÁN (chỉ lộ ra khi chạy smoke thật)
+
+1. `generateEntryCode` dùng `count + 1` → hỏng khi chuỗi có **lỗ hổng** (đã xoá/đảo
+   bút toán, dọn tenant, chạy lại seed). `postEntry` chỉ bắt va chạm theo
+   `(source, sourceId, operation)`, **KHÔNG** bắt va chạm `entryCode` ⇒ **mọi bút
+   toán còn lại trong ngày đó thất bại**.
+2. `entryCode` unique **toàn cục** nhưng `findFirst` bị tenant extension lọc ⇒ hai
+   tenant cùng thấy `max` giống nhau và sinh cùng một mã. Đo thật: tenant demo max
+   `0039` trong khi 18 dòng NULL chiếm `0040..0057` ⇒ P2002 liên tục.
+   → đọc bằng **raw SQL** (raw không bị extension lọc) và lấy `MAX(suffix)`.
+
+> **Bài học bổ sung vào Mục 10:** chỉ cần đổi một hàm thành công với
+> `mockResolvedValue` cũng làm `smoke:grn-posting` rớt **16/16 → 11/16**.
+> **Unit test PASS không chứng minh một thay đổi an toàn với DB thật.**
+> Luôn chạy smoke sau khi sửa, dù chỉ sửa hàm đơn lẻ.
+
+### 3. BA LỖI TÊN CỘT làm tính năng hỏng âm thầm
+
+| File | Sai | Đúng lại | Hậu quả nếu không sửa |
+|---|---|---|---|
+| `grn.service.js` | `InventoryLot.expiryDate` | `expDate` | nhánh "tạo lot mới" **luôn** ném Prisma lỗi |
+| `valuation.service.js` | `LotTransaction.note` | (không có cột này) | **xuất kho FIFO của mọi đơn hàng bị hỏng** |
+| `purchase.service.js` | lot mới thiếu `unitCost` | thêm `unitCost` | giá vốn FIFO sai khi giá các lần nhập khác nhau |
+
+### 4. CÁCH LY TENANT
+
+- `auth.service.js`: `generateTokens`, `refreshAccessToken`, `login` truyền
+  `tenantId` tường minh — đăng nhập chạy **trước** `authenticate` nên
+  `getTenantId()` là `null` dù tenant đã biết.
+- `auth.controller.js`: login 2FA lấy `tenantId` từ `tokens.user`.
+- `CREATE_BACKUP` là hành động **nền tảng** (bảng `AdminBackup` không có
+  `tenantId`) ⇒ khai ngoại lệ có điều kiện + trần 1, không gán bừa tenant.
+- Xoá 83 khách rác (đã chứng minh: 0 FK trỏ tới, 0 `partner_referrals` trỏ tới).
+- `classifyNullRows` chỉ lấy **ngoại lệ ĐẦU TIÊN** ⇒ nhiều ngoại lệ của cùng một
+  bảng bị bỏ qua im lặng. Đã đổi thành gộp **tất cả** ngoại lệ của bảng.
+
+### 5. BẰNG CHỨNG ĐƯA LÊN MÀN HÌNH
+
+Trang `/evidence`: kết quả backtest (file 9,5 MB) + nguồn `sha256` + 5 dòng giới
+hạn, kèm số đo **thật** của tenant. Kết luận **sinh từ số liệu, không viết sẵn**:
+ở lead time 7 ngày, ROP giảm 51,4% chi phí nhưng **mất 11,46 điểm mức phục vụ** ⇒
+màn hình nói *"không có lợi thế rõ ràng"*, không biến thành "tốt hơn".
+
+Sửa 2 lỗi trong lúc làm: nhãn gốc của thí nghiệm 2 làm `P1(DOC=28)` **trùng y hệt**
+`P4(DOC=28)` (đọc ra như một phương án); và so sánh theo thứ tự mảng rơi vào cặp
+sai nên báo *"hệ thống tốn hơn 53%"* — sửa thành so sánh theo **họ phương án**.
+
+### 6. KIỂM CHỨNG (2026-10-12/13, chạy TUẦN TỰ)
+
+| Lệnh | Kết quả | Loại |
+|---|---|---|
+| `npx jest` | **4350/4355** (5 skip) | mock |
+| `npm run check:tenant` | 11/11 + 4/4 + 4/4 — **PASS** | **DB thật** |
+| `npm run check:accounting` | 57 GRN / 57 bút toán / **0 thiếu**; cân bằng N=C | **DB thật** |
+| `npm run smoke:grn-posting` | **16/16** (mới) | **DB thật** |
+| `npm run smoke:po-gate` | 24/24 | **DB thật** |
+| `npm run smoke:demo-flow` | 12/12 | **DB thật** |
+| `npm run demo:check` | **13/13** | **DB thật** |
+| `npm run check:evidence` | **14/14** (cần backend) | **HTTP thật** |
+| `npm run check:modules` | 212 module | — |
+| `npm run demo:setup` | 12/12 SKU lead time đo được | **DB thật** |
+| `frontend npm run lint` | **0 error** (63 warning có sẵn) | — |
+| `frontend npm run build` | built | — |
+
+Sau mỗi lần chạy: `Get-Process node | Stop-Process -Force` — **0 tiến trình còn lại**.
+
+### 7. Còn lại (xếp theo giá trị cho AISC)
+
+1. **6 người thử + phỏng vấn THẬT** — phần còn lại lớn nhất, **không làm được bằng code**.
+2. **Replenishment Rules**: lưu `maxStock`/`leadTimeDays`/`packMultiple` theo
+   sản phẩm × kho. Hiện chỉ có `Inventory.minStock`; **`maxStock`, `leadTimeDays`
+   không tồn tại trong schema** (chỉ là hằng số trong code).
+3. **RFQ / so sánh báo giá NCC** — hiện **không có gì** (Vendor → PO thẳng).
+4. **Cây kho vị trí** — `Warehouse` phẳng, không có `type`/`parentId`.
+5. **Dashboard KPI chuỗi cung ứng.**
+6. 36 GRN kẹt `QC_DONE` thuộc tenant seed `crm-phase1-demo` — không phải tenant
+   trình bày, không ảnh hưởng luồng demo. Để lại, ghi để biết.
+7. 141/146 bảng scoped chưa có FK tới `tenants` — backlog đã biết.
+8. `data:import` tạo kho với `id = "<tenantId>:wh-main"` (**không phải UUID**).
+   `warehouseId` là `String` nên DB chấp nhận, nhưng hỏng khi code giả định UUID.
+   **Chưa sửa** — cần migration đổi `id` kho của tenant demo.
+
+### 8. Backup đã tạo (ngoài repo, `%TEMP%\erp-backups\`)
+
+- `aduu-before-orphan-null-cleanup-20261012T161938.dump` (1,27 MB)
+- `aduu-before-grn-backfill-20261012T163308.dump` (1,27 MB)
+
+---
