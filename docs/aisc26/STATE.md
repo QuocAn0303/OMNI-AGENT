@@ -1008,3 +1008,156 @@ Sau mỗi lần chạy: `Get-Process node | Stop-Process -Force` — **0 tiến 
 - `aduu-before-grn-backfill-20261012T163308.dump` (1,27 MB)
 
 ---
+
+## Cập nhật 2026-10-13 (phiên "5 hạng mục Odoo còn lại — ĐÃ XONG HẾT")
+
+**RESUME HERE.** **5/5 hạng mục đã XONG và có bằng chứng DB thật / HTTP thật.**
+Việc còn lại của AI: **không còn mục kỹ thuật nào**. Phần còn lại là của **người**:
+6 người thử + phỏng vấn thật.
+
+Commit mới theo thứ tự: `5dcfcd2` (Replenishment Rules), `0ce1b09` (RFQ),
+`89ea028` (cây kho vị trí), `b788dac` (dashboard KPI). Xem `git log --oneline -5`.
+
+### 0. Bốn nguyên tắc đã áp dụng xuyên suốt 5 hạng mục
+
+1. **NULL = "chưa cấu hình", không phải 0.** Mọi cột mới đều cho phép NULL, và `0`
+   vẫn là giá trị có nghĩa. Dùng `0` làm "chưa cấu hình" là mất thông tin.
+2. **Ràng buộc ở BA tầng**: Zod (báo lỗi cho UI) + CHECK constraint ở DB (chặn cả
+   script/import chạy ngoài app) + service từ chối giá trị ngoài miền.
+3. **Chỉ số không tính được trả `null` + lý do, KHÔNG trả 0.** Trả 0 là nói dối.
+4. **PO/đơn mua sinh ra từ tính năng mới vẫn đi qua `purchaseService.create`** —
+   không gọi `prisma.purchaseOrder.create` tay, để không đường vòng quy tắc duyệt.
+
+### 1. Replenishment Rules (Odoo `Reordering Rules`) — `5dcfcd2`
+
+Migration `20261013100000_inventory_replenishment_rules`: thêm
+`inventories.maxStock | leadTimeDays | packMultiple | serviceLevel` + 4 CHECK.
+
+**Phần quan trọng nhất là nối vào engine, không phải thêm cột.** Trước đây ROP dùng
+hằng số cứng (7 ngày / bội số 1 / 95%), người dùng không cấu hình được gì cho từng SKU.
+- `loadReplenishmentInput` đọc quy tắc, ưu tiên kho mặc định.
+- `ruleOverrides` **chỉ trả về tham số thật sự được cấu hình** — trả `undefined`
+  sẽ bị coi là "đã cấu hình" rồi đưa vào công thức với giá trị rỗng (đúng loại lỗi âm
+  thầm đã xảy ra với `poDate`, xem Mục 2 của phiên trước).
+- `lead.source = CONFIGURED | MEASURED | ESTIMATED` — không ai nhầm "ước lượng" là
+  "đo được" nữa.
+- **`maxStock` KHÔNG ép vào `orderQty`.** Ép trần vào công thức sẽ cho `orderQty = 0`
+  và hệ thống im lặng — mất luôn cảnh báo thiếu hàng. Nó chỉ dùng cho
+  `rules.overStock` / `rules.excessQty`.
+
+### 2. RFQ / so sánh báo giá NCC — `0ce1b09`
+
+Migration `20261013120000_rfq_quotation_comparison`: `Rfq` + `RfqItem` + `RfqQuote`
++ `RfqQuoteLine`. Đây là bước **hoàn toàn mới**: trước đây là `Vendor → PurchaseOrder`
+thẳng, không hỏi giá, không có bằng chứng vì sao chọn NCC.
+
+- **Báo giá THIẾU DÒNG không được xếp hạng.** Tổng tiền thiếu dòng nhỏ đi và làm
+  NCC đó trông rẻ giả.
+- **NCC báo thiếu hàng ⇒ PO chỉ tạo phần NCC thực sự có.** Đặt phần vượt khả năng
+  giao là tạo nợ mà không có hàng. UI cảnh báo **trước khi** chốt.
+- Không có API gửi NCC ⇒ `create` trả `requiresHumanSend: true, sentCount: 0`.
+- `awardedVendorId` / `purchaseOrderId` cố ý **không** có FK (giữ chứng cứ chọn NCC
+  khi NCC bị xoá mềm) — cùng nguyên tắc `PartnerReferral.customerId`.
+
+### 3. Cây kho vị trí (Odoo `stock.location`) — `89ea028`
+
+Migration `20261013140000_warehouse_location_tree`: thêm
+`warehouses.locationType | parentId | path`.
+
+**Thiết kế an toàn: không tạo bảng mới.** Mọi kho cũ mặc định `PHYSICAL` ⇒ hành vi
+không đổi; `Inventory`/GRN/lot/serial/chuyển kho vẫn tham chiếu `warehouseId`.
+
+- FK `ON DELETE RESTRICT`: xoá kho cha còn kho con = mất tồn kho.
+- CHECK chặn tự làm cha của chính mình (duyệt đệ quy gặp vòng là treo request).
+- **Trigger** chặn gắn vị trí con tenant A vào kho cha tenant B. *Không* làm được
+  bằng CHECK (Postgres từ chối subquery trong CHECK) cũng không bằng UNIQUE (so
+  sánh hai cột khác nhau).
+- **Chỉ `PHYSICAL` mới chứa hàng** — đổi vị trí đang có hàng sang `VIEW` bị chặn vì
+  tổng tồn trong báo cáo sẽ sai.
+
+**Ba bug thật bắt được trong lúc viết** (đã sửa, smoke có khoá lại):
+1. `getTree` lọc `parentId = rootId` ⇒ vị trí cấp 2 rơi khỏi cây, `totalQuantity`
+   **SAI**. Đã đổi sang CTE `RECURSIVE`; smoke thêm `KHU-C` cấp 2 để chặng.
+2. `select` của vị trí con thiếu `product` ⇒ `skus` rỗng cho mọi nhánh.
+3. Route `/tree/flat` phải khai **trước** `/:id/tree` — không thì Express khớp
+   chữ `"tree"` vào `:id` (cùng lý do với `tests/partner-routing.test.js` của PRM).
+
+### 4. Dashboard KPI chuỗi cung ứng — `b788dac`
+
+`GET /api/supply/kpis?days=` + `pages/SupplyDashboard.jsx`. Nhóm 6 chỉ số, mỗi nhóm
+kèm `note` giải thích cách tính và giới hạn; UI hiện `null` là **"chưa đủ dữ liệu"**
+kèm dấu `?`, không hiện 0.
+
+Đo thật trên tenant demo: OTIF = `null` (0 phiếu nhập nào có ngày giao dự kiến) và
+`daysOfCover` = `null` (kỳ 30 ngày không có hàng xuất) ⇒ hệ thống **nói thẳng là chưa
+biết**, đúng mục tiêu bài học số 3.
+
+### 5. KIỂM CHỨNG (2026-10-13, chạy TUẦN TỰ — không chạy song song)
+
+| Lệnh | Kết quả | Loại |
+|---|---|---|
+| `npx jest` | **4488/4493** pass (90 suite, 5 skip) | mock |
+| `npm run check:tenant` | 11/11 + 4/4 + 4/4 — **PASS** | **DB thật** |
+| `npm run check:accounting` | 57 GRN / 57 bút toán / **0 thiếu** | **DB thật** |
+| `npm run smoke:grn-posting` | 16/16 | **DB thật** |
+| `npm run smoke:replenishment-rules` | **16/16** (mới) | **DB thật** |
+| `npm run smoke:rfq` | **20/20** (mới) | **DB thật** |
+| `npm run smoke:warehouse-tree` | **18/18** (mới, 2 lần cùng kết quả) | **DB thật** |
+| `npm run smoke:po-gate` | 24/24 | **DB thật** |
+| `npm run smoke:demo-flow` | 12/12 | **DB thật** |
+| `npm run demo:check` | 13/13 | **DB thật** |
+| `npm run check:replenishment-rules` | **12/12** (mới) | **HTTP thật** |
+| `npm run check:supply` | **12/12** (mới) | **HTTP thật** |
+| `npm run check:evidence` | 14/14 | **HTTP thật** |
+| `npm run check:humangate` | **11/11** — **NỢ TỪ P6/P7 ĐÃ TRẢ** | **HTTP thật** |
+| `npm run check:modules` | 212 module | — |
+| `npm run check:swagger` | **135/135** khối | tĩnh |
+| `frontend npm run lint` | **0 error** (64 warning có sẵn) | — |
+| `frontend npm run build` | built | — |
+
+Sau mỗi lần chạy: `Get-Process node | Stop-Process -Force` — **0 tiến trình còn lại**.
+
+### 6. Bài học mới của phiên này (bổ sung Mục 10)
+
+1. **Decimal của Prisma không so sánh được với `===` số JS.** `line1.unitCost === 10500`
+   luôn `false` vì `unitCost` là `Decimal`. Phải `Number(...)` trước. Đã vấp 2 lần
+   trong `smoke:rfq`.
+2. **`result` thu hẹp làm mất số khi ra khỏi service.** `comparison.ranking` ban đầu
+   chỉ map `{quoteId, vendorId, vendorName, rank, total}` ⇒ mất
+   `savingVsCheapestPct` mà UI cần. Phải mang theo, đừng tính lại ở UI.
+3. **Đặt CHECK trước `ADD COLUMN` là lỗi "column does not exist".** Thứ tự trong
+   migration phải là: tạo cột → thêm CHECK/REFERENCES.
+4. **Migration fail giữa chừng phải `prisma migrate resolve --rolled-back`** trước
+   khi sửa và chạy lại; nếu không `deploy` sẽ khoá DB (P3009). Lần này fail
+   **trước khi** thêm cột nào nên DB sạch — kiểm `information_schema` để biết chắc.
+5. **`Warehouse.code` unique TOÀN CỤC.** Kho con trong smoke có mã `KHU-A` không
+   chứa tiền tố script ⇒ dọn rác lần sau không khớp, và kho mồ côi của tenant khác
+   vẫn chặn `@@unique`. Phải dọn **theo cây** (CTE `RECURSIVE`), không lọc tiền tố.
+6. **Test tổng khác 0 là không kiểm gì.** Test đầu của `replenishment-rules` dùng
+   dữ liệu bán hoàn hảo đều 10/ngày ⇒ `sigmaDaily = 0` ⇒ tồn tối thiểu bằng 0 ở
+   **mọi** mức phục vụ, test pass vì sai lý do. Phải dùng nhu cầu **có biến động**.
+
+### 7. Còn lại (xếp theo giá trị)
+
+**Đã trả xong nợ kỹ thuật tồn đọng từ P6/P7:** `check:humangate` 11/11 chạy được
+(cần backend thật — trước đó bị ghi là "chưa có bằng chứng" vì không bật server).
+
+1. **6 người thử + phỏng vấn THẬT** — **không làm được bằng code**, và là phần còn
+   lại lớn nhất cho AISC. Bộ công cụ đã sẵn (`usertest/`), kịch bản đã sinh lại theo
+   dữ liệu mới (`as-of 2026-09-19`, `sha256 sku-sets.json 8408c73…`).
+2. **`data:import` tạo kho với `id = "<tenantId>:wh-main"`** (không phải UUID).
+   `warehouseId` là `String` nên DB chấp nhận, nhưng hỏng khi code giả định UUID.
+   **Chưa sửa** — cần migration đổi `id` kho của tenant demo.
+3. 36 GRN kẹt `QC_DONE` thuộc tenant seed `crm-phase1-demo` — không phải tenant
+   trình bày, không ảnh hưởng luồng demo. Để lại, ghi để biết.
+4. 141/146 bảng scoped chưa có FK tới `tenants` — backlog đã biết.
+5. `OTIF` vẫn `null` vì chưa đơn mua nào có `expectedAt`. Cần chốt ngày giao dự
+   kiến khi tạo PO — **đây là việc của người dùng trong UI**, không phải code.
+
+### 8. Backup của phiên này
+
+Không có backup mới: 3 migration đều **additive** (chỉ `ADD COLUMN` / `CREATE TABLE`
+/ `CREATE TRIGGER`), không sửa dữ liệu nghiệp vụ. Dump của phiên trước vẫn ở
+`%TEMP%\erp-backups\` (xem Mục 8 của mốc 2026-10-12/13).
+
+---
