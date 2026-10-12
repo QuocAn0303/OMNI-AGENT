@@ -43,6 +43,7 @@
     "smoke:grn-posting": "node scripts/smoke-grn-posting.js",
     "smoke:replenishment-rules": "node scripts/smoke-replenishment-rules.js",
     "smoke:rfq": "node scripts/smoke-rfq.js",
+    "smoke:warehouse-tree": "node scripts/smoke-warehouse-tree.js",
     "backfill:grn-journal": "node scripts/backfill-grn-journal.js",
     "fix:journal-tenant": "node scripts/fix-null-journal-tenant.js",
     "check:evidence": "node scripts/check-evidence-http.js",

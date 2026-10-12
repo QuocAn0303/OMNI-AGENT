@@ -503,6 +503,22 @@ model Warehouse {
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
 
+  // Cây vị trí (Odoo `stock.location`). Mỗi kho vẫn là một KHO THẬT (giữ nguyên
+  // mọi quan hệ cũ), nhưng bên trong có cây vị trí để chia khu vực nhập / lưu /
+  // xuất / lấy hàng. `type`:
+  //   PHYSICAL  = nơi hàng thật nằm (mặc định — hành vi cũ, không đổi)
+  //   VIEW      = góc nhìn gộp nhiều vị trí, KHÔNG chứa hàng (Odoo: "View")
+  //   INTERNAL  = vị trí trung gian của luồng nhiều bước
+  // Chỉ PHYSICAL mới có tồn kho — ràng buộc này kiểm ở service, không phải DB,
+  // vì `Warehouse` không biết vị trí con của mình.
+  locationType String  @default("PHYSICAL")
+  parentId     String?
+  parent       Warehouse?  @relation("WarehouseTree", fields: [parentId], references: [id], onDelete: Restrict)
+  children     Warehouse[] @relation("WarehouseTree")
+  // Chặn xoá khi còn vị trí con — `onDelete: Restrict` ở trên đã lo, nhưng đặt
+  // tường minh để đọc dễ.
+  path String? // ví dụ "KHO-CHINH/KHU-A/KHU-B" — dựng sẵn để truy vấn nhanh
+
   inventories   Inventory[]
   orders        Order[]
   transfersFrom StockTransfer[] @relation("TransferFrom")
@@ -551,6 +567,7 @@ model Inventory {
 @@index([tenantId])
 }
 
+// Loại vị trí trong cây kho (Odoo `stock.location.usage`).
 enum StockTransferStatus {
   PENDING
   IN_TRANSIT
