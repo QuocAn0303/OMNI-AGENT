@@ -30,6 +30,13 @@ describe("luồng demo: đủ bước theo đúng đường mã sản phẩm", (
     // T14 thêm bước `explain-proposal` (vai trò LLM #2) giữa bước 4 và bước 5: mục
     // đích là chứng minh CHẾ ĐỘ KHÔNG-LLM chạy trọn luồng demo. Thứ tự không đổi,
     // chỉ thêm một bước không ghi DB.
+    //
+    // 2026-10-13 thêm `close-purchasing-loop` giữa bước 6 và bước chống trùng:
+    // đóng nốt vòng mua hàng (PO → GRN → bút toán → công nợ). Trước đó luồng dừng
+    // ở "tạo PO" trong khi đề tài tên là *"Tối ưu hóa Tồn kho và Chuỗi cung ứng"*.
+    // Bước này GHI DB (khác `explain-proposal`) nên phần dọn rác phải tương ứng —
+    // xem `purgeFlowResidue` trong demo-flow.js và khẳng định D7 của
+    // `smoke-demo-flow.js`.
     expect(steps).toEqual([
       "pick-sku",
       "create-order",
@@ -38,6 +45,7 @@ describe("luồng demo: đủ bước theo đúng đường mã sản phẩm", (
       "explain-proposal",
       "approve-gate",
       "exactly-one-po",
+      "close-purchasing-loop",
       "no-duplicate-proposal",
     ]);
   });

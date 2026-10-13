@@ -1,6 +1,6 @@
 {
-  "runId": "S10-20261010172155",
-  "at": "2026-10-10T17:21:55.329Z",
+  "runId": "S10-20261013155817",
+  "at": "2026-10-13T15:58:17.041Z",
   "labelSource": "nhan tay (label_sku do nguoi dien)",
   "dataset": {
     "labelSheet": "data\\aisc26\\skus\\labels\\label-sheet.csv",
@@ -98,10 +98,10 @@
     "excludesZero": false
   },
   "throughput": {
-    "fuzzyMs": 364,
-    "hybridMs": 418,
-    "msPerPairFuzzy": 6.07,
-    "msPerPairHybrid": 6.97
+    "fuzzyMs": 348,
+    "hybridMs": 329,
+    "msPerPairFuzzy": 5.8,
+    "msPerPairHybrid": 5.48
   },
   "llmCalls": 0,
   "llmUsable": 0,

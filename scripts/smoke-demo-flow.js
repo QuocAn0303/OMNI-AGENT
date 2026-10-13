@@ -112,6 +112,30 @@ async function main() {
       && run1.dedupe.onOrder > 0,
     `onOrder=${run1.dedupe.onOrder} · gate ${run1.dedupe.gatesBefore} → ${run1.dedupe.gatesAfter}`);
 
+  // ── D6b — ĐÓNG VÒNG: GRN → bút toán → công nợ (thêm 2026-10-13) ───────
+  // Khẳng định CỨNG, không phải "có vẻ đúng":
+  //   1. PO phải đi qua bước duyệt thứ hai (duyệt đề xuất ≠ duyệt đơn mua);
+  //   2. GRN nhận một phần ⇒ còn hàng phải giao nốt;
+  //   3. tồn kho tăng đúng bằng số hàng ĐẠT QC;
+  //   4. bút toán TỒN TẠI và CÂN BẰNG N = C — điều kiện từng hỏng (39 PO);
+  //   5. công nợ NCC tăng ⇒ vòng khép kín, không chỉ cộng tồn.
+  const g = run1.grn;
+  ok('D6b đơn PO phải qua bước duyệt THỨ HAI trước khi nhận hàng',
+    ['APPROVED', 'ORDERED', 'RECEIVED'].includes(g.poStatusAfterApprove),
+    `sau duyệt: ${g.poStatusAfterApprove}`);
+  ok('D6b GRN nhận một phần ⇒ còn hàng phải giao nốt',
+    g.remainingQty > 0 && g.acceptedQty > 0,
+    `đã nhận ${g.acceptedQty} · còn lại ${g.remainingQty}`);
+  ok('D6b tồn kho tăng đúng bằng số hàng đạt QC',
+    g.stockDelta === g.acceptedQty,
+    `tồn +${g.stockDelta} · đạt QC ${g.acceptedQty}`);
+  ok('D6b BÚT TOÁN tồn tại và cân bằng N = C (điều kiện từng hỏng: 39 PO)',
+    !!g.journalEntryCode && g.journalBalanced === true,
+    `${g.journalEntryCode || 'KHÔNG CÓ BÚT TOÁN'} · N=${g.journalDebit} C=${g.journalCredit}`);
+  ok('D6b công nợ NCC tăng ⇒ vòng mua hàng khép kín',
+    g.debtDelta > 0,
+    `công nợ +${Number(g.debtDelta).toLocaleString('vi-VN')} đ · NCC=${g.vendorName}`);
+
   // ── D7 — dọn dẹp rồi đo lại, hai lần liên tiếp ─────────────────────────
   const cleanup1 = await run1.cleanup();
   console.log(`[smoke] dọn lần 1: ${JSON.stringify(cleanup1.deleted)}`);

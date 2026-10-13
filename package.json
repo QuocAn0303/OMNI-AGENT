@@ -74,6 +74,7 @@
     "smoke:import-demo": "node scripts/smoke-import-demo.js",
     "smoke:demo-flow": "node scripts/smoke-demo-flow.js",
     "demo:run": "node scripts/demo/run-demo.js",
+    "clean:leaked-grn": "node scripts/cleanup-leaked-demo-grn.js",
     "demo:setup": "node scripts/demo/demo-setup.js",
     "demo:check": "node scripts/demo/demo-check.js",
     "demo:login": "node scripts/demo/ensure-demo-login.js",

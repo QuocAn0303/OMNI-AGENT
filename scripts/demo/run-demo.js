@@ -46,7 +46,8 @@ async function main() {
   const started = Date.now();
 
   line('╔══════════════════════════════════════════════════════════════════════╗');
-  line('║  LUỒNG DEMO — cảnh báo sắp hết hàng → đề xuất → duyệt → tạo PO     ║');
+  line('║  LUỒNG DEMO — cảnh báo sắp hết hàng → duyệt → tạo PO → NHẬP KHO    ║');
+  line('║  → BÚT TOÁN + CÔNG NỢ. Toàn bộ vòng mua hàng khép kín.               ║');
   line('║  Dữ liệu MÔ PHỎNG (UCI Online Retail II, CC BY 4.0) · KHÔNG có LLM ║');
   line('╚══════════════════════════════════════════════════════════════════════╝');
   line(`[demo] tenant: ${tenant.name}`);
@@ -77,7 +78,28 @@ async function main() {
   line(`   Người duyệt    ${s.approver}`);
   line(`   Kết quả        tạo đúng ${flow.poCheck.found} PO → ${s.poCode} (${n(s.poTotal)} GBP — tiền tệ của dataset, KHÔNG quy đổi)`);
 
-  head('BƯỚC 6  KHÔNG SINH ĐỀ XUẤT TRÙNG');
+  // ── BƯỚC ĐÓNG VÒNG (thêm 2026-10-13) ──────────────────────────────────
+  // Khối này là phần trả lời trực tiếp cho câu hỏi khó nhất của ban giám khảo:
+  // "số liệu của các bạn lấy từ đâu?". Câu trả lời: hệ thống tự đo được, và khi
+  // tự đo thì phát hiện ra lỗi của chính mình.
+  const g = flow.grn;
+  head('BƯỚC 7  ĐÓNG VÒNG MUA HÀNG: PHIẾU NHẬP KHO → SỔ CÁI');
+  line(`   PO cần duyệt   ${flow.poCheck.poCode} — sau bước duyệt thứ HAI: ${g.poStatusAfterApprove}`);
+  line('                   (duyệt đề xuất ở bước 5 ≠ duyệt đơn mua — 2 chốt kiểm riêng)');
+  line(`   Phiếu nhập     ${g.grnCode}`);
+  line(`   Hàng đạt QC    ${n(g.acceptedQty)}   còn phải giao nốt ${n(g.remainingQty)}`);
+  line(`   Giá trị nhận   ${n(g.receivedValue)} GBP`);
+  line(`   Tồn kho        +${n(g.stockDelta)} (đúng bằng số hàng ĐẠT QC)`);
+  line(`   BÚT TOÁN      ${g.journalEntryCode || 'KHÔNG CÓ — hạch lỗi'}`);
+  line(`                   Nợ ${n(g.journalDebit)} = Có ${n(g.journalCredit)}${g.journalBalanced === true ? '  (CÂN BẰNG)' : ''}`);
+  line('                   Nợ 156 tồn kho + Nợ 1331 công nợ phải trả = Có 331 công nợ phải có');
+  line(`   Công nợ NCC    +${n(g.debtDelta)} GBP với ${g.vendorName}`);
+  line('');
+  line('   ▸ Trước 2026-10-12: GRN chỉ cộng tồn kho, KHÔNG ghi bút toán, KHÔNG tạo công nợ.');
+  line('     Đo được 39 PO đã nhận hàng thật mà không có dòng bút toán nào.');
+  line('     Lệnh kiểm tra hiện tại: npm run check:accounting → số PO thiếu bút toán phải = 0.');
+
+  head('BƯỚC 8  KHÔNG SINH ĐỀ XUẤT TRÙNG');
   line(`   onOrder        ${n(flow.dedupe.onOrder)} (hàng đang trên đường từ PO vừa tạo)`);
   line(`   Gọi lại        ${flow.dedupe.secondSuggestion === null ? 'KHÔNG sinh đề xuất nữa' : `KHÔNG ĐÚNG — ${flow.dedupe.secondSuggestion}`}`);
   line(`   Số gate PO     ${flow.dedupe.gatesBefore} → ${flow.dedupe.gatesAfter}`);
