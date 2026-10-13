@@ -68,6 +68,13 @@ Mỗi mục có: **tệp cần sửa · vị trí · nguồn số liệu · lệ
 > *"TOÀN BỘ NỘI DUNG TRONG SHEET LÀ TÌNH HUỐNG GIẢ LẬP"* ⇒ **MÔ PHỎNG, không phải phỏng vấn
 > thật**. Dùng để mang đi hỏi: xoá cột *"Trả lời thực tế"* rồi điền lại. Chi tiết:
 > `notes/labeling-and-interview-status.md` §2.
+>
+> **2026-10-13 — ĐÃ DỰNG ĐƯỢC BẰNG CHỨNG THAY THẾ, KHÔNG PHẢI THAY CHO KHẢO SÁT.**
+> `docs/aisc26/09-real-data-evidence.md` đo 5 nhóm chỉ số nghiệp vụ trên chính hệ
+> thống đang chạy (`npm run measure:evidence`). Đó là bằng chứng **cho tính đúng đắn
+> của sản phẩm**, không phải bằng chứng **cho nhu cầu của người dùng** — hai thứ khác
+> nhau, không thể thay thế. D1–D3 vẫn **chưa làm**, và D3 (chốt giá) **không thể làm**
+> nếu chưa có D1.
 
 | # | Việc | Tệp · vị trí | Nguồn số liệu | Lệnh / cách làm |
 |---|---|---|---|---|

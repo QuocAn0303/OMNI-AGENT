@@ -1532,6 +1532,9 @@ npm run check:evidence            # 14/14
 npm run demo:setup               # nạp PO + GRN để có lead time đo được
 npm run demo:login -- --apply    # bật đăng nhập + gói `business` cho tenant demo
 npm run demo:run                 # in 6 khối của luồng đầy đủ
+
+# Đo bằng chứng nghiệp vụ (chỉ đọc) — sinh docs/aisc26/notes/real-data-evidence.json
+npm run measure:evidence         # 5 nhóm chỉ số + số đo trước khi sửa
 ```
 
 Sau mỗi lần chạy script ghi dữ liệu, **dừng mọi tiến trình nền**:

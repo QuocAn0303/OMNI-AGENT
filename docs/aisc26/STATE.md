@@ -1142,6 +1142,16 @@ Sau mỗi lần chạy: `Get-Process node | Stop-Process -Force` — **0 tiến 
 **Đã trả xong nợ kỹ thuật tồn đọng từ P6/P7:** `check:humangate` 11/11 chạy được
 (cần backend thật — trước đó bị ghi là "chưa có bằng chứng" vì không bật server).
 
+**2026-10-13 — đã dựng `docs/aisc26/09-real-data-evidence.md`** (`npm run measure:evidence`,
+chỉ đọc): 5 nhóm chỉ số nghiệp vụ đo trên chính hệ thống. Phát hiện mạnh nhất: **460/470
+SKU dưới ngưỡng tồn tối thiểu không bao giờ hiện trên màn hình đề xuất nhập hàng**, vì
+bộ lọc dùng hằng số cứng `quantity <= 10` (`prisma.inventory.fields` không tồn tại).
+Cùng dữ liệu, `minStock` cho ra 470 SKU cần nhập còn ROP cho ra 0.
+
+> **Đây KHÔNG phải khảo sát, và không được gọi là khảo sát.** Nó chứng minh sản phẩm
+> tự kiểm chứng được, không chứng minh nhu cầu người dùng. Số người phỏng vấn thật
+> vẫn là **0** và không nên đổi.
+
 1. **6 người thử + phỏng vấn THẬT** — **không làm được bằng code**, và là phần còn
    lại lớn nhất cho AISC. Bộ công cụ đã sẵn (`usertest/`), kịch bản đã sinh lại theo
    dữ liệu mới (`as-of 2026-09-19`, `sha256 sku-sets.json 8408c73…`).

@@ -1,0 +1,159 @@
+{
+  "purchasingIntegrity": {
+    "question": "Mỗi lần tồn kho tăng từ nhông hàng, có bút toán Nợ 156 / Có 331 không?",
+    "measured": {
+      "perTenant": [
+        {
+          "tenant": "crm-phase1-demo",
+          "tongPO": 45,
+          "coGRNposted": 0,
+          "thieuButoan": 0
+        },
+        {
+          "tenant": "omni-demo-mo-phong",
+          "tongPO": 57,
+          "coGRNposted": 57,
+          "thieuButoan": 0
+        }
+      ],
+      "journalEntriesTenantIdNull": 0,
+      "butoanKhongCanBang": 0,
+      "mauButoanLech": []
+    },
+    "truocKhiSua": {
+      "poThieuButoan": 39,
+      "journalEntriesTenantIdNull": 18,
+      "nguon": "do ngày 2026-10-12, xem docs/aisc26/STATE.md mục 1"
+    },
+    "lenhTaiKiemChung": "npm run check:accounting",
+    "ketLuan": "Trước khi sửa: 39 PO đã nhập hàng thật mà không có dòng bút toán nào. Sau khi sửa: 0. Toàn bộ bút toán cân bằng N = C."
+  },
+  "reorderDivergence": {
+    "question": "Hai màn hình của cùng một hệ thống có đưa ra cùng một con số đề xuất nhập hàng không?",
+    "measured": {
+      "tongDongTon": 500,
+      "manHinhCuThay": 10,
+      "duoiMinStockThatSu": 470,
+      "biManHinhCuAnKinh": 460,
+      "viDuBiAn": [
+        {
+          "sku": "22488",
+          "ton": 36,
+          "minStock": 42,
+          "nghien": 6
+        },
+        {
+          "sku": "22489",
+          "ton": 75,
+          "minStock": 109,
+          "nghien": 34
+        },
+        {
+          "sku": "22491",
+          "ton": 27,
+          "minStock": 55,
+          "nghien": 28
+        },
+        {
+          "sku": "22492",
+          "ton": 216,
+          "minStock": 252,
+          "nghien": 36
+        },
+        {
+          "sku": "22507",
+          "ton": 15,
+          "minStock": 16,
+          "nghien": 1
+        }
+      ],
+      "giaTriDeXuatCongThucCu": 1444,
+      "engineRopDeXuat": 0,
+      "giaTriEngineRop": 0,
+      "ropVaMinStockKhacNhau": 470,
+      "mauKhongCanNhap": [
+        {
+          "sku": "22488",
+          "status": "REPLENISHMENT_NEEDED",
+          "qty": 36,
+          "rop": 298,
+          "leadSource": "ESTIMATED"
+        },
+        {
+          "sku": "22489",
+          "status": "REPLENISHMENT_NEEDED",
+          "qty": 75,
+          "rop": 1376,
+          "leadSource": "ESTIMATED"
+        },
+        {
+          "sku": "22491",
+          "status": "REPLENISHMENT_NEEDED",
+          "qty": 27,
+          "rop": 781,
+          "leadSource": "ESTIMATED"
+        }
+      ],
+      "skuDaCauHinhQuyTac": 0
+    },
+    "truocKhiSua": {
+      "manHinhCuChiThaySkuTon10": "quantity <= 10 (hằng số cứng, không phải minStock)",
+      "nguon": "git show bc0d17f^:src/modules/smart-guide/smart-guide.service.js"
+    },
+    "lenhTaiKiemChung": "npm run smoke:replenishment-rules + mở /replenishment-rules",
+    "ketLuan": "Màn hình cũ dùng một hằng số cứng (10) nên mỗi lần chỉ hiện được 10/500 dòng tồn. Trong 470 SKU đang dưới ngưỡng minStock mà người dùng tự đặt, có 460 SKU bị ẩn hoàn toàn. Ngược lại, engine ROP — vốn dùng ngưỡng tính từ tốc độ bán và lead time thật — không đề xuất nhập SKU nào. Hai tiêu chí này trả lời hai câu hỏi khác nhau và người dùng không được cho biết hệ thống đang dùng tiêu chí nào."
+  },
+  "leadTime": {
+    "question": "Thời gian nhập hàng là đo được từ lịch sử thật hay đang dùng mặc định?",
+    "measured": {
+      "grnPosted": 57,
+      "poCoGrn": 57,
+      "doiDuocSoNgay": 57
+    },
+    "truocKhiSua": {
+      "skuLeadTimeDoDuoc": "0 / 20 SKU — tất cả rơi vào nhánh dùng mặc định 7 ngày",
+      "nguyennhan": "loadLeadTimeReceipts trả về { date, receivedAt } nhưng calcLeadTime đọc .poDate ⇒ poDate luôn undefined ⇒ mọi khoảng cách bị lọc hết",
+      "nguon": "docs/aisc26/STATE.md mục 2 của mốc 2026-10-12/13"
+    },
+    "lenhTaiKiemChung": "npm run demo:check",
+    "ketLuan": "Hiện có 57/57 PO có thể đo được lead time thật. Trước khi sửa con số này là 0 — nhánh 'đo được' chết âm thầm, mọi đơn hàng đều dùng mặc định 7 ngày mà không ai biết."
+  },
+  "capitalTiedUp": {
+    "question": "Có bao nhiêu tiền đang nằm trong hàng, và bao nhiêu không sinh lãi?",
+    "measured": {
+      "soSKU": 500,
+      "skuHetHang": 0,
+      "skuChet90Ngay": 44,
+      "giaTriTonKho": 546965,
+      "giaTriTonChet": 508352,
+      "soLuongTonChet": 246296,
+      "tyTrongTonChet": 92.94
+    },
+    "lenhTaiKiemChung": "npm run check:supply",
+    "canhBaoMienGianDuLieu": "Tỷ trọng tồn chết ở đây là ĐẶC TÍNH CỦA BỘ DỮ LIỆU MÔ PHỎNG, không phải của doanh nghiệp thật: tập xuất được nạp với tồn khởi tạo = 3 × trung vị bán hàng (xem 02-data.md §9.2), nên phần lớn SKU không bán đủ trong 90 ngày. CON SỐ NÀY KHÔNG DÙNG ĐỂ SO SÁNH VỚI DOANH NGHIỆP KHÁC. Điều chứng minh được là: hệ thống ĐANG ĐO ĐƯỢC con số này và hiện ra bằng tiền.",
+    "ketLuan": "Trong tổng 546.965 đ tồn kho, có 508.352 đ (92.94%) nằm ở hàng không bán được trong 90 ngày. Con số này người dùng thường không thấy vì màn hình chỉ hiện 'còn bao nhiêu cái', không hiện 'mất bao nhiêu tiền'. LƯU Ý: tỷ lệ % ở trên là đặc tính của bộ dữ liệu mô phỏng, không phải của doanh nghiệp thật."
+  },
+  "humanGate": {
+    "question": "Khi AI muốn tạo đơn mua, ai bấm nút đồng ý?",
+    "measured": {
+      "tongGate": 13,
+      "daDuyet": 9,
+      "dangCho": 0,
+      "biTuChoi": 0,
+      "hetHan": 4,
+      "poDraft": 0,
+      "tyLeChoPhepDuyet": 69.2
+    },
+    "lenhTaiKiemChung": "npm run check:humangate (cần backend chạy)",
+    "ketLuan": "Mọi hành động ghi vào hệ thống của AI đều đi qua một thẻ chờ người duyệt. Không có đường nào để AI tự tạo đơn mua mà không ai thấy."
+  },
+  "meta": {
+    "doLuc": "2026-10-13T15:26:34.288Z",
+    "tenant": {
+      "slug": "omni-demo-mo-phong",
+      "ten": "OMNI DEMO (MÔ PHỎNG — dữ liệu UCI Online Retail II)"
+    },
+    "ghiChu": "Tenant demo mang tên MÔ PHỎNG — số liệu nghiệp vụ là dữ liệu mô phỏng phục vụ trình diễn. Các số ĐỘ (số lỗi phát hiện, số ràng buộc DB, số khẳng định kiểm chứng) là số đo thật trên mã nguồn và cấu trúc dữ liệu, không phụ thuộc dữ liệu mô phỏng.",
+    "nguyenTac": "Script chỉ đọc. Không ghi, không sửa, không xoá gì."
+  }
+}
