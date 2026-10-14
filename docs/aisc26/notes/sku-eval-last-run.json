@@ -1,6 +1,6 @@
 {
-  "runId": "S10-20261014133450",
-  "at": "2026-10-14T13:34:50.398Z",
+  "runId": "S10-20261014143015",
+  "at": "2026-10-14T14:30:15.022Z",
   "labelSource": "nhan tay (label_sku do nguoi dien)",
   "dataset": {
     "labelSheet": "data\\aisc26\\skus\\labels\\label-sheet.csv",
@@ -98,10 +98,10 @@
     "excludesZero": false
   },
   "throughput": {
-    "fuzzyMs": 347,
-    "hybridMs": 732368,
-    "msPerPairFuzzy": 5.78,
-    "msPerPairHybrid": 12206.13
+    "fuzzyMs": 576,
+    "hybridMs": 482828,
+    "msPerPairFuzzy": 9.6,
+    "msPerPairHybrid": 8047.13
   },
   "llmCalls": 8,
   "llmUsable": 0,
@@ -111,7 +111,7 @@
     "promptTokens": 0,
     "completionTokens": 0,
     "totalTokens": 0,
-    "doTreTrungBinhMs": 64588,
+    "doTreTrungBinhMs": 44097,
     "luuY": "doTreTrungBinhMs tinh ca lan ERROR (503/timeout) — la chi phi that"
   },
   "tokensPerPair": {
@@ -119,5 +119,6 @@
     "trenMoiCapKiemDinh": 0,
     "trenMoiCapDaNhan": 0
   },
-  "publishable": true
+  "publishable": false,
+  "lyDoKhongCongBo": "mode=live nhung KHONG co cau tra loi LLM nao dung duoc (het ha muc 429 / 503) => hybrid chay dung bang fuzzy, khong phai so cua AI"
 }
