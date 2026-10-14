@@ -77,8 +77,8 @@ where: { quantity: { lte: prisma.inventory.fields?.minStock ? undefined : 10 } }
 |---|---:|
 | Tổng dòng tồn kho | 500 |
 | Số dòng màn hình cũ **hiện ra** | **10** |
-| SKU thật sự đang dưới ngưỡng `minStock` | 470 |
-| **>>> SKU bị màn hình cũ ẨN HOÀN TOÀN** | **460** |
+| SKU thật sự đang dưới ngưỡng `minStock` | 468 |
+| **>>> SKU bị màn hình cũ ẨN HOÀN TOÀN** | **458** |
 
 Vài ví dụ bị ẩn:
 
@@ -89,7 +89,7 @@ Vài ví dụ bị ẩn:
 | 22492 | 216 | 252 | 36 | không hiện |
 
 **Chi tiết còn đáng nói hơn:** engine ROP (ngưỡng tính từ tốc độ bán + lead time thật)
-không đề xuất nhập SKU nào — trong khi tiêu chí `minStock` cho ra 470. **470/500 SKU
+không đề xuất nhập SKU nào — trong khi tiêu chí `minStock` cho ra 468. **468/500 SKU
 hai tiêu chí cho hai kết luận trái ngược**, và người dùng không được cho biết hệ
 thống đang dùng tiêu chí nào.
 
@@ -179,7 +179,7 @@ Bộ 24 câu **không** dùng làm kết quả. Nhưng **danh sách vấn đề*
 
 | Câu hỏi (bộ 8 câu) | Đo được chưa? | Bằng chứng |
 |---|---|---|
-| **6.** *"Nếu phần mềm tự tính số lượng cần đặt rồi đưa ra cho bạn duyệt — bạn có dùng không? Vì sao?"* | ✅ **Mạnh nhất** | Mục 2 — **460/470** mã hàng dưới ngưỡng tồn tối thiểu không bao giờ hiện trên màn hình; 470/500 SKU hai tiêu chí cho hai kết luận trái ngược |
+| **6.** *"Nếu phần mềm tự tính số lượng cần đặt rồi đưa ra cho bạn duyệt — bạn có dùng không? Vì sao?"* | ✅ **Mạnh nhất** | Mục 2 — **458/468** mã hàng dưới ngưỡng tồn tối thiểu không bao giờ hiện trên màn hình; 468/500 SKU hai tiêu chí cho hai kết luận trái ngược |
 | **7.** *"Nếu nó tự tạo đơn nhập mà không cần bạn bấm — điều gì khiến bạn không bật?"* | ✅ Về mặt cơ chế | Mục 5 — mọi hành động của AI đi qua thẻ chờ duyệt, không có đường vòng |
 | **8.** *"Ai khác có quyền nói 'không' với một đề xuất đặt hàng?"* | ✅ Về mặt phân quyền | Mục 5 — `authorize('ADMIN','MANAGER')` trên mọi thao tác chốt NCC / tạo PO |
 | **1.** *"Kể lại lần gần nhất bạn phát hiện sắp hết hàng… biết qua đâu?"* | 🟡 Một nửa | Mục 2 — *đã chứng minh đường cảnh báo bị hỏng; chưa biết người dùng thật phát hiện qua đâu* |
@@ -194,7 +194,7 @@ Bộ 24 câu **không** dùng làm kết quả. Nhưng **danh sách vấn đề*
 
 > "Chúng tôi chưa phỏng vấn được người dùng thật. Nhưng khi kiểm tra hệ thống của
 > chính mình, chúng tôi tìm ra 39 đơn mua đã nhận hàng thật mà không vào sổ cái, và
-> 460 trong 470 mã hàng dưới ngưỡng tồn tối thiểu không bao giờ hiện trên màn hình
+> 458 trong 468 mã hàng dưới ngưỡng tồn tối thiểu không bao giờ hiện trên màn hình
 > đề xuất nhập hàng. Đó là lý do chúng tôi xây công cụ tự kiểm chứng này — và cũng là
 > lý do chúng tôi cần phỏng vấn người dùng thật trước khi khẳng định điều gì về hành
 > vi của họ."

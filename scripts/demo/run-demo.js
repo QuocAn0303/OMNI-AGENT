@@ -74,7 +74,7 @@ async function main() {
   line(`   Kiểm tra lại lúc duyệt: ${flow.fresh.ok ? 'OK' : 'BỊ CHẶN'} · trạng thái drift = ${flow.fresh.drift}`);
   line(`   Gate           ${flow.cdc.gateId}`);
 
-  head('BƯỚC 5  NGƯỜI DUYỆT QUA HUMAN-GATE');
+  head('BƯỚC 5-6  NGƯỜI DUYỆT QUA HUMAN-GATE → TẠO PO');
   line(`   Người duyệt    ${s.approver}`);
   line(`   Kết quả        tạo đúng ${flow.poCheck.found} PO → ${s.poCode} (${n(s.poTotal)} GBP — tiền tệ của dataset, KHÔNG quy đổi)`);
 
@@ -85,7 +85,7 @@ async function main() {
   const g = flow.grn;
   head('BƯỚC 7  ĐÓNG VÒNG MUA HÀNG: PHIẾU NHẬP KHO → SỔ CÁI');
   line(`   PO cần duyệt   ${flow.poCheck.poCode} — sau bước duyệt thứ HAI: ${g.poStatusAfterApprove}`);
-  line('                   (duyệt đề xuất ở bước 5 ≠ duyệt đơn mua — 2 chốt kiểm riêng)');
+  line('                   (duyệt đề xuất ở bước 5 ≠ duyệt đơn mua ở bước 7 — 2 chốt kiểm riêng)');
   line(`   Phiếu nhập     ${g.grnCode}`);
   line(`   Hàng đạt QC    ${n(g.acceptedQty)}   còn phải giao nốt ${n(g.remainingQty)}`);
   line(`   Giá trị nhận   ${n(g.receivedValue)} GBP`);

@@ -5,6 +5,10 @@
 
 **Stack chính**: Node.js 20 + Express 4 · Prisma 7 + PostgreSQL · Redis · Socket.IO · React 19 + Vite + Ant Design 6 · Docker · Jest
 
+> 🏆 **Đang thi AISC'26** — Khoa Hệ thống Thông tin, ĐHQG-HCM. Mã hồ sơ **AISC26-0058**,
+> đội **OmniAgent**, đã qua Vòng 1 và vào Vòng 2 – Vòng Trình bày.
+> **Bản đồ dự án, trạng thái hiện tại và việc còn lại: [`docs/aisc26/00-index.md`](docs/aisc26/00-index.md)**
+
 ---
 
 ## Stack & kiến trúc
@@ -27,7 +31,8 @@
 - **Bán hàng & POS**: POS đa chế độ (tại bàn / mang đi / giao hàng), quét barcode, in bill nhiệt Bluetooth (ESC/POS), bán ngoại tuyến (hàng chờ IndexedDB tự đồng bộ khi online), tách hóa đơn 3 chế độ (chia đều / theo món / tùy chỉnh), trả hàng & hoàn tiền, khuyến mãi (giảm % / giảm tiền / mua X tặng Y / giảm theo danh mục / theo sản phẩm / happy-hour), combo & modifier.
 - **F&B**: sơ đồ bàn kéo-thả (Floor canvas, zoom/fit), KDS (station + ticket bump/recall/void), QR self-ordering cho khách không cần đăng nhập, menu modifier/variant/combo, công thức món (Recipe/COGS tự trừ kho), thẻ tích điểm (stamp card), tích hợp GrabFood / ShopeeFood / BeFood.
 - **Kho & sản xuất**: đa kho, nhập–xuất–điều chỉnh, kiểm kê theo kho, chuyển kho, serial/lot/hạn dùng, BOM đa cấp (resolver chống vòng lặp), lệnh sản xuất, Work Center, Routing, Quality Check.
-- **Quản trị chuỗi cung ứng** *(mới)*: **cây vị trí kho** (`stock.location` — vị trí thật / góc nhìn / vị trí trung gian, đệ quy nhiều cấp), **quy tắc nhập hàng** theo SKU × kho (tồn tối thiểu/tối đa, thời gian nhập, quy cách đóng gói, mức phục vụ — Odoo *Reordering Rules*), **RFQ & so sánh báo giá NCC** (hỏi giá nhiều NCC → xếp hạng → chốt → sinh PO), **vòng mua hàng khép kín** (phiếu nhập kho ghi bút toán Nợ 156 / Nợ 1331 / Có 331 + cộng dồn công nợ NCC), **dashboard KPI chuỗi cung ứng**, **màn hình bằng chứng thực nghiệm** (`/evidence` — kết quả backtest kèm nguồn `sha256` và giới hạn, kết luận sinh từ số liệu chứ không viết sẵn).
+- **Quản trị chuỗi cung ứng** *(mới)*: **vòng mua hàng khép kín** (phiếu nhập kho ghi bút toán `Nợ 156 + Nợ 1331 = Có 331` + cộng dồn công nợ NCC), **cây vị trí kho** (`stock.location` — vị trí thật / góc nhìn / vị trí trung gian, đệ quy nhiều cấp), **quy tắc nhập hàng** theo SKU × kho (tồn tối thiểu/tối đa, thời gian nhập, quy cách đóng gói, mức phục vụ — Odoo *Reordering Rules*), **RFQ & so sánh báo giá NCC** (hỏi giá nhiều NCC → xếp hạng → chốt → sinh PO), **vòng mua hàng khép kín** (phiếu nhập kho ghi bút toán Nợ 156 / Nợ 1331 / Có 331 + cộng dồn công nợ NCC), **dashboard KPI chuỗi cung ứng**, **màn hình bằng chứng thực nghiệm** (`/evidence` — kết quả backtest kèm nguồn `sha256` và giới hạn, kết luận sinh từ số liệu chứ không viết sẵn).
+- **Công cụ tự kiểm chứng**: **39 lệnh npm** kiểm chứng trên **Postgres thật** — `check:accounting` (PO có nhập kho mà thiếu bút toán phải bằng 0), `smoke:rfq`, `smoke:warehouse-tree`, `measure:evidence`… Xem [Lệnh kiểm chứng](#-lệnh-kiểm-chứng-chạy-trên-db-thật).
 - **CRM & marketing**: khách hàng 360°, hạng tier, tích điểm loyalty, store credit, phân khúc, chiến dịch Email + Zalo OA, webhook bắt lead, dự báo churn / CLV / RFM.
 - **Kế toán kép (double-entry)**: Chart of Accounts, autopost tự động cho 12 sự kiện nghiệp vụ, sổ nhật ký / sổ cái / bảng CĐSPS, báo cáo B01–B03, báo cáo thuế HTKK (01/GTGT, 05/TNCN, D02), hóa đơn điện tử VNPT, khấu hao TSCĐ, đối soát ngân hàng (import sao kê VCB/TCB + auto-match), kết chuyển cuối kỳ, đa tiền tệ, quỹ tiền mặt nhỏ (HKD).
 - **Nhân sự**: nhân viên, chấm công 3 ca, tính lương (PIT/BHXH), nghỉ phép, làm thêm giờ, vi phạm nội bộ.
@@ -54,6 +59,7 @@
 | Route React | lazy-load, 4 nhóm phân quyền | `frontend/src/App.jsx` |
 | Cron jobs | **29** | `src/jobs/cron.js` |
 | Model tự scoping theo tenant | **147** | `TENANT_SCOPED_MODELS` trong `src/config/prisma.js` |
+| Script kiểm chứng / demo | **83 file**, **80 lệnh npm** (39 lệnh `check:*`/`smoke:*`/`demo:*`/`measure:*`) | `scripts/`, `package.json` |
 | Khối Swagger | **135/135** parse được | `npm run check:swagger` |
 | Ngôn ngữ i18n | 2 (vi, en) | `frontend/src/locales/` |
 
@@ -1519,7 +1525,7 @@ npm run smoke:replenishment-rules # 16/16 — quy tắc nhập hàng thật sự
 npm run smoke:rfq                 # 20/20 — so sánh báo giá + chốt NCC → PO
 npm run smoke:warehouse-tree     # 18/18 — cây vị trí + 4 ràng buộc ở tầng DB
 npm run smoke:po-gate            # 24/24 — human-gate tạo PO
-npm run smoke:demo-flow          # 12/12 — luồng demo end-to-end
+npm run smoke:demo-flow          # 17/17 — luồng demo end-to-end (đã đóng cả bước nhập kho)
 npm run demo:check               # 13/13 — tính định + không rác + phục vụ số thật
 
 # HTTP thật — CẦN BACKEND ĐANG CHẠY (npm run dev ở terminal khác)
@@ -1535,6 +1541,12 @@ npm run demo:run                 # in 6 khối của luồng đầy đủ
 
 # Đo bằng chứng nghiệp vụ (chỉ đọc) — sinh docs/aisc26/notes/real-data-evidence.json
 npm run measure:evidence         # 5 nhóm chỉ số + số đo trước khi sửa
+
+# Dọn rác phiếu nhập kho sót từ lần chạy lỗi (dry-run mặc định)
+npm run clean:leaked-grn         # thêm --apply để ghi (tự pg_dump trước)
+
+# Chẩn đoán: đo thời gian thật của order.service.create (tự dọn)
+npm run diag:order-timing        # lần đầu ~1,8s · lần sau ~0,3s ⇒ demo cần "hâm nóng"
 ```
 
 Sau mỗi lần chạy script ghi dữ liệu, **dừng mọi tiến trình nền**:

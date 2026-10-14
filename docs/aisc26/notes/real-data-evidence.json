@@ -33,8 +33,8 @@
     "measured": {
       "tongDongTon": 500,
       "manHinhCuThay": 10,
-      "duoiMinStockThatSu": 470,
-      "biManHinhCuAnKinh": 460,
+      "duoiMinStockThatSu": 468,
+      "biManHinhCuAnKinh": 458,
       "viDuBiAn": [
         {
           "sku": "22488",
@@ -70,7 +70,7 @@
       "giaTriDeXuatCongThucCu": 1444,
       "engineRopDeXuat": 0,
       "giaTriEngineRop": 0,
-      "ropVaMinStockKhacNhau": 470,
+      "ropVaMinStockKhacNhau": 468,
       "mauKhongCanNhap": [
         {
           "sku": "22488",
@@ -101,7 +101,7 @@
       "nguon": "git show bc0d17f^:src/modules/smart-guide/smart-guide.service.js"
     },
     "lenhTaiKiemChung": "npm run smoke:replenishment-rules + mở /replenishment-rules",
-    "ketLuan": "Màn hình cũ dùng một hằng số cứng (10) nên mỗi lần chỉ hiện được 10/500 dòng tồn. Trong 470 SKU đang dưới ngưỡng minStock mà người dùng tự đặt, có 460 SKU bị ẩn hoàn toàn. Ngược lại, engine ROP — vốn dùng ngưỡng tính từ tốc độ bán và lead time thật — không đề xuất nhập SKU nào. Hai tiêu chí này trả lời hai câu hỏi khác nhau và người dùng không được cho biết hệ thống đang dùng tiêu chí nào."
+    "ketLuan": "Màn hình cũ dùng một hằng số cứng (10) nên mỗi lần chỉ hiện được 10/500 dòng tồn. Trong 468 SKU đang dưới ngưỡng minStock mà người dùng tự đặt, có 458 SKU bị ẩn hoàn toàn. Ngược lại, engine ROP — vốn dùng ngưỡng tính từ tốc độ bán và lead time thật — không đề xuất nhập SKU nào. Hai tiêu chí này trả lời hai câu hỏi khác nhau và người dùng không được cho biết hệ thống đang dùng tiêu chí nào."
   },
   "leadTime": {
     "question": "Thời gian nhập hàng là đo được từ lịch sử thật hay đang dùng mặc định?",
@@ -123,32 +123,32 @@
     "measured": {
       "soSKU": 500,
       "skuHetHang": 0,
-      "skuChet90Ngay": 44,
-      "giaTriTonKho": 546965,
-      "giaTriTonChet": 508352,
-      "soLuongTonChet": 246296,
-      "tyTrongTonChet": 92.94
+      "skuChet90Ngay": 43,
+      "giaTriTonKho": 544854,
+      "giaTriTonChet": 505927,
+      "soLuongTonChet": 245104,
+      "tyTrongTonChet": 92.86
     },
     "lenhTaiKiemChung": "npm run check:supply",
     "canhBaoMienGianDuLieu": "Tỷ trọng tồn chết ở đây là ĐẶC TÍNH CỦA BỘ DỮ LIỆU MÔ PHỎNG, không phải của doanh nghiệp thật: tập xuất được nạp với tồn khởi tạo = 3 × trung vị bán hàng (xem 02-data.md §9.2), nên phần lớn SKU không bán đủ trong 90 ngày. CON SỐ NÀY KHÔNG DÙNG ĐỂ SO SÁNH VỚI DOANH NGHIỆP KHÁC. Điều chứng minh được là: hệ thống ĐANG ĐO ĐƯỢC con số này và hiện ra bằng tiền.",
-    "ketLuan": "Trong tổng 546.965 đ tồn kho, có 508.352 đ (92.94%) nằm ở hàng không bán được trong 90 ngày. Con số này người dùng thường không thấy vì màn hình chỉ hiện 'còn bao nhiêu cái', không hiện 'mất bao nhiêu tiền'. LƯU Ý: tỷ lệ % ở trên là đặc tính của bộ dữ liệu mô phỏng, không phải của doanh nghiệp thật."
+    "ketLuan": "Trong tổng 544.854 đ tồn kho, có 505.927 đ (92.86%) nằm ở hàng không bán được trong 90 ngày. Con số này người dùng thường không thấy vì màn hình chỉ hiện 'còn bao nhiêu cái', không hiện 'mất bao nhiêu tiền'. LƯU Ý: tỷ lệ % ở trên là đặc tính của bộ dữ liệu mô phỏng, không phải của doanh nghiệp thật."
   },
   "humanGate": {
     "question": "Khi AI muốn tạo đơn mua, ai bấm nút đồng ý?",
     "measured": {
-      "tongGate": 13,
-      "daDuyet": 9,
+      "tongGate": 16,
+      "daDuyet": 12,
       "dangCho": 0,
       "biTuChoi": 0,
       "hetHan": 4,
       "poDraft": 0,
-      "tyLeChoPhepDuyet": 69.2
+      "tyLeChoPhepDuyet": 75
     },
     "lenhTaiKiemChung": "npm run check:humangate (cần backend chạy)",
     "ketLuan": "Mọi hành động ghi vào hệ thống của AI đều đi qua một thẻ chờ người duyệt. Không có đường nào để AI tự tạo đơn mua mà không ai thấy."
   },
   "meta": {
-    "doLuc": "2026-10-13T15:26:34.288Z",
+    "doLuc": "2026-10-14T04:36:21.878Z",
     "tenant": {
       "slug": "omni-demo-mo-phong",
       "ten": "OMNI DEMO (MÔ PHỎNG — dữ liệu UCI Online Retail II)"

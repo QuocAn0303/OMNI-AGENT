@@ -36,16 +36,39 @@ const apply = process.argv.includes('--apply');
 const TENANT_SLUG = 'omni-demo-mo-phong';
 const BACKUP_DIR = process.env.BACKUP_DIR || path.join(process.env.TEMP || '.', 'erp-backups');
 
-const FIND = `
-  SELECT g.id, g."grnCode", g."purchaseOrderId", g."createdAt", g.status,
-         po."poCode", po.status AS po_status
-    FROM goods_receipt_notes g
-    JOIN purchase_orders po ON po.id = g."purchaseOrderId"
+/**
+ * PHẠM VI: đơn mua do LUỒNG DEMO sinh mà chưa hoàn tất.
+ *
+ * Mở rộng 2026-10-14: bản đầu CHỈ tìm qua `JOIN goods_receipt_notes`, nên bỏ
+ * sót trường hợp **đơn đã tạo nhưng chưa kịp tạo phiếu nhập** — đúng loại rác
+ * để lại khi luồng chết ngay sau bước `executeGate`. Đo được: 1 đơn
+ * `PO-20261013-0001` (DRAFT, 0 phiếu nhập) mà `npm run check:accounting` không
+ * báo (vì lệnh đó chỉ soi vòng đã nhận hàng). Giờ lấy danh sách từ
+ * `purchase_orders` rồi mới kéo GRN con theo.
+ *
+ * Ba điều kiện — xem "PHẠM VI AN TOÀN" ở đầu file:
+ *   1. tenant = `omni-demo-mo-phong`;
+ *   2. `po.note` chứa `[gate:` — dấu hiệu DUY NHẤT của luồng demo
+ *      (`executeGate` ghi note này). Dữ liệu `demo:setup` có note
+ *      "Lịch sử nhập cho luồng demo (MÔ PHỎNG…" ⇒ KHÔNG khớp;
+ *   3. `po.status <> 'RECEIVED'` — PO lịch sử đã `RECEIVED`.
+ */
+const FIND_PO = `
+  SELECT po.id, po."poCode", po.status, po."createdAt",
+         left(coalesce(po.note, ''), 46) AS note_46,
+         (SELECT count(*)::int FROM goods_receipt_notes g
+           WHERE g."purchaseOrderId" = po.id) AS so_grn
+    FROM purchase_orders po
    WHERE po."tenantId" = (SELECT id FROM tenants WHERE slug = '${TENANT_SLUG}')
      AND po.note LIKE '%[gate:%'
      AND po.status <> 'RECEIVED'
-   ORDER BY g."createdAt" DESC`;
+   ORDER BY po."createdAt" DESC`;
 
+/** Phiếu nhập + lô của các đơn nằm trong danh sách — xoá sau, theo thứ tự con trước cha. */
+const FIND_GRN_OF = (poIds) => `
+  SELECT g.id, g."grnCode", g.status, g."purchaseOrderId"
+    FROM goods_receipt_notes g
+   WHERE g."purchaseOrderId" IN (${poIds.map((_, i) => `$${i + 1}`).join(', ')})`;
 /**
  * Tìm `pg_dump`. Trên Windows nó thường KHÔNG nằm trong PATH (kiểm 2026-10-13:
  * `Get-Command pg_dump` trả về không có, dump cũ vẫn tồn tại nghĩa là lần trước
@@ -74,16 +97,21 @@ const resolvePgDump = () => {
 };
 
 (async () => {
-  console.log(`\n=== DỌN PHIẾU NHẬP KHO SÓT (${apply ? 'APPLY' : 'DRY-RUN'}) ===\n`);
+  console.log(`\n=== DỌN ĐƠN MUA / PHIẾU NHẬP KHO SÓT (${apply ? 'APPLY' : 'DRY-RUN'}) ===\n`);
 
-  const rows = await prisma.$queryRawUnsafe(FIND);
+  const rows = await prisma.$queryRawUnsafe(FIND_PO);
   if (!rows.length) {
-    console.log('Không có phiếu nào dính điều kiện. Không ghi gì.');
+    console.log('Không có đơn mua nào dính điều kiện. Không ghi gì.');
     await prisma.$disconnect();
     return;
   }
+  const poIds = rows.map((r) => r.id);
+  const grns = rows.some((r) => r.so_grn > 0)
+    ? await prisma.$queryRawUnsafe(FIND_GRN_OF(poIds), ...poIds)
+    : [];
   console.table(rows);
-  console.log(`Tổng: ${rows.length} phiếu\n`);
+  if (grns.length) console.table(grns);
+  console.log(`Tổng: ${rows.length} đơn mua · ${grns.length} phiếu nhập\n`);
 
   if (!apply) {
     console.log('DRY-RUN — chạy lại với --apply để ghi.');
@@ -102,7 +130,7 @@ const resolvePgDump = () => {
   }
   fs.mkdirSync(BACKUP_DIR, { recursive: true });
   const stamp = new Date().toISOString().replace(/[-:T]/g, '').slice(0, 15);
-  const dump = path.join(BACKUP_DIR, `aduu-before-leaked-grn-cleanup-${stamp}.dump`);
+  const dump = path.join(BACKUP_DIR, `aduu-before-leaked-purchase-cleanup-${stamp}.dump`);
   // `?schema=public` là tham số CHỈ Prisma hiểu; `pg_dump` từ chối
   // ("invalid URI query parameter"). Bỏ nó đi trước khi gọi.
   const dbUrl = String(process.env.DATABASE_URL || '').replace(/\?schema=public/, '');
@@ -118,17 +146,21 @@ const resolvePgDump = () => {
     process.exit(1);
   }
 
-  const grnIds = rows.map((r) => r.id);
-  const poIds = rows.map((r) => r.purchaseOrderId);
+  const grnIds = grns.map((g) => g.id);
   const deleted = await prisma.$transaction(async (tx) => {
     const out = {};
-    // Thứ tự con trước cha. `goods_receipt_items.purchaseItemId` là FK RESTRICT.
-    out.items = (await tx.goodsReceiptItem.deleteMany({ where: { grnId: { in: grnIds } } })).count;
-    out.notes = (await tx.goodsReceiptNote.deleteMany({ where: { id: { in: grnIds } } })).count;
+    // Thứ tự con trước cha. `goods_receipt_items.purchaseItemId` là FK RESTRICT
+    // tới `PurchaseItem` ⇒ phải xoá dòng GRN TRƯỚC dòng PO.
+    if (grnIds.length) {
+      out.grnItems = (await tx.goodsReceiptItem.deleteMany({ where: { grnId: { in: grnIds } } })).count;
+      out.grnNotes = (await tx.goodsReceiptNote.deleteMany({ where: { id: { in: grnIds } } })).count;
+    }
     out.purchaseItems = (await tx.purchaseItem.deleteMany({
       where: { purchaseOrderId: { in: poIds } },
     })).count;
-    out.purchaseOrders = (await tx.purchaseOrder.deleteMany({ where: { id: { in: poIds } } })).count;
+    out.purchaseOrders = (await tx.purchaseOrder.deleteMany({
+      where: { id: { in: poIds } },
+    })).count;
     return out;
   });
   console.log('Đã xoá:', deleted);
@@ -136,8 +168,8 @@ const resolvePgDump = () => {
   // Bút toán, công nợ và audit tương ứng đã được `purgeFlowResidue` của luồng dọn
   // theo cửa sổ thời gian. Kiểm lại bằng `npm run check:accounting` — số PO
   // thiếu bút toán phải bằng 0.
-  const after = await prisma.$queryRawUnsafe(FIND);
-  console.log(`Còn lại sau khi dọn: ${after.length} phiếu`);
+  const after = await prisma.$queryRawUnsafe(FIND_PO);
+  console.log(`Còn lại sau khi dọn: ${after.length} đơn mua`);
 
   await prisma.$disconnect();
 })().catch(async (e) => {
