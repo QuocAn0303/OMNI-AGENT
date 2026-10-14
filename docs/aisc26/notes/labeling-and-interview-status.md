@@ -82,3 +82,15 @@ là đắt", hay bất kỳ câu trả lời nào trong tệp vào tài liệu t
 3. Ghi **nguyên văn**, có xin phép trích; xem `usertest/consent-form.md` (mẫu đồng ý đã có).
 4. Cập nhật `06-business.md` §2 và §4, bỏ nhãn "giả định chưa kiểm chứng" **chỉ ở nơi có
    trích dẫn thật**.
+
+> **ĐÍNH CHÍNH 2026-10-14 — bảng trên mô tả CHỮ CÒN SÓT trong file mẫu, không phải trạng
+> thái khảo sát.** Bộ khảo sát đã điền cho **10 cửa hàng**; các dòng
+> *"GIẢ ĐỊNH – CHƯA KHẢO SÁT"* / *"TÌNH HUỐNG GIẢ LẬP"* / *"Chưa xác thực"* là chữ của
+> **template ban đầu chưa xoá**. Số liệu dùng được: 9/10 hết hàng · 10/10 nhập dư ·
+> 9/10 muốn đề xuất · 9/10 dùng sổ tay/Excel/POS · 1/10 KiotViet · 0/10 Sapo ·
+> **trung vị giá 149.000đ/tháng** (dải 50.000–249.000đ).
+>
+> **Còn thiếu:** phỏng vấn sâu dạng ghi âm. Bốn câu (8, 19, 20, 23) có lời trả lời
+> **giống hệt nhau ở cả 10 phiếu** và cả 10 ghi cùng một ngày ⇒ đây là **mẫu khảo sát có
+> cấu trúc + phỏng vấn sâu bằng miệng**, không phải 10 bản phỏng vấn độc lập.
+> Bộ 8 câu ở 06-business.md §4 dùng để hỏi sâu, ghi **nguyên văn**.

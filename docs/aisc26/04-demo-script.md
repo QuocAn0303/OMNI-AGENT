@@ -1,6 +1,12 @@
-# 04 — Kịch bản trình diễn 5 phút (+ phương án dự phòng)
+# 04 — Kịch bản trình diễn 7 phút (một luồng, đóng trọn tới sổ cái)
 
-**Ngày:** 2026-10-03 · **Nhánh:** `round2/p0-hardening` · **Bám theo:** T16
+**Ngày:** 2026-10-14 · **Nhánh:** `round2/p0-hardening`
+
+> **ĐÍNH CHÍNH 2026-10-14 — viết lại toàn bộ.** Bản cũ (2026-10-03) mô tả luồng
+> **dừng ở "tạo đơn nhập"**, trong khi đề tài tên là *"Tối ưu hóa Tồn kho và Chuỗi
+> cung ứng"*. Nay kịch bản đi trọn **9 bước**, từ đơn bán đến bút toán, và có thêm
+> khoảnh khắc **AI diễn thích + chốt chặn số** — thứ trả lời trực tiếp câu "vai trò
+> LLM ở đâu".
 
 > **Nhãn dữ liệu xuyên suốt:** dữ liệu trên màn hình là **MÔ PHỎNG**, dựng từ
 > **UCI Online Retail II (CC BY 4.0)** — xem `02-data.md`. Giá tính bằng **sterling của
@@ -24,25 +30,28 @@ npm run tenant:null -- --scan      # MỒ CÔI-TENANT 0 · TRÙNG 0
 
 # 1. Dữ liệu demo đủ dùng
 npm run data:import -- --reset --apply --days 34 --max-orders 6000
-npm run demo:setup                  # PO+GRN lịch sử cho 12 SKU "hero" ⇒ lead time ĐO ĐƯỢC
-npm run smoke:import-demo           # 9/9
+npm run demo:setup                  # PO+GRN lịch sử cho nhóm "hero" ⇒ lead time ĐO ĐƯỢC
+npm run smoke:import-demo
 
-# 1b. BẬT ĐĂNG NHẬP cho tenant MÔ PHỎNG (bắt buộc — mặc định user demo KHÔNG đăng nhập được)
+# 1b. BẬT ĐĂNG NHẬP cho tenant MÔ PHỎNG
 npm run demo:login -- --apply       # in ra email + mật khẩu dùng cho bước đăng nhập
 
-# 1c. KIỂM CHỨNG TRƯỚC KHI LÊN (mới, 2026-10-10) — 13/13 là xem được
-npm run demo:check                  # chạy luồng 2 lần, in luôn phiếu từng màn hình
+# 1c. KIỂM CHỨNG TRƯỚC KHI LÊN — 25/25 là xem được
+npm run demo:check                  # chạy luồng 2 lần + phủ bước 7 + chốt chặn LLM
 
-# 2. Luồng demo chạy được, và chạy lại được nhiều lần không rác
-npm run smoke:demo-flow            # 12/12, 2 lần liên tiếp: 0 bảng thay đổi
+# 2. Luồng demo chạy được, chạy lại nhiều lần không rác
+npm run smoke:demo-flow            # 17/17
 
-# 3. HTTP thật (cần backend đang chạy ở cổng 4000)
+# 3. HÂM NÓNG — LẦN ĐẦU CHẠY CHẬM 20 LẦN
+npm run demo:run                    # in 6 khối, chạy 2-3 giây khi đã ấm
+
+# 4. HTTP thật (cần backend đang chạy ở cổng 4000)
 npm run check:humangate            # 11/11
 
-# 4. LLM: mặc định là KHÔNG dùng LLM. Xác nhận rồi đừng đụng
+# 5. LLM: mặc định là KHÔNG dùng LLM
 npm run llm:policy                 # chỉ in chế độ + có/không key, KHÔNG in key
 
-# 5. Giao diện
+# 6. Giao diện
 cd frontend && npm run lint && npm run build && cd ..
 ```
 
@@ -50,187 +59,100 @@ cd frontend && npm run lint && npm run build && cd ..
 |---|:---:|---|---|
 | PostgreSQL local chạy | ☐ | `npm run tenant:null -- --scan` | dừng cài lại Postgres |
 | 0 migration chờ | ☐ | `npx prisma migrate status` | `npx prisma migrate deploy` (**không** `db:migrate`) |
-| Tenant demo có 500 SKU + ≥ 2.400 đơn | ☐ | trang `/products` | `npm run data:import -- --reset --apply …` |
-| `smoke:demo-flow` 12/12 | ☐ | lệnh trên | đọc `STATE.md` giả định A4/A5 |
+| Tenant demo có 500 SKU + đơn bán | ☐ | trang `/products` | `npm run data:import -- --reset --apply …` |
+| **`demo:check` 25/25** | ☐ | lệnh trên | đọc phần FAIL, **không trình bày** |
+| `smoke:demo-flow` 17/17 | ☐ | lệnh trên | đọc `STATE.md` giả định A4/A5 |
 | `check:humangate` 11/11 | ☐ | cần `npm run dev` | xem mục dự phòng B |
 | LLM **tắt** (mặc định) | ☐ | `npm run llm:policy` | không cần làm gì thêm |
-| Đăng nhập được vào tenant demo | ☐ | `/login` bằng tài khoản mà `npm run demo:login -- --apply` in ra | `npm run demo:login -- --apply` |
-| Tab "Nhập hàng" có dữ liệu | ☐ | `/smart-guide` → tab **Nhập hàng** (cần tenant demo, KHÔNG phải CANDORY) | xem mục 1b |
-| Mở sẵn 3 tab: `/smart-guide`, `/pos`, `/agent-approvals` | ☐ | trình duyệt | — |
-| **Chạy `npm run demo:run` 1 lần để có bản in dự phòng** | ☐ | xem mục 4 | — |
-| Câu hỏi dự phòng đã đọc | ☐ | `07-qa-prep.md` | — |
-
-**Sau buổi trình bày:** `Get-Process node | Stop-Process -Force` — **không** để lại
-tiến trình nền.
-
-### 1b. Tài khoản trình diễn — phải đúng tenant MÔ PHỎNG
-
-`data:import` cố tình tạo user demo với mật khẩu `khong-dang-nhap-duoc` (dữ liệu
-mô phỏng không được dùng để chứng minh đăng nhập). `npm run demo:login -- --apply`
-bật lại đúng hai thứ và in ra tài khoản:
-
-| | |
-|---|---|
-| Tenant | `OMNI DEMO (MÔ PHỎNG — dữ liệu UCI Online Retail II)` · gói `business` |
-| Email | `demo-mo-phong@local.invalid` |
-| Mật khẩu | in ra bởi lệnh trên (mặc định `Demo123456`) |
-
-> **Bắt buộc dùng tenant này, KHÔNG dùng `admin@candory.com`.** Tenant CANDORY chỉ có
-> 20 SKU và không SKU nào dưới ROP ⇒ tab "Nhập hàng" và màn hình đề xuất đều **trống**
-> khi trình bày. Tenant demo có 500 SKU, phần lớn dưới `minStock`.
->
-> Không nói "khách hàng chúng tôi" — đây là dữ liệu công khai, đã dán nhãn ở đầu file.
+| Đăng nhập được vào tenant demo | ☐ | `/login` bằng tài khoản `demo:login` in ra | `npm run demo:login -- --apply` |
+| **Đã chạy `demo:run` 1 lần để hâm nóng** | ☐ | xem mục 4 | — |
+| Mở sẵn 5 tab: `/smart-guide`, `/pos`, `/agent-approvals`, `/purchase-orders`, `/grn` | ☐ | trình duyệt | — |
+| Có bản in dự phòng | ☐ | `npm run demo:run > %TEMP%\demo.txt` | — |
 
 ---
 
-## 1. Kịch bản 5 phút
+## 1. Kịch bản 7 phút
 
-| Giờ | Màn hình | Ai nói gì (nguyên văn) | Ai làm |
+| Giờ | Màn hình | Nói gì | Thao tác |
 |---|---|---|---|
-| 0:00–0:30 | — (đứng) | A: "Đây là một trong ba món quy trình chúng tôi có: **cảnh báo sắp hết hàng → hệ thống tính số lượng cần đặt → người có quyền duyệt → tạo đơn nhập**. Năm phút. Toàn bộ số liệu trên màn hình là **dữ liệu mô phỏng** từ một tập dữ liệu công khai tên UCI Online Retail II, giấy phép CC BY 4.0; tiền tính bằng sterling của tệp đó, chúng tôi không quy đổi." | — |
-| 0:30–1:10 | tab 2: `/products` | A: "Ba chỗ tôi muốn nói trước. Một: **số lượng đặt do công thức quyết định, không phải AI** — AI không được phép chạm vào bất kỳ con số nào của quyết định đặt hàng. Hai: **không có AI thì luồng vẫn chạy trọn**, hôm nay tôi sẽ tắt AI. Ba: **không ai có thể bỏ qua bước duyệt** — không duyệt thì không có đơn nhập nào tồn tại." | B giữ tab |
-| 1:10–2:10 | tab 1: `/pos` | A: "Tôi bán 6 cái *[B: chọn SKU, số 6, bấm thanh toán]*. Tồn khả dụng của món này rơi từ 10 xuống 4." | **B** tạo đơn (nói trước khi bấm) |
-| 2:10–3:05 | tab 3: `/agent-approvals` | A: "Hệ thống vừa tự sinh một đề xuất. Nhìn bốn thứ: **tồn khả dụng**, **điểm đặt lại ROP**, **số ngày còn đủ bán**, và **số lượng đề xuất**. Số lượng này là `[2.510]` — công thức tính ra, không phải AI. *[B: bấm Duyệt]*. Hệ thống **kiểm tra lại từ DB lúc tôi bấm**: dữ liệu đã đổi thì nó chặn và bắt tôi xem khác biệt." | **B** bấm Duyệt |
-| 3:05–3:35 | tab 4: `/purchase-orders/…` | A: "Và đây là đơn nhập `[PO-…-0001]`, tạo **đúng một cái**, có ghi ai duyệt, lúc nào, ghi chú gì." | B mở PO |
-| 3:35–4:20 | — (quay lại `/agent-approvals`) | A: "Giờ phần đo được. Chúng tôi **không** bán câu 'AI chính xác hơn'. Chúng tôi bán: **đề xuất có cổng duyệt bắt buộc, và sai số đo được bằng backtest công khai**."<br>"Kết quả thí nghiệm 1 — nguyên văn, kể cả phần xấu: chỉ số chính ưu tiên ROP hơn ngưỡng cố định, **nhưng** cái đổi lại là bán ít hơn 9,5%, mất bán nhiều hơn 31,5%, và tỉ lệ lấp đủ yêu cầu rơi từ 76,81% xuống 69,51%. Chúng tôi **không** kết luận 'ROP tốt hơn'."<br>"Thí nghiệm 2 — **post-hoc**, chạy sau khi đã thấy số: ở **cùng mức phục vụ**, ROP trói ít vốn hơn ngưỡng cố định: chênh −954,63/ngày trên 132/500 SKU, khoảng tin cậy 95% không chứa 0, 99,24% SKU thắng. Ràng buộc 95% **không khả thi** — cao nhất đạt 88,66% — nên chúng tôi **không** trả lời được câu 'ở mức 95% thì sao'." | — |
-| 4:20–4:50 | — | A: "So với KiotViet, Sapo, CMBcore: ở đúng luồng này, tôi **không tìm thấy** ở họ cổng duyệt bắt buộc, chặn lệch số liệu, hay chỉ số sai số. `❌` trong bảng của tôi nghĩa là *không tìm thấy trong nguồn tôi đã đọc*, không phải *chắc chắn họ không có*."<br>"**Và chúng tôi không làm gì ở Vòng 2:** không POS, không đồng bộ sàn, không hóa đơn điện tử, không chấm công. Chỗ nào đối thủ mạnh hơn thì nói thẳng." | — |
-| 4:50–5:00 | — | A: "Còn ba thứ **chúng tôi chưa có dữ liệu**: kết quả LLM thật, thời gian người dùng, và phỏng vấn khách. Tôi ghi 'chưa có dữ liệu' thay vì điền số. Cảm ơn." | — |
-
-**Cấm nói:** "chính xác hơn KiotViet/Sapo" · "tiết kiệm X%" · "AI thông minh" ·
-"đa kênh" (luồng demo lấy đơn từ **tệp xuất mô phỏng**, không phải tích hợp thời gian
-thực) · bất kỳ số LLM nào (chưa đo).
+| 0:00–0:30 | — (đứng) | A: *"Đây là **một quy trình** đi trọn từ cảnh báo đến sổ cái: cảnh báo sắp hết hàng → hệ thống tính số lượng cần đặt → **người duyệt** → tạo đơn nhập → nhập kho → hạch bút toán. Mọi số trên màn hình là **dữ liệu mô phỏng** từ tập UCI Online Retail II, giấy phép CC BY 4.0; tiền tính bằng sterling của tệp đó."* | — |
+| 0:30–1:00 | tab `/smart-guide` | A: *"Ba chỗ tôi muốn nói trước. Một: **số lượng đặt do công thức quyết định, không phải AI**. Hai: **không có AI thì luồng vẫn chạy trọn** — hôm nay tôi tắt AI. Ba: **không ai bỏ qua được bước duyệt**; không duyệt thì không tồn tại đơn nhập nào."* | B giữ tab |
+| 1:00–1:50 | tab `/pos` | A: *"Tôi bán vài cái để tồn rơi."* | **B** chọn SKU, bấm thanh toán |
+| 1:50–2:30 | tab `/agent-approvals` | A: *"Hệ thống vừa sinh một đề xuất. Nhìn bốn thứ: **tồn khả dụng**, **điểm đặt lại ROP**, **số ngày còn đủ bán**, **số lượng đề xuất** — và **cờ nguồn thời gian nhập hàng**: `MEASURED` nghĩa là lấy từ lịch sử PO→GRN thật, không phải mặc định."* | **B** bấm **Duyệt** |
+| 2:30–3:00 | tab `/purchase-orders` | A: *"Đây là đơn nhập, tạo **đúng một cái**, có ghi ai duyệt, lúc nào, ghi chú gì."* | B mở PO |
+| 3:00–3:40 | tab `/grn` | A: *"Đơn mua chưa phải hàng. Giờ nhận kho: tôi nhận **một phần** — phần còn lại phải giao nốt, hệ thống tự nhớ. QC đạt, rồi **ghi sổ cái**."* | **B** bấm **Ghi sổ cái (post)** |
+| 3:40–4:10 | tab `/accounting` | A: *"Và đây là bút toán: **Nợ 156 tồn kho + Nợ 1331 công nợ phải trả = Có 331 công nợ phải có**. Trước 2026-10-12 hệ thống của chúng tôi nhận kho chỉ cộng tồn, **không** ghi bút toán — chúng tôi tự tìm ra bằng lệnh kiểm tra của chính mình: **39 đơn mua đã nhận hàng mà không có dòng bút toán nào**. Nay bằng 0."* | B mở sổ cái |
+| 4:10–5:00 | quay lại `/agent-approvals` | A: *"Giờ tới phần AI. AI ở đây làm **đúng hai việc**, cả hai đều là việc công thức không làm được."* Bấm **AI Giải thích và Soạn tin NCC**. *"Đây là lời giải thích cho anh/chị, và đây là tin nhắn đặt hàng gửi nhà cung cấp. Hệ thống **chỉ soạn, không gửi**."* | **B** bấm nút, đọc ra |
+| 5:00–5:30 | — | A: *"Và đây là phần tôi muốn anh/chị nhìn kỹ."* Bấm **Test Chốt chặn AI sửa số**. *"Tôi cố tình để AI sửa số lượng. Nó bị chặn: số cũ … ra số mới …, hệ thống báo số mới không có trong khối số của công thức, bác bỏ văn bản, và dùng lại số chuẩn. **Ranh giới này không phải lời hứa — nó là đoạn mã này** [`assertNumbersUnchanged`], và `demo:check` kiểm cả sai số nhỏ từng một đơn vị."* | **B** bấm nút |
+| 5:30–6:10 | — | A: *"Chúng tôi không bán câu 'AI chính xác hơn'. Chúng tôi bán: **đề xuất có cổng duyệt bắt buộc, chặn lệch số liệu, và sai số đo được bằng backtest công khai**."* *"Thí nghiệm 1 — kể cả phần xấu: chỉ số chính ưu tiên ROP hơn ngưỡng cố định, **nhưng** cái đổi lại là bán ít hơn 9,5%, mất bán nhiều hơn 31,5%. Chúng tôi **không** kết luận 'ROP tốt hơn'."* | — |
+| 6:10–6:40 | — | A: *"Về thị trường: chúng tôi khảo sát 10 cửa hàng. **9/10** gặp hết hàng, **10/10** bị nhập dư đọng vốn, và **9/10** đang dùng sổ tay hoặc Excel — trong đó người duy nhất dùng phần mềm chuyên nghiệp vẫn bị chênh lệch tồn và nhập dư theo đợt. Mức họ sẵn sàng chi: trung vị **149 nghìn/tháng**."* | — |
+| 6:40–7:00 | — | A: *"Còn hai ô chúng tôi **chưa có dữ liệu**: số token LLM chạy hàng ngày và thời gian người dùng. Tôi ghi 'chưa có dữ liệu' thay vì điền số."* | — |
 
 ---
 
 ## 2. Diễn tập (bắt buộc 2 lần)
 
-1. **Lần 1 — với đồng hồ.** Chạy đúng bảng ở trên, đo từng đoạn. Mục tiêu: **≤ 5:30**,
-   không có đoạn nào quá 45 giây mà không ai thao tác.
-2. **Lần 2 — phá thứ có thể phá.** Diễn tập với:
-   - **Cổng 4000 không chạy** ⇒ phải chuyển sang phương án B trong 15 giây.
-   - **Không có mạng** ⇒ luồng không-LLM vẫn phải chạy (mặc định là vậy).
-   - **Đơn hàng đã tồn tại** / **PO trùng** ⇒ chạy lại `npm run demo:run` trước khi lên.
-
-**Cách nói chuyển phương án (dùng nguyên văn):** *"Giao diện đang không trả lời. Tôi
-chạy lại luồng này ở chế độ không giao diện — cùng một đường mã, số liệu đọc thẳng từ
-cơ sở dữ liệu."*
+1. Chạy `npm run demo:check` — phải **25/25**.
+2. Chạy trọn kịch bản **một lần không màn hình** (`npm run demo:run`) để hâm nóng.
+3. Chạy lại `npm run demo:check`. Lần đầu nạp cây module cần ~27 s; lần sau **~2,4 s**.
+   Không có bước hâm nóng này thì bước `create-order` sẽ đứng **19 giây** trên sân khấu.
 
 ---
 
-## 3. Nếu hỏi "số 2.510 lấy ra sao?"
+## 3. Nếu hỏi "số kia lấy ra sao?"
 
-Nói đúng công thức, không nói "AI tính":
-
-> Tồn khả dụng trừ điểm đặt lại (ROP), ROP bằng **nhu cầu mỗi ngày × thời gian nhập +
-> tồn kho an toàn**. Tồn kho an toàn thì gắn với một mức phục vụ chọn trước. Nếu hàng
-> đã có trên đường thì trừ luôn. Rồi làm tròn theo bao bì của nhà cung cấp.
->
-> Chi tiết: `01-llm-role.md` §1 và `src/modules/replenishment/replenishment.calc.js`.
-
-Nếu hỏi tiếp "sao thời gian nhập lại là ước lượng?":
-
-> Vì cửa hàng mới dùng hệ thống chưa đủ lịch sử nhận hàng để đo. Hệ thống **đánh dấu
-> cờ ước lượng** thay vì giả vờ đó là số đo. Đây là điểm phải nói thẳng.
+| Câu hỏi | Trả lời |
+|---|---|
+| Số lượng đề xuất | `planReplenishment` — ROP = `nhu cầu/ngày × (leadTime + an toàn)`. Xem `replenishment.calc.js` |
+| Lead time lấy ở đâu | Từ lịch sử **PO → GRN thật**. Trước đây nhánh này **chết âm thầm**: 0/20 PO đo được, tất cả rơi về mặc định 7 ngày |
+| Vì sao có cờ "ước lượng"? | Vì không đủ lịch sử nhập cho SKU đó. Hệ thống **nói thẳng** thay vì giả vờ biết |
+| Tin nhắn NCC ai viết? | AI viết **lời**; số do công thức cho. Không có hàm gửi nào trong đường này — người dùng tự gửi |
+| AI có thể tự đặt hàng? | **Không.** Mọi hành động ghi đều qua thẻ chờ duyệt. Không có đường vòng |
 
 ---
 
-## 4. Phương án dự phòng (theo thứ tự dùng)
+## 4. Phương án dự phòng
 
-### A. `npm run demo:run` — không cần giao diện (30 giây)
+### A. `npm run demo:run` — không cần giao diện (~3 giây)
 
-Cùng `runDemoFlow()` với `smoke:demo-flow` ⇒ **bản trình diễn và bản nghiệm thu là một
-đường mã**, không thể lệch nhau. In ra: từng bước kèm thời gian thật (ms), ATP trước/sau,
-ROP, số lượng đề xuất, mã gate, mã PO, bằng chứng không sinh đề xuất trùng, và danh
-sách "bỏ qua có chủ đích".
+In 6 khối: SKU → đơn bán → công thức → duyệt → **đóng vòng (GRN → bút toán → công nợ)** →
+chống trùng. Dùng khi giao diện chết.
 
-```bash
-npm run demo:run              # tự dọn sau khi chạy
-npm run demo:run -- --keep    # giữ lại PO để mở giao diện xem sau
+### B. `npm run check:humangate` — chứng minh phần HTTP
+
+Chạy vòng đời gate qua HTTP thật: CASHIER hỏi dữ liệu nhạy cảm → bị chặn → tạo gate
+PENDING → ADMIN duyệt.
+
+### C. Chế độ không-LLM — **mặc định, không phải dự phòng**
+
+`npm run llm:policy` xác nhận. Khi LLM tắt, bước 8 vẫn chạy và **ghi rõ nhãn
+"mẫu"**; không giả vờ là LLM viết.
+
+### D. Bản in/snapshot dự phòng
+
+```powershell
+npm run demo:run > "$env:TEMP\demo.txt"
 ```
-
-Dùng khi: cổng 4000 chết · frontend build hỏng · trình bày ở máy không cài Postgres.
-**Bản in đã lưu** nằm ở `docs/aisc26/print/demo-run.txt` (nếu có) — in sẵn ra giấy.
-
-### B. `check:humangate` — chứng minh phần HTTP (nếu bị hỏi)
-
-11 assertion qua HTTP thật (đăng nhập → chat → gate → duyệt), cần backend đang chạy.
-Không dùng làm bản trình diễn chính; dùng để trả lời câu "phần HTTP có chạy thật không".
-
-### C. Bản in/snapshot dự phòng
-
-Chuẩn bị **một** bản in của `npm run demo:run` **và** 4 ảnh chụp màn hình
-(`/pos`, `/agent-approvals` trước duyệt, sau duyệt, `/purchase-orders/…`), đặt trong
-một thư mục ngoài repo. Nếu mất hết, nói:
-
-> "Tôi không trình diễn được lúc này vì môi trường không khởi động. Những gì tôi vừa
-> nói vẫn đúng, và đây là bản in của cùng một đường mã chạy lúc [thời điểm]."
-
-### D. Chế độ không-LLM — **mặc định, không phải dự phòng**
-
-`resolveMode()` trả `'off'` trừ khi có key. Hôm nay **nói "AI tắt" là đúng** và là một
-điểm mạnh: *"Chi phí AI trên luồng này bằng 0, vì số lượng do công thức quyết định; AI
-chỉ làm hai việc phụ và tắt đi thì luồng vẫn chạy."*
-Không được bật LLM lúc trình bày. Nếu bật, mọi con số LLM phải tắt (`CHƯA ĐO`).
 
 ---
 
 ## 5. Kịch bản thay thế 90 giây (khi bị cắt thời gian)
 
-1. **15s** — "Số lượng đặt do công thức tính, AI không chạm vào số; AI tắt là mặc định;
-   không duyệt thì không có đơn nhập."
-2. **40s** — `npm run demo:run` in ra 6 bước, đọc thẳng ATP → ROP → đề xuất → gate → PO.
-3. **20s** — kết luận backtest trung thực (thí nghiệm 1 xấu + thí nghiệm 2 post-hoc).
-4. **15s** — "không làm gì ở Vòng 2" + ba chỗ chưa có dữ liệu.
+1. `/agent-approvals` — bấm **Duyệt**, chỉ vào cờ `MEASURED` của lead time.
+2. `/grn` — nhận một phần rồi **Ghi sổ cái**.
+3. Quay lại `/agent-approvals` — bấm **Test Chốt chặn AI sửa số**.
+4. Kết: *"39 đơn mua không vào sổ cái, chúng tôi tự tìm ra và đã sửa."*
 
 ---
 
-## Cap nhat 2026-10-10: `demo:setup` + `demo:check` (so cua demo da "thien nhi" duoc)
+## 6. Những gì KHÔNG được nói
 
-### Vay sao can hai lenh nay
-
-`data:import` (gia dinh A5) chi tao lich su PO+GRN cho **20 SKU ton thap nhat** — dung
-nhom SKU ban nhanh (`nhu cau/ngay` hang tram). `pickDemoSku` chon "SKU co `orderQty` lon
-nhat" ⇒ **rut sat** vao nhom do ⇒ ban demo in ra `ROP 1.421 · de xuat nhap 2.510 cai`.
-Dung theo cong thuc, nhung **khong giong cua hang nao** ⇒ kho giai thich khi trinh bay.
-
-| Lenh | Lam gi |
+| Không nói | Vì sao |
 |---|---|
-| `npm run demo:setup` | Bo sung **3 vong PO+GRN** cho 12 SKU trong **dai tinh huong tap hoa nho** (nhu cau 0,5–50/ngay, `orderQty` 1–500) ⇒ lead time **DO DUOC** (`sampleSize >= 3`) thay vi mac dinh 7 ngay, va co NCC that. Id tap dinh ⇒ chay lai khong nhan ban. `--reset-demo-hist` de go. |
-| `npm run demo:check` | **Kiem chung truoc khi len**: du lieu du? chay luong **hai lan** co ra cung mot SKU? lan hai co rac khong? so co "thien nhi" khong? — **13/13** — va in ra **phieu tung man hinh** voi so that cua chinh lan chay do. FAIL = khong duoc trinh bay. |
-
-`pickDemoSku` doi thu tu uu tien: **lead time do duoc → dai tinh huong → `orderQty` lon
-nhat trong dai → mã tang dan**. Neu chua chay `demo:setup` thi lui ve tieu chi cu va
-`demo:run` van chay duoc (chi la so kem than thien hon). Them `orderBy` khi doc ung vien
-de **hai lan chay luon chon cung mot SKU** (truoc do `findMany` khong `orderBy` ⇒ Postgres
-tra thu tu tuy y).
-
-### So cua demo sau khi chay `demo:check` (lay tu chinh DB local, 2026-10-10)
-
-| | |
-|---|---|
-| SKU được chọn | `20726` — nhu cau ~31,6/ngay, ATP về ~33 sau khi bán |
-| Lead time | **7 ngay, ĐO ĐƯỢC** (khong con la "uoc luong") |
-| De xuat nhap | ~484 cai (trong dai 1–500) |
-| PO | 39 PO + 39 GRN POSTED · 1.427 don ban |
-
-### Ba lo loi that, khong phai "nhieu an"
-
-1. **Race so HĐĐT mock** — `_mockInvoiceNo()` chi dem trong bo nho nen moi lan khoi dong
-   Node lai bat dau tu `0000001` ⇒ `Unique constraint (invoiceNo)` ⇒ don demo khong don
-   duoc. Da sua: so gia co `MOCK-<ngay>-<seq>-<random6>` (dung de khong bao gio nham so that)
-   va `generateInvoiceNo` thu lai khi trung.
-2. **Cleanup cua luong demo thieu bang `invoices`** — `invoices.orderId` la FK **RESTRICT**
-   ⇒ la chay sau do vo khong xoa duoc don. Da them vao `cleanupDemoArtifacts()`.
-3. **`data:import --reset` de lai dong mo coi** — danh sach xoa thieu `invoice`,
-   `electronicInvoice`, `refreshToken`, `agent_*`, `debt`, `journal_*`, `promotion`, …
-   ⇒ `reset` chet hoac de lai 427 dong `promotions` tro toi tenant da xoa. Da bo sung
-   vao ca hai danh sach; rac con lai da don bang
-   `docs/aisc26/one-off/cleanup-orphan-rows.js` (521 dong, con 0).
-
-### Mot sua them o smoke (khong doi so da ky)
-
-`smoke:import-demo` K8 **do so dong hang cua MOI tenant khac demo** roi so voi so da ky
-cua `candory-scent` ⇒ FAIL oan khi chi can mot tenant khac (vd tenant seed
-`crm-phase1-demo`) co don. Da sua **pham vi do** cho dung tenant da ky; so da ky
-82 don / 158 dong / 89.862.000 VND **khong doi**. `candory-scent` do la kiem chung:
-82 don / 158 dong — dung chu ky.
+| "Chúng tôi phỏng vấn 10 chủ cửa hàng **độc lập**" | Nói đúng hơn: *mẫu khảo sát 24 câu đã điền cho 10 cửa hàng + phỏng vấn sâu*. Bốn câu (8, 19, 20, 23) trùng khít 10/10 |
+| "Tiết kiệm được X%" | Không có căn cứ |
+| "AI chính xác hơn" | Hybrid hơn fuzzy +0,0113 F1 nhưng **CI95 [0; 0,0379] vẫn chứa 0** |
+| "Hết hàng từ 8% xuống 1,5%" | Đã gỡ khỏi mọi tài liệu |
+| "ROP tốt hơn" | Thí nghiệm 1: ROP **mất bán nhiều hơn 31,5%** |
+| "Khách hàng của chúng tôi" | Dữ liệu là mô phỏng |
+| Nhắc tới giá gói cũ 499k/1.499k | Đã lệch khảo sát 3,3 lần — xem `06-business.md` §5.5 |

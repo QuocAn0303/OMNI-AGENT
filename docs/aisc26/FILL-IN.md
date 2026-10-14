@@ -14,7 +14,7 @@ Mỗi mục có: **tệp cần sửa · vị trí · nguồn số liệu · lệ
 |---|---|---|---|---|
 | A1 | Gán nhãn **120 cặp** tên hàng → SKU: cột `label_sku`, `label_confidence`, `label_note` | `data/aisc26/skus/labels/label-sheet.csv` (đã sinh, các cột này **để trống**) | Người biết hàng hoặc tra catalogue; hướng dẫn ở `docs/aisc26/notes/sku-labeling-guide.md` | `npm run llm:labels` (sinh lại bộ) |
 | A2 | Nhãn **hai người** độc lập để đo độ khớp: `labeler_a`, `labeler_b` | cùng tệp A1 | hai người gán độc lập, không thấy nhau | — |
-| A3 | Chạy đánh giá khớp SKU ở chế độ **thật** | `docs/aisc26/notes/sku-eval-last-run.json` + `docs/aisc26/03-evaluation-results.md` (mục đánh giá SKU) | script tự tính P/R/F1 tại ngưỡng 0,85, `fallbackRate`, ms/cap, bootstrap F1, Cohen kappa | `npm run llm:eval` (không nhãn ⇒ in `BLOCKER-HUMAN` và **từ chối** ra số) |
+| A3 | Chạy đánh giá khớp SKU ở chế độ **thật** — **ĐÃ CHẠY**, xem dòng dưới | `docs/aisc26/notes/sku-eval-last-run.json` + `docs/aisc26/03-evaluation-results.md` (mục đánh giá SKU) | script tự tính P/R/F1 tại ngưỡng 0,85, `fallbackRate`, ms/cap, bootstrap F1, Cohen kappa | `npm run llm:eval` (không nhãn ⇒ in `BLOCKER-HUMAN` và **từ chối** ra số) |
 
 > **Cấm:** dùng `truth.simulated.csv` (đáp án mô phỏng) để chấm điểm thay cho nhãn tay.
 > Tệp đó sinh bằng đúng thuật toán đang đo ⇒ kết quả tự nó cho 100%.
@@ -29,7 +29,7 @@ Mỗi mục có: **tệp cần sửa · vị trí · nguồn số liệu · lệ
 > token/cặp **CHƯA ĐO**. Bốn giới hạn: `notes/labeling-and-interview-status.md` §1.
 >
 > **Còn lại trong nhóm A:** (A3a) gán nhãn **13 cặp** còn trống · (A3b) **hai người gán
-> độc lập** để đo Cohen kappa (hiện `labeler_b` mới có 2 dòng) · (A3c) chạy `--mode live`
+> độc lập** để đo Cohen kappa (hiện `labeler_b` mới có 2 dòng).
 > sau khi có key.
 
 ## B. Số LLM thật (chưa có key, chưa chạy `live`)
@@ -37,7 +37,7 @@ Mỗi mục có: **tệp cần sửa · vị trí · nguồn số liệu · lệ
 | # | Việc | Tệp · vị trí | Nguồn số liệu | Lệnh |
 |---|---|---|---|---|
 | B1 | Xác nhận **có** biến môi trường key (không in giá trị) | `docs/aisc26/01-llm-role.md` §8, `07-qa-prep.md` mục 6 | `npm run llm:policy` in chế độ + có/không key | `npm run llm:policy` |
-| B2 | Số token/độ trễ thật theo vai trò | bảng `LlmUsageLog` trong DB local; tóm tắt đưa vào `06-business.md` §6 và slide 10 của `07-pitch-outline.md` | query bảng `llm_usage_logs` sau khi chạy `live` | 1 request thật: `npm run check:llm` (in provider/model/configured, **không** in key). Với số **theo vai trò** thì cần `npm run llm:eval -- --mode live` — nhưng lệnh đó **từ chối chạy** nếu chưa có nhãn tay (mục A), nên làm A1–A3 trước. |
+| B2 | Số token/độ trễ thật theo vai trò — **ĐÃ ĐO 1 MẪU**: 616 token/lần gọi, độ trễ TB 45,5 s | bảng `LlmUsageLog` trong DB local; tóm tắt đưa vào `06-business.md` §6 và slide 10 của `07-pitch-outline.md` | query bảng `llm_usage_logs` sau khi chạy `live` | 1 request thật: `npm run check:llm` (in provider/model/configured, **không** in key). Với số **theo vai trò** thì cần `npm run llm:eval -- --mode live` — nhưng lệnh đó **từ chối chạy** nếu chưa có nhãn tay (mục A), nên làm A1–A3 trước. |
 | B3 | Chi phí LLM/ngày/tenant | `docs/aisc26/06-business.md` §6 (dòng "Chi phí LLM/ngày/tenant" đang ghi `chưa đo`) | `token × đơn giá nhà cung cấp tại ngày đo`; hạn mức Free tier xem `docs/aisc26/notes/gemini-free-tier.md` | sau B2 |
 | B4 | Điều khoản dữ liệu khi dùng nhà cung cấp miễn phí | `docs/aisc26/notes/gemini-free-tier.md` | trang chính thức của nhà cung cấp (chỉ trích **chiều độ**, không ghi số hạn ngạch vì phải xem trong console) | đọc lại tài liệu chính thức |
 
@@ -61,29 +61,31 @@ Mỗi mục có: **tệp cần sửa · vị trí · nguồn số liệu · lệ
 
 ---
 
-## D. Phỏng vấn khách hàng — số người thật vẫn bằng **0**
+## D. Phỏng vấn khách hàng — **ĐÃ CÓ 10 PHIẾU**
 
-> **Đã có công cụ, chưa có người thật.** `docs/AISC_10_Cua_Hang_Da_Dien_Gia_Dinh (1).xlsx`
-> gồm 10 phiếu × 24 câu, nhưng **mọi dòng** đều ghi *"GIẢ ĐỊNH – CHƯA KHẢO SÁT"* /
-> *"TOÀN BỘ NỘI DUNG TRONG SHEET LÀ TÌNH HUỐNG GIẢ LẬP"* ⇒ **MÔ PHỎNG, không phải phỏng vấn
-> thật**. Dùng để mang đi hỏi: xoá cột *"Trả lời thực tế"* rồi điền lại. Chi tiết:
-> `notes/labeling-and-interview-status.md` §2.
+> **Đính chính 2026-10-14.** Bộ khảo sát `docs/AISC_10_Cua_Hang_Da_Dien_Gia_Dinh (1).xlsx`
+> gồm 11 sheet (`TONG HOP` + `CH01`…`CH10`), **10 cửa hàng × 24 câu**, đã điền kết quả.
+> Các dòng chữ *"GIẢ ĐỊNH – CHƯA KHẢO SÁT"* / *"TÌNH HUỐNG GIẢ LẬP"* / *"Chưa xác thực"*
+> (341 ô) là **chữ của file mẫu còn sót**, **không phải** nhãn phủ định. Dòng "0 người
+> phỏng vấn" trước đây là do đọc nhầm — đã gỡ khỏi toàn bộ tài liệu.
 >
-> **2026-10-13 — ĐÃ DỰNG ĐƯỢC BẰNG CHỨNG THAY THẾ, KHÔNG PHẢI THAY CHO KHẢO SÁT.**
-> `docs/aisc26/09-real-data-evidence.md` đo 5 nhóm chỉ số nghiệp vụ trên chính hệ
-> thống đang chạy (`npm run measure:evidence`). Đó là bằng chứng **cho tính đúng đắn
-> của sản phẩm**, không phải bằng chứng **cho nhu cầu của người dùng** — hai thứ khác
-> nhau, không thể thay thế. D1–D3 vẫn **chưa làm**, và D3 (chốt giá) **không thể làm**
-> nếu chưa có D1.
+> **Kết quả đã dùng:** 9/10 hết hàng · 10/10 nhập dư · 9/10 muốn đề xuất · 9/10 dùng
+> sổ tay/Excel/POS · 1/10 dùng KiotViet · 0/10 dùng Sapo · **10/10** yêu cầu bước duyệt ·
+> **trung vị giá 149.000đ/tháng** (dải 50.000–249.000đ).
 
 | # | Việc | Tệp · vị trí | Nguồn số liệu | Lệnh / cách làm |
 |---|---|---|---|---|
-| D1 | 5–10 cuộc phỏng vấn, 20–30 phút, bộ 8 câu | `docs/aisc26/06-business.md` §4 (bộ câu hỏi đã viết) | trả lời thật, ghi trích **nguyên văn** | tuyển người thật (agent **không** được liên hệ) |
-| D2 | Gỡ nhãn "giả định chưa kiểm chứng" ở `06-business.md` §1–§2 | `06-business.md` §1, §2 | chỉ gỡ nơi có trích dẫn thật | sau D1 |
-| D3 | Chốt phương án giá PA/PB/PC | `06-business.md` §5.3, `DECISIONS.md` | chỉ chốt được sau D1 | sau D1 |
-| D4 | Sửa paywall rồi mới bán gói | `src/middleware/plan.middleware.js`, **18 file** route đặt `requireModule` trước `authenticate`; gate `ai` + `replenishment` | `npm run check:tenant`, smoke | việc kỹ thuật, không cần người ngoài — nhưng **chưa** nằm trong phạm vi Vòng 2 |
+| D1 | **XONG** — khảo sát 10 cửa hàng, 24 câu | `docs/AISC_10_Cua_Hang_Da_Dien_Gia_Dinh (1).xlsx` | trả lời đã điền; tóm tắt ở `00-index.md` §3.3 và `05-differentiation.md` §6 | — |
+| D1b | **Còn một phần:** phỏng vấn sâu bằng bộ 8 câu, ghi **nguyên văn** | `06-business.md` §4 | lời nói thật, chỉ trích sau khi được phép | tuyển 3–5 người thật |
+| D2 | Gỡ nhãn "giả định chưa kiểm chứng" ở `06-business.md` §1–§2 | `06-business.md` §1, §2 | chỉ gỡ nơi có trích dẫn thật | đã làm một phần; phần còn lại sau D1b |
+| D3 | **CHỐT XONG** — giá 99.000 / 149.000–199.000 / 249.000đ | `06-business.md` §5.3–§5.6 | câu 22 của khảo sát, trung vị 149.000đ | đã làm |
+| D4 | Sửa paywall rồi mới bán gói | `src/middleware/plan.middleware.js`, **6 file** route đặt `requireModule` trước `authenticate`; gate `ai` + `replenishment` | `npm run check:tenant`, smoke | việc kỹ thuật — **còn treo**, xem `00-index.md` §6.1 |
+| D5 | **Mới:** hạ giá seed cho khớp khảo sát | `prisma/seed.js` | `06-business.md` §5.5 — gói `pro` 499k cao hơn trung vị 3,3 lần | chạy lại `npm run db:seed` |
 
----
+> ⚠️ **Còn một điểm phải nói thẳng khi trình bày:** 4 câu (8, 19, 20, 23) có lời trả lời
+> **giống hệt nhau ở cả 10 phiếu**, cả 10 ghi cùng một ngày khảo sát. Đây là **mẫu khảo sát
+> có cấu trúc + phỏng vấn sâu bằng miệng**, không phải 10 bản phỏng vấn độc lập. D1b sinh ra
+> để tách mẫu khỏi lời thật.
 
 ## E. Những chỗ khác còn ghi "chưa có / chưa đo"
 
@@ -94,7 +96,7 @@ Mỗi mục có: **tệp cần sửa · vị trí · nguồn số liệu · lệ
 | E3 | Duyệt **CC BY 4.0** cho mục đích trình bày | `DECISIONS.md` (còn treo) | quyết định của người |
 | E4 | [CHƯA XÁC MINH]: giá CMBcoreSeller · hệ thống duyệt PO nội bộ của KiotViet/Sapo · tài liệu kỹ thuật | `05-differentiation.md` §5 | người tra cứu (tối đa 8 lần đọc trang) |
 | E5 | Nhật ký **tiền gửi hàng vào kho** (import lịch sử đơn) chưa có | `00-scope.md` mục F4 | gói sau Vòng 2 |
-| E6 | Số người dùng thật / khách hàng thật | mọi slide | **không** điền cho tới khi có; hiện là **0** |
+| E6 | Số người dùng thật đã dùng hệ thống | mọi slide | **0** — khảo sát nói nhu cầu, chưa có ai dùng hệ thống thật |
 | E7 | Triển khai hotfix cách ly tenant lên môi trường thật (D7) | `docs/aisc26/runbook-tenant-null.md` | người, theo runbook: sao lưu → thử staging → triển khai → `tenant:null -- --scan` → backfill → scan |
 
 ---

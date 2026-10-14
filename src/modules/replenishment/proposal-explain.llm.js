@@ -71,16 +71,54 @@ const extractNumbers = (text) => {
  * @returns {{ok: boolean, invented: number[]}}
  */
 const assertNumbersUnchanged = (text, payload) => {
-  // Số được phép xuất hiện: mọi giá trị số trong payload, cộng biến thể làm tròn
-  // (2.1 → "2", 5.7 → "5,7") vì mẫu diễn giải hay làm tròn khi nói chuyện.
+  // Số được phép xuất hiện: mọi giá trị số trong payload, cộng CÁC BIẾN THỂ LÀM
+  // TRÒN của chính giá trị đó.
+  //
+  // SỬA 2026-10-14 — LỖI THẬT, phát hiện khi nối hàng rào vào API:
+  // Bản cũ chỉ thêm 3 biến thể — `toFixed(4)`, `toFixed(0)` và `*1000/1000` —
+  // mà hai cái đầu và cái sau gần như TRÙNG NHAU. Nên biến thể làm tròn 1 chữ
+  // số mà hệ thống TỰ DÙNG chưa được cho phép: `templateExplanation` viết
+  // `fmt1(25.625)` = "25,6", `extractNumbers` đọc lại thành `25.6`, không có
+  // trong tập cho phép ⇒ **bản mẫu của chính hệ thống bị hàng rào bác bỏ**.
+  // Đo được trên HTTP thật: `POST /api/replenishment/proposals/:gateId/explain`
+  // trả `guardrail.passed = false` với văn bản HOÀN TOÀN ĐÚNG SỐ.
+  //
+  // Đây cũng là lý do `SYSTEM_EXPLAIN` yêu cầu "KHÔNG làm tròn" nhưng chính mẫu
+  // thì làm tròn: hai bên trái nhau. Nay cho phép mọi biến thể làm tròn của số
+  // ĐÃ CÓ trong payload.
+  //
+  // AN TOÀN: nới rộng này KHÔNG cho LLM thêm số mới — chỉ cho viết số đã có ở
+  // dạng làm tròn. Muốn bẻ chốt vẫn phải đổi đáng kể (260 → 267) và bị bắt.
   const allowed = new Set();
+  const addVariants = (v) => {
+    const base = Number(v);
+    if (!Number.isFinite(base)) return;
+    allowed.add(Number(base.toFixed(4)));
+    for (const digits of [0, 1, 2, 3]) allowed.add(Number(base.toFixed(digits)));
+  };
   for (const v of Object.values(payload || {})) {
     if (typeof v !== 'number' || !Number.isFinite(v)) continue;
-    allowed.add(Number(v.toFixed(4)));
-    allowed.add(Number(v.toFixed(0)));
-    allowed.add(Number(Math.round(v * 1000) / 1000));
+    addVariants(v);
   }
-  const invented = [...extractNumbers(text)].filter((n) => !allowed.has(n));
+
+  // ĐỊNH DANH NGUYÊN VĂN — không phải "số do LLM thêm".
+  //
+  // SỬA 2026-10-14 (phát hiện khi nối hàng rào vào API): tên hàng trong tập UCI
+  // có chứa chữ số — "12 PENCILS TALL TUBE RED RETROSPOT", "100ML LIP BALM"…
+  // Chúng là TÊN, phải được giữ nguyên, nhưng `extractNumbers` thấy chữ số đó và
+  // báo là LLM tự thêm. Đo được: SKU 20983 bị báo 1 số lạ là `12`.
+  //
+  // Sửa bằng cách CHE TÊN/SKU/NCC khỏi văn bản TRƯỚC khi quét số — thay bằng
+  // chuỗi không có chữ số. Nới rộng này không làm yếu hàng rào: định danh là do
+  // người dùng nhập, LLM không được tự đặt tên hàng; mọi số khác vẫn bị quét.
+  let scanText = String(text || '');
+  for (const literal of [payload?.name, payload?.sku, payload?.vendorName]) {
+    const s = String(literal || '').trim();
+    if (s.length < 2) continue;
+    scanText = scanText.split(s).join('__ID__');
+  }
+
+  const invented = [...extractNumbers(scanText)].filter((n) => !allowed.has(n));
   return { ok: invented.length === 0, invented };
 };
 

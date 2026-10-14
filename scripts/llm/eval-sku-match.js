@@ -49,6 +49,8 @@ const ROOT = path.resolve(__dirname, '..', '..');
 const { SkuMatcher, AUTO_ACCEPT_SCORE, REVIEW_SCORE } = require(`${ROOT}/src/modules/import/sku-matcher`);
 const { matchHybridBatch, HUMAN_THRESHOLD } = require(`${ROOT}/src/modules/import/sku-matcher.hybrid`);
 const llmPolicy = require(`${ROOT}/src/config/llm-policy`);
+// Dùng cho đọc `LlmUsageLog` sau khi chạy (đo token thật) — xem `readUsage()`.
+const prisma = require(`${ROOT}/src/config/prisma`);
 
 const LABEL_DIR = path.join(ROOT, 'data', 'aisc26', 'skus', 'labels');
 const SHEET = path.join(LABEL_DIR, 'label-sheet.csv');
@@ -234,10 +236,85 @@ const parseArgs = () => {
   return { simulated: sim, mode: modeIdx >= 0 ? process.argv[modeIdx + 1] : undefined };
 };
 
+/**
+ * Đọc `LlmUsageLog` để đo TOKEN THẬT của lần chạy này.
+ *
+ * VÌ SAO CÓ (sửa 2026-10-14): dòng 361 cũ gán cứng
+ * `tokensPerPair: 'CHUA DO - can doc LlmUsageLog theo run nay'` — nghĩa là
+ * `tokensFromUsage` được tính rồi **vứt đi**, và không lần nào trong lịch sử
+ * dự án có con số token thật. `config/llm.js` và `writeUsageRow` của
+ * `llm-policy` đã ghi sẵn từng lần gọi vào bảng `llm_usage_logs`; chỉ là không
+ * ai đọc lại.
+ *
+ * Cửa sổ lọc = `[since, until)` quanh lần chạy + `task='SKU_MATCH'`. Khoá theo
+ * `task` vì các tác vụ khác (`PROPOSAL_EXPLAIN`, `VENDOR_MESSAGE`) dùng chung
+ * bảng và cùng có thể chạy song song.
+ *
+ * @returns {Promise<object>} số đo token/độ trễ, hoặc `{ measured:false, lyDo }`
+ */
+const readUsage = async (since, until) => {
+  try {
+    const agg = await prisma.llmUsageLog.aggregate({
+      where: { task: 'SKU_MATCH', createdAt: { gte: since, lt: until } },
+      _sum: {
+        promptTokens: true,
+        completionTokens: true,
+        totalTokens: true,
+        latencyMs: true,
+      },
+      _count: { _all: true },
+    });
+    const n = agg._count._all;
+    if (!n) return { measured: false, lyDo: 'khong co dong LlmUsageLog nao cho task SKU_MATCH trong cua so chay' };
+    return {
+      measured: true,
+      soLanGoi: n,
+      promptTokens: agg._sum.promptTokens || 0,
+      completionTokens: agg._sum.completionTokens || 0,
+      totalTokens: agg._sum.totalTokens || 0,
+      doTreTrungBinhMs: Math.round((agg._sum.latencyMs || 0) / n),
+      // Thời gian bị trả về kể cả lần lỗi — vẫn là chi phí thật của hệ thống.
+      luuY: 'doTreTrungBinhMs tinh ca lan ERROR (503/timeout) — la chi phi that',
+    };
+  } catch (e) {
+    return { measured: false, lyDo: `doc LlmUsageLog that bai: ${e.message}` };
+  }
+};
+
 const main = async () => {
   assertLocalDb('llm:eval khong ghi DB nhung van kiem tra DATABASE_URL cho an toan');
-  const { simulated } = parseArgs();
+  const { simulated, mode: cliMode } = parseArgs();
+  // SỬA 2026-10-14 — CỜ CLI `--mode` TỪNG BỊ BỎ QUA (im lặng).
+  //
+  // BUG THẬT: `parseArgs()` trả về `{ simulated, mode }`, nhưng dòng cũ chỉ
+  // destructure `const { simulated } = parseArgs();` ⇒ `mode` bị vứt im lặng.
+  // Dòng kế bên lại `llmPolicy.resolveMode()` chỉ đọc biến môi trường
+  // `LLM_MODE` (xem `src/config/llm-policy.js:105-107`) ⇒ lệnh
+  // `npm run llm:eval -- --mode live` **vẫn chạy ở mode=off** và không báo lỗi.
+  // Tài liệu hướng dẫn sai ở 6 chỗ (00-index.md, 09-real-data-evidence.md,
+  // FILL-IN.md, MORNING-REPORT.md, STATE.md) — ai làm theo sẽ tưởng đã đo
+  // được LLM thật trong khi vẫn là đường không-LLM.
+  //
+  // SỬA: cờ CLI được ghi vào `LLM_MODE` TRƯỚC khi `resolveMode()` chạy. Thứ tự
+  // này quan trọng: `resolveMode` đọc biến môi trường lúc gọi, không phải lúc
+  // nạp module — nên phải gán trước.
+  if (cliMode) {
+    if (!['off', 'record', 'replay', 'live'].includes(cliMode)) {
+      throw new Error(
+        `--mode ${cliMode} khong hop le. Chi chap nhan: off | record | replay | live.`,
+      );
+    }
+    process.env.LLM_MODE = cliMode;
+    // `LLM_DISABLED=1` vẫn phải thắng: đó là khoá cứu, không phải tuỳ chọn.
+    console.log(`[llm:eval] --mode ${cliMode} → ep LLM_MODE=${cliMode}`);
+  }
   const mode = llmPolicy.resolveMode();
+  if (cliMode && cliMode !== mode) {
+    console.log(
+      `[llm:eval] YEU CAU mode=${cliMode} NHUNG resolveMode() tra ${mode}` +
+      `${process.env.LLM_DISABLED === '1' ? ' (do LLM_DISABLED=1 — khoa cuu dung dat)' : ''}`,
+    );
+  }
   const catalog = readCsv(CATALOG_CSV).map((r) => ({ sku: r.sku, name: r.name }));
   const sheet = readCsv(SHEET);
 
@@ -282,10 +359,25 @@ const main = async () => {
   }
 
   const { dev, test } = splitDevTest(pairs);
+  const usageSince = new Date();
   const fuzzy = await runFuzzy(catalog, test);
   const hybrid = await runHybrid(catalog, test);
   const fuzzyDev = await runFuzzy(catalog, dev);
   const hybridDev = await runHybrid(catalog, dev);
+  const usageUntil = new Date();
+
+  // Token thật — đọc từ DB, không đoán.
+  const usage = (mode === 'live' || mode === 'record')
+    ? await readUsage(usageSince, usageUntil)
+    : { measured: false, lyDo: `mode=${mode} — khong co lenh goi that nen khong co token` };
+  const perPair = (total, count) => (count > 0 ? Number((total / count).toFixed(1)) : null);
+  const tokensPerPairNumber = usage.measured
+    ? {
+      trenMoiCapDaDoi: perPair(usage.totalTokens, usage.soLanGoi),
+      trenMoiCapKiemDinh: perPair(usage.totalTokens, test.length),
+      trenMoiCapDaNhan: perPair(usage.totalTokens, labelled),
+    }
+    : null;
 
   const sFuzzy = scoreAtThreshold(fuzzy.rows);
   const sHybrid = scoreAtThreshold(hybrid.rows);
@@ -327,9 +419,25 @@ const main = async () => {
     },
     llmCalls: hybrid.stats.llmCalls,
     llmUsable: hybrid.stats.llmUsable,
+    // Token/độ trễ đọc thật từ `llm_usage_logs` (sửa 2026-10-14 — trước đây gán
+    // cứng chuỗi "CHUA DO" dù đã chạy live).
+    usage,
     // Token/cặp: chỉ ghi số khi đã chạy live thật, ngược lại ghi "chưa đo".
-    tokensPerPair: tokensFromUsage ? 'CHUA DO — can doc LlmUsageLog theo run nay' : 'CHUA DO',
-    publishable: mode === 'live' || mode === 'record',
+    tokensPerPair: tokensFromUsage ? tokensPerPairNumber : 'CHUA DO',
+    // SỬA 2026-10-14 — `publishable` trước đây CHỈ xét `mode`, nên một lần chạy
+    // `mode=live` mà LLM **không lần nào** thành công vẫn bị gắn
+    // `publishable: true`. Hệ quả: hybrid ≡ fuzzy (vì LLM không được dùng) nhưng
+    // vẫn mang nhãn "số AI" ⇒ có thể bị đưa lên slide nhầm.
+    //
+    // Nay đòi cả hai: ĐÃ chạy live/record **và** có ít nhất 1 câu trả lời LLM
+    // dùng được. Không đạt ⇒ `publishable: false` kèm lý do.
+    publishable: (mode === 'live' || mode === 'record') && hybrid.stats.llmUsable > 0,
+    lyDoKhongCongBo: (mode !== 'live' && mode !== 'record')
+      ? `mode=${mode} — phai chay live hoac record`
+      : (hybrid.stats.llmUsable === 0
+        ? 'mode=live nhung KHONG co cau tra loi LLM nao dung duoc (het ha muc 429 / 503) '
+          + '=> hybrid chay dung bang fuzzy, khong phai so cua AI'
+        : null),
   };
 
   const file = path.join(ROOT, 'docs', 'aisc26', 'notes', 'sku-eval-last-run.json');
@@ -348,11 +456,32 @@ const main = async () => {
   L.push(`bootstrap F1(hybrid-fuzzy): ${boot.point} CI95 [${boot.ciLow}, ${boot.ciHigh}] ${boot.excludesZero ? '=> KHONG chua 0' : '=> CHUA 0'}`);
   L.push(`Cohen kappa (2 nguoi gan): ${kappa.kappa ?? kappa.reason}${kappa.low ? '  <0,6 => nhan chua du tin cay' : ''}`);
   L.push(`LLM goi: ${hybrid.stats.llmCalls} | dung duoc: ${hybrid.stats.llmUsable} | trượt: ${hybrid.stats.llmMisses}`);
-  L.push(`token/cap: ${out.tokensPerPair}`);
+  if (usage.measured) {
+    L.push(
+      `TOKEN THAT  : ${usage.totalTokens} tok (prompt ${usage.promptTokens} + completion ` +
+      `${usage.completionTokens}) tren ${usage.soLanGoi} lenh goi · do tre TB ${usage.doTreTrungBinhMs} ms`,
+    );
+    L.push(
+      `token/cap   : ${tokensPerPairNumber.trenMoiCapDaDoi} tren moi lenh goi · ` +
+      `${tokensPerPairNumber.trenMoiCapKiemDinh} tren moi cap kiem dinh · ` +
+      `${tokensPerPairNumber.trenMoiCapDaNhan} tren moi cap da nhan`,
+    );
+    const rate = usage.soLanGoi > 0 ? (hybrid.stats.llmUsable / usage.soLanGoi) * 100 : 0;
+    L.push(`ty le lenh LLM thanh cong: ${rate.toFixed(1)}% (${hybrid.stats.llmUsable}/${usage.soLanGoi})`);
+    if (rate < 50) {
+      L.push('');
+      L.push('!! TINH CUC THAP: qua mot nua so lenh goi that bai (503/timeout). Phan tang');
+      L.push('   cua hybrid tren bo mau nay KHONG dien dai — dung no de so sanh voi nguoi khac.');
+    }
+  } else {
+    L.push(`token/cap: CHUA DO — ${usage.lyDo}`);
+  }
   L.push('');
   if (!out.publishable) {
-    L.push('!! KHONG CONG BO: mode khong phai `live`. So tren chi chung minh pipeline chay.');
-    L.push('   Chi duoc dua vao slide khi co mode=live + ngay chay + ten model.');
+    L.push('!! KHONG CONG BO.');
+    L.push(`   Ly do: ${out.lyDoKhongCongBo}`);
+    L.push('   Chi duoc dua vao slide khi co mode=live + ngay chay + TEN MODEL + it nhat');
+    L.push('   mot cau tra loi LLM dung duoc.');
   }
   if (simulated) {
     L.push('!! NHAN LA MO PHONG (sinh tu catalog) — KHONG phai nhan nguoi, KHONG phai do chinh xac thuc te.');

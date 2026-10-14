@@ -18,6 +18,9 @@
  * - GET  /suggestions            — danh sách SKU dưới ROP, CÓ kèm số đề xuất (read-only)
  * - GET  /products/:id/preview   — xem trước một SKU (read-only)
  * - POST /products/:id/propose   — TẠO đề xuất thật (ghi AgentHumanGate PENDING)
+ * - POST /proposals/:gateId/explain — LLM diễn giải + soạn tin NCC + báo cáo
+ *   hàng rào `assertNumbersUnchanged` (thêm 2026-10-14; đây là endpoint ĐẦU TIÊN
+ *   đưa `proposal-explain.llm.js` vào sản phẩm — trước đó chỉ script gọi được)
  *
  * Read-only không ghi bảng nào: `previewForProduct` chỉ đọc, nhờ vậy màn hình xem
  * trước không tạo rác và không sinh đề xuất trùng.
@@ -34,6 +37,7 @@ const {
   suggestForProduct,
 } = require("./replenishment.suggest");
 const { NEED_REPLENISHMENT, STOCKOUT, OK } = require("./replenishment.calc");
+const { explainProposalForGate } = require("./proposal-explain.service");
 
 /**
  * @swagger
@@ -244,6 +248,86 @@ router.post(
         sku: result.gate.actionPayload?.sku,
         quantity: result.gate.actionPayload?.quantity,
       });
+    } catch (e) {
+      next(e);
+    }
+  },
+);
+
+/**
+ * @swagger
+ * /api/replenishment/proposals/{gateId}/explain:
+ *   post:
+ *     summary: LLM diễn giải đề xuất + soạn tin nhắn NCC, kèm trạng thái hàng rào số
+ *     description: >
+ *       Trả về hai văn bản cho một thẻ duyệt đề xuất nhập hàng: lời giải thích
+ *       cho chủ shop và tin nhắn đặt hàng gửi nhà cung cấp — cùng trạng thái
+ *       hàng rào `assertNumbersUnchanged`.
+ *
+ *       **Số trong văn bản không phải do LLM tính.** Khối số đưa vào LLM lấy từ
+ *       `AgentHumanGate.actionPayload` — tức số do `planReplenishment` đã tính ở
+ *       Bước A. Sau khi LLM trả lời, `assertNumbersUnchanged()` quét MỌI con số
+ *       trong văn bản và so với khối số đó; số nào lạ là LLM tự thêm và văn bản
+ *       bị loại bỏ, hệ thống dùng bản mẫu.
+ *
+ *       **Tin nhắn NCC KHÔNG được gửi.** Không có hàm gửi nào trong đường này;
+ *       `vendorMessageSent` luôn là `false` và `requiresHumanSend` luôn là `true`.
+ *       Người dùng tự sao chép rồi gửi qua Zalo/SMS/email.
+ *
+ *       `simulateTamper=true` là chế độ BIỂU DIỄN: cố tình đổi số lượng đề xuất
+ *       rồi đưa qua hàng rào thật để chứng minh nó bắt được. Không gọi mạng.
+ *     tags: [Replenishment]
+ *     security:
+ *       - bearerAuth: []
+ *     parameters:
+ *       - in: path
+ *         name: gateId
+ *         required: true
+ *         schema: { type: string, format: uuid }
+ *         description: id của AgentHumanGate loại PURCHASE_ORDER_PROPOSAL
+ *     requestBody:
+ *       required: false
+ *       content:
+ *         application/json:
+ *           schema:
+ *             type: object
+ *             properties:
+ *               simulateTamper:
+ *                 type: boolean
+ *                 default: false
+ *                 description: Chế độ biểu diễn hàng rào số (không gọi mạng)
+ *               mode:
+ *                 type: string
+ *                 enum: [auto, template]
+ *                 default: auto
+ *                 description: "auto = dùng LLM nếu chế độ cho phép, không thì dùng mẫu; template = ép mẫu"
+ *     responses:
+ *       200:
+ *         description: >
+ *           Văn bản + trạng thái hàng rào. `guardrail.passed=true` nghĩa là LLM
+ *           giữ nguyên 100% số của công thức. `guardrail.passed=false` (khi
+ *           simulateTamper) nghĩa là hàng rào đã bác bỏ văn bản sửa số và hệ
+ *           thống dùng bản mẫu.
+ *       400: { description: Thiếu gateId và productId, hoặc mode không hợp lệ }
+ *       404: { description: Không tìm thấy thẻ duyệt trong tenant này }
+ *       409: { description: Thẻ duyệt không có mã hàng trong payload }
+ */
+router.post(
+  "/proposals/:gateId/explain",
+  authorize("ADMIN", "MANAGER", "WAREHOUSE", "ACCOUNTANT"),
+  async (req, res, next) => {
+    try {
+      const simulateTamper = req.body?.simulateTamper === true;
+      const mode = req.body?.mode === "template" ? "template" : "auto";
+      const result = await inTenant(req.user.tenantId, () =>
+        explainProposalForGate({
+          tenantId: req.user.tenantId,
+          gateId: req.params.gateId,
+          simulateTamper,
+          mode,
+        }),
+      );
+      success(res, result);
     } catch (e) {
       next(e);
     }

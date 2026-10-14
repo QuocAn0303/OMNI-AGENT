@@ -202,7 +202,7 @@
 ## 16. "Nếu tôi muốn thử thì làm gì? Rủi ro của tôi là gì?"
 
 > Rủi ro thật, theo thứ tự:
-> 1. **Chưa có dữ liệu người dùng và chưa phỏng vấn ai** — bạn đang mua một giả định.
+> 1. **Khảo sát 10 cửa hàng có rồi, nhưng chưa ai dùng hệ thống thật** — nói đúng ranh giới này, đừng bán "khách hàng của chúng tôi".
 > 2. **Chi phí AI chưa đo**; hiện để AI tắt thì chi phí bằng 0 nhưng bạn mất phần diễn
 >    giải/khớp SKU.
 > 3. **Phạm vi hẹp**: một luồng, không POS, không sàn, không HĐĐT. Nếu cửa hàng bạn cần

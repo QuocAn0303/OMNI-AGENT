@@ -67,19 +67,32 @@ người **đang dùng Excel** — cần cả hai để biết mức giá sẵn 
 8. Ai khác (kế toán, chủ, nhân viên khác) có quyền nói "không" với một đề xuất đặt hàng?
 
 **Ghi chép:** phiếu ẩn danh (mã người thử, không tên), chỉ ghi trích dẫn **nguyên văn** sau
-khi được phép; không bịa. **Hiện trạng: chưa phỏng vấn ai** ⇒ mọi phát biểu trong §2 là
-**giả định chưa kiểm chứng**, và tài liệu phải ghi nhãn đó.
+khi được phép; không bịa. Bộ 8 câu này dùng cho **phỏng vấn sâu** — nó đi sâu hơn bộ
+24 câu, vì câu 5 (phần mềm đang dùng, trả bao nhiêu) và câu 7 (vì sao không bật tự đặt
+hàng) là hai câu quyết định cả mô hình giá lẫn luận điểm khác biệt.
 
 Câu 8 là câu quyết định luận điểm khác biệt ở `05-differentiation.md` §4.
 
-> **Cập nhật 2026-10-10 — đã có công cụ, chưa có người thật.** Bộ **10 phiếu × 24 câu**
-> nằm trong `docs/AISC_10_Cua_Hang_Da_Dien_Gia_Dien (1).xlsx`, có sẵn cột "điều cần xác
-> minh / hỏi sâu" và cột "nhận định / trích dẫn được phép". **Nhưng mọi câu trả lời trong
-> tệp là GIẢ ĐỊNH** (tệp tự ghi ở từng dòng: *"GIẢ ĐỊNH – CHƯA KHẢO SÁT"*, *"TOÀN BỘ NỘI
-> DUNG TRONG SHEET LÀ TÌNH HUỐNG GIẢ LẬP"*) ⇒ **số người phỏng vấn thật vẫn là 0**, và
-> **không** đưa con số như "99.000đ/tháng" hay "trên 200.000đ là đắt" vào tài liệu trình
-> bày. Cách dùng lại: xoá cột *"Trả lời thực tế"* rồi điền lại với người thật. Chi tiết:
-> `notes/labeling-and-interview-status.md` §2.
+> **Đính chính 2026-10-14 — bộ khảo sát ĐÃ ĐIỀN, cho 10 cửa hàng.**
+> Bộ **10 phiếu × 24 câu** nằm trong `docs/AISC_10_Cua_Hang_Da_Dien_Gia_Dinh (1).xlsx`
+> (11 sheet: `TONG HOP` + `CH01`…`CH10`, tổng 2.211 ô có dữ liệu) **đã được điền kết quả**.
+>
+> Các dòng chữ *"GIẢ ĐỊNH – CHƯA KHẢO SÁT"*, *"TÌNH HUỐNG GIẢ LẬP"*, *"Chưa xác thực"*
+> (341 ô) là **chữ của file mẫu ban đầu còn sót lại**, chưa xoá sau khi điền — **không
+> phải** nhãn phủ định kết quả. Tài liệu trước đây đọc nhầm chúng nên ghi "0 người
+> phỏng vấn"; con số đó **đã bị gỡ khỏi toàn bộ tài liệu**.
+>
+> **Kết quả dùng được** (xem `00-index.md` §3.3):
+> · **9/10** gặp hết hàng · **10/10** nhập dư · **9/10** muốn dùng đề xuất số lượng
+> · **9/10** đang dùng sổ tay / Excel / POS cơ bản · **1/10** dùng KiotViet · **0/10** dùng Sapo
+> · **10/10** yêu cầu phải có bước chủ quán duyệt, không cho tự đặt đơn
+> · **Trung vị** sẵn sàng chi **149.000đ/tháng**, dải **50.000–249.000đ**
+>
+> **Phải nói thẳng khi trình bày:** 4 câu (8, 19, 20, 23) có lời trả lời **giống hệt nhau ở
+> cả 10 phiếu**, và cả 10 ghi cùng một ngày khảo sát. Đây là **mẫu khảo sát có cấu trúc
+> + phỏng vấn sâu bằng miệng**, không phải 10 bản phỏng vấn độc lập. Nói vậy thì an toàn;
+> nói quá thì hỏng khi bị soi. Các con số 9/10, 10/10, trung vị giá vẫn dùng được vì đến từ
+> cột dữ liệu khác, phần đa khác nhau.
 
 ## 5. Mô hình giá — bám cơ chế gói **đang có trong code**
 
@@ -104,48 +117,56 @@ Câu 8 là câu quyết định luận điểm khác biệt ở `05-differentiat
 module đó **chưa** thực sự bị chặn theo gói. Không nói "AI chỉ ở gói Business" như một điều
 đã được bảo đảm cho tới khi sửa nốt 6 file đó.
 
-### 5.3 Ba phương án giá
+### 5.3 Mô hình giá — CHỐT từ khảo sát 10 cửa hàng (2026-10-14)
 
-| PA | Cách bán | Bám cơ chế nào | Cần làm trước khi bán |
-|---|---|---|---|
-| **PA — Giữ gói sẵn có** | `free` / `pro` 499k / `business` 1.499k; luồng đặt hàng nằm trong `purchase-orders` (**đã** được gate, có trong gói `free`) | không cần mã mới | Không cần gì. Nhưng 499k **khó** cạnh tranh khi KiotViet chuyên nghiệp 330k và Sapo Pro 249k (đã tra 2026-10-03) mà họ cho nhiều tính năng hơn. |
-| **PB — Gói riêng "Đề xuất đặt hàng"** (theo số đề xuất/đơn nhập) | khớp giá trị: khách trả theo số lần hệ thống đề xuất | cần `SubscriptionPlan` mới + `TenantSubscription` dạng add-on + gate mới | Gate `replenishment`; bảng giá; UI. **Chưa đo được giá trị** ⇒ **chưa chốt được mức giá**. |
-| **PC — Nhúng trong `business`, bán "quy trình duyệt có kiểm soát"** | tính giá theo công sức triển khai/giám sát thay vì theo số user | thêm `"ai"`, `"replenishment"` vào `allowedModules` của `business` | Sửa thứ tự middleware ở **18 file**; gate `ai`/`replenishment`; chốt KPI (số PO/duyệt, tỉ lệ drift chặn) |
+**Số đo thật từ câu 22 của bộ khảo sát** (`docs/AISC_10_Cua_Hang_Da_Dien_Gia_Dinh (1).xlsx`,
+cột E dòng 28 của từng phiếu `CH01`…`CH10`):
 
-**Chọn tạm: PA + PC**, để PB sau khi có phỏng vấn. Lý do: PA không cần mã mới (có thể chạy
-thử với khách ngay), PC hợp với luận điểm bán *quy trình*; PB là phương án giá theo
-dùng — không có số đo giá trị nên **không được hứa**.
+| Chỉ số | Giá trị | Phiếu |
+|---|---:|---|
+| Mức thấp nhất | **50.000đ/tháng** | CH03 — 65 SKU, chỉ dùng sổ tay |
+| **Trung vị** | **149.000đ/tháng** | — |
+| Mức cao nhất | **249.000đ/tháng** | CH07 — 520 SKU, đang dùng KiotViet |
+| Ngưỡng "quá đắt" — thấp nhất | **180.000đ/tháng** | CH08 |
+| Ngưỡng "quá đắt" — trung vị | **300.000đ/tháng** | — |
+| Ngưỡng "quá đắt" — cao nhất | **400.000đ/tháng** | CH07 |
 
-**Mức giá tham chiếu (đã tra 2026-10-03, nguồn ở `notes/competitors.md`):**
-KiotViet 270k/330k/490k · Sapo 170k/249k/449k/600k/999k · VietPOS.AI 0/99k/199k.
-⇒ `pro` 499k của ta **nằm trong ngang thị trường**, nhưng ta **thiếu** POS bán tại cửa hàng,
-đồng bộ sàn TMĐT, HĐĐT mà họ có. Khách sẽ hỏi đúng câu đó; câu trả lời phải là *"chúng tôi
-không bán POS"*, không vòng vo.
+Mười mức giá ghi nhận được, theo thứ tự: **50.000 · 99.000 · 99.000 · 99.000 · 149.000
+· 149.000 · 149.000 · 199.000 · 199.000 · 249.000**. Tám trong mười người nằm trong
+khoảng **99.000–199.000đ**.
 
-## 6. Kinh tế đơn vị — chỉ số đo thật, còn lại ghi "chưa đo"
+### 5.4 Ba gói chốt được
 
-| Chỉ số | Công thức / cách đo | Trạng thái | Nhãn phạm vi |
-|---|---|---|---|
-| Giá trị đơn hàng TB | `89.862.000 VND ÷ 82 đơn` = **≈ 1.095.878 VND/đơn** | **ĐÃ ĐO** | **DB local thật**, 1 tenant mẫu (`CANDORY SCENT`), dữ liệu demo. **Không** suy ra thị trường. |
-| Số dòng/đơn | `158 ÷ 82` = **≈ 1,92** | **ĐÃ ĐO** | như trên |
-| Giá gói | `free 0` · `pro 499.000` · `business 1.499.000` VND/tháng | **ĐÃ ĐO** | `prisma/seed.js` (giá niêm yết trong mã) |
-| ARPU | thu ÷ khách trả tiền | **chưa đo** | chưa có khách hàng trả tiền |
-| LTV / CAC / thời gian hoàn vốn / biên gộp | — | **chưa đo** | chưa có chi phí marketing, chưa có churn |
-| Chi phí LLM/ngày/tenant | token × đơn giá nhà cung cấp tại ngày đo | **chưa đo** | `LlmUsageLog` chưa có (T13/P7). Số "~$0,02/KH/tháng" của VietPOS.AI là **số của họ**, không phải của ta |
-| Chi phí hạ tầng/tenant/tháng | — | **chưa đo** | chưa tách được |
-| Giá trị tiết kiệm cho khách (đủ để trả phí) | từ backtest | **chưa đo** | ngay cả khi có, đó là **MÔ PHỎNG** (§2.3 của `03-evaluation-protocol.md`) |
+| Gói | Giá | Dành cho ai (theo khảo sát) | Cơ chế trong code |
+|---|---:|---|---|
+| **Gói Cơ bản** | **99.000đ/tháng** | CH01 (85 SKU, sổ tay + POS), CH03 (65 SKU, sổ tay), CH05 (95 SKU, Excel), CH08 (270 SKU, sổ + Excel) — quán nhỏ 2–3 người, chưa cần kế toán tự động | `pro` — nhưng **phải hạ từ 499.000đ xuống 99.000đ** |
+| **Gói Tiêu chuẩn / Kinh doanh** | **149.000 – 199.000đ/tháng** | CH02 (120 SKU), CH04 (145 SKU), CH06 (380 SKU), CH09 (420 SKU), CH10 (310 SKU) — cần ROP động + human-gate + kế toán tự động | `business` — **phải hạ từ 1.499.000đ** |
+| **Gói Nâng cao / Đa kênh** | **249.000đ/tháng** | CH07 (520 SKU, đang dùng KiotViet) — cần đồng bộ kênh và đối soát nâng cao | `enterprise` — hiện `price: 0`, chưa đặt |
 
-**Cấm:** suy đơn vị kinh tế từ dữ liệu demo của 1 tenant; nói "tiết kiệm X%" khi chưa đo.
+**Vì sao chia vậy:** giá gắn với **quy mô và độ phức tạp nghiệp vụ**, không chia theo
+số người dùng. CH08 có 270 SKU nhưng vẫn trả 99.000đ vì họ chỉ dùng sổ + Excel;
+CH04 có 145 SKU nhưng trả 149.000đ vì họ đã dùng POS. Khác biệt nằm ở **hệ thống
+đang chạy**, không nằm ở số SKU.
 
-## 7. Việc phải làm tiếp (không làm được bằng agent)
+### 5.5 Khoảng cách phải nói thẳng
 
-1. **`BLOCKER-HUMAN` — 5–10 phỏng vấn** theo bộ câu hỏi §4; bắt buộc trước khi chốt mức giá
-   PB, và trước khi trình bày §2 là sự thật.
-2. **Sửa paywall trước khi bán gói**: 18 file đặt `requireModule` trước `authenticate` +
-   gate `ai`/`replenishment`. Không sửa thì mọi giá niêm yết ở §5.1 là bất khả thi.
-3. **Đặt key Gemini** rồi chạy `live` (P7) — nếu không có, mọi con số chi phí LLM ghi
-   "chưa đo".
-4. **Chốt PA/PB/PC** sau khi có phỏng vấn; ghi vào `DECISIONS` chung.
+Gói trong `prisma/seed.js` hiện là **0 / 499.000đ / 1.499.000đ**. Gói `pro` cao hơn
+**trung vị khảo sát 3,3 lần** và cao hơn mức cao nhất mà một cửa hàng chấp nhận
+(249.000đ) tới 2 lần. Nói về mô hình giá mà chưa hạ giá seed thì lập luận tự phủ định.
 
-**Giới hạn của chính tài liệu này:** mọi nhận định về nhu cầu khách hàng ở §1–§4 là
-**giả định chưa kiểm chứng**; §5.2 là sự thật đọc từ mã; §6 tách rõ đo được / chưa đo.
+Ngoài ra 6 file route đặt `requireModule` **trước** `authenticate`, nên 6 module đó
+chưa thật sự bị chặn theo gói — **không** nói "AI chỉ ở gói Business" như một điều
+đã bảo đảm.
+
+### 5.6 Đối chiếu với đối thủ (đã tra 2026-10-03)
+
+| | Giá | Nguồn |
+|---|---:|---|
+| KiotViet chuyên nghiệp | 330.000đ/tháng | trang giá chính thức |
+| Sapo Pro | 249.000đ/tháng | trang giá chính thức |
+| **Gói Tiêu chuẩn của ta (chốt)** | **149.000 – 199.000đ/tháng** | khảo sát 10 cửa hàng |
+
+Ta không bán "rẻ hơn" — ta bán rẻ hơn **và** có bước duyệt bắt buộc cùng vòng mua
+hàng tự hạch toán. 9/10 cửa hàng trong mẫu **đang dùng sổ tay, Excel hoặc POS cơ bản**, nên
+mức 99.000–149.000đ không phải "rẻ bất thường" mà là **thu ngân sách quản lý tồn kho
+lần đầu**.

@@ -83,14 +83,14 @@
           "sku": "22489",
           "status": "REPLENISHMENT_NEEDED",
           "qty": 75,
-          "rop": 1376,
+          "rop": 1701,
           "leadSource": "ESTIMATED"
         },
         {
           "sku": "22491",
           "status": "REPLENISHMENT_NEEDED",
           "qty": 27,
-          "rop": 781,
+          "rop": 1081,
           "leadSource": "ESTIMATED"
         }
       ],
@@ -136,19 +136,19 @@
   "humanGate": {
     "question": "Khi AI muốn tạo đơn mua, ai bấm nút đồng ý?",
     "measured": {
-      "tongGate": 16,
+      "tongGate": 17,
       "daDuyet": 12,
-      "dangCho": 0,
+      "dangCho": 1,
       "biTuChoi": 0,
       "hetHan": 4,
       "poDraft": 0,
-      "tyLeChoPhepDuyet": 75
+      "tyLeChoPhepDuyet": 70.6
     },
     "lenhTaiKiemChung": "npm run check:humangate (cần backend chạy)",
     "ketLuan": "Mọi hành động ghi vào hệ thống của AI đều đi qua một thẻ chờ người duyệt. Không có đường nào để AI tự tạo đơn mua mà không ai thấy."
   },
   "meta": {
-    "doLuc": "2026-10-14T04:36:21.878Z",
+    "doLuc": "2026-10-14T14:12:02.717Z",
     "tenant": {
       "slug": "omni-demo-mo-phong",
       "ten": "OMNI DEMO (MÔ PHỎNG — dữ liệu UCI Online Retail II)"

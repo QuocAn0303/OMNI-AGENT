@@ -34,16 +34,20 @@
 **Trên màn hình**
 ```
 Cảnh báo sắp hết hàng
-   → hệ thống tính số lượng cần đặt (ATP − ROP)
-   → NGƯỜI DUYỆT  ← bắt buộc, bỏ qua là không có PO
+   → hệ thống tính số lượng cần đặt (ATP − ROP, lead time ĐO ĐƯỢC từ lịch sử PO→GRN)
+   → NGƯỜI DUYỆT  ← bắt buộc, bỏ qua là không có PO; lệch số thì chặn
    → tạo đúng 1 đơn nhập
-   → hàng trên đường chặn đề xuất trùng
+   → nhập kho (một phần) + QC
+   → HẠCH BÚT TOÁN: Nợ 156 + Nợ 1331 = Có 331   ← phần chúng tôi tự thấy là đang thiếu
+   → công nợ NCC tăng
+   → AI chỉ viết lời giải thích + tin nhắn NCC, KHÔNG được đổi số (hàng rào kiểm bằng mã)
 ```
 *(kèm ảnh chụp `/agent-approvals`)*
 
 **Ghi chú nói**
-> "Ba phần còn lại của phần mềm — POS, sàn thương mại điện tử, hóa đơn điện tử — tôi sẽ
-> nói ở slide 9 rằng chúng tôi **không** làm."
+> "Đây là **một quy trình, đi trọn tới sổ cái** — không dừng ở bước tạo đơn. Ba phần còn
+> lại của phần mềm — sàn thương mại điện tử, hóa đơn điện tử, chấm công — tôi sẽ nói ở
+> slide 9 rằng chúng tôi **không** làm."
 
 ---
 
@@ -194,29 +198,44 @@ nguồn đã đọc** (không phải chắc chắn không có) · — chưa xác
 
 ---
 
-## Slide 10 — Hạn chế đã biết + cái chúng tôi cần
+## Slide 10 — Đã đo được gì, và còn thiếu gì
 
-**Trên màn hình**
-**CHƯA CÓ DỮ LIỆU (không điền số):**
+**ĐÃ ĐO ĐƯỢC — số thật, chạy lại được bằng lệnh:**
+
+| Chỉ số | Số | Lệnh kiểm chứng |
+|---|---|---|
+| PO đã nhận hàng mà **thiếu bút toán** | **39 → 0** | `npm run check:accounting` |
+| Bút toán `tenantId` NULL (cách ly tenant vỡ) | **18 → 0** | `npm run check:tenant` |
+| Màn hình đề xuất **ẩn** SKU dưới ngưỡng | **458 / 468 → 0** | `npm run measure:evidence` |
+| PO có **lead time đo được** | **0/20 → 57/57** | `npm run demo:check` |
+| **Token thật** mỗi lần gọi LLM | **616** (381 prompt + 46 completion) | `npm run llm:eval -- --mode live` |
+| Tỉ lệ chuyển người khi SKU mơ hồ | **13,33%** | `npm run llm:eval` |
+| Khảo sát 10 cửa hàng: hết hàng / nhập dư / muốn đề xuất | **9/10 · 10/10 · 9/10** | tệp khảo sát, sheet `TONG HOP` |
+| Trung vị sẵn sàng chi trả | **149.000đ/tháng** (dải 50–249k) | cột E dòng 28 các phiếu `CH01`–`CH10` |
+
+**CHƯA CÓ DỮ LIỆU — để trống, không điền số:**
+
 | Cần đo | Vì sao chưa có | Lệnh/đường đi |
 |---|---|---|
-| Chi phí LLM thật | Chưa đặt key; `LlmUsageLog` mới chỉ có dữ liệu `replay` | đặt key → `npm run check:llm`, `npm run llm:eval` |
-| Khớp SKU — đường **không LLM** | **F1 0,8515** (P 0,8269 · R 0,8776) trên **107** cặp có nhãn tay; 13,33% ca chuyển người | **nhãn tay** + `mode=off` ⇒ **không phải số AI**, không so sánh được với ai |
-| Khớp SKU — **phần AI** | **CHƯA CÓ DỮ LIỆU** | chưa có key, chưa chạy `live`; token/cặp **chưa đo** |
-| Độ tin cậy giữa người gán | **CHƯA CÓ DỮ LIỆU** | chỉ 1 người gán ⇒ Cohen kappa chưa đo được |
-| Độ đúng khớp SKU trên dữ liệu thật | **CHƯA CÓ DỮ LIỆU** | cần tệp xuất sàn thật; tệp UCI chỉ dùng để dựng bộ nhãn |
+| Độ đúng khớp SKU của **phần AI** | `mode=live` **đã chạy thật**, nhưng hạn mức Gemini 20 lần/ngày đã hết (HTTP 429); lần chạy được chỉ 1/8 lệnh thành công | chạy lại `npm run llm:eval -- --mode live` khi hạn mức reset |
+| Chênh lệch hybrid vs fuzzy | **+0,0113 F1, CI95 [0; 0,0379]** — CI **vẫn chứa 0**, chưa kết luận được | cần mẫu LLM thành công nhiều hơn |
+| Độ tin cậy giữa người gán | chỉ 1 người gán ⇒ Cohen kappa chưa đo được | cần người gán thứ hai, độc lập |
+| Độ đúng khớp SKU trên dữ liệu xuất sàn thật | tệp UCI chỉ dùng để dựng bộ nhãn | cần tệp xuất sàn thật |
 | Thời gian người thử | Bộ công cụ đã sẵn, **chưa có ai thử** | `docs/aisc26/usertest/README.md` |
-| Nhu cầu khách hàng, mức giá | **Chưa phỏng vấn ai** | bộ 8 câu ở `06-business.md` §4 |
+| Lời phỏng vấn **sâu** dạng ghi âm | khảo sát 24 câu đã có; nhưng 4 câu (8, 19, 20, 23) trùng khít 10/10 nên cần hỏi sâu để tách mẫu khỏi lời thật | bộ 8 câu ở `06-business.md` §4 |
 | Thí nghiệm có ràng buộc ≥ 95% | post-hoc chưa đủ; cần lưới rộng hơn, tiền đăng ký mới | `03-evaluation-protocol.md` §13.2 |
 
-**Hạn chế kỹ thuật đã biết:** chưa đo được chi phí LLM · giao diện đọc được trạng thái
-"lơ lửng" nhờ endpoint mới `GET /api/agent/human-gates/by-status` (chỉ đọc) · luồng demo
-bỏ qua `pg_notify` và phần HTTP (có script riêng phủ) · CROSTON không vượt ROP trên tập này.
+**Hạn chế kỹ thuật đã biết:** 6 file route còn đặt middleware kiểm gói trước middleware xác thực ⇒ 6 module chưa thật sự bị chặn theo gói, nên tôi không nói "AI chỉ ở gói Business" như một điều đã bảo đảm. · Luồng demo bỏ qua `pg_notify` và phần HTTP (có script riêng phủ) · Giá gói trong seed còn cao hơn trung vị khảo sát 3,3 lần, đang hạ. · CROSTON không vượt ROP trên tập này.
 
 **Ghi chú nói**
-> "Tôi kết thúc bằng cái tôi **không** có. Bốn ô trên đều ghi 'chưa có dữ liệu' và tôi để
-> nguyên. Nếu tôi điền số vào chúng thì tôi chỉ đang kể một câu chuyện đẹp hơn, không
-> phải một sản phẩm tốt hơn."
+> "Tôi kết thúc bằng hai phần. Phần một là những gì **tôi tự đo được, và tự tìm ra lỗi
+> của chính mình**: 39 đơn mua không vào sổ cái, 458 SKU bị màn hình giấu mất, lead time
+> chết âm thầm — giờ cả ba đều bằng 0 hoặc bằng 57/57.
+>
+> Phần hai là những ô tôi **để trống**: token LLM chạy hàng ngày, thời gian người dùng,
+> và lời phỏng vấn sâu dạng ghi âm. Tôi có thể điền số vào chúng bằng những con số nghe
+> rất thuyết phục. Nhưng khi anh/chị hỏi "con số đó lấy từ đâu", tôi sẽ không có câu trả
+> lời — và người mất niềm tin lúc đó là tôi, chứ không phải con số."
 
 ---
 

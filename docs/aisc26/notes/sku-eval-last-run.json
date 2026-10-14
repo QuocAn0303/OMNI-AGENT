@@ -1,6 +1,6 @@
 {
-  "runId": "S10-20261013155817",
-  "at": "2026-10-13T15:58:17.041Z",
+  "runId": "S10-20261014133450",
+  "at": "2026-10-14T13:34:50.398Z",
   "labelSource": "nhan tay (label_sku do nguoi dien)",
   "dataset": {
     "labelSheet": "data\\aisc26\\skus\\labels\\label-sheet.csv",
@@ -9,15 +9,15 @@
     "labelled": 107,
     "nhanLaMoPhong": false
   },
-  "mode": "off",
+  "mode": "live",
   "llm": {
-    "mode": "off",
-    "enabled": false,
+    "mode": "live",
+    "enabled": true,
     "configured": true,
     "provider": "gemini",
     "model": "gemini-3.8-flash",
     "throttleMs": 1200,
-    "backoffFactor": 1,
+    "backoffFactor": 64,
     "recordStore": null
   },
   "confThreshold": 0.85,
@@ -98,13 +98,26 @@
     "excludesZero": false
   },
   "throughput": {
-    "fuzzyMs": 348,
-    "hybridMs": 329,
-    "msPerPairFuzzy": 5.8,
-    "msPerPairHybrid": 5.48
+    "fuzzyMs": 347,
+    "hybridMs": 732368,
+    "msPerPairFuzzy": 5.78,
+    "msPerPairHybrid": 12206.13
   },
-  "llmCalls": 0,
+  "llmCalls": 8,
   "llmUsable": 0,
-  "tokensPerPair": "CHUA DO",
-  "publishable": false
+  "usage": {
+    "measured": true,
+    "soLanGoi": 13,
+    "promptTokens": 0,
+    "completionTokens": 0,
+    "totalTokens": 0,
+    "doTreTrungBinhMs": 64588,
+    "luuY": "doTreTrungBinhMs tinh ca lan ERROR (503/timeout) — la chi phi that"
+  },
+  "tokensPerPair": {
+    "trenMoiCapDaDoi": 0,
+    "trenMoiCapKiemDinh": 0,
+    "trenMoiCapDaNhan": 0
+  },
+  "publishable": true
 }

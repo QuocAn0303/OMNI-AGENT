@@ -20,7 +20,7 @@
  * Hợp đồng API: xem `src/api/agentGates.js`.
  */
 import { useMemo, useState } from 'react';
-import { Alert, Button, Card, Descriptions, Input, Modal, Space, Statistic, Tag, Typography, message } from 'antd';
+import { Alert, Button, Card, Descriptions, Divider, Input, Modal, Space, Statistic, Tag, Typography, message } from 'antd';
 import {
   CheckOutlined,
   CloseOutlined,
@@ -30,6 +30,7 @@ import {
   WarningOutlined,
 } from '@ant-design/icons';
 import { decideGate, retryGateExecution } from '../../api/agentGates';
+import { explainProposal } from '../../api/replenishmentRules';
 
 const { Paragraph, Text } = Typography;
 
@@ -84,8 +85,131 @@ function DriftDiff({ diff }) {
  * @param {object}   props.gate    — bản ghi `AgentHumanGate` (PENDING hoặc APPROVED)
  * @param {Function} props.onDone  — callback sau khi quyết định xong (để list refresh)
  */
+/**
+ * Khối "AI diễn giải & soạn tin NCC" + trạng thái hàng rào số.
+ *
+ * Đây là nơi duy nhất trên giao diện cho thấy ranh giới vai trò LLM:
+ * AI được VIẾT LỜI, không được ĐỔI SỐ. Trạng thái hàng rào hiện ngay dưới
+ * văn bản, kèm số gốc và số bị bắt khi chế độ biểu diễn chạy.
+ *
+ * KHÔNG dùng icon cho hai nhãn hàng rào: chữ thuần để trích chép lên slide
+ * không bị vỡ khi sao chép.
+ */
+function AiExplainBlock({ block, onExplain, onTamper, busy }) {
+  if (!block) {
+    return (
+      <Space wrap style={{ marginTop: 12 }}>
+        <Button onClick={onExplain} loading={busy}>
+          AI Giải thích và Soạn tin NCC
+        </Button>
+        <Button onClick={onTamper} loading={busy}>
+          Test Chốt chặn AI sửa số
+        </Button>
+        <Text type="secondary" style={{ fontSize: 12 }}>
+          AI chỉ diễn giải con số của công thức, không được tự tính hoặc sửa số.
+        </Text>
+      </Space>
+    );
+  }
+
+  const g = block.guardrail || {};
+  const tampered = block.simulateTamper === true;
+
+  return (
+    <div style={{ marginTop: 12, padding: 12, border: '1px solid #f0f0f0', borderRadius: 8 }}>
+      <Space direction="vertical" size={8} style={{ width: '100%' }}>
+        <Space wrap>
+          <Text strong>Giải thích đề xuất</Text>
+          <Tag color={block.explanationSource === 'llm' ? 'blue' : 'default'}>
+            nguồn: {block.explanationSource === 'llm' ? 'LLM' : 'mẫu (LLM không khả dụng)'}
+          </Tag>
+          <Text type="secondary" style={{ fontSize: 12 }}>
+            chế độ LLM: {block.llmMode}
+          </Text>
+        </Space>
+        <Paragraph style={{ marginBottom: 0 }}>{block.explanation}</Paragraph>
+
+        <Divider style={{ margin: '4px 0' }} />
+
+        <Space wrap>
+          <Text strong>Tin nhắn đặt hàng gửi nhà cung cấp</Text>
+          <Tag color="default">chỉ soạn — chưa gửi</Tag>
+        </Space>
+        <Paragraph
+          copyable={{ text: block.vendorMessage, tooltips: ['Sao chép tin nhắn', 'Đã sao chép'] }}
+          style={{ marginBottom: 0, whiteSpace: 'pre-wrap' }}
+        >
+          {block.vendorMessage}
+        </Paragraph>
+
+        <Divider style={{ margin: '4px 0' }} />
+
+        <Space direction="vertical" size={4} style={{ width: '100%' }}>
+          <Text strong>Hàng rào số — assertNumbersUnchanged</Text>
+          {tampered ? (
+            <Tag color="error">
+              ĐÃ CHẶN AI SỬA SỐ: phát hiện LLM đổi số lượng ({g.originalNumber} thành{' '}
+              {g.tamperedNumber}) — đã bác bỏ và khôi phục số chuẩn từ công thức
+            </Tag>
+          ) : (
+            <Tag color="success">
+              assertNumbersUnchanged: ĐÃ KIỂM CHỨNG — AI giữ nguyên số liệu công thức
+            </Tag>
+          )}
+          <Text type="secondary" style={{ fontSize: 12 }}>
+            Số do công thức tính, đã kiểm:{' '}
+            {(g.checkedNumbers || [])
+              .map((n) => `${n.truong}=${n.giaTri}`)
+              .join(' · ') || 'không có'}
+          </Text>
+          {(g.inventedNumbers || []).length > 0 && (
+            <Text type="danger" style={{ fontSize: 12 }}>
+              Số bị loại khỏi văn bản: {(g.inventedNumbers || []).join(', ')}
+            </Text>
+          )}
+          {block.tamperedSample && (
+            <Paragraph
+              style={{
+                marginBottom: 0,
+                fontSize: 12,
+                padding: 8,
+                background: '#fffbe6',
+                border: '1px dashed #ffd591',
+                borderRadius: 4,
+                whiteSpace: 'pre-wrap',
+              }}
+            >
+              <Text type="secondary" style={{ fontSize: 12 }}>
+                Văn bản bị bác (mô phỏng):{' '}
+              </Text>
+              {block.tamperedSample}
+            </Paragraph>
+          )}
+          <Space wrap>
+            <Button size="small" onClick={onExplain} disabled={busy}>
+              Chạy lại chế độ thường
+            </Button>
+            <Button size="small" onClick={onTamper} disabled={busy}>
+              Chạy lại test chốt chặn
+            </Button>
+          </Space>
+        </Space>
+      </Space>
+    </div>
+  );
+}
+
+/**
+ * Thẻ duyệt đề xuất PO của agent.
+ *
+ * Ngoài việc duyệt/từ chối (vốn đã có), thẻ nay có thêm khối AI diễn giải +
+ * soạn tin NCC + trạng thái hàng rào `assertNumbersUnchanged` — xem
+ * `AiExplainBlock` ở trên.
+ */
 export default function SmartApprovalCard({ gate, onDone }) {
   const [busy, setBusy] = useState(false);
+  const [aiBusy, setAiBusy] = useState(false);
+  const [aiBlock, setAiBlock] = useState(null);
   const [rejectOpen, setRejectOpen] = useState(false);
   const [rejectNote, setRejectNote] = useState('');
   const [ackDrift, setAckDrift] = useState(false);
@@ -154,6 +278,30 @@ export default function SmartApprovalCard({ gate, onDone }) {
   };
 
   const title = payload.productName || item.sku || 'Đề xuất nhập hàng';
+
+  /**
+   * Gọi AI diễn giải + soạn tin NCC.
+   *
+   * `simulateTamper=true` là chế độ biểu diễn: backend cố tình đổi số lượng rồi
+   * đưa qua hàng rào thật để chứng minh nó bắt được. Không gọi mạng.
+   */
+  const runAi = async (simulateTamper) => {
+    setAiBusy(true);
+    try {
+      const res = await explainProposal(gate.id, { simulateTamper });
+      setAiBlock(res);
+      message.success(
+        simulateTamper
+          ? 'Đã chạy test hàng rào: xem trạng thái bên dưới.'
+          : 'Đã sinh lời giải thích và tin nhắn NCC.',
+      );
+    } catch (e) {
+      setAiBlock(null);
+      message.error(e.response?.data?.message || e.message || 'Lỗi');
+    } finally {
+      setAiBusy(false);
+    }
+  };
 
   return (
     <Card
@@ -289,6 +437,13 @@ export default function SmartApprovalCard({ gate, onDone }) {
           }
         />
       )}
+
+      <AiExplainBlock
+        block={aiBlock}
+        busy={aiBusy}
+        onExplain={() => runAi(false)}
+        onTamper={() => runAi(true)}
+      />
 
       <Space wrap style={{ marginTop: 12 }}>
         {stuck ? (

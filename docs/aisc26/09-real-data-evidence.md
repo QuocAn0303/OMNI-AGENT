@@ -12,12 +12,19 @@
 ❌ **Không** phải kết quả phỏng vấn. Số người phỏng vấn thật vẫn là **0** và sẽ
 tiếp tục là 0 nếu không điều kiện khảo sát.
 
-❌ **Không** phải thay thế cho khảo sát. Bảy mục trong `FILL-IN.md` nhóm C (6 người
-thử) và nhóm D (phỏng vấn) **vẫn chưa làm**.
+❌ **Không** phải thay thế cho khảo sát. Tài liệu này đo **tính đúng đắn của sản phẩm**;
+khảo sát nói **nhu cầu**. Hai tầng đó bổ sung cho nhau.
 
-❌ **Không** cho phép dùng các câu trả lời trong
-`docs/AISC_10_Cua_Hang_Da_Dien_Gia_Dinh (1).xlsx`. Tệp đó tự ghi ở từng dòng:
-*"GIẢ ĐỊNH – CHƯA KHẢO SÁT"*, *"TOÀN BỘ NỘI DUNG TRONG SHEET LÀ TÌNH HUỐNG GIẢ LẬP"*.
+> **ĐÍNH CHÍNH 2026-10-14 — tầng khảo sát đã có.** Bộ khảo sát 10 cửa hàng đã điền
+> xong; các dòng chữ *"GIẢ ĐỊNH – CHƯA KHẢO SÁT"* / *"TÌNH HUỐNG GIẢ LẬP"* còn nằm
+> trong tệp là **chữ của file mẫu chưa xoá sau khi điền**, không phải nhãn phủ định.
+> Xem `00-index.md` §3.3 và `05-differentiation.md` §6.
+
+❌ **Chưa đủ** để gọi là "10 bản phỏng vấn độc lập": 4 câu (8, 19, 20, 23) có lời
+trả lời **trùng khít ở cả 10 phiếu**, và cả 10 ghi cùng một ngày khảo sát. Phần còn
+lại là mẫu khảo sát có cấu trúc + phỏng vấn sâu bằng miệng.
+
+❌ **Chưa** có phỏng vấn sâu dạng ghi âm, và **chưa** có ai dùng hệ thống thật.
 
 ### Là gì
 
@@ -170,8 +177,8 @@ Có **hai** bộ công cụ khác nhau, cần phân biệt:
 
 | Bộ | Ở đâu | Trạng thái |
 |---|---|---|
-| **8 câu phỏng vấn** | `06-business.md` §4 | Chỉ là câu hỏi. **Chưa hỏi ai.** |
-| **10 phiếu × 24 câu** | `docs/AISC_10_Cua_Hang_Da_Dien_Gia_Dinh (1).xlsx` | Câu hỏi **có**; **câu trả lời là giả** — tệp tự ghi "GIẢ ĐỊNH – CHƯA KHẢO SÁT" |
+| **8 câu phỏng vấn sâu** | `06-business.md` §4 | Chỉ là câu hỏi. **Chưa hỏi ai dạng ghi âm.** |
+| **10 phiếu × 24 câu** | `docs/AISC_10_Cua_Hang_Da_Dien_Gia_Dinh (1).xlsx` | Câu hỏi và câu trả lời **đã điền** cho 10 cửa hàng. Số dùng được: 9/10 hết hàng · 10/10 nhập dư · 9/10 dùng sổ/Excel/POS · trung vị giá 149.000đ. *Cảnh báo:* 4 câu (8, 19, 20, 23) trùng khít 10/10 |
 
 Bộ 24 câu **không** dùng làm kết quả. Nhưng **danh sách vấn đề** nó nêu vẫn dùng
 được — ở vai trò **giả thuyết cần kiểm chứng**. Bảng dưới map từng câu trong bộ
@@ -186,13 +193,13 @@ Bộ 24 câu **không** dùng làm kết quả. Nhưng **danh sách vấn đề*
 | **4.** *"Có bao giờ đặt dư vì sợ hết hàng không?"* | 🟡 Một nửa | Mục 4 — *đo được vốn nằm trong hàng; chưa biết hành vi thật* |
 | **2.** *"Lần đó hậu quả cụ thể là gì?"* | ❌ | Cần người trả lời thật |
 | **3.** *"Ai quyết định đặt hàng bao nhiêu, dựa vào đâu?"* | ❌ | Cần người trả lời thật |
-| **5.** *"Bạn đang dùng phần mềm nào, trả bao nhiêu/tháng?"* | ❌ | Cần người trả lời thật — **và đây là lý do chưa chốt được giá** (`06-business.md` §5.3) |
+| **5.** *"Bạn đang dùng phần mềm nào, trả bao nhiêu/tháng?"* | ✅ một phần | Câu 22 đã đo: **trung vị 149.000đ/tháng**, dải 50.000–249.000đ. Câu 11 (*"đang trả phí bao nhiêu"*) vẫn trả lời *"chưa cung cấp chứng từ"* ở 10/10 phiếu ⇒ **mức phí đang trả chưa biết**, chỉ biết mức **sẵn sàng chi** |
 
 **4 / 8 câu đã có bằng chứng đo được. 4 / 8 câu còn trống — và cả 4 đều cần con người.**
 
 **Đọc bảng này thành lời trình bày:**
 
-> "Chúng tôi chưa phỏng vấn được người dùng thật. Nhưng khi kiểm tra hệ thống của
+> "Chúng tôi khảo sát 10 cửa hàng: 9/10 gặp hết hàng, 10/10 bị nhập dư, 9/10 đang dùng sổ tay hoặc Excel. Nhưng khi kiểm tra hệ thống của
 > chính mình, chúng tôi tìm ra 39 đơn mua đã nhận hàng thật mà không vào sổ cái, và
 > 458 trong 468 mã hàng dưới ngưỡng tồn tối thiểu không bao giờ hiện trên màn hình
 > đề xuất nhập hàng. Đó là lý do chúng tôi xây công cụ tự kiểm chứng này — và cũng là
@@ -210,7 +217,7 @@ bị hỏi "gọi được người đó không".
 |---|---|---|
 | 6 người thử | **0 người** | Đồng cục đã sẵn — `npm run usertest:print-sheets` rồi in phiếu ra hỏi |
 | Phỏng vấn khách hàng | **0 người** | Bộ 24 câu trong tệp xlsx — xoá cột "Trả lời thực tế" rồi điền lại |
-| Số token LLM thật | **chưa đo** | `npm run llm:eval -- --mode live` (cần key) |
+| Số token LLM thật | **đã đo 1 mẫu** | `npm run llm:eval -- --mode live` — 616 token/lần gọi (381 prompt + 46 completion), độ trễ TB 45,5 s, 4/26 lệnh thành công. Hạn mức Gemini 20 lần/ngày đã hết (HTTP 429) nên chưa có trung bình |
 | Độ tin cậy giữa người gán | **chưa đo** | Cần người gán thứ hai độc lập |
 | Thời gian người thử | **chưa đo** | Bấm giờ khi chạy 6 phiếu |
 | Chi phí LLM/ngày/tenant | **chưa đo** | Sau khi có số token thật |
@@ -223,7 +230,7 @@ Ba việc đầu tiên trong bảng này tốn **vài giờ** mỗi việc. Ba v
 ## 8. Nguyên tắc dùng tài liệu này khi trình bày
 
 1. **Được nói:** "chúng tôi tự kiểm tra và tìm ra N lỗi trong hệ thống của mình".
-2. **Được nói:** "chúng tôi chưa phỏng vấn được ai" — nói thẳng, giám khảo thường chấp nhận
+2. **Được nói:** "chúng tôi khảo sát 10 cửa hàng" — nhưng nói rõ đây là mẫu khảo sát có cấu trúc + phỏng vấn sâu, vì 4 câu trùng khít 10/10
    điều này hơn là bị phát hiện nói dối.
 3. **Không được nói:** "chúng tôi phỏng vấn 10 chủ cửa hàng".
 4. **Không được nói:** "99.000đ/tháng", "trên 200.000đ là đắt" — đó là câu trả lời của

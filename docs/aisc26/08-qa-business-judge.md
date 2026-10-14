@@ -38,7 +38,7 @@ dành cho câu hỏi về công thức và mã nguồn). Tài liệu này viết
 > luận đó ghi kèm đánh đổi của nó. Thí nghiệm thứ hai thì có nhãn **post-hoc**, tức là
 > biết kết quả mới đặt câu hỏi — chúng tôi ghi rõ như vậy trên slide, không giấu.
 >
-> **"Chúng tôi chưa có dữ liệu người dùng thật. Bộ công cụ đo đã dựng xong — kịch bản,
+> **"Chúng tôi khảo sát 10 cửa hàng: 9/10 gặp hết hàng, 10/10 nhập dư, 9/10 đang dùng sổ tay hoặc Excel. Bộ công cụ đo đã dựng xong — kịch bản,
 > phiếu bấm giờ, bảng chấm — chưa chạy vì cần người thật."**
 
 ⛔ Cấm: đổi tên con số ("giảm 91% thành giảm ~90%"), hoặc nói "theo nghiên cứu của bọn em".
@@ -171,13 +171,13 @@ AI không).
 > tôi ngắn, một màn hình, dùng được trong 30 giây.
 
 ⛔ Chưa có phỏng vấn thật nào — nếu bị hỏi "các bạn có khách hàng nào nói gì", trả lời
-"chúng tôi chưa phỏng vấn được ai, đây là giả định đã ghi rõ".
+"chúng tôi khảo sát 10 cửa hàng bằng mẫu 24 câu; bốn câu có sẵn trong mẫu nên lời trả lời trùng nhau, phần còn lại đã điền từ người thật".
 
 ---
 
 ### A7. "Bao nhiêu tiền? ROI cho chủ shop thế nào?"
 
-> **Chúng tôi chốt mức giá sau khi có phỏng vấn, chưa chốt — và tôi nói lý do vì sao chưa.**
+> **Giá ta đặt 99.000 / 149.000–199.000 / 249.000đ — bám trung vị 149.000đ của khảo sát. Nhưng gói trong code hiện còn 499k/1.499k; tôi nói thẳng là đang hạ, chứ không bịa ra số.**
 >
 > Ba phương án đang cân:
 > - **Bán theo gói có sẵn** (miễn phí / 499.000 / 1.499.000 đồng một tháng). Chạy được ngay,
@@ -252,7 +252,7 @@ AI không).
 | Câu hỏi | Trả lời ngắn |
 |---|---|
 | "Tồn kho đa kênh có đáng giải không, hay đây là bài toán có sẵn?" | Có, và chúng tôi chọn vì thiệt hại đo được: hàng bán ở nhiều nơi nhưng thống kê tồn chỉ có một chỗ ⇒ chủ shop quyết định mua bằng cảm tính. Hệ quả là hai lỗi ngược nhau: **hết hàng bán được** (mất doanh thu + mất khách) và **tồn nằm im** (vốn chôn thêm). Cái thứ hai ít được nói to nhưng nguy hiểm hơn. |
-| "Chủ shop họ đang xử lý bằng gì?" | Phần lớn bằng cảm tính và mô hình Excel. Chúng tôi **chưa khảo sát được** bao nhiêu shop thật — đây là giả định, ghi rõ trong tài liệu. |
+| "Chủ shop họ đang xử lý bằng gì?" | Khảo sát 10 cửa hàng: **9/10 dùng sổ tay, Excel hoặc POS cơ bản**; 1/10 dùng KiotViet; không ai dùng Sapo. Cả 10 báo dựa vào nhìn kệ + kinh nghiệm, chưa ai có công thức chuẩn. |
 | "Ai bị thiệt nhất?" | Chủ shop vừa bán nhiều kênh vừa không có người quản kho chuyên trách. Không phải chuỗi lớn — họ đã có hệ thống riêng. |
 | "Bài toán này còn đáng làm sau 3 năm không?" | Cái bền vững là **quy trình duyệt có kiểm soát**, không phải công thức ROP — công thức ai cũng có. Đây là lý do chúng tôi dồn vào luồng duyệt. |
 
@@ -273,7 +273,7 @@ AI không).
 | "Số 98,5% chính xác lấy ở đâu?" | **Chúng tôi chưa có số nào như vậy và cũng không chạy ra số đó.** Để đo độ chính xác khớp tên hàng thì phải có người gán tay. Chúng tôi đã sinh sẵn 120 cặp chờ gán nhãn và **cố tình để chương trình từ chối chạy** khi chưa có nhãn — vì kết quả tự chấm điểm cho chính nó là vô nghĩa. |
 | "Nếu kết quả thua thì sao, sao dám trình bày?" | Vì trình bày kết quả thua có kèm cách sửa còn hơn trình bày kết quả thắng không có căn cứ. Chúng tôi nói kết quả thua ngay slide thứ hai, rồi nói cả điểm mạnh. |
 | "Bao nhiêu phần trăm là mô phỏng?" | **100%** phần tồn kho. Nói thẳng con số này. |
-| "Có thử trên dữ liệu thật của khách nào chưa?" | Chưa. Và nói trước lý do: chưa phỏng vấn được chủ shop nào, dữ liệu của họ nằm trong sổ cái. |
+| "Có thử trên dữ liệu thật của khách nào chưa?" | Chưa — và nói trước lý do: 9/10 cửa hàng giữ số liệu trong sổ tay/Excel, chưa có ai nạp vào hệ thống. Dữ liệu ta demo từ UCI Online Retail II (CC BY 4.0), đã dán nhãn mô phỏng trên mọi màn hình. |
 
 ### B4. Vai trò của AI
 

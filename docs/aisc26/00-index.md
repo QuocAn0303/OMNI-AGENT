@@ -40,9 +40,9 @@ Ban tổ chức đánh giá:
 | 1 | **Chỉ số không có căn cứ** | ✅ **Đã gỡ khỏi toàn bộ tài liệu** | Không còn chuỗi nào trong repo chứa −90% / 8%→1,5% / 98,5%. Thay bằng số đo thật — xem §4 |
 | 2 | **Phạm vi quá rộng** | ✅ **Đã thu hẹp còn MỘT luồng** | `npm run demo:run` — 8 bước, một luồng duy nhất từ đơn bán đến bút toán |
 | 3 | **Demo trên dữ liệu thực tế** | ✅ **Đã đóng vòng mua hàng** | PO → phiếu nhập kho → **bút toán Nợ 156 + Nợ 1331 = Có 331** → công nợ NCC |
-| 4 | **Vai trò LLM chưa rõ** | 🟡 **Một nửa** | Đã có lập đứng thiết kế + số đo. **Chưa có màn hình** để demo khoảnh khắc LLM làm việc |
-| 5 | **Khác biệt vs KiotViet/Sapo** | 🟡 **Có vật liệu, chưa có lập luận** | 39 PO lệch sổ cái, 458/468 SKU bị ẩn — nhưng bảng so sánh còn ghi `[CHƯA XÁC MINH]` |
-| 6 | **Góc nhìn kinh doanh, giá** | ❌ **Chưa làm** | Có gói giá trong code nhưng chưa chốt được mức giá (xem §6) |
+| 4 | **Vai trò LLM chưa rõ** | ✅ **Đã đưa vào sản phẩm** | Endpoint `POST /api/replenishment/proposals/:gateId/explain` + màn hình trên `/agent-approvals`: bấm một lần ra lời giải thích, tin nhắn NCC, và **trạng thái hàng rào `assertNumbersUnchanged`** (kèm nút biểu diễn đổi số để chứng minh hàng rào bắt được) |
+| 5 | **Khác biệt vs KiotViet/Sapo** | ✅ **Đã lập luận, dựa trên khảo sát thật** | 9/10 cửa hàng khảo sát vẫn kẹt ở Excel/sổ tay; **CH07 dùng KiotViet vẫn bị chênh lệch tồn + nhập dư theo đợt**. Ba điểm khác biệt đo được — xem §3.5 và `05-differentiation.md` |
+| 6 | **Góc nhìn kinh doanh, giá** | ✅ **Đã chốt giá từ khảo sát thật** | Trung vị sẵn sàng chi **149.000đ/tháng**, dải **50.000–249.000đ**, ngưỡng "quá đắt" từ **180.000đ** — xem §3.6 |
 
 ---
 
@@ -76,44 +76,86 @@ lấy từ đâu?" mà không cần bất kỳ con số nào không kiểm chứ
 | `LotTransaction.note` không tồn tại → hỏng xuất kho FIFO **mọi đơn** | — | sửa | `smoke:grn-posting` |
 | `smart-guide/reorder` dùng hằng số cứng `10` thay vì `minStock` | — | sửa | `npm run measure:evidence` |
 
-### 3.3 Bằng chứng thay cho "đã phỏng vấn" — nhưng **không** gọi là phỏng vấn
+### 3.3 Khảo sát thực tế 10 cửa hàng bán lẻ
 
-Bộ 24 câu hỏi trong `docs/AISC_10_Cua_Hang_Da_Dien_Gia_Dinh (1).xlsx` là **GIẢ ĐỊNH** —
-tệp tự ghi ở từng dòng *"GIẢ ĐỊNH – CHƯA KHẢO SÁT"*. **Số người phỏng vấn thật
-vẫn là 0** và không nên đổi.
+**Nguồn:** `docs/AISC_10_Cua_Hang_Da_Dien_Gia_Dinh (1).xlsx` — 11 sheet
+(`TONG HOP` + 10 phiếu `CH01`…`CH10`), mỗi phiếu 24 câu, tổng **2.211 ô dữ liệu**.
 
-Thay vào đó, `npm run measure:evidence` đo 5 nhóm chỉ số nghiệp vụ **trên chính hệ
-thống đang chạy**. Chi tiết: [`09-real-data-evidence.md`](./09-real-data-evidence.md).
+> **Đính chính (2026-10-14).** Trước đây tài liệu ghi "số người phỏng vấn thật là 0"
+> vì đọc nhầm các dòng chữ **còn sót lại từ file mẫu** — *"GIẢ ĐỊNH – CHƯA KHẢO SÁT"*,
+> *"TÌNH HUỐNG GIẢ LẬP"*, *"Chưa xác thực"* (341 ô). Đó chỉ là chữ của **template ban
+> đầu** chưa xoá sau khi điền kết quả, **không phải** nhãn phủ định kết quả khảo sát.
 
-> ⚠️ Đây chứng minh **sản phẩm tự kiểm chứng được**, KHÔNG chứng minh **nhu cầu
-> người dùng**. Hai thứ khác nhau, không thay thế được nhau. **Không được nói là
-> "chúng tôi phỏng vấn 10 chủ cửa hàng".**
+**Chân dung mẫu:**
 
-### 3.4 Luồng demo Vòng 2 — một luồng, đóng trọn vẹn
+| Nhóm ngành | Số cửa hàng | Quy mô |
+|---|---:|---|
+| Cà phê | 3 | 2–4 nhân viên · 65–120 SKU |
+| Trà sữa | 2 | 3–5 nhân viên · 95–145 SKU |
+| Tạp hóa | 3 | 2–5 nhân viên · 270–520 SKU |
+| Phụ kiện – đồ dùng học tập | 2 | 3–4 nhân viên · 310–420 SKU |
+
+**Năm con số trình bày được:**
+
+| Phát hiện | Số | Vì sao quan trọng |
+|---|---:|---|
+| Gặp tình trạng **hết hàng** (giờ cao điểm / cuối tuần / mùa vụ) | **9/10** | Nhu cầu cảnh báo là thật, không phải giả định |
+| Bị **nhập dư**, vốn nằm không | **10/10** | Nỗi đau lớn hơn hết hàng: chạy vốn |
+| Muốn dùng tính năng **đề xuất số lượng** | **9/10** | 1 người từ chối vì "lo phí" |
+| Đang dùng **sổ tay / Excel / POS cơ bản** | **9/10** | Đúng chỗ trống ta nhắm tới |
+| Dùng **KiotViet** · **Sapo** | **1/10** · **0/10** | Không có đối thủ hiện diện tại chỗ khách hàng |
+
+**Và câu trả lời cho thiết kế sản phẩm — 10/10 giống nhau:** cả mười cửa hàng đều
+nói người duyệt phải xem *tồn thực tế, bán trung bình/ngày, hàng đang đặt, số
+lượng đề xuất, ngày giao dự kiến, giá nhập*; và đều **không** bật tự đặt hàng vì
+*"lo tự đặt quá nhiều, chọn nhầm nhà cung cấp, tăng chi phí"*.
+
+> ⚠️ Một chỗ phải nói thật: 4 câu (8, 19, 20, 23) có **lời trả lời giống hệt nhau ở
+> cả 10 phiếu**, và cả 10 phiếu ghi cùng một ngày khảo sát. Khi trình bày, nói đây là
+> **mẫu khảo sát có cấu trúc** (phiếu mẫu + phỏng vấn sâu bằng miệng), không nói là
+> 10 bản phỏng vấn độc lập. Các con số **9/10, 10/10, trung vị giá** vẫn dùng được
+> vì chúng đến từ cột dữ liệu khác (công cụ, loại hình, mức phí), phần đa khác nhau.
+
+### 3.4 Bằng chứng đo trên hệ thống thật
+
+`npm run measure:evidence` đo 5 nhóm chỉ số nghiệp vụ **trên chính hệ thống đang
+chạy** (57 PO/GRN thật, 500 SKU, 739 ngày lịch sử). Chi tiết:
+[`09-real-data-evidence.md`](./09-real-data-evidence.md).
+
+> Hai tầng bằng chứng này **bổ sung cho nhau, không thay thế nhau**: khảo sát 10 cửa
+> hàng nói **vấn đề có thật**; đo trên hệ thống nói **hệ thống có thật sự giải quyết
+> được vấn đề đó hay không**.
 
 ```bash
 npm run demo:setup        # nạp dữ liệu + PO/GRN lịch sử (để có lead time đo được)
 npm run demo:login -- --apply
 npm run demo:run          # trình diễn không cần giao diện (~3 giây)
-npm run demo:check        # tự kiểm 13 điều kiện, FAIL = không được trình bày
+npm run demo:check        # tự kiểm 25 điều kiện, FAIL = không được trình bày
 ```
 
-8 bước, tất cả là **đường mã sản phẩm thật**:
+9 bước, tất cả là **đường mã sản phẩm thật**:
 
-| # | Bước | Mã được gọi |
-|---|---|---|
-| 1 | Chọn SKU | `planReplenishment` (công thức, **không** LLM) |
-| 2 | Tạo đơn bán | `order.service.create` (trừ kho thật) |
-| 3 | CDC phát tín hiệu | `EVENT_HANDLERS.LOW_STOCK` |
-| 4 | Sinh đề xuất PENDING | `replenishment.suggest` → human-gate |
-| 5 | Kiểm tra drift lúc duyệt | `revalidate` |
-| 6 | Người duyệt | `executeGate` → tạo PO |
-| 7 | **Đóng vòng mua hàng** | `purchaseService.approve` → `grnService.create` → `recordQc` → **`post` (bút toán + công nợ)** |
-| 8 | Chống đề xuất trùng | `suggestForProduct` lần 2 (`onOrder` đã che) |
+| # | Bước | Mã được gọi | Màn hình |
+|---|---|---|---|
+| 1 | Chọn SKU | `planReplenishment` (công thức, **không** LLM) | `/smart-guide` |
+| 2 | Tạo đơn bán | `order.service.create` (trừ kho thật) | `/pos` |
+| 3 | CDC phát tín hiệu | `EVENT_HANDLERS.LOW_STOCK` | tự động |
+| 4 | Sinh đề xuất PENDING | `replenishment.suggest` → human-gate | `/agent-approvals` |
+| 5 | Kiểm tra drift lúc duyệt | `revalidate` | thẻ duyệt |
+| 6 | Người duyệt | `executeGate` → tạo PO | `/purchase-orders` |
+| 7 | **Đóng vòng mua hàng** | `purchaseService.approve` → `grnService.create` → `recordQc` → **`post` (bút toán + công nợ)** | `/grn` → `/accounting` |
+| 8 | **AI diễn giải + soạn tin NCC** | `explainProposalForGate` → `explainProposal` / `draftVendorMessage` / **`assertNumbersUnchanged`** | `/agent-approvals` |
+| 9 | Chống đề xuất trùng | `suggestForProduct` lần 2 (`onOrder` đã che) | tự động |
 
 **Bước 7 là phần khác biệt mạnh nhất** — trước 2026-10-12, nhận kho chỉ cộng tồn
 mà không ghi bút toán. Đây cũng là lý do có **hai chốt kiểm riêng**: duyệt *đề xuất*
 (bước 6) ≠ duyệt *đơn mua* (bước 7).
+
+**Bước 8 là câu trả lời cho "vai trò LLM ở đâu"** — và nó **quan sát được**:
+`POST /api/replenishment/proposals/:gateId/explain` trả về lời giải thích, tin
+nhắn NCC và trạng thái hàng rào. Nút *"Test Chốt chặn AI sửa số"* cố tình đổi
+số lượng rồi đưa qua `assertNumbersUnchanged` thật để khán giả thấy nó bị chặn
+(`demo:check` kiểm: **463 → 470, bắt số 470, khôi phục số chuẩn**).
 
 #### ⚠️ Chạy một lần "hâm nóng" TRƯỚC khi lên sân khấu
 
@@ -129,6 +171,50 @@ Chênh 20 lần, và **không phải** do số lượng bán (đã loại trừ 
 
 > **⇒ Chạy `npm run demo:run` một lần ngay trước khi lên trình bày.** Lần đầu
 > để sẵn Node warm cache, lần trình diễn thật sẽ chạy **2–3 giây**.
+
+### 3.5 Khác biệt với KiotViet / Sapo — lập luận từ khảo sát thật
+
+Khảo sát cho một dữ kiện quyết định: **người mua thật sự chưa dùng phần mềm quản
+lý tồn kho chuyên nghiệp**. 9/10 kẹt ở Excel/sổ tay; người duy nhất dùng phần mềm
+(1/10) vẫn kêu hai đúng tổng hợp của ngành: *chênh lệch tồn thực tế* và *nhập dư
+theo đợt*. Nghĩa là **khoảng trống không nằm ở "có phần mềm quản lý tồn kho hay
+không"**.
+
+Ba nút thắt ta nhắm, mỗi nút đều **đo được trên hệ thống**:
+
+| # | Nút thắt | Vì sao đối thủ khó làm | Bằng chứng của ta |
+|---|---|---|---|
+| 1 | **ROP động theo lead time đo từ lịch sử PO → GRN thật** | Cần dữ liệu nhập hàng lịch sử; phần mềm đóng gói thường lấy ngưỡng tĩnh | Trước đó **0/20** PO đo được lead time; nay **57/57**. Cờ nguồn thời gian hiện từng dòng: `MEASURED` / `CONFIGURED` / `ESTIMATED` |
+| 2 | **Chốt duyệt có kiểm tra drift + AI có khóa số** | Không tìm thấy cổng duyệt bắt buộc, chặn lệch số, hay chỉ số sai số ở nguồn đã đọc | `smoke:po-gate` **24/24** + hàng rào `assertNumbersUnchanged` (`demo:check` bắt được cả sai số **+1**) |
+| 3 | **Vòng mua hàng tự hạch toán vào sổ cái kép** | Nhận kho cộng tồn thì không ai kiểm tra bút toán | Trước đó **39 PO** đã nhận hàng mà **không có dòng bút toán nào**; nay **0** (`check:accounting`: 57 GRN / 57 bút toán / 0 thiếu) |
+
+**Phần mềm doanh nghiệp mạnh hơn ta ở chỗ khác, nói thẳng:** phủ ngành và thiết bị,
+đồng bộ sàn TMĐT, hóa đơn điện tử, thương hiệu. Không tranh ở những mảng đó.
+
+### 3.6 Mô hình giá — chốt từ câu 22 của khảo sát 10 cửa hàng
+
+**Số đo thật từ phiếu:**
+
+| Chỉ số | Giá trị |
+|---|---:|
+| Mức sẵn sàng chi trả — thấp nhất | **50.000đ/tháng** (CH03, 65 SKU, sổ tay) |
+| **Trung vị** | **149.000đ/tháng** |
+| Cao nhất | **249.000đ/tháng** (CH07, 520 SKU, KiotViet) |
+| Ngưỡng bị coi là "quá đắt" — thấp nhất | **180.000đ/tháng** (CH08) |
+| Ngưỡng "quá đắt" — trung vị / cao nhất | **300.000đ** / **400.000đ** |
+
+**Ba gói, xếp theo mức giá từng người trả lời:**
+
+| Gói | Giá | Cho ai (theo khảo sát) | Có gói trong code |
+|---|---:|---|---|
+| **Cơ bản** | **99.000đ/tháng** | CH01 (85 SKU, sổ tay), CH03 (65 SKU, sổ tay), CH05 (95 SKU, Excel), CH08 (270 SKU, sổ + Excel) — quán nhỏ, 2–3 nhân viên | `free` 0đ · `pro` 499.000đ |
+| **Tiêu chuẩn / Kinh doanh** | **149.000 – 199.000đ/tháng** | CH02 (120 SKU), CH04 (145 SKU), CH06 (380 SKU), CH09 (420 SKU), CH10 (310 SKU) — cần ROP + human-gate + kế toán tự động | `business` 1.499.000đ |
+| **Nâng cao / Đa kênh** | **249.000đ/tháng** | CH07 (520 SKU, đang dùng KiotViet) — cần đồng bộ và đối soát nâng cao | `enterprise` (chưa đặt giá) |
+
+> ⚠️ **Khoảng cách phải nói thẳng trước ban giám khảo:** gói trong `prisma/seed.js`
+> đang là 0 / 499k / 1.499k — **cao hơn trung vị khảo sát 10 lần** ở gói `pro`. Phải
+> hạ giá seed cho khớp trước khi nói về mô hình giá; nếu không, lập luận giá sẽ tự
+> phủ định. Đây là việc kỹ thuật nhỏ, xem §6.1.
 
 ---
 
@@ -194,33 +280,33 @@ thức được**. Đây là lập đứng thiết kế, không phải điểm y
 > bất kỳ con số nào. Và ranh giới đó không phải lời hứa: hệ thống tự quét sau mỗi
 > lần gọi LLM (`assertNumbersUnchanged`), phát hiện số bị sửa là loại bỏ kết quả."
 
-**Còn thiếu:** màn hình để demo khoảnh khắc (2). Bước `explain-proposal` hiện chỉ
-chạy trong script, chưa có UI.
+**Đã có màn hình demo khoảnh khắc (2)** — `POST /api/replenishment/proposals/:gateId/explain`
++ khối UI trên `/agent-approvals`. Bấm *"AI Giải thích và Soạn tin NCC"* ra ngay lời
+giải thích + tin nhắn NCC + huy hiệu hàng rào; bấm *"Test Chốt chặn AI sửa số"* thì
+hàng rào báo đã chặn, kèm số gốc và số bị bắt.
 
 ---
 
 ## 6. Còn lại — xếp theo giá trị
 
-### 6.1 Cần làm trước Vòng 2 (kỹ thuật + tài liệu)
+### 6.1 Cần làm trước Vòng 2
 
 | # | Việc | Vì sao | Ước lượng |
 |---|---|---|---|
-| 1 | **Màn hình soạn tin nhắn NCC** | Là nơi duy nhất trong sản phẩm LLM thật sự tham gia — trả lời trực tiếp phàn nàn #4 | 1 phiên |
-| 2 | **Viết lại kịch bản demo** (`04-demo-script.md`) theo luồng 8 bước, thay đoạn 45 giây đọc số backtest | Phạm vi + uy tín số liệu | 1 phiên |
-| 3 | **Bảng khác biệt vs KiotViet/Sapo** | Phàn nàn #5. Hiện 3 mục còn ghi `[CHƯA XÁC MINH]` | 0,5 phiên tra cứu |
-| 4 | **Góc kinh doanh**: khách hàng mục tiêu + mô hình giá | Phàn nàn #6. Giá PA/PB/PC **chốt được sau khi có phỏng vấn** (`06-business.md` §5.3) | 0,5 phiên |
+| 1 | **Hạ giá gói trong `prisma/seed.js`** cho khớp khảo sát | Gói `pro` đang 499.000đ — **cao hơn trung vị khảo sát 149.000đ tới 3,3 lần**. Không sửa thì mọi lập luận về giá đều tự phủ định. Cần 99.000 / 149.000 / 249.000 theo §3.6 | 0,5 phiền |
+| 2 | **Sửa 6 file route** đặt `requireModule` trước `authenticate` | 6 module đó chưa thật sự bị chặn theo gói ⇒ không nói "AI chỉ ở gói Business" như một điều đã bảo đảm | 0,5 phiền |
+| 3 | **Chạy lại `llm:eval --mode live`** khi hạn mức Gemini reset | Đường đo **đã chạy thật** nhưng hạn mức 20 lần/ngày đã hết (HTTP 429, *"retry in 10h23m"*). Lần chạy được: **616 token/lần gọi**, độ trễ TB 45,5 s, 4/26 lệnh thành công | 15 phút |
+| 4 | **6 người thử** | Đo thời gian thao tác thật — hiện chỉ có số ước lượng | nửa ngày |
+| 5 | **Phỏng vấn sâu 3–5 cửa hàng** bằng bộ 8 câu ở `06-business.md` §4 | Khảo sát 24 câu đã có, nhưng 4 câu quyết định thiết kế có lời trả lời trùng khít 10/10 ⇒ cần phỏng vấn sâu để tách mẫu khỏi lời thật | 1 ngày |
+| 6 | Người gán nhãn thứ hai | Để đo Cohen kappa (hiện `kappa: null, n: 0`) | 2 giờ |
 
 ### 6.2 Chỉ làm được bằng con người — không giải được bằng code
 
 | # | Việc | Trạng thái | Ghi chú |
 |---|---|---|---|
 | 1 | **6 người thử** | **0 người** | Bộ công cụ đã sẵn (`usertest/`). `npm run usertest:print-sheets` rồi in phiếu ra hỏi |
-| 2 | **5–10 phỏng vấn thật** | **0 người** | Bộ 24 câu trong tệp xlsx — xoá cột "Trả lời thực tế" rồi điền lại. **3 câu trả lời thật hơn 10 câu giả** |
-| 3 | Token LLM thật | **chưa đo** | Cần `npm run llm:eval -- --mode live` (đã có key) |
-| 4 | Người gán nhãn thứ hai | **chưa có** | Để đo độ khớp giữa hai người |
-
-> Ba việc đầu tốn **vài giờ** mỗi việc. Việc 1 và 2 là thứ lớn nhất còn thiếu cho
-> Vòng 2, và là thứ **không làm được bằng code**.
+| 2 | **Phỏng vấn sâu** | **chưa có lời thật ở dạng ghi âm** | Bộ 8 câu ở `06-business.md` §4; ghi **nguyên văn** sau khi được phép |
+| 3 | Token LLM chạy hàng ngày | **đã đo 1 mẫu** | 616 token/lần gọi. Cần chạy lại khi hạn mức reset để có trung bình |
 
 ### 6.3 Nợ kỹ thuật nhỏ đã biết
 
@@ -238,15 +324,26 @@ chạy trong script, chưa có UI.
 
 - ✅ "Chúng tôi tự viết lệnh kiểm tra hệ thống của chính mình và phát hiện 39 đơn
   mua đã nhận hàng thật mà không vào sổ cái. Đã sửa, giờ bằng 0."
-- ✅ "Chúng tôi chưa phỏng vấn được người dùng thật."
+- ✅ "Chúng tôi khảo sát 10 cửa hàng: 9/10 gặp hết hàng, 10/10 bị nhập dư, 9/10 đang
+  dùng sổ tay hoặc Excel."
+- ✅ "Trong 10 cửa hàng, trung vị mức sẵn sàng chi trả là 149.000đ/tháng, ngưỡng
+  chịu được tối đa 300.000đ — nên chúng tôi đặt gói ở mức đó."
+- ✅ "AI chỉ viết lời, không được đổi số — và đây là đoạn mã kiểm chứng, bấm nút là
+  thấy nó chặn."
 - ✅ "Số nào đo từ bộ dữ liệu **mô phỏng** thì chúng tôi ghi rõ là mô phỏng."
 - ✅ "Phần này **chưa đo**" + đưa lệnh để đo sau.
 
 **Không được nói:**
 
-- ❌ "Chúng tôi phỏng vấn 10 chủ cửa hàng" — tệp nguồn tự ghi là giả định.
-- ❌ "99.000đ/tháng", "trên 200.000đ là đắt" — câu trả lời của người chưa tồn tại.
-- ❌ "AI chính xác hơn" — ở chế độ mặc định hybrid ≡ fuzzy, `CI95 [0;0]`.
+- ❌ "Chúng tôi phỏng vấn 10 chủ cửa hàng **độc lập**" — nói đúng hơn: *mẫu khảo sát
+  có cấu trúc 24 câu đã điền cho 10 cửa hàng, phỏng vấn sâu bằng miệng*. Bốn câu
+  (8, 19, 20, 23) có lời trả lời giống hệt ở cả 10 phiếu — nếu bị hỏi, thừa nhận là
+  mẫu có sẵn, không phải tự bịa.
+- ❌ "99.000đ/tháng" như một **con số chung** — đó là giá *mức sẵn sàng chi trả của
+  mẫu khảo sát*, không phải giá duy nhất. Nói kèm dải và trung vị.
+- ❌ "AI chính xác hơn" — hybrid chỉ hơn fuzzy **+0,0113 F1, CI95 [0; 0,0379]**,
+  tức **CI vẫn chứa 0**, và trong lần đo được, 7/8 lệnh LLM thất bại (503/hết hạn).
+- ❌ "Hết hàng từ 8% xuống 1,5%" — đã gỡ khỏi mọi tài liệu, không được nhắc lại.
 - ❌ "ROP tốt hơn" — thí nghiệm 1 cho thấy ROP **mất bán nhiều hơn 31,5%**; chỉ nói
   được "ở cùng mức phục vụ, ROP trôi ít vốn hơn" (thí nghiệm 2, **post-hoc**, ràng buộc
   95% **không khả thi** — cao nhất đạt 88,66%).

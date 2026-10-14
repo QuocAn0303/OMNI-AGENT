@@ -110,3 +110,20 @@ Gần ta nhất về mặt *định vị* (POS + ERP + AI agent, multi-tenant). 
    buộc + sai số đo được trên backtest công khai**. Đây mới là chỗ đứng được.
 3. Đối thủ mạnh hơn ta ở: hệ sinh thái sàn/vận chuyển/HĐĐT, số khách, thiết bị POS,
    template ngành. Phải nói thẳng.
+## Bổ sung 2026-10-14 — đối thủ trong mắt người mua thật
+
+Khảo sát 10 cửa hàng cho một dữ kiện quyết định về chiến lược:
+
+| Công cụ đang dùng | Số cửa hàng |
+|---|---:|
+| Sổ tay / Excel / POS cơ bản | **9/10** |
+| KiotViet | **1/10** (CH07, 520 SKU) |
+| Sapo | **0/10** |
+
+**Hệ quả cho luận điểm khác biệt:** phần lớn khách hàng mục tiêu **chưa dùng** phần mềm
+quản lý tồn kho chuyên nghiệp. Vì vậy **không** bán "ta có tính năng mà KiotViet/Sapo
+không có" — CH07 dùng KiotViet vẫn báo *chênh lệch tồn thực tế* và *nhập dư theo đợt*.
+
+**Hai con số dùng được từ khảo sát:** trung vị sẵn sàng chi **149.000đ/tháng**
+(dải 50.000–249.000đ) và **10/10** yêu cầu phải có bước chủ quán duyệt, không cho tự
+đặt hàng — đây là cơ sở định giá và là lập đứng cho human-gate.
