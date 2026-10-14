@@ -61,7 +61,7 @@ Ban tổ chức đánh giá:
 Nền tảng đã có sẵn và **không phá gì**: ERP kế toán kép, POS, F&B (bàn/KDS/QR order),
 CRM + PRM, nhân sự, sản xuất (BOM/WO/QC), AI agent có human-gate, multi-tenant, 63 module.
 
-### 3.2 Bảy lỗi thật đã tìm ra và sửa trong chính hệ thống mình
+### 3.2 Chín lỗi thật đã tìm ra và sửa trong chính hệ thống mình
 
 Đây là phần **đáng giá nhất khi trình bày** — vì nó trả lời câu "chỉ số của các bạn
 lấy từ đâu?" mà không cần bất kỳ con số nào không kiểm chứng được.
@@ -75,6 +75,8 @@ lấy từ đâu?" mà không cần bất kỳ con số nào không kiểm chứ
 | Bộ đếm mã bút toán (`count+1`) hỏng khi có lỗ hổng | — | sửa | `npm run check:accounting` |
 | `LotTransaction.note` không tồn tại → hỏng xuất kho FIFO **mọi đơn** | — | sửa | `smoke:grn-posting` |
 | `smart-guide/reorder` dùng hằng số cứng `10` thay vì `minStock` | — | sửa | `npm run measure:evidence` |
+| **Hàng rào số từ chối cả bản mẫu của hệ thống** — `assertNumbersUnchanged` cho phép biến thể làm tròn 1 chữ số, nhưng bản mẫu ghi `25,6` từ `25,625` ⇒ `guardrail.passed = false` trên văn bản **đúng số** | 1 lần mỗi chạy | sửa | `npm run demo:check` |
+| **Hàng rào báo động giả** — chữ số trong **tên hàng** (`"12 PENCILLS…"`) bị quét thành "số do LLM tự thêm" | 1 số lạ mỗi SKU có số trong tên | sửa | `npm run demo:check` |
 
 ### 3.3 Khảo sát thực tế 10 cửa hàng bán lẻ
 
@@ -211,10 +213,25 @@ Ba nút thắt ta nhắm, mỗi nút đều **đo được trên hệ thống**:
 | **Tiêu chuẩn / Kinh doanh** | **149.000 – 199.000đ/tháng** | CH02 (120 SKU), CH04 (145 SKU), CH06 (380 SKU), CH09 (420 SKU), CH10 (310 SKU) — cần ROP + human-gate + kế toán tự động | `business` 1.499.000đ |
 | **Nâng cao / Đa kênh** | **249.000đ/tháng** | CH07 (520 SKU, đang dùng KiotViet) — cần đồng bộ và đối soát nâng cao | `enterprise` (chưa đặt giá) |
 
-> ⚠️ **Khoảng cách phải nói thẳng trước ban giám khảo:** gói trong `prisma/seed.js`
-> đang là 0 / 499k / 1.499k — **cao hơn trung vị khảo sát 10 lần** ở gói `pro`. Phải
-> hạ giá seed cho khớp trước khi nói về mô hình giá; nếu không, lập luận giá sẽ tự
-> phủ định. Đây là việc kỹ thuật nhỏ, xem §6.1.
+> ✅ **Đã đồng bộ (2026-10-14).** Giá trong `prisma/seed.js` và trong DB đã đổi theo
+> bảng trên; kiểm chứng qua `GET /api/subscriptions/plans` trả đúng 4/4. Mỗi mức truy
+> được về một câu trả lời cụ thể trong khảo sát:
+>
+> | Gói | Giá | Căn cứ trong khảo sát | Cửa hàng mà gói này phục vụ được |
+> |---|---:|---|---:|
+> | `free` | 0đ | — | CH03 (WTP 50.000đ) |
+> | `pro` | **99.000đ** | CH01, CH05, CH08 | 3/10 |
+> | `business` | **149.000đ** | trung vị; CH02, CH04, CH10 | 6/10 (cộng CH06, CH09) |
+> | `enterprise` | **249.000đ** | CH07 — mức cao nhất trong mẫu | 7/10 |
+>
+> ⇒ **3 mức giá phủ được 7/10 cửa hàng trong mẫu.** Ba cửa hàng còn lại (CH06, CH09)
+> chấp nhận mức cao hơn nên vẫn vào được; CH03 (WTP 50.000đ) là ngoài tầm.
+>
+> ⚠️ **Điều phải nói thẳng:** trung vị mức **sẵn sàng chi** (149.000đ) thấp hơn mức
+> trung vị phần mềm các cửa hàng **đang trả** (160.000đ, tính trên 5 quán có trả phí).
+> Nghĩa là không thể bán bằng lập luận "rẻ hơn POS" — phải cho thấy giá trị rõ ở
+> phần **bước duyệt có kiểm soát** và **vòng mua hàng tự hạch toán**, đó mới là chỗ POS
+> hiện tại chưa làm được (CH07 đang trả 250.000đ mà vẫn lệch tồn).
 
 ---
 
@@ -230,7 +247,7 @@ Ba nút thắt ta nhắm, mỗi nút đều **đo được trên hệ thống**:
 |---|---|
 | `npm test` | **4488 / 4493** pass (90 suite, 5 skip) |
 | `npm run check:modules` | **212** module load được |
-| `npm run check:swagger` | **135 / 135** khối |
+| `npm run check:swagger` | **136 / 135** khối |
 
 ### Trên DB thật
 
@@ -293,8 +310,8 @@ hàng rào báo đã chặn, kèm số gốc và số bị bắt.
 
 | # | Việc | Vì sao | Ước lượng |
 |---|---|---|---|
-| 1 | **Hạ giá gói trong `prisma/seed.js`** cho khớp khảo sát | Gói `pro` đang 499.000đ — **cao hơn trung vị khảo sát 149.000đ tới 3,3 lần**. Không sửa thì mọi lập luận về giá đều tự phủ định. Cần 99.000 / 149.000 / 249.000 theo §3.6 | 0,5 phiền |
-| 2 | **Sửa 6 file route** đặt `requireModule` trước `authenticate` | 6 module đó chưa thật sự bị chặn theo gói ⇒ không nói "AI chỉ ở gói Business" như một điều đã bảo đảm | 0,5 phiền |
+| 1 | ~~**Hạ giá gói trong `prisma/seed.js`**~~ | ✅ **Xong 2026-10-14** — 99.000 / 149.000 / 249.000đ, kiểm chứng qua API 4/4 |
+| 2 | ~~**Sửa 6 file route** đặt `requireModule` trước `authenticate`~~ | ✅ **Xong 2026-10-14** — quét lại 96 file: **0** file sai thứ tự. Xem `05-differentiation.md` §3 mục 6 vì sao `portal` sửa theo cách khác |
 | 3 | **Chạy lại `llm:eval --mode live`** khi hạn mức Gemini reset | Đường đo **đã chạy thật** nhưng hạn mức 20 lần/ngày đã hết (HTTP 429, *"retry in 10h23m"*). Lần chạy được: **616 token/lần gọi**, độ trễ TB 45,5 s, 4/26 lệnh thành công | 15 phút |
 | 4 | **6 người thử** | Đo thời gian thao tác thật — hiện chỉ có số ước lượng | nửa ngày |
 | 5 | **Phỏng vấn sâu 3–5 cửa hàng** bằng bộ 8 câu ở `06-business.md` §4 | Khảo sát 24 câu đã có, nhưng 4 câu quyết định thiết kế có lời trả lời trùng khít 10/10 ⇒ cần phỏng vấn sâu để tách mẫu khỏi lời thật | 1 ngày |

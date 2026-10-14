@@ -60,14 +60,26 @@ Legend: **✅** = có bằng chứng đọc được · **◐** = có một ph�
 5. **Hạ tầng đa tenant khác hẳn.** VietPOS.AI công bố "1 KH = 1 PostgreSQL DB riêng"
    (tách DB vật lý); ta cách ly bằng scoping cấp truy vấn + AsyncLocalStorage. Hai mô
    hình khác nhau, không so được bằng điểm số.
-6. **Gating theo gói: đã vá phần lớn, còn 6/96** *(đo lại 2026-10-10)*. Trước đây
-   **18/92** file route đặt `requireModule` **trước** `authenticate`, mà `requireModule`
-   **fail-open** khi chưa có `req.user` (`src/middleware/plan.middleware.js:109`). Nay
-   quét 96 file route: còn **6** file sai thứ tự — `partners`, `portal`,
-   `production/lot`, `production/routing`, `production/work-center`,
-   `projects/timesheet` ⇒ 6 module đó **thực tế chưa bị chặn theo gói**. Và `ai` +
-   `replenishment` **đã** được gate. Không nói "AI chỉ ở gói Business" cho tới khi sửa
-   nốt 6 file.
+6. **Gating theo gói: đã quét lại toàn bộ, không còn file sai thứ tự** *(đo lại
+   2026-10-14)*. Trước đây **18/92** file route đặt `requireModule` **trước**
+   `authenticate`, mà `requireModule` **fail-open** khi chưa có `req.user`
+   (`src/middleware/plan.middleware.js:109`). Nay quét 96 file route: **0** file sai
+   thứ tự. Cụ thể:
+   - `partners`, `production/lot`, `production/routing`, `production/work-center`,
+     `projects/timesheet` — đã ở dạng đúng `router.use(authenticate, requireModule(...))`.
+   - `portal` — **không sửa được theo cách kia**, vì mọi route trong file là route
+     **KHÁCH HÀNG** (`/otp/*` đăng nhập OTP, còn lại `withCustomer` — token phiên
+     khách, không phải JWT nhân viên). `requireModule` đọc `req.user?.tenantId` rồi
+     `return next()` ⇒ trên các route này nó **luôn chạy tiếp, không chặn được gì**.
+     Đã **xoá** middleware chết này và ghi chú lý do tại chỗ, thay vì thêm
+     `authenticate` — thêm `authenticate` sẽ làm hỏng portal: khách không có JWT
+     nhân viên nên không đăng nhập được vào chính cổng xem đơn của mình.
+     Gói được kiểm ở phía chủ shop khi bật/tắt portal, không phải ở phía khách.
+
+   ⇒ **Được nói:** `ai` + `replenishment` được gate, và toàn bộ 96 file route đã
+   quét lại, không còn file nào đặt sai thứ tự.
+   ⇒ **Không** nói "AI chỉ ở gói Business" như một điều đã bảo đảm tuyệt đối —
+   phần khách hàng của portal cố ý không gate ở tầng HTTP.
 
 ## 4. Chốt **một** luận điểm khác biệt bảo vệ được
 

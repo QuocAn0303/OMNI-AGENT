@@ -977,7 +977,7 @@ sai nên báo *"hệ thống tốn hơn 53%"* — sửa thành so sánh theo **h
 | `npm run smoke:grn-posting` | **16/16** (mới) | **DB thật** |
 | `npm run smoke:po-gate` | 24/24 | **DB thật** |
 | `npm run smoke:demo-flow` | 12/12 | **DB thật** |
-| `npm run demo:check` | **13/13** | **DB thật** |
+| `npm run demo:check` | **25/25** | **DB thật** |
 | `npm run check:evidence` | **14/14** (cần backend) | **HTTP thật** |
 | `npm run check:modules` | 212 module | — |
 | `npm run demo:setup` | 12/12 SKU lead time đo được | **DB thật** |
@@ -1105,13 +1105,13 @@ biết**, đúng mục tiêu bài học số 3.
 | `npm run smoke:warehouse-tree` | **18/18** (mới, 2 lần cùng kết quả) | **DB thật** |
 | `npm run smoke:po-gate` | 24/24 | **DB thật** |
 | `npm run smoke:demo-flow` | 12/12 | **DB thật** |
-| `npm run demo:check` | 13/13 | **DB thật** |
+| `npm run demo:check` | 25/25 | **DB thật** |
 | `npm run check:replenishment-rules` | **12/12** (mới) | **HTTP thật** |
 | `npm run check:supply` | **12/12** (mới) | **HTTP thật** |
 | `npm run check:evidence` | 14/14 | **HTTP thật** |
 | `npm run check:humangate` | **11/11** — **NỢ TỪ P6/P7 ĐÃ TRẢ** | **HTTP thật** |
 | `npm run check:modules` | 212 module | — |
-| `npm run check:swagger` | **135/135** khối | tĩnh |
+| `npm run check:swagger` | **136/136** khối | tĩnh |
 | `frontend npm run lint` | **0 error** (64 warning có sẵn) | — |
 | `frontend npm run build` | built | — |
 

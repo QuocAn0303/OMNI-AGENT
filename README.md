@@ -60,7 +60,7 @@
 | Cron jobs | **29** | `src/jobs/cron.js` |
 | Model tự scoping theo tenant | **147** | `TENANT_SCOPED_MODELS` trong `src/config/prisma.js` |
 | Script kiểm chứng / demo | **83 file**, **80 lệnh npm** (39 lệnh `check:*`/`smoke:*`/`demo:*`/`measure:*`) | `scripts/`, `package.json` |
-| Khối Swagger | **135/135** parse được | `npm run check:swagger` |
+| Khối Swagger | **136/136** parse được | `npm run check:swagger` |
 | Ngôn ngữ i18n | 2 (vi, en) | `frontend/src/locales/` |
 
 **Cổng mặc định**: backend `4000` (tự tăng khi bị chiếm, tối đa 10 lần) · frontend `5173` · PostgreSQL `5432` · Redis `6379` · Prisma Studio `5555` · Swagger `/api-docs`.
@@ -1515,7 +1515,7 @@ GET  /api/partners/roi        # hoa hồng + ROI
 # Tĩnh / mock (không chạm DB)
 npm test                          # 4488/4493 assertion
 npm run check:modules             # 212 module load được
-npm run check:swagger             # 135/135 khối @swagger
+npm run check:swagger             # 136/136 khối @swagger
 
 # DB thật — tự dọn dữ liệu, chạy 2 lần cho cùng kết quả
 npm run check:tenant              # cách ly multi-tenant — PASS 11/11 + 4/4 + 4/4

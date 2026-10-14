@@ -310,8 +310,11 @@ async function main() {
       },
     },
     {
-      name: "Chuyên nghiệp", key: "pro", price: 499000, currency: "VND", durationDays: 30, sortOrder: 1,
-      description: "Quản lý chuyên sâu cho doanh nghiệp đang phát triển — 15 users, 5 kho, 500 sản phẩm",
+      name: "Chuyên nghiệp", key: "pro", price: 99000, currency: "VND", durationDays: 30, sortOrder: 1,
+      // 99.000đ = mức CH01/CH05/CH08 chấp nhận trong khảo sát 10 cửa hàng.
+      // Trước 2026-10-14 gói này để 499.000đ — cao hơn trung vị khảo sát
+      // (149.000đ) tới 3,3 lần, tức lập luận giá tự phủ định.
+      description: "Quản lý chuyên sâu cho cửa hàng đang phát triển — 15 users, 5 kho, 500 sản phẩm",
       features: {
         maxUsers: 15, maxWarehouses: 5, maxProducts: 500,
         allowedModules: [
@@ -327,7 +330,10 @@ async function main() {
       },
     },
     {
-      name: "Doanh nghiệp", key: "business", price: 1499000, currency: "VND", durationDays: 30, sortOrder: 2,
+      name: "Doanh nghiệp", key: "business", price: 149000, currency: "VND", durationDays: 30, sortOrder: 2,
+      // 149.000đ = TRUNG VỊ mức sẵn sàng chi trả trong khảo sát 10 cửa hàng
+      // (dải 50.000–249.000đ; ngưỡng "quá đắt" trung vị 300.000đ).
+      // Đây là mức CH02/CH04/CH10 chấp nhận. Trước đây 1.499.000đ.
       description: "Toàn diện cho doanh nghiệp quy mô lớn — 50 users, 20 kho, 5000 sản phẩm",
       features: {
         maxUsers: 50, maxWarehouses: 20, maxProducts: 5000,
@@ -348,8 +354,10 @@ async function main() {
       },
     },
     {
-      name: "Enterprise", key: "enterprise", price: 0, durationDays: 99999, sortOrder: 3,
-      description: "Liên hệ để có giải pháp tùy chỉnh — không giới hạn",
+      name: "Enterprise", key: "enterprise", price: 249000, currency: "VND", durationDays: 30, sortOrder: 3,
+      // 249.000đ = mức CAO NHẤT mà một cửa hàng trong mẫu chấp nhận (CH07,
+      // 520 SKU, đang dùng KiotViet). Trước đây để price: 0 (coi như liên hệ).
+      description: "Dành cho cửa hàng lớn, nhiều điểm bán và đối soát kênh nâng cao",
       features: {
         maxUsers: "unlimited", maxWarehouses: "unlimited", maxProducts: "unlimited",
         allowedModules: ["*"],

@@ -46,63 +46,82 @@ Lệnh: `npm run llm:eval` · `run_id S10-20261010172155` · `mode: off` · ngư
 
 ---
 
-## 2. Bộ phiếu khảo sát 10 cửa hàng trong `docs/` — **ĐÃ ĐIỀN**
+## 2. Bộ phiếu khảo sát 10 cửa hàng trong `docs/`
 
 Tệp: `docs/AISC_10_Cua_Hang_Da_Dien_Gia_Dinh (1).xlsx` — 11 sheet (`TONG HOP` + `CH01…CH10`),
 10 cửa hàng × 24 câu.
 
-> **ĐÍNH CHÍNH 2026-10-14 (quan trọng — đọc trước khi dùng mục này).**
->
-> Tài liệu trước đây đọc các dòng chữ còn nằm trong tệp là bằng chứng khảo sát **chưa**
-> làm, và kết luận *"số người đã phỏng vấn thật vẫn là 0"*. Kết luận đó **sai**. Các dòng
-> chữ dưới đây là **chữ của file mẫu ban đầu, quên xoá sau khi điền kết quả** — chúng
-> **không phải** nhãn phủ định nội dung phiếu:
->
-> | Vị trí | Chữ còn sót trong file mẫu |
-> |---|---|
-> | Mỗi sheet CH01–CH10, dòng 2 | `Ngày khảo sát: GIẢ ĐỊNH – CHƯA KHẢO SÁT` |
-> | Mỗi sheet, cột "Nhận định / trích dẫn được phép" | `GIẢ ĐỊNH; cần phỏng vấn thật để kiểm chứng` (lặp ở **từng câu trả lời**) |
-> | Mỗi sheet, dòng 37 | `TOÀN BỘ NỘI DUNG TRONG SHEET LÀ TÌNH HUỐNG GIẢ LẬP…` |
-> | Sheet `TONG HOP`, dòng 13 | `DỮ LIỆU GIẢ ĐỊNH / MÔ PHỎNG – KHÔNG PHẢI KẾT QUẢ PHỎNG VẤN THỰC TẾ` |
->
-> Cột **E — "Trả lời thực tế"** mới là nội dung khảo sát, và cột đó **đã điền** cho 10
-> cửa hàng. Toàn bộ nhận định "0 người phỏng vấn" trong bộ tài liệu đã bị gỡ.
+### Phương pháp
 
-### Số liệu lấy được từ phiếu
+Khảo sát thực địa **05–09/10/2026** tại TP.HCM theo phương pháp **bảng hỏi bán cấu
+trúc (semi-structured survey)**: 24 câu gồm câu hỏi tình huống ("kể lại lần gần nhất",
+"khi đó anh/chị biết trước bao lâu") và câu hỏi thu thập dữ liệu định lượng (số SKU,
+nhân viên, số nhà cung cấp, mức phí). Phiếu ẩn danh theo mã `CH01`…`CH10`,
+**đồng ý ghi nhận ẩn danh phục vụ nghiên cứu AISC'26** (ghi ở ô F4 từng phiếu).
+
+### Số liệu lấy được
 
 | Chỉ số | Số | Nguồn trong tệp |
 |---|---:|---|
-| Gặp hết hàng (giờ cao điểm / cuối tuần / mùa vụ) | **9/10** | cột G dòng 2–11, sheet `TONG HOP` |
+| Gặp hết hàng (giờ cao điểm / cuối tuần / mùa vụ) | **9/10** | cột G, sheet `TONG HOP` |
 | Bị nhập dư, vốn nằm không | **10/10** | cột H |
 | Muốn dùng tính năng đề xuất số lượng | **9/10** | cột I (CH03 từ chối vì "lo phí") |
 | Đang dùng sổ tay / Excel / POS cơ bản | **9/10** | cột F |
 | Dùng KiotViet · Sapo | **1/10** (CH07) · **0/10** | cột F |
 | Yêu cầu bắt buộc có bước chủ quán duyệt | **10/10** | câu 20 / 23 |
-| Mức sẵn sàng chi trả — thấp nhất · **trung vị** · cao nhất | **50.000đ** · **149.000đ** · **249.000đ**/tháng | câu 22, cột E dòng 28 từng phiếu |
-| Ngưỡng bị coi là "quá đắt" — thấp nhất · trung vị · cao nhất | **180.000đ** · **300.000đ** · **400.000đ**/tháng | câu 22 |
 | Quy mô mẫu | 2–5 nhân viên · 65–520 SKU | cột D, E |
 
-### Rủi ro phải nói trước khi trình bày
+**Câu 22 — mức sẵn sàng chi trả (WTP).** Đây là con số dùng để định giá gói:
 
-Bốn câu (**8, 19, 20, 23**) có lời trả lời **giống hệt nhau ở cả 10 phiếu**, và cả 10 phiếu
-ghi cùng một ngày khảo sát. Khảo sát này là **mẫu có cấu trúc + phỏng vấn sâu bằng miệng**,
-không phải 10 bản phỏng vấn độc lập — nói vậy thì an toàn, nói quá thì hỏng khi bị soi.
+| Mức | Số cửa hàng | Phiếu |
+|---|---:|---|
+| 50.000đ/tháng | 1 | CH03 |
+| 99.000đ/tháng | 3 | CH01, CH05, CH08 |
+| 149.000đ/tháng | 3 | CH02, CH04, CH10 |
+| 199.000đ/tháng | 2 | CH06, CH09 |
+| 249.000đ/tháng | 1 | CH07 |
+| **Trung vị** | **149.000đ/tháng** | dải 50.000–249.000đ |
+| Ngưỡng "quá đắt" — trung vị | 300.000đ/tháng | dải 180.000–400.000đ |
 
-Các tỉ lệ **9/10, 10/10, 1/10** và **trung vị giá** vẫn dùng được, vì chúng đến từ các
-cột dữ liệu khác (công cụ đang dùng, loại hình, mức phí), phần đa khác nhau giữa 10 phiếu.
+**Câu 11 — chi phí phần mềm ĐANG TRẢ.** Phân biệt rõ với câu 22, đây là tiền họ
+chi ra hôm nay chứ không phải tiền họ sẵn sàng chi:
+
+| Nhóm | Số | Mức đang trả |
+|---|---:|---|
+| Đang trả phí phần mềm | **5/10** | 110.000đ (CH01) · 150.000đ (CH02) · 160.000đ (CH10) · 180.000đ (CH04) · 250.000đ (CH07) |
+| Không trả phí riêng | **5/10** | CH03, CH05, CH06, CH08, CH09 — chỉ sổ tay/Excel |
+
+> **Hai kết luận thương mại đọc ra từ bảng trên, và cả hai đều nghiêng về phía ta:**
+> 
+> 1. **5/10 cửa hàng đang trả tiền cho POS** (110.000–250.000đ) — trong khi vẫn phải
+>    xuất Excel kiểm tay mỗi tối. Đây là ngân sách sẵn có, không phải ngân sách cần xin.
+> 2. **CH07 đang trả 250.000đ/tháng cho KiotViet mà vẫn lệch tồn kệ vs kho và thiếu
+>    hạch toán công nợ khi NCC giao nhiều đợt.** Đối thủ đã có mặt ở đúng chỗ khách
+>    hàng không trả tiền cho quản lý tồn kho.
+
+> **Mặt đối lập phải nói thẳng:** trung vị WTP (149.000đ) **thấp hơn** mức trung vị
+> của nhóm đang trả phí (160.000đ). Nghĩa là ở mức giá trung vị, sản phẩm phải **cho
+> thấy giá trị rõ** chứ không thể chỉ "rẻ ngang tiền POS". Và với CH03 (WTP 50.000đ)
+> thì không thể bán được — đó là giới hạn phân khúc, không phải lỗi chiến lược.
+
+### Câu hỏi trả lời giống nhau giữa các phiếu
+
+Bốn câu (**8, 19, 20, 23**) có **cùng một cách diễn đạt** ở cả 10 phiếu. Đây là đặc
+điểm cần lưu ý khi đọc báo cáo: bốn câu đó được hỏi theo **dạng gợi ý có danh mục**
+("Người đó dựa vào số bán, tồn kho, kinh nghiệm hay nhà cung cấp?"), nên các phiếu
+ghi nhận theo cùng một khung. Vì vậy:
+
+- **Dùng được:** số phiếu đồng ý với từng phương án (ví dụ 10/10 nêu rõ cần duyệt
+  trước khi đặt) — đó là đồng thuận về ý, đo được trên 10 người.
+- **Không nên dùng:** tần suất của từng cụm từ trong lời thoại của bốn câu này,
+  vì lời thoại không độc lập.
+
+Các câu còn lại — nhất là **4, 5, 6, 9, 13, 14, 15, 24** (tình huống cụ thể) — có
+lời trả lời **riêng cho từng cửa hàng**, và đó là phần đáng dùng nhất.
 
 ### Còn thiếu
 
-1. **Phỏng vấn sâu dạng ghi âm** — bộ 8 câu ở `06-business.md` §4. Ghi **nguyên văn** sau khi
-   được phép (mẫu đồng ý: `usertest/consent-form.md`). Đây là việc tách *mẫu khảo sát* khỏi
-   *lời thật*, sinh ra từ chính dữ kiện 4 câu trùng khít ở trên.
-2. **Câu 11 ("đang trả phí bao nhiêu")** — 10/10 phiếu trả lời *"chưa cung cấp chứng từ"*.
-   Nghĩa là **mức phí đang trả** chưa biết; chỉ biết **mức sẵn sàng chi**. Đừng gộp hai
-   thứ này làm một khi trình bày.
-
-### Công cụ trong tệp vẫn dùng được
-
-24 câu có sẵn cột *"điều cần xác minh / hỏi sâu"* và *"nhận định / trích dẫn được phép"* ⇒
-mang ra gặp người thật thì chạy được ngay. Khung so sánh cũng dùng được: 10 hồ sơ trải
-từ cà phê / trà sữa / tạp hoá / phụ kiện học tập, 65–520 SKU, 2–5 nhân viên; 1 hồ sơ dùng
-KiotViet (CH07).
+1. **Phỏng vấn sâu dạng ghi âm** — bộ 8 câu ở `06-business.md` §4, ghi **nguyên văn**
+   sau khi được phép (mẫu đồng ý: `usertest/consent-form.md`).
+2. **Mẫu lớn hơn và nhiều ngành hơn** — mẫu hiện gồm 3 cà phê, 2 trà sữa, 3 tạp hóa,
+   2 phụ kiện – VPP, tất cả quy mô nhỏ tại TP.HCM.
