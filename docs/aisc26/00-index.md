@@ -312,7 +312,7 @@ hàng rào báo đã chặn, kèm số gốc và số bị bắt.
 |---|---|---|---|
 | 1 | ~~**Hạ giá gói trong `prisma/seed.js`**~~ | ✅ **Xong 2026-10-14** — 99.000 / 149.000 / 249.000đ, kiểm chứng qua API 4/4 |
 | 2 | ~~**Sửa 6 file route** đặt `requireModule` trước `authenticate`~~ | ✅ **Xong 2026-10-14** — quét lại 96 file: **0** file sai thứ tự. Xem `05-differentiation.md` §3 mục 6 vì sao `portal` sửa theo cách khác |
-| 3 | **Chạy lại `llm:eval --mode live`** khi hạn mức Gemini reset | Đường đo **đã chạy thật** nhưng hạn mức 20 lần/ngày đã hết (HTTP 429, *"retry in 10h23m"*). Lần chạy được: **616 token/lần gọi**, độ trễ TB 45,5 s, 4/26 lệnh thành công | 15 phút |
+| 3 | ~~**Chạy lại `llm:eval --mode live`**~~ | ✅ **Xong 2026-10-14** — đổi sang project Gemini mới + `gemini-3.5-flash-lite`. `mode=live` thật: F1 0,8515 → **0,8762**, ca chuyển người **13,33% → 5,00%**, **457,6 token/lần gọi** · **99,2** token/cặp · độ trễ TB **1 226 ms** · 62,5% LLM trả lời chắc chắn | — |
 | 4 | **6 người thử** | Đo thời gian thao tác thật — hiện chỉ có số ước lượng | nửa ngày |
 | 5 | **Phỏng vấn sâu 3–5 cửa hàng** bằng bộ 8 câu ở `06-business.md` §4 | Khảo sát 24 câu đã có, nhưng 4 câu quyết định thiết kế có lời trả lời trùng khít 10/10 ⇒ cần phỏng vấn sâu để tách mẫu khỏi lời thật | 1 ngày |
 | 6 | Người gán nhãn thứ hai | Để đo Cohen kappa (hiện `kappa: null, n: 0`) | 2 giờ |
@@ -323,7 +323,7 @@ hàng rào báo đã chặn, kèm số gốc và số bị bắt.
 |---|---|---|---|
 | 1 | **6 người thử** | **0 người** | Bộ công cụ đã sẵn (`usertest/`). `npm run usertest:print-sheets` rồi in phiếu ra hỏi |
 | 2 | **Phỏng vấn sâu** | **chưa có lời thật ở dạng ghi âm** | Bộ 8 câu ở `06-business.md` §4; ghi **nguyên văn** sau khi được phép |
-| 3 | Token LLM chạy hàng ngày | **đã đo 1 mẫu** | 616 token/lần gọi. Cần chạy lại khi hạn mức reset để có trung bình |
+| 3 | Token LLM chạy hàng ngày | **đã đo, `mode=live`** | **457,6 token/lần gọi** · **99,2** token/cặp · độ trễ TB **1 226 ms** · 62,5% LLM trả lời chắc chắn. Chỉ số trung bình theo ngày/tenant thì chưa — cần chạy liên tục nhiều ngày |
 
 ### 6.3 Nợ kỹ thuật nhỏ đã biết
 

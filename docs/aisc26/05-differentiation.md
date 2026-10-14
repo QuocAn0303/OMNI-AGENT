@@ -38,7 +38,7 @@ Legend: **✅** = có bằng chứng đọc được · **◐** = có một ph�
 | **AI viết lời nhưng không đổi số** | — | — | — | — | ✅ `assertNumbersUnchanged` — bắt được cả sai số **+1**; chế độ biểu diễn trên UI |
 | **Nhập kho tự hạch vào sổ cái kép** | — | — | — | — | ✅ Nợ 156 + Nợ 1331 = Có 331 + cộng công nợ NCC (`check:accounting`: 57/57, 0 thiếu) |
 | **Đo được sai số của đề xuất** | ❌ không thấy | ❌ không thấy | ❌ không thấy | ❌ không thấy | ◐ **giao thức đã viết, backtest CHƯA chạy** (P2/P5) |
-| Chi phí LLM trên luồng này | — | — | công bố "~$0.02/KH/tháng" cho bot Telegram | — | ✅ **0đ**: số lượng do công thức quyết định, LLM chỉ giải thích/soạn tin (có đường lui không-LLM). Đo thật: **616 token/lần gọi** |
+| Chi phí LLM trên luồng này | — | — | công bố "~$0.02/KH/tháng" cho bot Telegram | — | ✅ **0đ**: số lượng do công thức quyết định, LLM chỉ giải thích/soạn tin (có đường lui không-LLM). Đo thật (`mode=live`): **457,6 token/lần gọi**, **99,2 token/cặp**, độ trễ TB **1,2 s**, và **62,5%** số ca mơ hồ được LLM trả lời chắc chắn (5/8) |
 | Nhập dữ liệu hàng loạt có sẵn | ✅ | ✅ | ✅ (import Excel) | ✅ | ◐ có `import`, **chưa nạp được lịch sử đơn** (F4 trong `00-scope.md`) |
 
 > **Ba dòng `—` ở nhóm "AI viết lời nhưng không đổi số", "Nhập kho tự hạch sổ cái" và

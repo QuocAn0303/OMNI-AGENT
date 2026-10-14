@@ -146,6 +146,8 @@ const matchHybridBatch = async (inputs = [], catalog = [], opts = {}) => {
   let llmUsable = 0;
   let llmRejected = 0;
   let llmMisses = 0;
+  // Sửa 2026-10-14: tách nhóm "trượt" theo NGUYÊN NHÂN. Xem chỗ dùng ở dưới.
+  let llmMissBy = { api: 0, json: 0, hallucinatedSku: 0, other: 0 };
 
   for (const input of inputs) {
     const base = matcher.match(input.name, { inputSku: input.sku });
@@ -201,6 +203,17 @@ const matchHybridBatch = async (inputs = [], catalog = [], opts = {}) => {
     const ans = await askLlm(input.name, candidates);
     if (ans.via === 'unavailable') {
       llmMisses += 1;
+      // Sửa 2026-10-14 — VÍ SAO BỊ TRƯỢT, không gom chung thành "503".
+      // `llmMisses` gộp ba nguyên nhân rất khác nhau: lỗi API, JSON hỏng, và
+      // LLM trả mã ngoài danh sách ứng viên. Trước đây báo cáo tổng kết bảo
+      // "503/timeout" cho mọi trường hợp — nhưng đo trên DB thật cho thấy
+      // 13/13 lời gọi API đều HTTP 200, không có 503 nào. Ghi lại lý do để
+      // phân biệt lỗi hạ tầng với lỗi nội dung.
+      const r = String(ans.reason || '');
+      if (/không dùng được/i.test(r)) llmMissBy.api += 1;
+      else if (/JSON không hợp lệ/i.test(r)) llmMissBy.json += 1;
+      else if (/ngoài danh sách/i.test(r)) llmMissBy.hallucinatedSku += 1;
+      else llmMissBy.other += 1;
       // Đường lui: giữ điểm công thức, KHÔNG tự áp dụng, đưa người xác nhận.
       reviewQueue.push({
         ...row,
@@ -247,6 +260,14 @@ const matchHybridBatch = async (inputs = [], catalog = [], opts = {}) => {
     llmUsable,
     llmRejected,
     llmMisses,
+    // Lý do trượt, tách theo nhóm (sửa 2026-10-14). Trước đây báo cáo tổng kết
+    // gọi chung mọi thứ là "503/timeout", nhưng đo thật cho thấy API không hỏng
+    // — hầu hết là LLM trả JSON sai khuôn dạng.
+    llmMissBy,
+    // Cơ sở để tính tỉ lệ thành công ĐÚNG: llmCalls là số ca được hỏi LLM,
+    // llmUsable là số ca LLM trả lời chắc chắn. (Trước đây báo cáo chia
+    // llmUsable cho tổng số lời gọi cả test + dev nên ra tỉ lệ bị thấp hơn thật.)
+    tyLeDungDuoc: llmCalls > 0 ? Number(((llmUsable / llmCalls) * 100).toFixed(1)) : null,
     nhanTuDong: AUTO_ACCEPT_SCORE,
     nhanReview: REVIEW_SCORE,
     nhanNguoi: HUMAN_THRESHOLD,

@@ -1,6 +1,6 @@
 {
-  "runId": "S10-20261014143015",
-  "at": "2026-10-14T14:30:15.022Z",
+  "runId": "S10-20261014153015",
+  "at": "2026-10-14T15:30:15.673Z",
   "labelSource": "nhan tay (label_sku do nguoi dien)",
   "dataset": {
     "labelSheet": "data\\aisc26\\skus\\labels\\label-sheet.csv",
@@ -15,9 +15,9 @@
     "enabled": true,
     "configured": true,
     "provider": "gemini",
-    "model": "gemini-3.8-flash",
+    "model": "gemini-3.5-flash-lite",
     "throttleMs": 1200,
-    "backoffFactor": 64,
+    "backoffFactor": 1,
     "recordStore": null
   },
   "confThreshold": 0.85,
@@ -52,14 +52,14 @@
     "hybrid": {
       "n": 60,
       "labelled": 56,
-      "tp": 43,
-      "fp": 9,
-      "fn": 6,
-      "precision": 0.8269,
-      "recall": 0.8776,
-      "f1": 0.8515,
-      "escalated": 8,
-      "fallbackRate": 0.1333
+      "tp": 46,
+      "fp": 11,
+      "fn": 2,
+      "precision": 0.807,
+      "recall": 0.9583,
+      "f1": 0.8762,
+      "escalated": 3,
+      "fallbackRate": 0.05
     }
   },
   "dev": {
@@ -78,47 +78,56 @@
     "hybrid": {
       "n": 60,
       "labelled": 51,
-      "tp": 39,
-      "fp": 16,
-      "fn": 2,
-      "precision": 0.7091,
-      "recall": 0.9512,
-      "f1": 0.8125,
-      "escalated": 5,
-      "fallbackRate": 0.0833
+      "tp": 40,
+      "fp": 19,
+      "fn": 1,
+      "precision": 0.678,
+      "recall": 0.9756,
+      "f1": 0.8,
+      "escalated": 1,
+      "fallbackRate": 0.0167
     }
   },
   "f1DiffBootstrap": {
     "n": 60,
     "seed": 20261003,
     "resamples": 1000,
-    "point": 0,
-    "ciLow": 0,
-    "ciHigh": 0,
+    "point": 0.0247,
+    "ciLow": -0.014,
+    "ciHigh": 0.0679,
     "excludesZero": false
   },
   "throughput": {
-    "fuzzyMs": 576,
-    "hybridMs": 482828,
-    "msPerPairFuzzy": 9.6,
-    "msPerPairHybrid": 8047.13
+    "fuzzyMs": 358,
+    "hybridMs": 10745,
+    "msPerPairFuzzy": 5.97,
+    "msPerPairHybrid": 179.08
   },
   "llmCalls": 8,
-  "llmUsable": 0,
+  "llmUsable": 5,
+  "llmRejected": 1,
+  "llmMisses": 2,
+  "llmMissBy": {
+    "api": 0,
+    "json": 2,
+    "hallucinatedSku": 0,
+    "other": 0
+  },
+  "tyLeDungDuoc": 62.5,
   "usage": {
     "measured": true,
     "soLanGoi": 13,
-    "promptTokens": 0,
-    "completionTokens": 0,
-    "totalTokens": 0,
-    "doTreTrungBinhMs": 44097,
+    "promptTokens": 5022,
+    "completionTokens": 927,
+    "totalTokens": 5949,
+    "doTreTrungBinhMs": 1226,
     "luuY": "doTreTrungBinhMs tinh ca lan ERROR (503/timeout) — la chi phi that"
   },
   "tokensPerPair": {
-    "trenMoiCapDaDoi": 0,
-    "trenMoiCapKiemDinh": 0,
-    "trenMoiCapDaNhan": 0
+    "trenMoiCapDaDoi": 457.6,
+    "trenMoiCapKiemDinh": 99.2,
+    "trenMoiCapDaNhan": 55.6
   },
-  "publishable": false,
-  "lyDoKhongCongBo": "mode=live nhung KHONG co cau tra loi LLM nao dung duoc (het ha muc 429 / 503) => hybrid chay dung bang fuzzy, khong phai so cua AI"
+  "publishable": true,
+  "lyDoKhongCongBo": null
 }

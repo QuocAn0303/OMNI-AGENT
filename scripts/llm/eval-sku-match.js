@@ -419,6 +419,12 @@ const main = async () => {
     },
     llmCalls: hybrid.stats.llmCalls,
     llmUsable: hybrid.stats.llmUsable,
+    llmRejected: hybrid.stats.llmRejected,
+    llmMisses: hybrid.stats.llmMisses,
+    // Lý do trượt tách nhóm (sửa 2026-10-14 — trước đây báo cáo gọi chung là
+    // "503/timeout", nhưng đo thật cho thấy API không hỏng).
+    llmMissBy: hybrid.stats.llmMissBy,
+    tyLeDungDuoc: hybrid.stats.tyLeDungDuoc,
     // Token/độ trễ đọc thật từ `llm_usage_logs` (sửa 2026-10-14 — trước đây gán
     // cứng chuỗi "CHUA DO" dù đã chạy live).
     usage,
@@ -466,12 +472,22 @@ const main = async () => {
       `${tokensPerPairNumber.trenMoiCapKiemDinh} tren moi cap kiem dinh · ` +
       `${tokensPerPairNumber.trenMoiCapDaNhan} tren moi cap da nhan`,
     );
-    const rate = usage.soLanGoi > 0 ? (hybrid.stats.llmUsable / usage.soLanGoi) * 100 : 0;
-    L.push(`ty le lenh LLM thanh cong: ${rate.toFixed(1)}% (${hybrid.stats.llmUsable}/${usage.soLanGoi})`);
-    if (rate < 50) {
+    // Sửa 2026-10-14 — cảnh báo cũ ghi "503/timeout" cho MỌI trường hợp trượt.
+    // Đo trên DB thật cho thấy 13/13 lời gọi API đều HTTP 200: trượt phần lớn vì
+    // LLM trả JSON sai khuôn dạng, không phải vì hạ tầng. Ghi đúng nguyên nhân.
+    const missBy = hybrid.stats.llmMissBy || {};
+    const tyLe = hybrid.stats.tyLeDungDuoc;
+    L.push(`ty le LLM tra loi chac chan: ${tyLe}% (${hybrid.stats.llmUsable}/${hybrid.stats.llmCalls} ca duoc hoi)`);
+    if (tyLe !== null && tyLe < 50) {
+      const goc = [];
+      if (missBy.api) goc.push(`${missBy.api} loi API`);
+      if (missBy.json) goc.push(`${missBy.json} JSON sai khuon dang`);
+      if (missBy.hallucinatedSku) goc.push(`${missBy.hallucinatedSku} tra ma ngoai danh sach ung vien`);
+      if (missBy.other) goc.push(`${missBy.other} ly do khac`);
       L.push('');
-      L.push('!! TINH CUC THAP: qua mot nua so lenh goi that bai (503/timeout). Phan tang');
-      L.push('   cua hybrid tren bo mau nay KHONG dien dai — dung no de so sanh voi nguoi khac.');
+      L.push('!! TINH DUNG DUOC THAP. Phan tang cua hybrid tren bo mau nay KHONG');
+      L.push('   dien dai — dung no de so sanh voi nguoi khac.');
+      if (goc.length) L.push(`   Ly do truot: ${goc.join('; ')}.`);
     }
   } else {
     L.push(`token/cap: CHUA DO — ${usage.lyDo}`);

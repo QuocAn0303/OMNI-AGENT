@@ -208,7 +208,8 @@ nguồn đã đọc** (không phải chắc chắn không có) · — chưa xác
 | Bút toán `tenantId` NULL (cách ly tenant vỡ) | **18 → 0** | `npm run check:tenant` |
 | Màn hình đề xuất **ẩn** SKU dưới ngưỡng | **458 / 468 → 0** | `npm run measure:evidence` |
 | PO có **lead time đo được** | **0/20 → 57/57** | `npm run demo:check` |
-| **Token thật** mỗi lần gọi LLM | **616** (381 prompt + 46 completion) | `npm run llm:eval -- --mode live` |
+| **Token thật** mỗi lần gọi LLM | **457,6** · **99,2**/cặp · độ trễ **1 226 ms** | `npm run llm:eval -- --mode live` |
+| Ca chuyển người khi khớp SKU mơ hồ | **13,33% → 5,00%** (8/60 → 3/60) | `npm run llm:eval -- --mode live` |
 | Tỉ lệ chuyển người khi SKU mơ hồ | **13,33%** | `npm run llm:eval` |
 | Khảo sát 10 cửa hàng: hết hàng / nhập dư / muốn đề xuất | **9/10 · 10/10 · 9/10** | tệp khảo sát, sheet `TONG HOP` |
 | Trung vị sẵn sàng chi trả | **149.000đ/tháng** (dải 50–249k) | cột E dòng 28 các phiếu `CH01`–`CH10` |
@@ -217,7 +218,7 @@ nguồn đã đọc** (không phải chắc chắn không có) · — chưa xác
 
 | Cần đo | Vì sao chưa có | Lệnh/đường đi |
 |---|---|---|
-| Độ đúng khớp SKU của **phần AI** | `mode=live` **đã chạy thật**, nhưng hạn mức Gemini 20 lần/ngày đã hết (HTTP 429); lần chạy được chỉ 1/8 lệnh thành công | chạy lại `npm run llm:eval -- --mode live` khi hạn mức reset |
+| Độ đúng khớp SKU của **phần AI** | `mode=live` **đã chạy thật**: F1 0,8515 → **0,8762**. Nhưng CI95 [−0,014 ; 0,0679] **vẫn chứa 0** ⇒ không kết luận được hybrid tốt hơn | cần mẫu nhiều hơn để CI tách khỏi 0 |
 | Chênh lệch hybrid vs fuzzy | **+0,0113 F1, CI95 [0; 0,0379]** — CI **vẫn chứa 0**, chưa kết luận được | cần mẫu LLM thành công nhiều hơn |
 | Độ tin cậy giữa người gán | chỉ 1 người gán ⇒ Cohen kappa chưa đo được | cần người gán thứ hai, độc lập |
 | Độ đúng khớp SKU trên dữ liệu xuất sàn thật | tệp UCI chỉ dùng để dựng bộ nhãn | cần tệp xuất sàn thật |
