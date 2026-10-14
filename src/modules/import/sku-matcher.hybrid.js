@@ -53,10 +53,39 @@ const z = require('zod');
  * LLM trả về `sku` (mã hàng) + `confidence` + `reason`; KHÔNG được tự tạo mã mới.
  */
 const LlmMatchSchema = z.object({
-  sku: z.string().min(1),
+  // Sửa 2026-10-15: cho phép RỖNG. Chuỗi rỗng là cách LLM nói "không ứng viên
+  // nào khớp" — một câu trả lời hợp lệ, không phải dữ liệu hỏng. Bản cũ đặt
+  // `.min(1)` khiến mọi câu trả lời dạng này bị báo nhầm là "JSON sai khuôn".
+  sku: z.string(),
   confidence: z.number().min(0).max(1),
   reason: z.string().max(300).optional().default(''),
 });
+
+/**
+ * Schema đầu ra cho Gemini (thêm 2026-10-15) — structured output.
+ *
+ * Gemini nhận schema theo tập con OpenAPI 3.0. Cần `responseMimeType:
+ * "application/json"` đi kèm (đã có ở `llm.js` khi `jsonMode: true`).
+ *
+ * VÌ SAO THÊM: đo trên project Gemini mới cho thấy **2/8** ca trả về JSON sai
+ * khuôn — dù `responseMimeType` đã bật. Đo `llm_usage_logs`: 13/13 lời gọi
+ * HTTP 200, **0** lỗi hạ tầng ⇒ lỗi thuần về định dạng. Schema ràng buộc
+ * đúng ba trường này nên loại bỏ hẳn nhóm lỗi đó.
+ *
+ * PHẢI GIỮ KHỚP VỚI `LlmMatchSchema` ở trên. Schema ở đây chỉ ràng buộc HÌNH
+ * DẠNG; phép kiểm chéo "mã có nằm trong danh sách ứng viên không" vẫn do
+ * `askLlm` làm ở phía sau — không thay bằng schema được, vì schema không biết
+ * danh sách ứng viên.
+ */
+const GEMINI_RESPONSE_SCHEMA = {
+  type: 'OBJECT',
+  properties: {
+    sku: { type: 'STRING', description: 'Ma hang chon trong danh sach ung vien duoc dua' },
+    confidence: { type: 'NUMBER', description: 'Do tin cay tu 0 den 1' },
+    reason: { type: 'STRING', description: 'Ly do ngan gon, toi da 300 ky tu' },
+  },
+  required: ['sku', 'confidence'],
+};
 
 const SYSTEM_PROMPT = [
   'Bạn là bộ khớp mã hàng cho hệ thống ERP tiếng Việt.',
@@ -94,6 +123,19 @@ const askLlm = async (externalName, candidates) => {
     system: SYSTEM_PROMPT,
     prompt: buildUserPrompt(externalName, candidates),
     jsonMode: true,
+    responseSchema: GEMINI_RESPONSE_SCHEMA,
+    // TÁI LẬP ĐƯỢC — đặt temperature = 0 (2026-10-15).
+    //
+    // Bằng chứng đo được: chạy `llm:eval --mode live` ba lần liên tiếp trên cùng
+    // dữ liệu cho ba kết quả khác nhau — F1 0,8868 / 0,8762 / 0,8654; recall
+    // 0,9792 / 0,9583 / 0,9375. Mặc định temperature = 0,2 khiến LLM tự chấm điểm
+    // khác nhau mỗi lần, và chỉ một ca biên là đủ đổi kết luận.
+    //
+    // Với một hàm đánh giá (evaluation harness) thì **tính tái lập quan trọng hơn
+    // tính "hay"**. Cùng dữ liệu phải cho cùng con số, nếu không con số đó không
+    // mang thông tin gì. Vẫn có phần không tái lập do bản thân provider, nhưng
+    // tắt được phần do mình quyết định.
+    temperature: 0,
     maxOutputTokens: 300,
   });
 
@@ -107,6 +149,23 @@ const askLlm = async (externalName, candidates) => {
     return { ...unavailable, reason: `JSON không hợp lệ: ${check.error.issues[0]?.message || 'unknown'}` };
   }
   const { sku, confidence, reason } = check.data;
+
+  // LLM nói "không có ứng viên nào khớp" bằng cách trả `sku` RỖNG.
+  //
+  // Sửa 2026-10-15 — đây là câu trả lời ĐÚNG, không phải lỗi định dạng.
+  // Bản cũ để `sku: z.string().min(1)`, nên chuỗi rỗng bị `safeParse` loại và bị
+  // ghi nhầm thành "JSON không hợp lệ". Thực tế LLM trả đúng, hệ thống lại báo sai
+  // nguyên nhân ⇒ đo sai tỉ lệ lỗi và giấu mất một nhóm hành vi hợp lệ.
+  // Đo được: ví dụ tên "12 PENCIL SMALL TUBE" → `{"sku":"","confidence":0}`.
+  if (!sku || !sku.trim()) {
+    return {
+      sku: null,
+      confidence: 0,
+      needsHuman: true,
+      via: 'no-match',
+      reason: reason || 'LLM không tìm thấy ứng viên nào phù hợp',
+    };
+  }
 
   // Chống bịa mã: sku phải nằm trong ứng viên (nguyên tắc 2, `01-llm-role.md` §3.2).
   const hit = candidates.find((c) => c.sku === sku);
@@ -148,6 +207,8 @@ const matchHybridBatch = async (inputs = [], catalog = [], opts = {}) => {
   let llmMisses = 0;
   // Sửa 2026-10-14: tách nhóm "trượt" theo NGUYÊN NHÂN. Xem chỗ dùng ở dưới.
   let llmMissBy = { api: 0, json: 0, hallucinatedSku: 0, other: 0 };
+  // LLM trả lời "không có ứng viên nào khớp" — hợp lệ, KHÔNG tính vào lỗi.
+  let llmNoMatch = 0;
 
   for (const input of inputs) {
     const base = matcher.match(input.name, { inputSku: input.sku });
@@ -210,7 +271,10 @@ const matchHybridBatch = async (inputs = [], catalog = [], opts = {}) => {
       // 13/13 lời gọi API đều HTTP 200, không có 503 nào. Ghi lại lý do để
       // phân biệt lỗi hạ tầng với lỗi nội dung.
       const r = String(ans.reason || '');
-      if (/không dùng được/i.test(r)) llmMissBy.api += 1;
+      // `no-match` KHÔNG phải lỗi: LLM trả lời đúng là không có ứng viên nào
+      // khớp. Đếm riêng để không gộp nhầm vào nhóm thất bại.
+      if (ans.via === 'no-match') llmNoMatch += 1;
+      else if (/không dùng được/i.test(r)) llmMissBy.api += 1;
       else if (/JSON không hợp lệ/i.test(r)) llmMissBy.json += 1;
       else if (/ngoài danh sách/i.test(r)) llmMissBy.hallucinatedSku += 1;
       else llmMissBy.other += 1;
@@ -264,6 +328,7 @@ const matchHybridBatch = async (inputs = [], catalog = [], opts = {}) => {
     // gọi chung mọi thứ là "503/timeout", nhưng đo thật cho thấy API không hỏng
     // — hầu hết là LLM trả JSON sai khuôn dạng.
     llmMissBy,
+    llmNoMatch,
     // Cơ sở để tính tỉ lệ thành công ĐÚNG: llmCalls là số ca được hỏi LLM,
     // llmUsable là số ca LLM trả lời chắc chắn. (Trước đây báo cáo chia
     // llmUsable cho tổng số lời gọi cả test + dev nên ra tỉ lệ bị thấp hơn thật.)
@@ -282,6 +347,7 @@ module.exports = {
   matchHybridBatch,
   askLlm,
   LlmMatchSchema,
+  GEMINI_RESPONSE_SCHEMA,
   SYSTEM_PROMPT,
   buildUserPrompt,
   HUMAN_THRESHOLD,

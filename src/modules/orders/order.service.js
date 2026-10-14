@@ -33,14 +33,36 @@ const logger = require('../../utils/logger');
 const toNumber = (value) => Number(value || 0);
 const round2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
 
+/**
+ * Sinh mã đơn `ORD-YYYYMMDD-XXXX`, tăng dần trong ngày.
+ *
+ * SỬA 2026-10-15 — LỖI THẬT, bắt được khi chạy `demo:check` lúc 01:00 giờ VN.
+ *
+ * Bản cũ dùng HAI ĐỒNG HỒ KHÁC NHAU cho cùng một con số:
+ *   · tiền tố ngày  ← `new Date().toISOString()` = **giờ UTC**
+ *   · mốc đếm      ← `setHours(0,0,0,0)`            = **giờ local**
+ * Ở Việt Nam (UTC+7), giữa 00:00–07:00 mỗi đêm, UTC vẫn còn ở ngày hôm trước
+ * ⇒ tiền tố là ngày MỚI nhưng đếm trên ngày CŨ. Kết quả: sinh lại đúng mã đã có
+ * và ném `Unique constraint failed on ("orderCode")`. Lỗi chắc chắn tái diễn mỗi
+ * đêm, không phải rủi ro ngẫu nhiên.
+ *
+ * Nay tính cả tiền tố lẫn mốc đếm từ **cùng một đồng hồ local**.
+ *
+ * Hạn chế còn lại (CHƯA sửa vì cần thiết kế rộng hơn): `count` không lọc theo
+ * tenant, nên hai tenant tạo đơn cùng ngày có thể tranh nhau số thứ tự; và
+ * `count+1` vẫn hỏng nếu có đơn bị xoá trong ngày. Sửa đúng cần một bộ đếm
+ * riêng (sequence theo ngày) — đã ghi ở `docs/aisc26/00-index.md` §6.3.
+ */
 const generateOrderCode = async (tx = prisma) => {
-  const today = new Date().toISOString().slice(0, 10).replace(/-/g, "");
-  const start = new Date();
-  start.setHours(0, 0, 0, 0);
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, "0");
+  const d = String(now.getDate()).padStart(2, "0");
+  const start = new Date(y, now.getMonth(), now.getDate());
   const count = await tx.order.count({
     where: { createdAt: { gte: start } },
   });
-  return `ORD-${today}-${String(count + 1).padStart(4, "0")}`;
+  return `ORD-${y}${m}${d}-${String(count + 1).padStart(4, "0")}`;
 };
 //tính toán logic giảm giá phức tạp: hỗ trợ cả giảm giá theo % và theo số tiền, áp dụng cho từng item hoặc toàn đơn hàng, đảm bảo không vượt quá giá trị gốc
 const calculateDiscount = (base, type = "NONE", value = 0) => {

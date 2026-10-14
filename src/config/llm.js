@@ -258,12 +258,41 @@ const recordUsage = async ({ task, provider, model, mode, usage, latencyMs, succ
   }
 };
 
-const callModel = async (model, { system, prompt, jsonMode, temperature, maxOutputTokens }) => {
+/**
+ * Gọi Gemini.
+ *
+ * `responseSchema` (thêm 2026-10-15): buộc model trả về đúng khuôn dữ liệu.
+ *
+ * VÌ SAO CẦN — bằng chứng đo được trên project Gemini mới:
+ *   `responseMimeType: "application/json"` ĐÃ có sẵn, nhưng vẫn có **2/8** ca
+ *   trả về JSON sai khuôn ⇒ `LlmMatchSchema.safeParse` thất bại ⇒ hệ thống loại
+ *   bỏ và đẩy sang người dùng xác nhận. Đo trên `llm_usage_logs`: **13/13** lời
+ *   gọi HTTP 200, **0** lỗi hạ tầng ⇒ 100% là lỗi ĐỊNH DẠNG, không phải 503.
+ *
+ *   `responseMimeType` chỉ bảo model "trả về JSON"; `responseSchema` mới bảo
+ *   "JSON đúng các trường này, kiểu này". Gemini hỗ trợ schema theo tập con
+ *   OpenAPI 3.0 nên không cần model nào đặc biệt.
+ *
+ *   Hệ quả: thất bại vì khuôn biến về 0; những lỗi còn lại là việc nội dung
+ *   (LLM tự chấm điểm thấp, hoặc trả mã ngoài danh sách ứng viên) — vốn đã có
+ *   đường xử lý riêng.
+ *
+ *   QUAN TRỌNG: schema CHỈ ràng buộc HÌNH DẠNG, không ép nội dung. Ràng buộc
+ *   "mã trả về phải nằm trong danh sách ứng viên" vẫn do `sku-matcher.hybrid.js`
+ *   kiểm — đó là kiểm chéo phía sau model, không phải việc của schema.
+ */
+const callModel = async (model, { system, prompt, jsonMode, temperature, maxOutputTokens, responseSchema }) => {
   const c = config();
   const url = `${c.baseUrl}/models/${encodeURIComponent(model)}:generateContent?key=${encodeURIComponent(c.apiKey)}`;
   const body = {
     contents: [{ role: "user", parts: [{ text: prompt }] }],
-    generationConfig: { temperature, maxOutputTokens, ...(jsonMode ? { responseMimeType: "application/json" } : {}) },
+    generationConfig: {
+      temperature,
+      maxOutputTokens,
+      ...(jsonMode ? { responseMimeType: "application/json" } : {}),
+      // Chỉ có hiệu lực khi đi kèm responseMimeType = application/json.
+      ...(jsonMode && responseSchema ? { responseSchema } : {}),
+    },
     ...(system ? { systemInstruction: { parts: [{ text: system }] } } : {}),
   };
   const json = await requestJson(url, body);
@@ -362,6 +391,9 @@ const generateText = async (opts = {}) => {
     throw new Error(`Chua cau hinh LLM cloud (LLM_PROVIDER=${c.provider}). ${hint}`);
   }
   const { system, prompt, jsonMode = false, temperature = 0.2, maxOutputTokens = 2048 } = opts;
+  // Schema đầu ra do CALLER đưa vào. Chỉ Gemini dùng; provider khác bỏ qua.
+  // Xem `callModel` để hiểu vì sao cần.
+  const responseSchema = opts.responseSchema || null;
   const task = opts.task || "OTHER";
   const startedAt = Date.now();
 
@@ -397,7 +429,7 @@ const generateText = async (opts = {}) => {
       try {
         const { text, usage } =
           target.kind === "gemini"
-            ? await callModel(model, { system, prompt, jsonMode, temperature, maxOutputTokens: budget })
+            ? await callModel(model, { system, prompt, jsonMode, temperature, maxOutputTokens: budget, responseSchema })
             : await callOpenAIChat({
                 baseUrl: target.baseUrl, apiKey: c.apiKey, model,
                 system, prompt, jsonMode, temperature, maxTokens: budget,

@@ -80,6 +80,7 @@
     "demo:check": "node scripts/demo/demo-check.js",
     "demo:login": "node scripts/demo/ensure-demo-login.js",
     "llm:labels": "node scripts/llm/build-label-set.js",
+    "llm:labels:b": "node scripts/llm/label-second.js",
     "llm:eval": "node scripts/llm/eval-sku-match.js",
     "llm:policy": "node scripts/check-llm-policy.js",
     "smoke:llm-usage": "node scripts/smoke-llm-usage.js",

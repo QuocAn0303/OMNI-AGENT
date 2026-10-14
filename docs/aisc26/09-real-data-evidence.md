@@ -218,7 +218,7 @@ bị hỏi "gọi được người đó không".
 | 6 người thử | **0 người** | Đồng cục đã sẵn — `npm run usertest:print-sheets` rồi in phiếu ra hỏi |
 | Phỏng vấn khách hàng | **0 người** | Bộ 24 câu trong tệp xlsx — xoá cột "Trả lời thực tế" rồi điền lại |
 | Số token LLM thật | **đã đo, `mode=live`** | `npm run llm:eval -- --mode live` — **457,6 token/lần gọi** (5022 prompt + 927 completion / 13 lời gọi), **99,2 token/cặp kiểm định**, độ trễ TB **1 226 ms**, **13/13 lời gọi HTTP 200**, 62,5% ca LLM trả lời chắc chắn. Lưu ý: **CI95 [−0,014 ; 0,0679] vẫn chứa 0** ⇒ không kết luận được hybrid tốt hơn fuzzy; điểm đáng chú ý là **số ca chuyển người xác nhận giảm 13,33% → 5,00%** (8/60 → 3/60) |
-| Độ tin cậy giữa người gán | **chưa đo** | Cần người gán thứ hai độc lập |
+| Độ tin cậy giữa người gán (Cohen κ) | **chưa đo — n = 0** | Đã sửa lỗi công cụ (bản cũ so *tên* người gán chứ không phải câu trả lời ⇒ κ là số bùa). Nay có `label_a_*`/`label_b_*` + bản nhãn mù 107 cặp. Cần người thứ hai gán: `npm run llm:labels:b -- --export` |
 | Thời gian người thử | **chưa đo** | Bấm giờ khi chạy 6 phiếu |
 | Chi phí LLM/ngày/tenant | **chưa đo** | Sau khi có số token thật |
 | Đơn giá PA/PB/PC | **chốt sau khi có phỏng vấn** | `06-business.md` §5.3 |

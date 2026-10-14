@@ -209,8 +209,8 @@ nguồn đã đọc** (không phải chắc chắn không có) · — chưa xác
 | Màn hình đề xuất **ẩn** SKU dưới ngưỡng | **458 / 468 → 0** | `npm run measure:evidence` |
 | PO có **lead time đo được** | **0/20 → 57/57** | `npm run demo:check` |
 | **Token thật** mỗi lần gọi LLM | **457,6** · **99,2**/cặp · độ trễ **1 226 ms** | `npm run llm:eval -- --mode live` |
-| Ca chuyển người khi khớp SKU mơ hồ | **13,33% → 5,00%** (8/60 → 3/60) | `npm run llm:eval -- --mode live` |
-| Tỉ lệ chuyển người khi SKU mơ hồ | **13,33%** | `npm run llm:eval` |
+| **Ca chuyển người khi SKU mơ hồ** | **13,33% → 3,33–6,67%** — đều đặn qua cả 5 lần chạy | `npm run llm:eval -- --mode live` |
+| **Độ đúng khớp SKU của phần AI** (so với chỉ công thức) | F1 0,8515 → **0,8654 – 0,8868** *(chạy 5 lần)* · Recall **0,9375 – 0,9792** · Precision **0,8036 – 0,8103** | `npm run llm:eval -- --mode live` |
 | Khảo sát 10 cửa hàng: hết hàng / nhập dư / muốn đề xuất | **9/10 · 10/10 · 9/10** | tệp khảo sát, sheet `TONG HOP` |
 | Trung vị sẵn sàng chi trả | **149.000đ/tháng** (dải 50–249k) | cột E dòng 28 các phiếu `CH01`–`CH10` |
 
@@ -218,12 +218,11 @@ nguồn đã đọc** (không phải chắc chắn không có) · — chưa xác
 
 | Cần đo | Vì sao chưa có | Lệnh/đường đi |
 |---|---|---|
-| Độ đúng khớp SKU của **phần AI** | `mode=live` **đã chạy thật**: F1 0,8515 → **0,8762**. Nhưng CI95 [−0,014 ; 0,0679] **vẫn chứa 0** ⇒ không kết luận được hybrid tốt hơn | cần mẫu nhiều hơn để CI tách khỏi 0 |
-| Chênh lệch hybrid vs fuzzy | **+0,0113 F1, CI95 [0; 0,0379]** — CI **vẫn chứa 0**, chưa kết luận được | cần mẫu LLM thành công nhiều hơn |
-| Độ tin cậy giữa người gán | chỉ 1 người gán ⇒ Cohen kappa chưa đo được | cần người gán thứ hai, độc lập |
+| Chênh lệch hybrid vs fuzzy | **chưa kết luận được**: chạy 5 lần, F1 dao động 0,8654–0,8868, CI95 **luôn chứa 0** (5/5 lần). Khi LLM làm việc nhiều nhất thì Recall tăng nhưng **Precision giảm** | cần mẫu lớn hơn và nhiều lần chạy |
+| Cohen κ giữa hai người gán | **chưa đo được** (n = 0). Đã phát hiện và sửa lỗi công cụ: bản cũ tính κ bằng cách so **tên** hai người chứ không phải câu trả lời. Nay đã có cột `label_a_*` / `label_b_*` và bản nhãn mù cho người thứ hai | người thứ hai gán độc lập, rồi `npm run llm:labels:b -- --load` |
 | Độ đúng khớp SKU trên dữ liệu xuất sàn thật | tệp UCI chỉ dùng để dựng bộ nhãn | cần tệp xuất sàn thật |
 | Thời gian người thử | Bộ công cụ đã sẵn, **chưa có ai thử** | `docs/aisc26/usertest/README.md` |
-| Lời phỏng vấn **sâu** dạng ghi âm | khảo sát 24 câu đã có; nhưng 4 câu (8, 19, 20, 23) trùng khít 10/10 nên cần hỏi sâu để tách mẫu khỏi lời thật | bộ 8 câu ở `06-business.md` §4 |
+| Lời phỏng vấn **sâu** dạng ghi âm | khảo sát 24 câu đã điền; nhưng câu 8, 19, 20, 23 hỏi theo dạng gợi ý có danh mục nên lời thoại không độc lập — **dùng được ở mức số phiếu đồng ý**, không dùng được ở mức tần suất cụm từ | bộ 8 câu ở `06-business.md` §4, ghi **nguyên văn** |
 | Thí nghiệm có ràng buộc ≥ 95% | post-hoc chưa đủ; cần lưới rộng hơn, tiền đăng ký mới | `03-evaluation-protocol.md` §13.2 |
 
 **Hạn chế kỹ thuật đã biết:** 6 file route còn đặt middleware kiểm gói trước middleware xác thực ⇒ 6 module chưa thật sự bị chặn theo gói, nên tôi không nói "AI chỉ ở gói Business" như một điều đã bảo đảm. · Luồng demo bỏ qua `pg_notify` và phần HTTP (có script riêng phủ) · Giá gói trong seed còn cao hơn trung vị khảo sát 3,3 lần, đang hạ. · CROSTON không vượt ROP trên tập này.

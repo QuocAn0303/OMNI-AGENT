@@ -93,13 +93,34 @@ const splitDevTest = (pairs, testShare = TEST_SHARE) => {
 };
 
 /**
- * Cohen's κ cho 2 người gán (S10). Cần cả 2 cột `labeler_a`/`labeler_b` có tên.
- * Không đủ dữ liệu ⇒ trả `null` + lý do, KHÔNG bịa κ.
+ * Cohen's κ cho 2 người gán (S10).
+ *
+ * SỬA 2026-10-15 — BẢN CŨ TÍNH SAI BIẾN NÀY.
+ * Bản cũ nhận `pairs.map(p => p.labeler_a)` và `pairs.map(p => p.labeler_b)`,
+ * tức so **TÊN** hai người chứ không phải câu trả lời của họ. Hệ quả:
+ *   · hai người khác tên ⇒ mọi cặp đều "bất đồng" ⇒ κ luôn bằng 0;
+ *   · hai người cùng tên ⇒ mọi cặp đều "thống nhất" ⇒ κ luôn bằng 1.
+ * Cả hai đều là con số bùa, không đo được gì về độ tin cậy của nhãn.
+ *
+ * Nay nhận `label_a_sku` / `label_b_sku` — mỗi người một cột trả lời riêng,
+ * do `scripts/llm/label-second.js --migrate` tạo ra.
+ *
+ * Chuỗi rỗng được coi là một giá trị hợp lệ: cả hai đều để trống nghĩa là
+ * "không ứng viên nào đúng" — đó là câu trả lời có chủ đích, không phải thiếu dữ
+ * liệu. Cần hai cùng trống mới loại khỏi mẫu; chỉ một cột trống thì tính là
+ * bất đồng (vì một người nói "không", người kia nói "có").
  */
 const cohensKappa = (a, b) => {
-  const pairs = a.map((x, i) => [x, b[i]]).filter(([x, y]) => x && y);
-  const n = pairs.length;
-  if (!n) return { kappa: null, n: 0, reason: 'chua co cap nao ca hai nguoi gan cung mot nhan' };
+  // `String(x ?? '')` — nếu không, `undefined` lọt qua `!== ''` và mọi cặp chưa
+  // được gán đều bị tính là "thống nhất". Đó chính là lỗi làm κ = 1 với n = 120
+  // khi thực tế chỉ có 6 nhãn của người B.
+  const has = (x) => String(x ?? '').trim() !== '';
+  const idx = a.map((_, i) => i).filter((i) => has(a[i]) && has(b[i]));
+  const n = idx.length;
+  if (!n) {
+    return { kappa: null, n: 0, reason: 'chua co cap nao ca hai nguoi gan cung mot nhan (can nhan lap day cot label_b_sku)' };
+  }
+  const pairs = idx.map((i) => [a[i], b[i]]);
   const cats = [...new Set(pairs.flat())];
   const agree = pairs.filter(([x, y]) => x === y).length;
   const po = agree / n;
@@ -110,7 +131,16 @@ const cohensKappa = (a, b) => {
     pe += pa * pb;
   }
   const kappa = pe >= 1 ? 1 : (po - pe) / (1 - pe);
-  return { kappa: round(kappa, 4), n, po: round(po, 4), pe: round(pe, 4), low: kappa < 0.6 };
+  return {
+    kappa: round(kappa, 4),
+    n,
+    po: round(po, 4),
+    pe: round(pe, 4),
+    agree,
+    low: kappa < 0.6,
+    // Số cặp hai người trả lời khác nhau — người thứ ba phải phân xử.
+    canPhanXu: pairs.filter(([x, y]) => x !== y).length,
+  };
 };
 
 /**
@@ -335,6 +365,10 @@ const main = async () => {
       pair_id: r.pair_id,
       external_name: r.external_name,
       label_sku: r.label_sku || null,
+      // Sửa 2026-10-15: phải đọc HAI CỘT TRẢ LỜI riêng, không phải `labeler_a/b`.
+      // Bản cũ lấy `labeler_a`/`labeler_b` — đó là cột TÊN người gán.
+      label_a_sku: r.label_a_sku ?? '',
+      label_b_sku: r.label_b_sku ?? '',
       labeler_a: r.labeler_a || null,
       labeler_b: r.labeler_b || null,
       label_confidence: r.label_confidence || null,
@@ -350,9 +384,12 @@ const main = async () => {
     console.log('');
     console.log('Dung 2 nguoi gan doc lap theo huong dan, roi chay lai:');
     console.log('  1) mo docs/aisc26/notes/sku-labeling-guide.md');
-    console.log('  2) moi nguoi dien MOT cot: labeler_a va labeler_b (khong xem cot cua nhau)');
-    console.log('  3) sau khi hai ben thong nhat label_sku (phan xu giua khi khac)');
-    console.log('  4) chay: npm run llm:eval');
+    console.log('  2) nguoi A: chay `npm run llm:labels:b -- --migrate` mot lan de tach cot');
+    console.log('     roi gan vao `label_a_sku` / `label_a_confidence`');
+    console.log('  3) nguoi B: chay `npm run llm:labels:b -- --export`, gan vao cot `b_*`');
+    console.log('     (ban do KHONG co cot cua nguoi A — nhan MU, hai nguoi KHONG xem nhau)');
+    console.log('  4) nap nhan nguoi B: `npm run llm:labels:b -- --load`');
+    console.log('  5) chay lai: npm run llm:eval  => co Cohen kappa that');
     console.log('');
     console.log(`Muon chi chay may (khong cong bo so): npm run llm:eval -- --simulated`);
     process.exit(2);
@@ -385,7 +422,7 @@ const main = async () => {
 
   const kappa = simulated
     ? { kappa: null, n: 0, reason: 'nhan MO PHONG - khong tinh Cohen kappa duoc' }
-    : cohensKappa(pairs.map((p) => p.labeler_a), pairs.map((p) => p.labeler_b));
+    : cohensKappa(pairs.map((p) => p.label_a_sku), pairs.map((p) => p.label_b_sku));
 
   // Token: chỉ có số thật khi đã chạy live. Replay/off ⇒ 0 và ghi "chưa đo".
   const tokensFromUsage = hybrid.stats.llmCalls > 0 && (mode === 'live' || mode === 'record');
@@ -424,6 +461,7 @@ const main = async () => {
     // Lý do trượt tách nhóm (sửa 2026-10-14 — trước đây báo cáo gọi chung là
     // "503/timeout", nhưng đo thật cho thấy API không hỏng).
     llmMissBy: hybrid.stats.llmMissBy,
+    llmNoMatch: hybrid.stats.llmNoMatch,
     tyLeDungDuoc: hybrid.stats.tyLeDungDuoc,
     // Token/độ trễ đọc thật từ `llm_usage_logs` (sửa 2026-10-14 — trước đây gán
     // cứng chuỗi "CHUA DO" dù đã chạy live).
@@ -460,7 +498,14 @@ const main = async () => {
   L.push(`BASELINE fuzzy khong-LLM : P=${sFuzzy.precision} R=${sFuzzy.recall} F1=${sFuzzy.f1} chuyen_nguoi=${pct(sFuzzy.fallbackRate)}%`);
   L.push(`HYBRID (fuzzy + LLM)     : P=${sHybrid.precision} R=${sHybrid.recall} F1=${sHybrid.f1} chuyen_nguoi=${pct(sHybrid.fallbackRate)}%`);
   L.push(`bootstrap F1(hybrid-fuzzy): ${boot.point} CI95 [${boot.ciLow}, ${boot.ciHigh}] ${boot.excludesZero ? '=> KHONG chua 0' : '=> CHUA 0'}`);
-  L.push(`Cohen kappa (2 nguoi gan): ${kappa.kappa ?? kappa.reason}${kappa.low ? '  <0,6 => nhan chua du tin cay' : ''}`);
+  if (kappa.kappa === null) {
+    L.push(`Cohen kappa (2 nguoi gan): CHUA DO — ${kappa.reason || 'khong du du lieu'}`);
+    L.push('   -> chay: npm run llm:labels:b -- --export, nguoi B gan, roi --load');
+  } else {
+    L.push(`Cohen kappa (2 nguoi gan): k=${kappa.kappa} (n=${kappa.n}, thong nhat ${kappa.agree}`
+      + `, can phan xu ${kappa.canPhanXu}, po=${kappa.po}, pe=${kappa.pe})`
+      + (kappa.low ? '  <0,6 => nhan chua du tin cay' : ''));
+  }
   L.push(`LLM goi: ${hybrid.stats.llmCalls} | dung duoc: ${hybrid.stats.llmUsable} | trượt: ${hybrid.stats.llmMisses}`);
   if (usage.measured) {
     L.push(
@@ -477,17 +522,21 @@ const main = async () => {
     // LLM trả JSON sai khuôn dạng, không phải vì hạ tầng. Ghi đúng nguyên nhân.
     const missBy = hybrid.stats.llmMissBy || {};
     const tyLe = hybrid.stats.tyLeDungDuoc;
+    const noMatch = hybrid.stats.llmNoMatch || 0;
     L.push(`ty le LLM tra loi chac chan: ${tyLe}% (${hybrid.stats.llmUsable}/${hybrid.stats.llmCalls} ca duoc hoi)`);
-    if (tyLe !== null && tyLe < 50) {
+    if (noMatch > 0) {
+      L.push(`LLM tra loi "khong co ung vien nao khop": ${noMatch} ca — day la tra loi DUNG,`);
+      L.push('   khong phai loi; ca do van duoc dua nguoi xac nhan nhu moi.');
+    }
+    const thatBai = (missBy.api || 0) + (missBy.json || 0) + (missBy.hallucinatedSku || 0) + (missBy.other || 0);
+    L.push(`loi that cua LLM: ${thatBai} ca` + (thatBai ? ` (${JSON.stringify(missBy)})` : ''));
+    if (thatBai > 0) {
       const goc = [];
       if (missBy.api) goc.push(`${missBy.api} loi API`);
       if (missBy.json) goc.push(`${missBy.json} JSON sai khuon dang`);
       if (missBy.hallucinatedSku) goc.push(`${missBy.hallucinatedSku} tra ma ngoai danh sach ung vien`);
       if (missBy.other) goc.push(`${missBy.other} ly do khac`);
-      L.push('');
-      L.push('!! TINH DUNG DUOC THAP. Phan tang cua hybrid tren bo mau nay KHONG');
-      L.push('   dien dai — dung no de so sanh voi nguoi khac.');
-      if (goc.length) L.push(`   Ly do truot: ${goc.join('; ')}.`);
+      L.push(`   Chi tiet: ${goc.join('; ')}.`);
     }
   } else {
     L.push(`token/cap: CHUA DO — ${usage.lyDo}`);

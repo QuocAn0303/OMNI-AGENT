@@ -61,7 +61,7 @@ Ban tổ chức đánh giá:
 Nền tảng đã có sẵn và **không phá gì**: ERP kế toán kép, POS, F&B (bàn/KDS/QR order),
 CRM + PRM, nhân sự, sản xuất (BOM/WO/QC), AI agent có human-gate, multi-tenant, 63 module.
 
-### 3.2 Chín lỗi thật đã tìm ra và sửa trong chính hệ thống mình
+### 3.2 Mười lỗi thật đã tìm ra và sửa trong chính hệ thống mình
 
 Đây là phần **đáng giá nhất khi trình bày** — vì nó trả lời câu "chỉ số của các bạn
 lấy từ đâu?" mà không cần bất kỳ con số nào không kiểm chứng được.
@@ -77,6 +77,8 @@ lấy từ đâu?" mà không cần bất kỳ con số nào không kiểm chứ
 | `smart-guide/reorder` dùng hằng số cứng `10` thay vì `minStock` | — | sửa | `npm run measure:evidence` |
 | **Hàng rào số từ chối cả bản mẫu của hệ thống** — `assertNumbersUnchanged` cho phép biến thể làm tròn 1 chữ số, nhưng bản mẫu ghi `25,6` từ `25,625` ⇒ `guardrail.passed = false` trên văn bản **đúng số** | 1 lần mỗi chạy | sửa | `npm run demo:check` |
 | **Hàng rào báo động giả** — chữ số trong **tên hàng** (`"12 PENCILLS…"`) bị quét thành "số do LLM tự thêm" | 1 số lạ mỗi SKU có số trong tên | sửa | `npm run demo:check` |
+| **Hàng rào số từ chối cả câu trả lời ĐÚNG của LLM** — LLM nói "không ứng viên nào khớp" bằng `sku: ""`, nhưng `z.string().min(1)` loại rồi báo nhầm thành "JSON sai khuôn" | 2/8 ca | sửa | `npm run demo:check` |
+| **Sinh mã đơn trùng mỗi đêm** — tiền tố ngày lấy từ giờ **UTC** còn mốc đếm lấy từ giờ **local**; giữa 00:00–07:00 giờ VN, hệ thống sinh lại mã của ngày hôm trước ⇒ `Unique constraint failed` | **1 lần/đêm** | sửa | `npm run demo:check` |
 
 ### 3.3 Khảo sát thực tế 10 cửa hàng bán lẻ
 
@@ -272,6 +274,58 @@ Ba nút thắt ta nhắm, mỗi nút đều **đo được trên hệ thống**:
 | `npm run check:replenishment-rules` | **12 / 12** |
 | `npm run check:supply` | **12 / 12** |
 | `npm run check:evidence` | **14 / 14** |
+
+#### Không tái lập được — phải nói trước khi trích số
+
+Chạy cùng một lệnh **5 lần**, cùng dữ liệu, cùng mô hình:
+
+| Lần | P | R | F1 | Ca chuyển người | usable |
+|---|---|---|---|---|---:|
+| 1 | 0,8103 | 0,9792 | 0,8868 | 3,33% | 6/8 |
+| 2 | 0,8070 | 0,9583 | 0,8762 | 5,00% | 5/8 |
+| 3 | 0,8036 | 0,9375 | 0,8654 | 6,67% | 4/8 |
+| 4 | 0,8036 | 0,9375 | 0,8654 | 6,67% | 4/8 |
+| 5 | 0,8070 | 0,9583 | 0,8762 | 5,00% | 5/8 |
+
+**F1 dao động trong khoảng 0,8654 – 0,8868.** Nguyên nhân không nằm ở thuật toán
+mà ở chỗ **LLM tự chấm điểm**: một ca biên trượt qua ngưỡng là đổi cả kết luận. Đã
+thử đặt `temperature = 0` — **vẫn dao động**, vì Gemini không bảo đảm tất định (lô
+hàng song song ở tầng phục vụ).
+
+⇒ **Không được trích một con số đơn lẻ.** Phải nói khoảng. Trích "F1 = 0,8868" mà
+không kèm khoảng là trích con số đẹp nhất trong 5 lần — và hỏng khi bị hỏi "chạy lại
+được không".
+
+**Hai điều ĐỀU ĐẶN qua cả 5 lần** — đây mới là kết luận đáng tin:
+
+| Điều | Chỉ công thức | Có LLM |
+|---|---|---|
+| Ca chuyển người xác nhận | **13,33%** (ổn định tuyệt đối) | **3,33% – 6,67%** |
+| CI95 của chênh lệch F1 | — | **luôn chứa 0** (5/5 lần) |
+
+Tức là: **LLM luôn giảm gánh nặng xác nhận cho người dùng**, nhưng **chưa lần nào
+chứng minh được F1 tốt hơn**. Đó là câu trả lời trung thực, và cũng là điều an toàn
+khi giám khảo hỏi về vai trò của AI.
+
+#### Hai lỗi trong công cụ đo κ, tìm ra khi chạy lần này
+
+1. Sheet chỉ có **một** cột trả lời `label_sku`, còn `labeler_a`/`labeler_b` lưu
+   **tên** người gán. Hai người không thể gán độc lập — người thứ hai sẽ ghi đè đúng
+   cột của người thứ nhất.
+2. `eval-sku-match.js` tính κ bằng cách so `labeler_a` với `labeler_b`, tức là so
+   **TÊN hai người**. Khác tên ⇒ κ = 0 luôn; cùng tên ⇒ κ = 1 luôn. Con số không đo
+   được gì về độ tin cậy của nhãn.
+
+Đã sửa cả hai: thêm cột trả lời riêng `label_a_*` / `label_b_*`, và κ nay tính trên
+hai cột đó. Lệnh mới: `npm run llm:labels:b -- --export` (xuất bản **mù**, không
+kèm nhãn người A) và `--load` (nạp về, tự đánh dấu ca A≠B cho người thứ ba phân xử).
+
+> **κ vẫn `null` (n = 0), và điều đó là đúng.** Mới chỉ có một người gán. Không ai được
+> điền hộ — điền hộ thì κ đo được cái không phải độ tin cậy nhãn.
+> File cho người thứ hai: `data/aisc26/skus/labels/label-sheet-B.csv` — **107 cặp**,
+> trong đó **14 cặp** được đánh dấu BIÊN theo cấu trúc (tên ứng viên gần trùng, tên
+> quá dài, có số lượng lớn, có nhãn khuyến mãi). Đánh dấu bằng **cấu trúc**, không dựa
+> vào nhãn người A, nên vẫn giữ tính mù.
 
 ### Đánh giá khớp SKU (chế độ không-LLM)
 

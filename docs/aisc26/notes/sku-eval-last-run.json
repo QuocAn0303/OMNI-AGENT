@@ -1,6 +1,6 @@
 {
-  "runId": "S10-20261014153015",
-  "at": "2026-10-14T15:30:15.673Z",
+  "runId": "S10-20261014175539",
+  "at": "2026-10-14T17:55:39.704Z",
   "labelSource": "nhan tay (label_sku do nguoi dien)",
   "dataset": {
     "labelSheet": "data\\aisc26\\skus\\labels\\label-sheet.csv",
@@ -9,10 +9,10 @@
     "labelled": 107,
     "nhanLaMoPhong": false
   },
-  "mode": "live",
+  "mode": "off",
   "llm": {
-    "mode": "live",
-    "enabled": true,
+    "mode": "off",
+    "enabled": false,
     "configured": true,
     "provider": "gemini",
     "model": "gemini-3.5-flash-lite",
@@ -34,7 +34,7 @@
   "kappa": {
     "kappa": null,
     "n": 0,
-    "reason": "chua co cap nao ca hai nguoi gan cung mot nhan"
+    "reason": "chua co cap nao ca hai nguoi gan cung mot nhan (can nhan lap day cot label_b_sku)"
   },
   "test": {
     "fuzzy": {
@@ -52,14 +52,14 @@
     "hybrid": {
       "n": 60,
       "labelled": 56,
-      "tp": 46,
-      "fp": 11,
-      "fn": 2,
-      "precision": 0.807,
-      "recall": 0.9583,
-      "f1": 0.8762,
-      "escalated": 3,
-      "fallbackRate": 0.05
+      "tp": 43,
+      "fp": 9,
+      "fn": 6,
+      "precision": 0.8269,
+      "recall": 0.8776,
+      "f1": 0.8515,
+      "escalated": 8,
+      "fallbackRate": 0.1333
     }
   },
   "dev": {
@@ -78,56 +78,48 @@
     "hybrid": {
       "n": 60,
       "labelled": 51,
-      "tp": 40,
-      "fp": 19,
-      "fn": 1,
-      "precision": 0.678,
-      "recall": 0.9756,
-      "f1": 0.8,
-      "escalated": 1,
-      "fallbackRate": 0.0167
+      "tp": 39,
+      "fp": 16,
+      "fn": 2,
+      "precision": 0.7091,
+      "recall": 0.9512,
+      "f1": 0.8125,
+      "escalated": 5,
+      "fallbackRate": 0.0833
     }
   },
   "f1DiffBootstrap": {
     "n": 60,
     "seed": 20261003,
     "resamples": 1000,
-    "point": 0.0247,
-    "ciLow": -0.014,
-    "ciHigh": 0.0679,
+    "point": 0,
+    "ciLow": 0,
+    "ciHigh": 0,
     "excludesZero": false
   },
   "throughput": {
-    "fuzzyMs": 358,
-    "hybridMs": 10745,
-    "msPerPairFuzzy": 5.97,
-    "msPerPairHybrid": 179.08
+    "fuzzyMs": 398,
+    "hybridMs": 391,
+    "msPerPairFuzzy": 6.63,
+    "msPerPairHybrid": 6.52
   },
-  "llmCalls": 8,
-  "llmUsable": 5,
-  "llmRejected": 1,
-  "llmMisses": 2,
+  "llmCalls": 0,
+  "llmUsable": 0,
+  "llmRejected": 0,
+  "llmMisses": 0,
   "llmMissBy": {
     "api": 0,
-    "json": 2,
+    "json": 0,
     "hallucinatedSku": 0,
     "other": 0
   },
-  "tyLeDungDuoc": 62.5,
+  "llmNoMatch": 0,
+  "tyLeDungDuoc": null,
   "usage": {
-    "measured": true,
-    "soLanGoi": 13,
-    "promptTokens": 5022,
-    "completionTokens": 927,
-    "totalTokens": 5949,
-    "doTreTrungBinhMs": 1226,
-    "luuY": "doTreTrungBinhMs tinh ca lan ERROR (503/timeout) — la chi phi that"
+    "measured": false,
+    "lyDo": "mode=off — khong co lenh goi that nen khong co token"
   },
-  "tokensPerPair": {
-    "trenMoiCapDaDoi": 457.6,
-    "trenMoiCapKiemDinh": 99.2,
-    "trenMoiCapDaNhan": 55.6
-  },
-  "publishable": true,
-  "lyDoKhongCongBo": null
+  "tokensPerPair": "CHUA DO",
+  "publishable": false,
+  "lyDoKhongCongBo": "mode=off — phai chay live hoac record"
 }

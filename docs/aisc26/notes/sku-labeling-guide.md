@@ -17,6 +17,13 @@ chính nó", và số đó sẽ đẹp một cách vô nghĩa.
 
 ## 2. File cần biết
 
+> **Lệnh nhanh** *(thêm 2026-10-15)*:
+> ```bash
+> npm run llm:labels:b -- --migrate   # tách cột trả lời cho mỗi người (chạy 1 lần)
+> npm run llm:labels:b -- --export    # xuất bản MÙ cho người B
+> npm run llm:labels:b -- --load      # nạp nhãn người B về sheet chính → có κ thật
+> ```
+
 | File | Ai được mở | Nội dung |
 |---|---|---|
 | `label-sheet.csv` | **Cả hai người gán** | 120 cặp. Cột nhãn **để trống**. |
@@ -37,8 +44,18 @@ Mỗi người làm một bản sao riêng của `label-sheet.csv`.
 4. Điền **`label_confidence`**: `cao` | `trung bình` | `thấp`.
    Hết 5 ứng viên ⇒ bắt buộc `thấp`.
 5. Điền **`label_note`** khi cần: ví dụ `tên trùng màu, cần ảnh`; `2 cái giống tên`.
-6. Ghi tên/ngày của mình vào **`labeler_a`** (người A) và **`labeler_b`** (người B),
-   mỗi người điền **cột của mình** ở bản gửi lại.
+6. **Cột trả lời riêng cho từng người** *(sửa 2026-10-15)*:
+   · Người A điền `label_a_sku` · `label_a_confidence` · `label_a_note`, ghi tên vào
+     `label_a_by`, ngày vào `label_a_at`.
+   · Người B dùng file `label-sheet-B.csv` do `npm run llm:labels:b -- --export`
+     sinh ra, điền `b_sku` · `b_confidence` · `b_note`, rồi `npm run llm:labels:b -- --load`.
+
+   > **Vì sao phải tách cột** *(lỗi thật, phát hiện 2026-10-15)*: bản cũ chỉ có
+   > MỘT cột trả lời `label_sku`, còn `labeler_a`/`labeler_b` chỉ lưu **tên** người
+   > gán. Hai người không thể gán độc lập trong sheet đó — người thứ hai ghi đè đúng
+   > cột của người thứ nhất. Tệ hơn: `eval-sku-match.js` từng tính Cohen κ bằng
+   > cách so **`labeler_a` với `labeler_b`** — tức so **tên**, không phải câu trả lời.
+   > Khác tên ⇒ κ = 0 luôn; cùng tên ⇒ κ = 1 luôn. Con số không đo được gì.
 
 ### Các ca phải gán `low` / `label_sku` trống
 
