@@ -3,7 +3,9 @@
  *
  * Vì sao không dùng global fetch: trên mạng WiFi này DNS trả AAAA trước và máy KHÔNG có
  * IPv6 default route, nên fetch() của Node bị treo → request chết lặng. Ở đây dùng
- * https.request với `family: 4` để cưỡng chế IPv4, không phụ thuộc DNS/OS.
+ * http/https.request với `family: 4` để cưỡng chế IPv4, không phụ thuộc DNS/OS.
+ * Scheme và cổng lấy từ chính URL (xem `httpTarget`) để gateway chạy cục bộ
+ * (`http://localhost:20128/v1`) gọi được, không bị đẩy nhầm về cổng 443.
  *
  * Biến môi trường (xem .env / .env.example):
  *   LLM_PROVIDER     gemini | openai-compatible | uit | local   (mặc định: gemini nếu có key)
@@ -42,6 +44,7 @@
  *   không có đường nào gọi model mà không ghi token.
  */
 const https = require("https");
+const http = require("http");
 const logger = require("../utils/logger");
 const { getTenantId } = require("./tenantContext");
 
@@ -50,6 +53,31 @@ const DEFAULT_UIT_GEMMA_URL = "https://llm.uit.edu.vn/gemma/v1";
 const DEFAULT_UIT_QWEN_URL = "https://llm.uit.edu.vn/qwen/v1";
 const DEFAULT_UIT_MODEL = "gemma-4-26b";
 const DEFAULT_UIT_REASONING_MODEL = "qwen3.8-27b";
+
+/**
+ * Chọn đúng module HTTP và cổng cho một URL.
+ *
+ * Sửa 2026-10-15 — trước đây cả 3 chỗ đều gọi thẳng `https.request` và KHÔNG
+ * truyền `port`. Hai lỗi đó cộng lại tạo ra thông báo rất khó đoán:
+ *
+ *   LLM_BASE_URL=http://localhost:20128/v1
+ *   -> ECONNREFUSED 127.0.0.1:443      (443, không phải 20128)
+ *
+ * Vì sao: `https.request` bỏ qua `new URL().protocol`, nên URL `http://` vẫn đi
+ * qua TLS mặc định cổng 443; đồng thời thiếu `port` nên kể cả URL đúng scheme
+ * cũng rơi về 80/443. Hậu quả là gateway chạy cục bộ (9router, LiteLLM, Ollama,
+ * vLLM…) không gọi được, và lỗi báo ra lại trông như lỗi mạng chứ không phải
+ * lỗi cấu hình — rất dễ mất thời gian đi tìm nhầm.
+ *
+ * @param {string|URL} url
+ * @returns {{ mod: typeof http|typeof https, port: number|undefined }}
+ */
+const httpTarget = (url) => {
+  const u = typeof url === "string" ? new URL(url) : url;
+  const mod = u.protocol === "http:" ? http : https;
+  // `port` rỗng = dùng mặc định theo scheme; truyền chuỗi rỗng vào sẽ thành lỗi.
+  return { mod, port: u.port ? Number(u.port) : undefined };
+};
 
 const config = () => {
   const provider = (process.env.LLM_PROVIDER || (process.env.GEMINI_API_KEY ? "gemini" : "local")).toLowerCase();
@@ -97,9 +125,11 @@ const requestJson = (url, body, headers = {}, label = "Gemini") =>
   new Promise((resolve, reject) => {
     const target = new URL(url);
     const payload = JSON.stringify(body);
-    const req = https.request(
+    const { mod, port } = httpTarget(target);
+    const req = mod.request(
       {
         hostname: target.hostname,
+        port,
         path: `${target.pathname}${target.search}`,
         method: "POST",
         family: 4, // bắt buộc: máy này không có IPv6 default route
@@ -151,8 +181,9 @@ const requestJson = (url, body, headers = {}, label = "Gemini") =>
 const getJson = (url) =>
   new Promise((resolve, reject) => {
     const target = new URL(url);
-    const req = https.request(
-      { hostname: target.hostname, path: `${target.pathname}${target.search}`, method: "GET", family: 4, timeout: config().timeoutMs },
+    const { mod, port } = httpTarget(target);
+    const req = mod.request(
+      { hostname: target.hostname, port, path: `${target.pathname}${target.search}`, method: "GET", family: 4, timeout: config().timeoutMs },
       (res) => {
         let raw = "";
         res.on("data", (c) => { raw += c; });
@@ -493,8 +524,9 @@ const listModels = async () => {
   const target = c.provider === "uit" ? selectUitTarget({}) : { baseUrl: c.baseUrl };
   const json = await new Promise((resolve, reject) => {
     const u = new URL(`${target.baseUrl}/models`);
-    const req = https.request(
-      { hostname: u.hostname, path: `${u.pathname}${u.search}`, method: "GET", family: 4, timeout: c.timeoutMs, headers: { Authorization: `Bearer ${c.apiKey}` } },
+    const { mod, port } = httpTarget(u);
+    const req = mod.request(
+      { hostname: u.hostname, port, path: `${u.pathname}${u.search}`, method: "GET", family: 4, timeout: c.timeoutMs, headers: { Authorization: `Bearer ${c.apiKey}` } },
       (res) => {
         let raw = "";
         res.on("data", (d) => { raw += d; });
