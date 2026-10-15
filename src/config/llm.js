@@ -160,7 +160,11 @@ const requestJson = (url, body, headers = {}, label = "Gemini") =>
         res.on("data", (c) => { raw += c; });
         res.on("end", () => {
           let json = null;
-          try { json = JSON.parse(raw); } catch { /* giữ raw */ }
+          // Giữ raw khi không phải JSON: một số gateway (vd. 9router) trả về
+          // SSE `data: {...}` dù request KHÔNG bật stream. Trước đây raw bị
+          // vứt ở đây ⇒ `parseChatResponse` nhận null ⇒ báo "không trả về nội
+          // dung" trong khi model đã trả lời đúng. Xem `normalizeChatBody`.
+          try { json = JSON.parse(raw); } catch { json = { __raw: raw }; }
           if (res.statusCode >= 200 && res.statusCode < 300) return resolve(json);
           // Ngoài mạng UIT, gateway trường redirect 302 về www.uit.edu.vn thay vì
           // trả JSON — báo rõ để không nhầm với "key sai".
@@ -390,11 +394,79 @@ const buildChatBody = ({ model, system, prompt, jsonMode, temperature, maxTokens
 };
 
 /**
+ * Gom response SSE (`data: {...}` từng dòng) về đúng hình dạng JSON
+ * non-stream của OpenAI, để `parseChatResponse` dùng chung một code path.
+ *
+ * Sửa 2026-10-15 — 9router trả SSE cho provider `ollama` dù request KHÔNG bật
+ * `stream`. Body thật:
+ *     data: {"...","choices":[{"delta":{"content":"Chào"},"finish_reason":null}]}
+ *     data: {"...","choices":[{"delta":{},"finish_reason":"stop"}],"usage":{...}}
+ * `JSON.parse` toàn bộ body thất bại ⇒ coi như model không trả lời, trong khi
+ * model đã trả lời đúng. Đây là lý do `ollama/gemma4:31b-cloud` báo
+ * "không trả về nội dung" một cách vô lý.
+ *
+ * Trả về null nếu `raw` không phải SSE — khi đó giữ nguyên hành vi cũ.
+ */
+const parseSseChatBody = (raw) => {
+  const text = String(raw || "");
+  if (!/(^|\n)\s*data:/.test(text)) return null;
+
+  let content = "";
+  let reasoning = "";
+  let finishReason = null;
+  let usage = null;
+  let sawChunk = false;
+
+  for (const line of text.split(/\r?\n/)) {
+    const m = /^data:\s*(.*)$/.exec(line.trim());
+    if (!m) continue;
+    const payload = m[1].trim();
+    // `[DONE]` là dấu hiệu kết thúc luồng, không phải JSON.
+    if (!payload || payload === "[DONE]") continue;
+    let chunk = null;
+    try { chunk = JSON.parse(payload); } catch { continue; }
+    sawChunk = true;
+    const choice = chunk?.choices?.[0] || {};
+    // Ở dạng streaming nội dung nằm ở `delta`, không phải `message`.
+    const delta = choice.delta || choice.message || {};
+    if (typeof delta.content === "string") content += delta.content;
+    if (typeof delta.reasoning_content === "string") reasoning += delta.reasoning_content;
+    if (choice.finish_reason) finishReason = choice.finish_reason;
+    // `usage` thường chỉ có ở chunk cuối.
+    if (chunk.usage) usage = chunk.usage;
+  }
+
+  if (!sawChunk) return null;
+  return {
+    choices: [{ message: { content, reasoning_content: reasoning }, finish_reason: finishReason }],
+    usage: usage || undefined,
+  };
+};
+
+/**
+ * Đưa mọi hình dạng body về đúng một dạng mà `parseChatResponse` hiểu.
+ * - JSON thường          → trả nguyên
+ * - SSE `data:`          → gom lại (xem `parseSseChatBody`)
+ * - Không nhận ra        → trả nguyên để `parseChatResponse` báo lỗi như cũ
+ */
+const normalizeChatBody = (json) => {
+  if (json && typeof json === "object" && typeof json.__raw === "string") {
+    return parseSseChatBody(json.__raw) || json;
+  }
+  return json;
+};
+
+/**
  * Đọc text từ response `/chat/completions` (thuần, không mạng).
  * `reasoning_content` (suy nghĩ của Qwen) KHÔNG trộn vào đáp án — caller log riêng.
  * `finish_reason=length` tương đương MAX_TOKENS của Gemini: cần budget lớn hơn.
+ *
+ * Nhận cả body thô (chuỗi) và object — tự chuẩn hoá SSE trước.
  */
-const parseChatResponse = (json) => {
+const parseChatResponse = (input) => {
+  const json = normalizeChatBody(
+    typeof input === "string" ? { __raw: input } : input,
+  );
   const choice = json?.choices?.[0] || {};
   const text = choice?.message?.content ?? "";
   const reasoning = choice?.message?.reasoning_content || "";
@@ -402,6 +474,12 @@ const parseChatResponse = (json) => {
     const err = new Error(`UIT khong tra ve noi dung (finish_reason=${choice?.finish_reason || "khong ro"})`);
     err.retryable = choice?.finish_reason === "length";
     err.needsMoreTokens = choice?.finish_reason === "length";
+    // Nếu không nhận ra được body thì phải nói ra, không báo chung chung
+    // "không trả về nội dung" — hai nguyên nhân này cần cách sửa khác nhau.
+    if (json && typeof json.__raw === "string") {
+      err.rawPreview = json.__raw.slice(0, 300);
+      err.hint = "body khong phai JSON cung khong phai SSE — xem rawPreview";
+    }
     throw err;
   }
   return { text, reasoning };
@@ -564,5 +642,5 @@ const listModels = async () => {
   return ((json && json.data) || []).map((m) => m.id).filter(Boolean);
 };
 
-module.exports = { isConfigured, describe, generateText, listModels, parseJsonLoose, config, getLastUsage, resetLastUsage, readUsage, buildChatBody, parseChatResponse, selectUitTarget };
+module.exports = { isConfigured, describe, generateText, listModels, parseJsonLoose, config, getLastUsage, resetLastUsage, readUsage, buildChatBody, parseChatResponse, parseSseChatBody, normalizeChatBody, selectUitTarget };
 

@@ -114,6 +114,85 @@ describe("config/llm — cấu hình provider", () => {
     expect(r.mod.isConfigured()).toBe(false);
   });
 
+  // ── Body SSE (thêm 2026-10-15) ─────────────────────────────────────────
+  // 9router trả SSE cho provider `ollama` dù request KHÔNG bật `stream`.
+  // Trước đây `JSON.parse` fail ⇒ raw bị vứt ⇒ báo "không trả về nội dung"
+  // trong khi model đã trả lời đúng. Body thật lấy từ 9router:
+  //   data: {...,"choices":[{"delta":{"content":"Chào"},"finish_reason":null}]}
+  //   data: {...,"choices":[{"delta":{},"finish_reason":"stop"}],"usage":{...}}
+  const SSE_THAT = [
+    'data: {"id":"c1","object":"chat.completion.chunk","model":"gemma4:31b-cloud","choices":[{"index":0,"delta":{"content":"Chào"},"finish_reason":null}]}',
+    "",
+    'data: {"id":"c1","object":"chat.completion.chunk","model":"gemma4:31b-cloud","choices":[{"index":0,"delta":{},"finish_reason":"stop"}],"usage":{"prompt_tokens":23,"completion_tokens":2,"total_tokens":25}}',
+    "",
+    'data: [DONE]',
+    '',
+  ].join('\n');
+
+  test("gom body SSE thành đáp án đầy đủ", () => {
+    const r = loadWith({ LLM_PROVIDER: "openai-compatible", OPENAI_API_KEY: "k" });
+    restore = r.restore;
+    expect(r.mod.parseChatResponse({ __raw: SSE_THAT }).text).toBe("Chào");
+  });
+
+  test("SSE nhiều chunk thì nối lại, không mất phần giữa", () => {
+    const r = loadWith({ LLM_PROVIDER: "openai-compatible", OPENAI_API_KEY: "k" });
+    restore = r.restore;
+    const body = [
+      'data: {"choices":[{"delta":{"content":"Xin "}}]}',
+      'data: {"choices":[{"delta":{"content":"chào "}}]}',
+      'data: {"choices":[{"delta":{"content":"bạn"},"finish_reason":"stop"}],"usage":{"total_tokens":9}}',
+    ].join('\n');
+    expect(r.mod.parseChatResponse({ __raw: body }).text).toBe("Xin chào bạn");
+  });
+
+  test("SSE giữ riêng reasoning_content, không trộn vào đáp án", () => {
+    const r = loadWith({ LLM_PROVIDER: "openai-compatible", OPENAI_API_KEY: "k" });
+    restore = r.restore;
+    const body = [
+      'data: {"choices":[{"delta":{"reasoning_content":"suy nghĩ..."}}]}',
+      'data: {"choices":[{"delta":{"content":"đáp án"},"finish_reason":"stop"}]}',
+    ].join('\n');
+    const out = r.mod.parseChatResponse({ __raw: body });
+    expect(out.text).toBe("đáp án");
+    expect(out.reasoning).toBe("suy nghĩ...");
+  });
+
+  test("SSE lấy usage từ chunk cuối để đo token", () => {
+    const r = loadWith({ LLM_PROVIDER: "openai-compatible", OPENAI_API_KEY: "k" });
+    restore = r.restore;
+    const out = r.mod.normalizeChatBody({ __raw: SSE_THAT });
+    expect(out.usage.total_tokens).toBe(25);
+    expect(out.choices[0].finish_reason).toBe("stop");
+  });
+
+  test("body JSON thường thì giữ nguyên, không bị đụng", () => {
+    const r = loadWith({ LLM_PROVIDER: "openai-compatible", OPENAI_API_KEY: "k" });
+    restore = r.restore;
+    const binhThuong = { choices: [{ message: { content: "OK" }, finish_reason: "stop" }], usage: { total_tokens: 3 } };
+    expect(r.mod.parseChatResponse(binhThuong).text).toBe("OK");
+    expect(r.mod.normalizeChatBody(binhThuong)).toBe(binhThuong);
+  });
+
+  test("body không nhận ra thì phải nêu lý do, không báo chung chung", () => {
+    // Không phải JSON, không phải SSE (ví dụ proxy trả HTML lỗi).
+    // 'không trả về nội dung' kèm 'không phải JSON cũng không phải SSE' là hai
+    // lỗi khác nhau, cần hai cách sửa khác nhau — không được gộp làm một.
+    const r = loadWith({ LLM_PROVIDER: "openai-compatible", OPENAI_API_KEY: "k" });
+    restore = r.restore;
+    let err = null;
+    try { r.mod.parseChatResponse({ __raw: "<html>502 Bad Gateway</html>" }); } catch (e) { err = e; }
+    expect(err).toBeTruthy();
+    expect(err.rawPreview).toContain("502");
+    expect(err.hint).toMatch(/khong phai JSON/);
+  });
+
+  test("parseChatResponse nhận trực tiếp chuỗi raw", () => {
+    const r = loadWith({ LLM_PROVIDER: "openai-compatible", OPENAI_API_KEY: "k" });
+    restore = r.restore;
+    expect(r.mod.parseChatResponse(SSE_THAT).text).toBe("Chào");
+  });
+
   test("LLM_PROVIDER=uit + LLM_UIT_API_KEY thì configured, model mặc định gemma-4-26b", () => {
     const r = loadWith({
       GEMINI_API_KEY: undefined, LLM_PROVIDER: "uit", LLM_UIT_API_KEY: "uit-key",
