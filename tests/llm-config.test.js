@@ -8,8 +8,19 @@ const path = require("path");
 
 const MODULE = path.join(__dirname, "..", "src", "config", "llm.js");
 
+// config() đọc ba cặp tên biến: LLM_*, và OPENAI_*/MODEL_NAME theo chuẩn SDK
+// (thêm 2026-10-15). Test phải xoá HẾT cả hai nhóm, nếu không thì `OPENAI_API_KEY`
+// trong .env thật lọt vào và làm các test "không có key" đổi kết quả.
+const BIEN_LLM = [
+  "LLM_PROVIDER", "LLM_API_KEY", "LLM_MODEL", "LLM_BASE_URL", "LLM_FALLBACK_MODELS",
+  "LLM_UIT_API_KEY", "LLM_UIT_MODEL",
+  "GEMINI_API_KEY",
+  "OPENAI_API_KEY", "OPENAI_BASE_URL", "MODEL_NAME",
+];
+
 const loadWith = (env) => {
   const saved = { ...process.env };
+  BIEN_LLM.forEach((k) => delete process.env[k]);
   Object.keys(env).forEach((k) => {
     if (env[k] === undefined) delete process.env[k];
     else process.env[k] = env[k];
@@ -56,6 +67,51 @@ describe("config/llm — cấu hình provider", () => {
     const r = loadWith({ GEMINI_API_KEY: "super-secret-key" });
     restore = r.restore;
     expect(JSON.stringify(r.mod.describe())).not.toContain("super-secret-key");
+  });
+
+  // ── Tên biến kiểu OpenAI SDK (thêm 2026-10-15) ────────────────────────
+  // Các project khác trên máy đặt .env theo chuẩn SDK. Nếu chỉ đọc LLM_* thì
+  // key trong .env bị bỏ qua và gateway trả "401 Missing API key" — trông y hệt
+  // key sai dù file hoàn toàn đúng.
+  test("đọc OPENAI_API_KEY / OPENAI_BASE_URL / MODEL_NAME", () => {
+    const r = loadWith({
+      LLM_PROVIDER: "openai-compatible",
+      OPENAI_API_KEY: "sk-router-123", OPENAI_BASE_URL: "http://localhost:20128/v1",
+      MODEL_NAME: "oc/muse-spark-1.3-contributor-free",
+    });
+    restore = r.restore;
+    const c = r.mod.config();
+    expect(c.apiKey).toBe("sk-router-123");
+    expect(c.baseUrl).toBe("http://localhost:20128/v1");
+    expect(c.model).toBe("oc/muse-spark-1.3-contributor-free");
+    expect(r.mod.isConfigured()).toBe(true);
+  });
+
+  test("LLM_* được ưu tiên khi có cả hai kiểu đặt tên", () => {
+    const r = loadWith({
+      LLM_PROVIDER: "openai-compatible",
+      LLM_API_KEY: "khoa-llm", LLM_BASE_URL: "https://llm.erp.local/v1", LLM_MODEL: "model-llm",
+      OPENAI_API_KEY: "khoa-openai", OPENAI_BASE_URL: "https://llm.skhac.local/v1", MODEL_NAME: "model-openai",
+    });
+    restore = r.restore;
+    const c = r.mod.config();
+    expect(c.apiKey).toBe("khoa-llm");
+    expect(c.baseUrl).toBe("https://llm.erp.local/v1");
+    expect(c.model).toBe("model-llm");
+  });
+
+  test("bỏ dấu thừa quanh giá trị lấy từ biến môi trường", () => {
+    const r = loadWith({ LLM_PROVIDER: "openai-compatible", OPENAI_API_KEY: "  sk-co-khoang  " });
+    restore = r.restore;
+    expect(r.mod.config().apiKey).toBe("sk-co-khoang");
+  });
+
+  test("OPENAI_API_KEY rỗng thì KHÔNG được coi là có key", () => {
+    // `trim()` trong firstEnv: biến để trống phải rơi tiếp, không được chặn
+    // provider khác bằng một chuỗi rỗng.
+    const r = loadWith({ LLM_PROVIDER: "openai-compatible", LLM_API_KEY: undefined, OPENAI_API_KEY: "   " });
+    restore = r.restore;
+    expect(r.mod.isConfigured()).toBe(false);
   });
 
   test("LLM_PROVIDER=uit + LLM_UIT_API_KEY thì configured, model mặc định gemma-4-26b", () => {

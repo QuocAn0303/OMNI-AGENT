@@ -80,19 +80,38 @@ const httpTarget = (url) => {
 };
 
 const config = () => {
-  const provider = (process.env.LLM_PROVIDER || (process.env.GEMINI_API_KEY ? "gemini" : "local")).toLowerCase();
+  // Nhận CẢ hai cách đặt tên biến.
+  //
+  // Sửa 2026-10-15 — trước đây chỉ đọc `LLM_*`. Các project khác trên máy này
+  // (vd. agent-tools-skills-lab) đặt tên theo chuẩn OpenAI SDK là
+  // `OPENAI_API_KEY` / `OPENAI_BASE_URL` / `MODEL_NAME`. Người dùng cấu hình
+  // `.env` theo kiểu đó => ở đây đọc ra key RỖNG => gateway trả
+  // `401 Missing API key`, trông y hệt key sai dù key trong file hoàn toàn đúng.
+  //
+  // Vì sao sửa bằng cách chấp nhận cả hai thay vì bắt đổi tên: cho phép dùng
+  // chung một file `.env` giữa nhiều project, và `LLM_*` vẫn ưu tiên để không
+  // phá cấu hình sẵn có.
+  const firstEnv = (...names) => {
+    for (const n of names) {
+      const v = (process.env[n] || "").trim();
+      if (v) return v;
+    }
+    return "";
+  };
+
+  const provider = (process.env.LLM_PROVIDER || (firstEnv("GEMINI_API_KEY", "OPENAI_API_KEY") ? "gemini" : "local")).toLowerCase();
   // Key theo provider: UIT có key riêng của trường, không dùng chung key Google.
   const apiKey =
     provider === "uit"
-      ? process.env.LLM_UIT_API_KEY || process.env.LLM_API_KEY || ""
+      ? firstEnv("LLM_UIT_API_KEY", "LLM_API_KEY", "OPENAI_API_KEY")
       : provider === "openai-compatible"
-        ? process.env.LLM_API_KEY || process.env.GEMINI_API_KEY || ""
-        : process.env.GEMINI_API_KEY || "";
+        ? firstEnv("LLM_API_KEY", "OPENAI_API_KEY", "GEMINI_API_KEY")
+        : firstEnv("GEMINI_API_KEY", "OPENAI_API_KEY");
   const model =
-    process.env.LLM_MODEL ||
+    firstEnv("LLM_MODEL", "MODEL_NAME") ||
     (provider === "uit" ? process.env.LLM_UIT_MODEL || DEFAULT_UIT_MODEL : "gemini-3.8-flash");
   const baseUrl = (
-    provider === "uit" ? DEFAULT_UIT_GEMMA_URL : process.env.LLM_BASE_URL || DEFAULT_GEMINI_BASE
+    provider === "uit" ? DEFAULT_UIT_GEMMA_URL : firstEnv("LLM_BASE_URL", "OPENAI_BASE_URL") || DEFAULT_GEMINI_BASE
   ).replace(/\/$/, "");
   return {
     provider,
