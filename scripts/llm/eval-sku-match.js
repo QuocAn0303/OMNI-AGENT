@@ -169,6 +169,28 @@ const scoreAtThreshold = (rows) => {
     else fp += 1;
   }
   const labelled = rows.filter((r) => r.label_sku).length;
+
+  // ── ĐỘ CHÍNH XÁC THÔ (thêm 2026-10-15) ──────────────────────────────────
+  // Vì sao cần: P/R/F1 ở trên KHÔNG đủ để trả lời "sai bao nhiêu ca".
+  //
+  //  - `recall = tp/(tp+fn)` chỉ đếm FN khi ca bị ĐƯA NGƯỜI. Ca bị tự áp
+  //    dụng sai lại rơi vào `fp` — tức không bao giờ chạm recall. Hệ quả: hệ
+  //    thống trả sai 8 ca mà vẫn có recall = 1.0 nếu nó không đưa ca nào ra
+  //    người. Đọc "R = 1" là hiểu sai.
+  //  - Dòng "ngưỡng chấm: confidence >= 0.85" in ra báo cáo nhưng hàm này
+  //    không nhận tham số ngưỡng — việc lọc đã do `needsHuman` quyết từ trước.
+  //
+  // Nên thêm hai số đọc được không nhầm:
+  //  - `rawAccuracy`  : đúng / số ca có nhãn (bất kể có tự áp dụng hay không)
+  //  - `wrongAuto`    : số ca tự áp dụng SAI — đây là ca GHI SAI VÀO DB âm
+  //                     thầm, nên đáng sợ hơn cả "sai" nói chung (xem K9 ở
+  //                     scripts/smoke-import-demo.js).
+  const labelledRows = rows.filter((r) => r.label_sku);
+  const correctCount = labelledRows.filter((r) => r.pred_sku && r.pred_sku === r.label_sku).length;
+  const wrongAuto = labelledRows.filter(
+    (r) => r.pred_sku && r.pred_sku !== r.label_sku && r.needsHuman !== true,
+  ).length;
+
   const precision = tp + fp > 0 ? tp / (tp + fp) : null;
   const recall = tp + fn > 0 ? tp / (tp + fn) : null;
   const f1 = precision !== null && recall !== null && precision + recall > 0
@@ -182,6 +204,9 @@ const scoreAtThreshold = (rows) => {
     f1: round(f1),
     escalated,
     fallbackRate: rows.length ? round(escalated / rows.length) : null,
+    rawCorrect: correctCount,
+    rawAccuracy: labelledRows.length ? round(correctCount / labelledRows.length) : null,
+    wrongAuto,
   };
 };
 
@@ -516,6 +541,10 @@ const main = async () => {
     const truth = r.label_sku || '';
     const pred = r.pred_sku || '';
     const judged = Boolean(pred) && r.needsHuman !== true;
+    // Ba trạng thái phải tách bạch. Trước đây ca KHÔNG có nhãn nhưng vẫn tự áp
+    // dụng bị gán "SAI" — cộng vào số lỗi một cách sai, và đọc bảng thấy "sai"
+    // nhiều hơn thực tế. "Chưa ai kiểm" không phải "sai".
+    const ketQua = !judged ? 'CHAN_NGUOI' : (truth === '' ? 'CHUA_CO_NHAN' : (pred === truth ? 'DUNG' : 'SAI'));
     return [
       r.pair_id,
       q.external_name || '',
@@ -527,7 +556,7 @@ const main = async () => {
       r.fuzzy_sku ?? '', r.fuzzy_score ?? '',
       pred, r.via, r.confidence ?? '',
       truth,
-      judged ? (pred === truth ? 'DUNG' : 'SAI') : 'KHONG_TU_DOA',
+      ketQua,
       r.reason || '',
     ].map((c) => {
       const s = String(c ?? '');
@@ -561,6 +590,13 @@ const main = async () => {
   L.push('');
   L.push(`BASELINE fuzzy khong-LLM : P=${sFuzzy.precision} R=${sFuzzy.recall} F1=${sFuzzy.f1} chuyen_nguoi=${pct(sFuzzy.fallbackRate)}%`);
   L.push(`HYBRID (fuzzy + LLM)     : P=${sHybrid.precision} R=${sHybrid.recall} F1=${sHybrid.f1} chuyen_nguoi=${pct(sHybrid.fallbackRate)}%`);
+  // Độ chính xác thô đặt NGAY dưới P/R/F1 và luôn kèm phần đếm, để không ai
+  // đọc "R = 1" thành "100% chính xác". Chi tiết vì sao ở `scoreAtThreshold`.
+  const dongTho = (n, s) => `  do chinh xac tho: ${s.rawCorrect}/${s.labelled} = ${pct(s.rawAccuracy)}%`
+    + `  | tu ap dung sai (ghi sai DB am tham): ${s.wrongAuto}`;
+  L.push(dongTho('fuzzy', sFuzzy));
+  L.push(dongTho('hybrid', sHybrid));
+  L.push('');
   L.push(`bootstrap F1(hybrid-fuzzy): ${boot.point} CI95 [${boot.ciLow}, ${boot.ciHigh}] ${boot.excludesZero ? '=> KHONG chua 0' : '=> CHUA 0'}`);
   if (kappa.kappa === null) {
     L.push(`Cohen kappa (2 nguoi gan): CHUA DO — ${kappa.reason || 'khong du du lieu'}`);
@@ -570,7 +606,11 @@ const main = async () => {
       + `, can phan xu ${kappa.canPhanXu}, po=${kappa.po}, pe=${kappa.pe})`
       + (kappa.low ? '  <0,6 => nhan chua du tin cay' : ''));
   }
-  L.push(`LLM goi: ${hybrid.stats.llmCalls} | dung duoc: ${hybrid.stats.llmUsable} | trượt: ${hybrid.stats.llmMisses}`);
+  // Gọi tên đúng: `llmUsable` là số ca LLM trả lời CHẮC CHẮN (confidence ≥ ngưỡng),
+  // KHÔNG phải số ca trả lời ĐÚNG. Trước đây in là "dung duoc" — cùng từ với
+  // "câu trả lời dùng được", dễ đọc nhầm thành chính xác. Số đúng phải lấy ở
+  // dòng "do chinh xac tho" và bảng từng ca.
+  L.push(`LLM goi: ${hybrid.stats.llmCalls} | tra loi chac chan (>= nguong): ${hybrid.stats.llmUsable} | truot: ${hybrid.stats.llmMisses}`);
   if (usage.measured) {
     L.push(
       `TOKEN THAT  : ${usage.totalTokens} tok (prompt ${usage.promptTokens} + completion ` +

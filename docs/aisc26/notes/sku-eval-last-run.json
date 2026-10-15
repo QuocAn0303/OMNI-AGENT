@@ -1,6 +1,6 @@
 {
-  "runId": "S10-20261015125022",
-  "at": "2026-10-15T12:50:22.093Z",
+  "runId": "S10-20261015151212",
+  "at": "2026-10-15T15:12:12.541Z",
   "labelSource": "nhan tay (label_sku do nguoi dien)",
   "dataset": {
     "labelSheet": "data\\aisc26\\skus\\labels\\label-sheet.csv",
@@ -14,8 +14,8 @@
     "mode": "live",
     "enabled": true,
     "configured": true,
-    "provider": "gemini",
-    "model": "gemini-3.5-flash-lite",
+    "provider": "openai-compatible",
+    "model": "ollama/gemma4:31b-cloud",
     "throttleMs": 1200,
     "backoffFactor": 1,
     "recordStore": null
@@ -47,19 +47,25 @@
       "recall": 0.8776,
       "f1": 0.8515,
       "escalated": 8,
-      "fallbackRate": 0.1333
+      "fallbackRate": 0.1333,
+      "rawCorrect": 48,
+      "rawAccuracy": 0.8571,
+      "wrongAuto": 7
     },
     "hybrid": {
       "n": 60,
       "labelled": 56,
-      "tp": 46,
+      "tp": 48,
       "fp": 11,
-      "fn": 2,
-      "precision": 0.807,
-      "recall": 0.9583,
-      "f1": 0.8762,
-      "escalated": 3,
-      "fallbackRate": 0.05
+      "fn": 0,
+      "precision": 0.8136,
+      "recall": 1,
+      "f1": 0.8972,
+      "escalated": 1,
+      "fallbackRate": 0.0167,
+      "rawCorrect": 48,
+      "rawAccuracy": 0.8571,
+      "wrongAuto": 8
     }
   },
   "dev": {
@@ -73,39 +79,45 @@
       "recall": 0.9512,
       "f1": 0.8125,
       "escalated": 5,
-      "fallbackRate": 0.0833
+      "fallbackRate": 0.0833,
+      "rawCorrect": 41,
+      "rawAccuracy": 0.8039,
+      "wrongAuto": 10
     },
     "hybrid": {
       "n": 60,
       "labelled": 51,
-      "tp": 40,
-      "fp": 18,
-      "fn": 1,
-      "precision": 0.6897,
-      "recall": 0.9756,
-      "f1": 0.8081,
-      "escalated": 2,
-      "fallbackRate": 0.0333
+      "tp": 41,
+      "fp": 19,
+      "fn": 0,
+      "precision": 0.6833,
+      "recall": 1,
+      "f1": 0.8119,
+      "escalated": 0,
+      "fallbackRate": 0,
+      "rawCorrect": 41,
+      "rawAccuracy": 0.8039,
+      "wrongAuto": 10
     }
   },
   "f1DiffBootstrap": {
     "n": 60,
     "seed": 20261003,
     "resamples": 1000,
-    "point": 0.0247,
-    "ciLow": -0.014,
-    "ciHigh": 0.0679,
-    "excludesZero": false
+    "point": 0.0457,
+    "ciLow": 0.0008,
+    "ciHigh": 0.0969,
+    "excludesZero": true
   },
   "throughput": {
-    "fuzzyMs": 327,
-    "hybridMs": 68971,
-    "msPerPairFuzzy": 5.45,
-    "msPerPairHybrid": 1149.52
+    "fuzzyMs": 340,
+    "hybridMs": 13896,
+    "msPerPairFuzzy": 5.67,
+    "msPerPairHybrid": 231.6
   },
   "llmCalls": 8,
-  "llmUsable": 5,
-  "llmRejected": 3,
+  "llmUsable": 7,
+  "llmRejected": 1,
   "llmMisses": 0,
   "llmMissBy": {
     "api": 0,
@@ -114,12 +126,21 @@
     "other": 0
   },
   "llmNoMatch": 0,
-  "tyLeDungDuoc": 62.5,
+  "tyLeDungDuoc": 87.5,
   "usage": {
-    "measured": false,
-    "lyDo": "doc LlmUsageLog that bai: \nInvalid `prisma.llmUsageLog.aggregate()` invocation in\nD:\\erp-system\\scripts\\llm\\eval-sku-match.js:299:42\n\n  296  */\n  297 const readUsage = async (since, until) => {\n  298   try {\n→ 299     const agg = await prisma.llmUsageLog.aggregate(\n"
+    "measured": true,
+    "soLanGoi": 13,
+    "promptTokens": 5243,
+    "completionTokens": 744,
+    "totalTokens": 5987,
+    "doTreTrungBinhMs": 1392,
+    "luuY": "doTreTrungBinhMs tinh ca lan ERROR (503/timeout) — la chi phi that"
   },
-  "tokensPerPair": null,
+  "tokensPerPair": {
+    "trenMoiCapDaDoi": 460.5,
+    "trenMoiCapKiemDinh": 99.8,
+    "trenMoiCapDaNhan": 56
+  },
   "publishable": true,
   "lyDoKhongCongBo": null
 }

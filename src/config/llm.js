@@ -488,7 +488,11 @@ const parseChatResponse = (input) => {
 const callOpenAIChat = async ({ baseUrl, apiKey, model, system, prompt, jsonMode, temperature, maxTokens, thinking, label }) => {
   const url = `${baseUrl}/chat/completions`;
   const body = buildChatBody({ model, system, prompt, jsonMode, temperature, maxTokens, thinking });
-  const json = await requestJson(url, body, { Authorization: `Bearer ${apiKey}` }, label || "OpenAI");
+  const raw = await requestJson(url, body, { Authorization: `Bearer ${apiKey}` }, label || "OpenAI");
+  // Chuẩn hoá MỘT LẦN rồi dùng cho cả hai việc. Trước đây `readUsage` nhận
+  // thẳng body thô (`{ __raw }`) trong khi `parseChatResponse` tự chuẩn hoá bên
+  // trong ⇒ với body SSE, `usage` nằm trong chunk cuối bị bỏ qua ⇒ đo ra 0 token.
+  const json = normalizeChatBody(raw);
   const { text, reasoning } = parseChatResponse(json);
   if (reasoning) logger.debug(`[LLM] reasoning (${model}, ${reasoning.length} ky tu, khong tron vao dap an)`);
   return { text, usage: readUsage(json) };
