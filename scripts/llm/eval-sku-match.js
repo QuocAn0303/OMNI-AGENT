@@ -244,7 +244,13 @@ const runHybrid = async (catalog, pairs) => {
   const res = await matchHybridBatch(inputs, catalog, { useLlm: true });
   const byRef = new Map();
   for (const r of [...res.matched, ...res.reviewQueue]) {
-    byRef.set(r.ref, { sku: r.sku, needsHuman: r.needsHuman === true, via: r.via, confidence: r.confidence });
+    byRef.set(r.ref, {
+      sku: r.sku, needsHuman: r.needsHuman === true, via: r.via,
+      confidence: r.confidence, reason: r.reason,
+      // Đoán của CÔNG THỨC, để so từng ca xem LLM đã cải thiện hay làm hỏng.
+      fuzzySku: r.fuzzy?.sku ?? null,
+      fuzzyScore: r.fuzzy?.score ?? null,
+    });
   }
   const rows = pairs.map((p) => {
     const hit = byRef.get(p.pair_id) || {};
@@ -255,6 +261,12 @@ const runHybrid = async (catalog, pairs) => {
       needsHuman: hit.needsHuman !== false,
       via: hit.via || 'missing',
       confidence: hit.confidence ?? null,
+      // Sửa 2026-10-15 — các trường dưới đây để ĐỌC TỪNG CA, không chỉ đọc
+      // tổng P/R/F1. Không có chúng thì không biết LLM sai ở đâu và sai thế nào.
+      reason: hit.reason || '',
+      fuzzy_sku: hit.fuzzySku ?? null,
+      fuzzy_score: hit.fuzzyScore ?? null,
+      external_name: p.external_name,
     };
   });
   return { rows, ms: Date.now() - t0, stats: res.stats };
@@ -488,6 +500,58 @@ const main = async () => {
   fs.mkdirSync(path.dirname(file), { recursive: true });
   fs.writeFileSync(file, `${JSON.stringify(out, null, 2)}\n`, 'utf8');
 
+  // ── BẢNG TỪNG CA: bằng chứng để đọc, không chỉ để tính điểm ────────────
+  //
+  // Thêm 2026-10-15. Tổng P/R/F1 không cho biết LLM sai ở đâu và sai vì sao —
+  // nên ghi kèm từng ca. Đây là thứ đem ra trình bày được: "3 ca LLM trả lời
+  // sai, đây là 3 ca, và đây là nguyên nhân".
+  const casesFile = path.join(ROOT, 'docs', 'aisc26', 'notes', 'sku-eval-cases.csv');
+  const byId = new Map(sheet.map((r) => [r.pair_id, r]));
+  // PHẢI map trên `hybrid.rows` (dòng ĐÃ CHẤM, có pred_sku/via), KHÔNG phải
+  // `test` (cặp thô, không có 2 trường đó). Lần đầu map nhầm `test` ⇒ cột `via`
+  // và `pred_sku` ra rỗng, bảng thành vô nghĩa mà không báo lỗi.
+  const chon = new Map(hybrid.rows.map((r) => [r.pair_id, r]));
+  const caseRows = hybrid.rows.map((r) => {
+    const q = byId.get(r.pair_id) || {};
+    const truth = r.label_sku || '';
+    const pred = r.pred_sku || '';
+    const judged = Boolean(pred) && r.needsHuman !== true;
+    return [
+      r.pair_id,
+      q.external_name || '',
+      q.cand1_sku, q.cand1_name,
+      q.cand2_sku, q.cand2_name,
+      q.cand3_sku, q.cand3_name,
+      q.cand4_sku, q.cand4_name,
+      q.cand5_sku, q.cand5_name,
+      r.fuzzy_sku ?? '', r.fuzzy_score ?? '',
+      pred, r.via, r.confidence ?? '',
+      truth,
+      judged ? (pred === truth ? 'DUNG' : 'SAI') : 'KHONG_TU_DOA',
+      r.reason || '',
+    ].map((c) => {
+      const s = String(c ?? '');
+      return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    }).join(',');
+  });
+  // Chốt chặn: bảng chi tiết rỗng là vô dụng, phải nói ra chứ không ghi im lặng.
+  const coVia = caseRows.filter((l) => l.split(',')[15]).length;
+  if (coVia === 0) {
+    throw new Error(
+      'BANG TUNG CA RONG — cot "via" khong co gia tri nao. '
+      + 'Kiem tra lai: phai map tren hybrid.rows (dong da cham), khong phai test (cap tho).',
+    );
+  }
+  const caseHead = [
+    'pair_id', 'external_name',
+    'c1_sku', 'c1_name', 'c2_sku', 'c2_name', 'c3_sku', 'c3_name',
+    'c4_sku', 'c4_name', 'c5_sku', 'c5_name',
+    'fuzzy_sku', 'fuzzy_score',
+    'pred_sku', 'via', 'confidence',
+    'label_sku_dung', 'ket_qua', 'ly_do',
+  ].join(',');
+  fs.writeFileSync(casesFile, `${caseHead}\n${caseRows.join('\n')}\n`, 'utf8');
+
   // ── in báo cáo ──────────────────────────────────────────────────────────
   const L = [];
   L.push('=== DANH GIA KHOIP SKU (S10) ===');
@@ -553,6 +617,7 @@ const main = async () => {
   }
   if (labelled < 100) L.push('!! n < 100 => chi bao so dem, KHONG bao phan tram.');
   L.push(`ghi: ${path.relative(ROOT, file)}`);
+  L.push(`ghi tung ca: ${path.relative(ROOT, casesFile)} (${caseRows.length} cap)`);
 
   console.log(L.join('\n'));
   await require(`${ROOT}/src/config/prisma`).$disconnect().catch(() => {});
