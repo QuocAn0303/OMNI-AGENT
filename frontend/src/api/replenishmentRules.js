@@ -38,3 +38,18 @@ export const explainProposal = (gateId, opts = {}) =>
 export const getReplenishmentSuggestions = (limit = 50, status) =>
   axios.get('/replenishment/suggestions', { params: { limit, status } })
     .then((r) => unwrap(r)?.items ?? unwrap(r));
+
+/**
+ * Tạo đề xuất nhập cho một SKU ⇒ sinh human-gate ở trạng thái PENDING.
+ *
+ * Thêm 2026-10-16. VÌ SAO CẦN: endpoint `POST /replenishment/products/:id/propose`
+ * đã tồn tại từ trước nhưng **không hàm nào ở frontend gọi tới**. Hệ quả: màn
+ * `Duyệt đề xuất nhập` luôn trống trừ khi ai đó chạy script ngoài terminal, và
+ * luồng "AI đề xuất → người duyệt" không khởi động được từ trình duyệt — tức
+ * tính năng quan trọng nhất của vòng 2 không demo nổi trên sân khấu.
+ *
+ * Server trả 400 nếu SKU còn tồn (chưa cần nhập), 409 nếu SKU cần nhập mà
+ * chưa có nhà cung cấp. Hai lỗi đó là hành vi đúng — không bịa NCC.
+ */
+export const proposeReplenishment = (productId) =>
+  axios.post(`/replenishment/products/${productId}/propose`).then(unwrap);

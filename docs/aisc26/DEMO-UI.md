@@ -4,8 +4,7 @@
 > chuột trên trình duyệt.
 >
 > Chuẩn bị (làm **trước** khi lên sân khấu, không làm trước mặt khán giả):
-> backend + frontend đang chạy, đã đăng nhập, và **đã dựng sẵn ít nhất 1 đề xuất
-> chờ duyệt** ở bước 2.
+> backend + frontend đang chạy, đã đăng nhập, và **không cần chuẩn bị gì trước — mọi thứ tạo được ngay trên trình duyệt./
 
 ---
 
@@ -23,15 +22,23 @@ Mở `http://localhost:5173`
 
 ---
 
-## Bước 1 — Mở đề xuất chờ duyệt (quan trọng nhất)
+## Bước 1 — Tạo đề xuất rồi mở màn duyệt
 
-**Menu trái → nhóm `TRỢ LÝ AI` → bấm `Duyệt đề xuất nhập`**
+**Menu trái → nhóm `Phân tích` → bấm `Trợ lý KD`**
 
-Thấy tiêu đề **"Đề xuất cần bạn duyệt"** và danh sách thẻ đề xuất.
+Chuyển sang tab **`Đề xuất nhập`**. Bảng hiện các SKU dưới điểm đặt lại.
 
-> **Nếu thấy "Không có đề xuất nào đang chờ"** → hệ thống chưa có gì để duyệt.
-> Dựng trước bằng `npm run demo:run`, hoặc vào `Trợ lý KD` (`/smart-guide`) để tạo
-> một đề xuất rồi quay lại đây.
+Cuộn sang cột cuối **`Hành động`**. Tìm một dòng có nút **`Tạo đề xuất`** không bị
+mờ (mờ = SKU đó chưa có nhà cung cấp, hệ thống không tự bịa).
+
+**Bấm `Tạo đề xuất`** → tự chuyển sang màn **`Duyệt đề xuất nhập`**.
+
+> Bộ dữ liệu demo có **105 SKU dưới ROP nhưng chỉ 7 SKU có nhà cung cấp** —
+> nên cần tìm đúng dòng có nút sáng, không phải dòng nào cũng bấm được.
+
+---
+
+## Bước 2 — AI giải thích và hàng rào chặn số
 
 **Trên thẻ đề xuất, bấm nút: `AI Giải thích và Soạn tin NCC`**
 
@@ -50,7 +57,7 @@ Có thẻ nhỏ ở góc trên bên phải nói nguồn: **`nguồn: LLM`** ho�
 
 ---
 
-## Bước 2 — Chứng minh hàng rào thật sự chặn (không phải hình vẽ)
+## Bước 3 — Chứng minh hàng rào thật sự chặn (không phải hình vẽ)
 
 **Bấm nút: `Test Chốt chặn AI sửa số`**
 
@@ -64,7 +71,7 @@ Kết quả mong đợi: khối **"Hàng rào số"** chuyển sang báo **bị 
 
 ---
 
-## Bước 3 — Duyệt đề xuất
+## Bước 4 — Duyệt đề xuất
 
 **Tích ô: `Tôi xem diff ở trên và vẫn mua đúng số lượng này`**
 (ô này chỉ hiện khi đề xuất có lệch so với công thức)
@@ -79,7 +86,7 @@ Hộp xanh hiện lên: **"Đã tạo PO PO-…-… (…đ)"**
 
 ---
 
-## Bước 4 — Thấy PO thật trong danh sách
+## Bước 5 — Thấy PO thật trong danh sách
 
 **Menu trái → nhóm `KẾ TOÁN & TÀI CHÍNH` → bấm `Mua hàng`**
 
@@ -91,7 +98,7 @@ Danh sách đơn mua hàng, có PO vừa tạo ở trên.
 
 ---
 
-## Bước 5 — Nhập kho
+## Bước 6 — Nhập kho
 
 **Menu trái → `KẾ TOÁN & TÀI CHÍNH` → `Phiếu nhận hàng (GRN)`**
 
@@ -101,7 +108,7 @@ Danh sách phiếu nhận kho. Mở một phiếu có bút toán đi kèm.
 
 ---
 
-## Bước 6 — Xem bút toán (mắt xích đã đóng)
+## Bước 7 — Xem bút toán (mắt xích đã đóng)
 
 **Menu trái → `KẾ TOÁN & TÀI CHÍNH` → `Sổ kế toán`**
 
@@ -119,7 +126,7 @@ Nợ 1331  Công nợ nhà cung cấp
 
 ---
 
-## Bước 7 — So sánh báo giá nhà cung cấp
+## Bước 8 — So sánh báo giá nhà cung cấp
 
 **Menu trái → `TRỢ LÝ AI` → `So sánh báo giá NCC`**
 
@@ -127,7 +134,7 @@ So nhiều báo giá của các NCC khác nhau cho cùng một mã hàng.
 
 ---
 
-## Bước 8 — Chỉ số chuỗi cung ứng
+## Bước 9 — Chỉ số chuỗi cung ứng
 
 **Menu trái → `TRỢ LÝ AI` → `Chỉ số chuỗi cung ứng`**
 
@@ -138,7 +145,7 @@ Bảng KPI: tồn kho, vòng quay tồn kho, tồn chết, giao hàng cho NCC.
 
 ---
 
-## Bước 9 — Bằng chứng thực nghiệm
+## Bước 10 — Bằng chứng thực nghiệm
 
 **Menu trái → `TRỢ LÝ AI` → `Bằng chứng thực nghiệm`**
 
@@ -150,7 +157,7 @@ Backtest có số đo, kèm nguồn và giới hạn.
 
 ---
 
-## Bước 10 — Trợ lý kinh doanh
+## Bước 11 — Trợ lý kinh doanh
 
 **Menu trái → `Phân tích` → `Trợ lý KD`**
 
@@ -162,9 +169,9 @@ Gợi ý giá bán, gợi ý nhập hàng, sức khỏe doanh nghiệp — đề
 
 | Bước | Vì sao |
 |---|---|
-| **1 và 2** | Trả lời trực tiếp phàn nàn *"vai trò thật sự của LLM chưa rõ"* của vòng 1 |
-| **6** | Con số 39 PO là lỗi **đo được trước/sau**, không phải cam kết |
-| **9** | Cách duy nhất để trả lời *"chỉ số của các bạn lấy từ đâu?"* mà không bịa |
+| **2 và 3** | Trả lời trực tiếp phàn nàn *"vai trò thật sự của LLM chưa rõ"* của vòng 1 |
+| **7** | Con số 39 PO là lỗi **đo được trước/sau**, không phải cam kết |
+| **10** | Cách duy nhất để trả lời *"chỉ số của các bạn lấy từ đâu?"* mà không bịa |
 
 ---
 
@@ -172,9 +179,9 @@ Gợi ý giá bán, gợi ý nhập hàng, sức khỏe doanh nghiệp — đề
 
 | Câu hỏi | Trả lời bằng gì |
 |---|---|
-| "AI làm gì, công thức không làm được?" | Bước 1. Phần còn lại (ROP, BOM, tồn tối thiểu) **cố ý làm bằng công thức** |
-| "Có phải AI tự quyết không?" | **Không.** Bước 3 — phải tick ô xác nhận và bấm Duyệt |
-| "Hàng rào có chạy thật không?" | Bước 2 — bấm nút, hàng rào chuyển sang báo chặn |
+| "AI làm gì, công thức không làm được?" | Bước 2. Phần còn lại (ROP, BOM, tồn tối thiểu) **cố ý làm bằng công thức** |
+| "Có phải AI tự quyết không?" | **Không.** Bước 4 — phải tick ô xác nhận và bấm Duyệt |
+| "Hàng rào có chạy thật không?" | Bước 3 — bấm nút, hàng rào chuyển sang báo chặn |
 | "Độ chính xác bao nhiêu?" | **Chưa công bố được.** 85,71 % nhưng đo trên nhãn mà ta biết sai 7/8 ca. Nói thẳng, đừng sửa rồi báo lại |
 | "Có người dùng thật chưa?" | **0/6.** Không bịa |
 | "Sao không dùng model mạnh hơn?" | Ba model khác hàng cho cùng kết quả — nút cần siết không phải nút model |

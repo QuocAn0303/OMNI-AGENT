@@ -1,7 +1,7 @@
 import { useEffect, useState, useRef } from 'react';
 import {
   Tabs, Spin, Table, Tag, Space, Typography, Card, Row, Col,
-  Progress, Empty, Alert, Badge, Button, Tooltip,
+  Progress, Empty, Alert, Badge, Button, Tooltip, message,
 } from 'antd';
 import {
   DollarOutlined, ShoppingOutlined, HeartOutlined, FileTextOutlined,
@@ -12,6 +12,7 @@ import axios from '../api/axios';
 import DOMPurify from 'dompurify';
 import PageHeader from '../components/layout/PageHeader';
 import MoneyDisplay from '../components/shared/MoneyDisplay';
+import { proposeReplenishment } from '../api/replenishmentRules';
 
 const { Text, Title } = Typography;
 
@@ -25,6 +26,8 @@ export default function SmartGuide() {
   const [health, setHealth] = useState(null);
   const [report, setReport] = useState(null);
   const loadedRef = useRef({});
+  // SKU đang gửi đề xuất — để nút bị khoá đúng dòng, tránh bấm hai lần tạo trùng.
+  const [proposingSku, setProposingSku] = useState(null);
 
   useEffect(() => {
     let cancelled = false;
@@ -73,6 +76,32 @@ export default function SmartGuide() {
     return <Tag color={map[p]}>{label[p]}</Tag>;
   };
 
+  /**
+   * Tạo đề xuất nhập cho một dòng ⇒ sinh human-gate PENDING ở màn "Duyệt đề xuất nhập".
+   *
+   * Thêm 2026-10-16 — trước đây màn đó chỉ có thể đầy bằng cách chạy script ngoài
+   * terminal. Nghĩa là trên trình duyệt không khởi động được luồng AI → người duyệt.
+   *
+   * Hai lỗi trả về là hành vi ĐÚNG, không phải lỗi:
+   *   400 "SKU này chưa cần nhập"      — còn tồn, đề xuất là vô nghĩa
+   *   409 "chưa có nhà cung cấp"        — hệ thống không được bịa NCC
+   * Nên hiện nguyên văn thay vì báo chung chung "thất bại".
+   */
+  const handlePropose = async (row) => {
+    const sku = row.sku || row.productId;
+    setProposingSku(sku);
+    try {
+      await proposeReplenishment(row.productId || row.id);
+      message.success(`Đã tạo đề xuất cho ${sku} — mở màn "Duyệt đề xuất nhập" để xem`);
+      navigate('/agent-approvals');
+    } catch (err) {
+      const msg = err?.response?.data?.message || 'Không tạo được đề xuất';
+      message.warning(msg);
+    } finally {
+      setProposingSku(null);
+    }
+  };
+
   // === PRICING TAB ===
   const pricingColumns = [
     { title: 'Sản phẩm', dataIndex: 'name', render: (v, r) => <div><Text strong>{v}</Text><br /><Text type="secondary" style={{ fontSize: 11 }}>SKU: {r.sku}</Text></div> },
@@ -116,6 +145,32 @@ export default function SmartGuide() {
     { title: 'NCC', dataIndex: 'suggestedVendor', render: (v) => v ? v.name : <Tag color="default">Chưa có</Tag> },
     { title: 'Ưu tiên', dataIndex: 'priority', align: 'center', render: (v) => priorityTag(v) },
     { title: 'Gợi ý', dataIndex: 'message', render: (v) => <Text style={{ fontSize: 12, color: 'var(--text-secondary)' }}>{v}</Text> },
+    {
+      title: 'Hành động',
+      align: 'right',
+      render: (_v, r) => {
+        const busy = proposingSku === (r.sku || r.productId);
+        // Chỉ 7/105 dòng trong bộ demo có NCC. Hiện nút cho 98 dòng còn lại thì
+        // người dùng bấm xong nhận 409 "chưa có nhà cung cấp" — nút chết.
+        // Nên khoá và nói rõ lý do ngay tại chỗ.
+        if (!r.suggestedVendor) {
+          return (
+            <Tooltip title="SKU này cần nhập nhưng chưa có nhà cung cấp — cần người chọn, hệ thống không tự bịa">
+              <span>
+                <Button size="small" disabled>
+                  Tạo đề xuất
+                </Button>
+              </span>
+            </Tooltip>
+          );
+        }
+        return (
+          <Button size="small" type="primary" loading={busy} onClick={() => handlePropose(r)}>
+            Tạo đề xuất
+          </Button>
+        );
+      },
+    },
   ];
 
   // === HEALTH TAB ===
