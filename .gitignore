@@ -118,3 +118,4 @@ venv/
 
 # AISC26 P8: thu muc in giay cua bo cong cu nguoi thu (sinh lai bang lenh, khong commit)
 docs/aisc26/usertest/print/
+ data/supermarket/

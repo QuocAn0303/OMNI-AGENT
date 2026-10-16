@@ -420,13 +420,23 @@ model Category {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
+  // Thêm 2026-10-16 — cây ngành hàng. Trước đây `Category` PHẲNG (chỉ có
+  // `name`), trong khi `Warehouse` đã có `WarehouseTree` và `Account` đã có
+  // `AccountTree`. Danh mục siêu thị bắt buộc phải có cấp cha–con
+  // ("Thực phẩm" → "Sữa & đồ uống" → "Sữa tươi"), không có thì không mô phỏng
+  // được cây ngành hàng thật.
+  parentId String?
+  parent   Category?  @relation("CategoryTree", fields: [parentId], references: [id], onDelete: Restrict)
+  children Category[] @relation("CategoryTree")
+
   products   Product[]
   promotions Promotion[]
 
   @@unique([name, tenantId])
+  @@index([tenantId, parentId])
   @@map("categories")
-@@index([tenantId])
 }
+
 
 model Product {
   id          String   @id @default(uuid())
@@ -441,6 +451,15 @@ model Product {
   isActive    Boolean  @default(true)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+
+  // Thêm 2026-10-16 — mã vạch ở CẤP SẢN PHẨM.
+  //
+  // Trước đây `barcode` chỉ tồn tại trên `ProductVariant`; `Product` thì không
+  // có. Siêu thị quét mã vạch ở POS, nên thiếu cột này là thiếu THẬT, không
+  // phải thiếu dữ liệu — và bài toán khớp mã mất chân trụng.
+  //
+  // `@unique` vì trùng mã thì POS không phân biệt được hai mã hàng.
+  barcode    String?   @unique
 
   categoryId String
   category   Category @relation(fields: [categoryId], references: [id])
