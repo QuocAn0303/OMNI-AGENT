@@ -279,7 +279,7 @@ lại ngay.
 
 ---
 
-## 9. Nếu cần chạy riêng frontend
+## 8. Nếu cần chạy riêng frontend
 
 ```bash
 cd frontend
@@ -292,7 +292,7 @@ Backend phải chạy song song (`npm run dev` ở thư mục gốc). Backend t�
 
 ---
 
-## 10. Danh sách lệnh kiểm chứng đầy đủ
+## 9. Danh sách lệnh kiểm chứng đầy đủ
 
 ```bash
 npm test                          # 4499/4504
