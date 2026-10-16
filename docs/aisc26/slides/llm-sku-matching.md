@@ -67,11 +67,19 @@ trung thực: ta tối ưu **giảm gánh nặng cho người**, chứ chưa t�
 
 **CI95 của chênh lệch F1 = [0,0008 ; 0,0969] — không chứa 0.**
 
-| Lần chạy | F1 | Chuyển người | CI95 có chứa 0 |
-|---|---:|---:|---|
-| Chỉ công thức | 0,8515 | 13,33 % | — |
-| Có LLM (Ollama `gemma4:31b-cloud`) | 0,8972 | 1,67 % | **không** |
-| Có LLM (Gemini `3.5-flash-lite`, 5 lần) | 0,8654–0,8868 | 3,33–6,67 % | **luôn chứa** |
+Đo **5 lần**, không trích một số đơn lẻ:
+
+| Lần | F1 | Chuyển người | Độ đúng thô | CI95 |
+|---|---:|---:|---:|---|
+| 1 | 0,8972 | 1,67 % | 48/56 | [0,0008 ; 0,0969] |
+| 2 | 0,8972 | 1,67 % | 48/56 | [0,0008 ; 0,0969] |
+| 3 | 0,8972 | 1,67 % | 48/56 | [0,0008 ; 0,0969] |
+| 4 | 0,8972 | 1,67 % | 48/56 | [0,0008 ; 0,0969] |
+| 5 | 0,8972 | 1,67 % | 48/56 | [0,0008 ; 0,0969] |
+
+**5/5 lần y hệt nhau.** Trên Gemini `3.5-flash-lite` cùng bộ ca này dao động
+F1 0,8654–0,8868 và **CI95 luôn chứa 0** — tức con số trình bày ở đây là số ta
+đo được lại được, không phải số may rủi.
 
 Phần cải thiện nhìn thấy được là **số ca phải chuyển người giảm từ 13,33 % xuống 1,67 %** —
 đo trực tiếp, không cần suy ra từ F1.
@@ -112,6 +120,10 @@ công thức, nên **ca sai nhất lại là ca không bao giờ được hỏi*
 
 LLM chỉ được hỏi 8/60 ca. Trên 6 ca có nhãn để đối chiếu: **đúng 5, sai 1 (83,3 %)**.
 
+> Ba model khác nhau — Gemini, Ollama, UIT — đều trả lời **giống nhau** trên 8 ca
+> này. Đổi model không xử lý được tám lỗi kia, vì các lỗi ấy không nằm trong
+> tầm nhìn của LLM.
+>
 > Đây là **hạn chế kiến trúc, không phải hạn chế của mô hình.** Muốn LLM sửa lỗi
 > thì phải cho nó nhìn thấy chỗ nghi ngờ. Hướng sửa: hạ ngưỡng chuyển câu hỏi,
 > hoặc bắt buộc hỏi LLM khi có nhiều ứng viên cùng họ sản phẩm.
@@ -144,19 +156,29 @@ Người gán **không nhất quán với chính mình** trên cùng mã thứ "
 
 ---
 
-## Slide 9 — Vì sao dùng model miễn phí
+## Slide 9 — Ba model, ba đường truy cập, một kết luận
 
-| | Gemini `3.5-flash-lite` | Ollama `gemma4:31b-cloud` |
-|---|---|---|
-| Hạn mức | **20 lần/ngày** | Không giới hạn |
-| Thời gian một lần đo | 44 – 119 giây | **21 giây** |
-| Độ đúng thô | 85,5 % | **85,7 %** |
+Cùng bộ 60 ca kiểm định, cùng một bộ nhãn:
 
-Giới hạn 20 lần/ngày khiến **không thể đo lặp lại** — mà đo lặp lại mới là
-cách duy nhất biết con số có ổn không. Model miễn phí đổi lấy khả năng chạy
-5 lần, 10 lần, và báo cáo một **khoảng** thay vì một con số đơn lẻ.
+| Model | Đường truy cập | Hạn mức | 1 lần đo | F1 | Độ đúng thô |
+|---|---|---|---:|---:|---:|
+| Gemini `3.5-flash-lite` | Google AI Studio | **20 lần/ngày** | 44–119 giây | 0,8654–0,8868 | 85,5 % |
+| Ollama `gemma4:31b-cloud` | 9router → Ollama đám mây | Không giới hạn | 21 giây | 0,8972 | 85,7 % |
+| **UIT `gemma-4-26b`** | Máy chủ trường | Không giới hạn | **17 giây** | **0,8972** | **85,7 %** |
+| *(đo đối chiếu)* chỉ công thức | — | — | — | 0,8515 | 85,71 % |
 
-Chi phí mỗi ca kiểm định: **99,8 token**.
+**Ba model khác hàng, cho ra cùng một kết quả.** Không phải ngẫu nhiên: tám ca
+duy nhất được hỏi LLM đều đủ rõ, và cả ba model đều trả lời như nhau.
+
+> **Đây là phát hiện quan trọng nhất của phần đo.** Chọn model không phải là
+> nút cần siết. Chỗ cần sửa là **cổng chuyển câu hỏi** — vì 7/8 lỗi nằm ở nơi
+> LLM không bao giờ được hỏi (slide 7).
+
+**Vì sao chọn UIT:** không giới hạn, nhanh nhất (725–800 ms mỗi lời gọi), và
+**tái lập được**: 5 lần chạy cho kết quả giống hệt. Gemini với 20 lần/ngày thì
+**không thể đo lặp lại** — mà đo lặp lại mới là cách biết con số có ổn không.
+
+Chi phí mỗi ca kiểm định: **102,9 token** · không tốn tiền, không trừ hạn mức.
 
 ---
 
