@@ -199,6 +199,25 @@ const explainProposalForGate = async ({
     orderQty: n(input.orderQty),
     unitCost: n(input.unitCost),
     total: n(input.total),
+    // SỬA 2026-10-16 — HAI trường này ĐÃ được đưa cho LLM ở `input` (dòng
+    // `daysOfCoverLeft` và `stockoutDaysLast90`) nhưng THIẾU ở `payloadForGuard`.
+    // Hệ quả đo được trên HTTP thật với SKU 22577:
+    //   input.daysOfCoverLeft = 83 / 157.5 = 0.5   (được LLM dùng hợp lệ)
+    //   LLM viết: "tồn kho đủ dùng trong 0.5 ngày"
+    //   ⇒ `assertNumbersUnchanged` không có 0.5 trong tập cho phép
+    //   ⇒ `guardrail.passed = false`, `inventedNumbers: [0.5]`
+    // LLM bị chặng vì dùng đúng số được cho. Đây là CÙNG loại lỗi với "hàng rào
+    // số từ chối câu trả lời ĐÚNG" đã sửa ở `assertNumbersUnchanged` — biến thể
+    // mới: lần này thất lạ ở chỗ KHỐI SỐ LỆCH NHAU, không phải ở cách làm tròn.
+    //
+    // Cách sửa: cho `payloadForGuard` đúng bằng những gì LLM được cho. KHÔNG nới
+    // rộng tập số cho phép — nếu không thì hàng rào vô nghĩa.
+    daysOfCoverLeft: Number.isFinite(Number(input.daysOfCoverLeft))
+      ? Number(input.daysOfCoverLeft)
+      : null,
+    stockoutDaysLast90: Number.isFinite(Number(input.stockoutDaysLast90))
+      ? Number(input.stockoutDaysLast90)
+      : null,
   };
   // `checkedNumbers` chỉ liệt kê phần SỐ — đó là thứ UI hiển thị.
   const numericGuard = {

@@ -78,6 +78,7 @@ lấy từ đâu?" mà không cần bất kỳ con số nào không kiểm chứ
 | **Hàng rào số từ chối cả bản mẫu của hệ thống** — `assertNumbersUnchanged` cho phép biến thể làm tròn 1 chữ số, nhưng bản mẫu ghi `25,6` từ `25,625` ⇒ `guardrail.passed = false` trên văn bản **đúng số** | 1 lần mỗi chạy | sửa | `npm run demo:check` |
 | **Hàng rào báo động giả** — chữ số trong **tên hàng** (`"12 PENCILLS…"`) bị quét thành "số do LLM tự thêm" | 1 số lạ mỗi SKU có số trong tên | sửa | `npm run demo:check` |
 | **Hàng rào số từ chối cả câu trả lời ĐÚNG của LLM** — LLM nói "không ứng viên nào khớp" bằng `sku: ""`, nhưng `z.string().min(1)` loại rồi báo nhầm thành "JSON sai khuôn" | 2/8 ca | sửa | `npm run demo:check` |
+| **Hàng rào chặn LLM vì dùng đúng số được cho** — `daysOfCoverLeft` và `stockoutDaysLast90` được đưa cho LLM nhưng thiếu trong `payloadForGuard`; LLM viết *"đủ dùng trong 0,5 ngày"* (83÷157,5 = 0,5) rồi bị báo `inventedNumbers: [0.5]` | mọi lần gọi LLM thật | sửa | `POST /api/replenishment/proposals/:gateId/explain` |
 | **Sinh mã đơn trùng mỗi đêm** — tiền tố ngày lấy từ giờ **UTC** còn mốc đếm lấy từ giờ **local**; giữa 00:00–07:00 giờ VN, hệ thống sinh lại mã của ngày hôm trước ⇒ `Unique constraint failed` | **1 lần/đêm** | sửa | `npm run demo:check` |
 
 ### 3.3 Khảo sát thực tế 10 cửa hàng bán lẻ
