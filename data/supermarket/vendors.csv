@@ -1,0 +1,61 @@
+﻿vendor_code,name,tax_code,phone,email,address,payment_terms_days,kraljic,grade
+NCC-1000,Cong ty CP Nuoc giai khat Binh Duong,8220198013,068449860,contact1@sup1.com.vn,"90 Le Loi, Nha Be, TP. HCM",15,BOTTLENECK,A
+NCC-1001,Cong ty TNHH Thuong mai Dai Phat 94,3817852685,028920460,contact2@sup2.com.vn,"184 Cach Mang Thang Tam, Quan 12, Da Nang",45,ROUTINE,D
+NCC-1002,Cong ty TNHH Thuong mai Phuong Nam 56,8029499928,072012904,contact3@sup3.com.vn,"257 Cach Mang Thang Tam, Quan 1, Da Nang",0,ROUTINE,B
+NCC-1003,Cong ty TNHH Thuong mai An Phu 66,4260225193,045227945,contact4@sup4.com.vn,"395 Pasteur, Nha Be, Da Nang",30,STRATEGIC,D
+NCC-1004,Cong ty CP Nong san Dong Nai,5628439504,043045726,contact5@sup1.com.vn,"82 Le Thanh Ton, Quan 5, Da Nang",45,STRATEGIC,D
+NCC-1005,Cong ty TNHH Thuong mai Tan Tien 77,5579099948,036858267,contact6@sup2.com.vn,"33 Vo Van Tan, Tan Phu, Ha Noi",0,LEVERAGE,D
+NCC-1006,Cong ty TNHH Thuong mai An Phu 15,4049549795,065168795,contact7@sup3.com.vn,"163 Ly Thuong Kiet, Hoc Mon, TP. HCM",30,ROUTINE,C
+NCC-1007,Cong ty TNHH Thuong mai Dai Phat 61,4859062540,099198546,contact8@sup4.com.vn,"33 Ho Tung Mau, Quan 12, TP. HCM",45,ROUTINE,A
+NCC-1008,Cong ty CP Nong san Dong Nai,7565362045,051427975,contact9@sup1.com.vn,"125 Nguyen Trai, Quan 10, Ha Noi",0,STRATEGIC,D
+NCC-1009,Cong ty TNHH Thuong mai Phuong Nam 28,9765974100,054087879,contact10@sup2.com.vn,"223 Dien Bien Phu, Quan 5, TP. HCM",60,STRATEGIC,B
+NCC-1010,Cong ty TNHH Thuong mai Phuong Nam 2,8360336205,049784435,contact11@sup3.com.vn,"227 Nam Ky Khoi Nghia, Tan Phu, Da Nang",0,LEVERAGE,C
+NCC-1011,Cong ty TNHH Thuong mai Thanh Cong 48,3828774299,023296983,contact12@sup4.com.vn,"91 Le Thanh Ton, Binh Thanh, Ha Noi",60,BOTTLENECK,C
+NCC-1012,Cong ty CP Nong san Binh Duong,6352002127,099861834,contact13@sup1.com.vn,"129 Ho Tung Mau, Phu Nhuan, Ha Noi",30,STRATEGIC,D
+NCC-1013,Cong ty TNHH Thuong mai An Phu 79,7414285922,092701867,contact14@sup2.com.vn,"188 Vo Van Tan, Cu Chi, Ha Noi",0,BOTTLENECK,D
+NCC-1014,Cong ty TNHH Thuong mai Phuong Nam 5,5985142657,031031998,contact15@sup3.com.vn,"320 Le Thanh Ton, Tan Binh, TP. HCM",0,LEVERAGE,C
+NCC-1015,Cong ty TNHH Thuong mai Tan Tien 89,8724922430,034872295,contact16@sup4.com.vn,"52 Nguyen Thi Minh Khai, Quan 12, Ha Noi",30,BOTTLENECK,C
+NCC-1016,Cong ty CP Hang tieu dung Dong Nai,5326278368,072542114,contact17@sup1.com.vn,"274 Cach Mang Thang Tam, Quan 11, Da Nang",60,STRATEGIC,A
+NCC-1017,Cong ty TNHH Thuong mai Hoang Gia 7,3107207282,027456566,contact18@sup2.com.vn,"14 Nam Ky Khoi Nghia, Quan 12, Ha Noi",0,ROUTINE,D
+NCC-1018,Cong ty TNHH Thuong mai Dai Phat 36,8547517624,045664344,contact19@sup3.com.vn,"34 Hai Ba Trung, Quan 11, Ha Noi",45,BOTTLENECK,B
+NCC-1019,Cong ty TNHH Thuong mai Thanh Cong 28,6349223444,022102866,contact20@sup4.com.vn,"91 Nguyen Thi Minh Khai, Quan 11, Da Nang",60,LEVERAGE,C
+NCC-1020,Cong ty CP Nong san Sai Gon,6636559695,073230424,contact21@sup1.com.vn,"39 Ly Thuong Kiet, Binh Thanh, Da Nang",0,BOTTLENECK,C
+NCC-1021,Cong ty TNHH Thuong mai Tan Tien 11,8220536094,093522363,contact22@sup2.com.vn,"29 Vo Van Tan, Binh Thanh, TP. HCM",15,STRATEGIC,D
+NCC-1022,Cong ty TNHH Thuong mai Dai Phat 16,6957522832,031517486,contact23@sup3.com.vn,"138 Le Thanh Ton, Quan 5, Da Nang",30,BOTTLENECK,C
+NCC-1023,Cong ty TNHH Thuong mai Dai Phat 28,9454585894,059055333,contact24@sup4.com.vn,"189 Phan Chu Trinh, Quan 1, TP. HCM",60,ROUTINE,A
+NCC-1024,Cong ty CP Nong san Ha Noi,9242739035,096000515,contact25@sup1.com.vn,"86 Nguyen Hue, Quan 12, Ha Noi",60,BOTTLENECK,B
+NCC-1025,Cong ty TNHH Thuong mai Thanh Cong 31,2694137753,055209555,contact26@sup2.com.vn,"146 Phan Chu Trinh, Binh Thanh, TP. HCM",60,ROUTINE,B
+NCC-1026,Cong ty TNHH Thuong mai An Phu 37,1259345525,045587803,contact27@sup3.com.vn,"336 Le Thanh Ton, Quan 11, Ha Noi",0,LEVERAGE,D
+NCC-1027,Cong ty TNHH Thuong mai Hoang Gia 73,6292082264,046831397,contact28@sup4.com.vn,"387 Cach Mang Thang Tam, Hoc Mon, TP. HCM",15,BOTTLENECK,B
+NCC-1028,Cong ty CP Thuc pham Ha Noi,5723606761,034386782,contact29@sup1.com.vn,"238 Nguyen Thi Minh Khai, Nha Be, Da Nang",60,BOTTLENECK,B
+NCC-1029,Cong ty TNHH Thuong mai Tan Tien 81,3386036279,027012297,contact30@sup2.com.vn,"315 Le Loi, Thu Duc, TP. HCM",0,LEVERAGE,C
+NCC-1030,Cong ty TNHH Thuong mai Hoang Gia 92,2323220620,055320216,contact31@sup3.com.vn,"162 Hai Ba Trung, Quan 10, Ha Noi",15,BOTTLENECK,C
+NCC-1031,Cong ty TNHH Thuong mai Tan Tien 38,5232931943,074105540,contact32@sup4.com.vn,"394 Nguyen Hue, Tan Phu, Da Nang",60,LEVERAGE,C
+NCC-1032,Cong ty CP Nuoc giai khat Ha Noi,3706617183,024705646,contact33@sup1.com.vn,"223 Tran Hung Dao, Quan 12, Da Nang",15,ROUTINE,A
+NCC-1033,Cong ty TNHH Thuong mai Dai Phat 79,3083429354,075787463,contact34@sup2.com.vn,"99 Cach Mang Thang Tam, Quan 12, Ha Noi",15,STRATEGIC,C
+NCC-1034,Cong ty TNHH Thuong mai Hoang Gia 1,2570804188,072679002,contact35@sup3.com.vn,"251 Le Thanh Ton, Nha Be, Da Nang",15,STRATEGIC,B
+NCC-1035,Cong ty TNHH Thuong mai Thanh Cong 69,1245691137,033930362,contact36@sup4.com.vn,"326 Tran Hung Dao, Tan Phu, TP. HCM",15,BOTTLENECK,A
+NCC-1036,Cong ty CP Nong san Ha Noi,2113018429,084812118,contact37@sup1.com.vn,"294 Nguyen Trai, Quan 3, Ha Noi",0,ROUTINE,D
+NCC-1037,Cong ty TNHH Thuong mai Tan Tien 96,5935854360,096130344,contact38@sup2.com.vn,"169 Vo Van Tan, Quan 12, Ha Noi",45,LEVERAGE,A
+NCC-1038,Cong ty TNHH Thuong mai Phuong Nam 33,7249198410,092738026,contact39@sup3.com.vn,"179 Nam Ky Khoi Nghia, Quan 5, Da Nang",45,BOTTLENECK,B
+NCC-1039,Cong ty TNHH Thuong mai An Phu 46,8696069525,085445518,contact40@sup4.com.vn,"260 Ho Tung Mau, Quan 12, Da Nang",0,BOTTLENECK,B
+NCC-1040,Cong ty CP Hang tieu dung Viet Nam,4802261493,058979067,contact41@sup1.com.vn,"38 Nguyen Thi Minh Khai, Quan 10, Ha Noi",60,LEVERAGE,C
+NCC-1041,Cong ty TNHH Thuong mai An Phu 46,4181828288,024642209,contact42@sup2.com.vn,"315 Vo Van Tan, Quan 5, TP. HCM",0,LEVERAGE,C
+NCC-1042,Cong ty TNHH Thuong mai An Phu 53,7140376313,021132755,contact43@sup3.com.vn,"320 Dien Bien Phu, Phu Nhuan, TP. HCM",0,BOTTLENECK,A
+NCC-1043,Cong ty TNHH Thuong mai An Phu 84,7012567934,053588575,contact44@sup4.com.vn,"44 Vo Van Tan, Tan Binh, TP. HCM",0,BOTTLENECK,A
+NCC-1044,Cong ty CP Nuoc giai khat Ha Noi,4966838252,086802390,contact45@sup1.com.vn,"108 Ho Tung Mau, Thu Duc, Da Nang",15,STRATEGIC,C
+NCC-1045,Cong ty TNHH Thuong mai Phuong Nam 12,5493749590,051336642,contact46@sup2.com.vn,"332 Hai Ba Trung, Binh Thanh, Da Nang",15,STRATEGIC,C
+NCC-1046,Cong ty TNHH Thuong mai Dai Phat 97,4076416036,051091626,contact47@sup3.com.vn,"304 Phan Chu Trinh, Hoc Mon, Da Nang",30,ROUTINE,D
+NCC-1047,Cong ty TNHH Thuong mai Phuong Nam 13,8781907150,081710649,contact48@sup4.com.vn,"339 Ho Tung Mau, Hoc Mon, Ha Noi",0,STRATEGIC,D
+NCC-1048,Cong ty CP Hang tieu dung Sai Gon,2173566301,061351230,contact49@sup1.com.vn,"239 Le Loi, Binh Thanh, Ha Noi",30,BOTTLENECK,A
+NCC-1049,Cong ty TNHH Thuong mai Thanh Cong 31,7475877030,022886721,contact50@sup2.com.vn,"15 Tran Hung Dao, Go Vap, Da Nang",15,BOTTLENECK,C
+NCC-1050,Cong ty TNHH Thuong mai Tan Tien 67,7818515823,095236385,contact51@sup3.com.vn,"147 Phan Chu Trinh, Quan 7, TP. HCM",30,LEVERAGE,D
+NCC-1051,Cong ty TNHH Thuong mai Thanh Cong 73,5086954200,045666357,contact52@sup4.com.vn,"159 Vo Van Tan, Cu Chi, Da Nang",60,ROUTINE,D
+NCC-1052,Cong ty CP Nuoc giai khat Ha Noi,4326288176,037229078,contact53@sup1.com.vn,"41 Ho Tung Mau, Quan 1, Da Nang",60,ROUTINE,A
+NCC-1053,Cong ty TNHH Thuong mai Tan Tien 18,6162736183,098782832,contact54@sup2.com.vn,"301 Hai Ba Trung, Quan 1, Da Nang",0,BOTTLENECK,A
+NCC-1054,Cong ty TNHH Thuong mai Hoang Gia 31,5074093765,028287001,contact55@sup3.com.vn,"362 Nguyen Trai, Hoc Mon, Da Nang",15,LEVERAGE,B
+NCC-1055,Cong ty TNHH Thuong mai Tan Tien 66,9270824616,054450633,contact56@sup4.com.vn,"388 Nguyen Hue, Thu Duc, TP. HCM",30,STRATEGIC,A
+NCC-1056,Cong ty CP Hang tieu dung Binh Duong,9184574911,051658908,contact57@sup1.com.vn,"13 Vo Van Tan, Go Vap, TP. HCM",15,LEVERAGE,B
+NCC-1057,Cong ty TNHH Thuong mai Hoang Gia 30,9702936510,085299573,contact58@sup2.com.vn,"184 Vo Van Tan, Hoc Mon, Da Nang",45,STRATEGIC,C
+NCC-1058,Cong ty TNHH Thuong mai Phuong Nam 30,1409207525,043028133,contact59@sup3.com.vn,"42 Nam Ky Khoi Nghia, Binh Tan, Ha Noi",45,LEVERAGE,B
+NCC-1059,Cong ty TNHH Thuong mai Phuong Nam 90,4551898838,058754274,contact60@sup4.com.vn,"225 Ly Thuong Kiet, Cu Chi, TP. HCM",45,LEVERAGE,B
