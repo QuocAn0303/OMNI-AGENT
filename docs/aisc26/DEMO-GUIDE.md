@@ -53,18 +53,33 @@ Phải in `DB OK` thì mới đi tiếp.
 ## 2. Tạo dữ liệu demo
 
 ```bash
-npm run db:migrate        # tạo bảng
-npm run demo:setup        # dữ liệu tối thiểu cho demo
-npm run demo:login        # bật đăng nhập + gói business (idempotent)
+npm run db:migrate              # tạo bảng
+npm run demo:setup              # dữ liệu tối thiểu cho demo
+npm run demo:login -- --apply   # bật mật khẩu đăng nhập + gói business
 ```
 
-Tài khoản demo (tạo ở bước `demo:login`):
+> ⚠️ **`demo:login` mặc định KHÔNG ghi gì** — chỉ in ra kế hoạch rồi thoát.
+> Thiếu `--apply` thì mật khẩu trong DB vẫn là `khong-dang-nhap-duoc` (đặt cố ý
+> bởi `data:import`) và đăng nhập sẽ thất bại.
+
+Tài khoản demo:
 
 | | |
 |---|---|
 | Email | `demo-mo-phong@local.invalid` |
 | Mật khẩu | `Demo123456` |
 | Tenant | `omni-demo-mo-phong` |
+
+**Kiểm tra đã bật thật chưa — không đoán:**
+
+```bash
+curl -s -X POST http://localhost:4000/api/auth/login `
+  -H "Content-Type: application/json" `
+  -d "{\"email\":\"demo-mo-phong@local.invalid\",\"password\":\"Demo123456\"}"
+```
+
+Phải trả về `"success":true` và một `token`. Nếu trả
+`"Email hoặc mật khẩu không đúng"` ⇒ chạy lại `demo:login -- --apply`.
 
 > **Không chạy `npm run db:seed`** nếu database đã có dữ liệu — lệnh đó ghi đè.
 

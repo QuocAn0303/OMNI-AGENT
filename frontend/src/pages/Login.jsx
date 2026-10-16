@@ -34,7 +34,9 @@ export default function Login() {
     setLoading(true);
     try {
       const resp = await axiosInstance.post("/auth/login", {
-        email: values.username,
+        // Cắt khoảng trắng dính khi dán từ clipboard — nguyên nhân thường gặp
+        // nhất khiến login bị từ chối với thông báo không chỉ rõ lỗi ở đâu.
+        email: String(values.username || "").trim(),
         password: values.password,
       });
       const data = resp.data?.data || {};
@@ -52,10 +54,12 @@ export default function Login() {
         navigate("/dashboard");
       }
     } catch (err) {
-      setError(
-        err?.response?.data?.message ||
-          t('login.errorFallback'),
-      );
+      // Ưu tiên lỗi theo TRƯỜNG nếu có. API trả `{ message: "Dữ liệu không hợp lệ",
+      // errors: [{ field: "email", message: "Email không hợp lệ" }] }` cho lỗi
+      // validate. Chỉ lấy `message` chung thì người dùng thấy "Dữ liệu không hợp
+      // lệ" — không biết phải sửa ô nào, phải đoán.
+      const fieldError = err?.response?.data?.errors?.[0]?.message;
+      setError(fieldError || err?.response?.data?.message || t('login.errorFallback'));
     } finally {
       setLoading(false);
     }
