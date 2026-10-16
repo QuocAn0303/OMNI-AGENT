@@ -269,7 +269,7 @@ lại ngay.
 
 ---
 
-## 8. Cần người, không làm bằng code được
+## 7. Cần người, không làm bằng code được
 
 | Việc | Lệnh / đường dẫn | Tình trạng |
 |---|---|---|
