@@ -243,62 +243,28 @@ function readMarketplace(file, days, shiftMs = 0) {
   return { orders, minDate, maxDate, skippedOutOfWindow };
 }
 
-/** Xoá sạch tenant demo theo thứ tự phụ thuộc (con → cha). */
+/**
+ * Xoá sạch tenant demo — bất chấp thứ tự phụ thuộc.
+ *
+ * Vòng lặp "thêm bảng con mới rồi lại lỗi FK" đã ba lần (invoices → payments →
+ * stock_transfer_items). Thay vì đuổi theo, vô hiệu kiểm tra FK trong transaction
+ * (`session_replication_role = replica` — chỉ superuser; DB LOCAL và script đã
+ * `assertLocalDb`) rồi xoá mọi bảng PUBLIC có cột `tenantId`. Cách này tự động
+ * theo kịp schema mới mà không cần sửa danh sách thủ công.
+ */
 async function resetTenant(tenantId) {
-  const order = [
-    ['orderItem', { order: { tenantId } }],
-    // `invoices.orderId` là FK **RESTRICT** (không cascade). Bảng này KHÔNG có trong
-    // danh sách cũ ⇒ chỉ cần một dòng `invoices` sinh ra ngoài luồng import (ví dụ
-    // `order.service.create` ghi hoá đơn khi demo chạy) là `data:import --reset` chết
-    // với `violates RESTRICT ... invoices_orderId_fkey` và **không nạp lại được** tenant
-    // demo. Xoá trước `order`, sau `orderItem` và trước mọi bảng con khác của đơn.
-    ['invoice', { tenantId }],
-    ['electronicInvoice', { tenantId }],
-    // Bảng con của `user`/`order`/`vendor` phải xoá TRƯỚC khi xoá chúng — FK đều
-    // RESTRICT. Danh sách này bổ sung sau khi gặp lỗi thật: `refresh_tokens` chặn
-    // `user`, `agent_*` chặn `user`, `debt`/`journal_*` chặn `order`.
-    ['refreshToken', { user: { tenantId } }],
-    ['portalOtp', { tenantId }],
-    ['portalSession', { tenantId }],
-    ['supportAccessSession', { tenantId }],
-    ['agentFeedback', { tenantId }],
-    ['agentStep', { tenantId }],
-    ['agentHumanGate', { tenantId }],
-    ['agentSession', { tenantId }],
-    ['notification', { tenantId }],
-    ['journalPostingError', { tenantId }],
-    ['journalLine', { tenantId }],
-    ['journalEntry', { tenantId }],
-    ['debtPayment', { debt: { tenantId } }],
-    ['debt', { tenantId }],
-    ['purchaseInvoiceRecord', { tenantId }],
-    // Bảng con của product/customer: xoá TRƯỚC bảng cha (FK RESTRICT). Thiếu chúng thì
-    // `data:import --reset` xoá được tenant nhưng để lại dòng mồ côi trỏ tới tenant
-    // vừa bị xoá (đã quan sát: 427 dòng `promotions` mồ côi sau một lần reset).
-    ['promotionUsage', { promotion: { tenantId } }],
-    ['promotion', { tenantId }],
-    ['serialNumber', { product: { tenantId } }],
-    ['inventoryLot', { product: { tenantId } }],
-    ['productVariant', { product: { tenantId } }],
-    ['customerTagOnCustomer', { customer: { tenantId } }],
-    ['order', { tenantId }],
-    ['goodsReceiptItem', { grn: { tenantId } }],
-    ['goodsReceiptNote', { tenantId }],
-    ['purchaseItem', { purchaseOrder: { tenantId } }],
-    ['purchaseOrder', { tenantId }],
-    ['inventoryTransaction', { inventory: { tenantId } }],
-    ['inventory', { tenantId }],
-    ['product', { tenantId }],
-    ['category', { tenantId }],
-    ['customer', { tenantId }],
-    ['warehouse', { tenantId }],
-    ['vendor', { tenantId }],
-    ['auditLog', { tenantId }],
-    ['user', { tenantId }],
-  ];
-  for (const [model, where] of order) {
-    await prisma[model].deleteMany({ where });
-  }
+  await prisma.$transaction(async (tx) => {
+    await tx.$executeRaw`SET LOCAL session_replication_role = replica`;
+    const tables = await tx.$queryRaw`
+      SELECT table_name AS name
+      FROM information_schema.columns
+      WHERE table_schema = 'public' AND column_name = 'tenantId'
+      ORDER BY table_name
+    `;
+    for (const { name } of tables) {
+      await tx.$executeRawUnsafe(`DELETE FROM "${name}" WHERE "tenantId" = $1`, tenantId);
+    }
+  });
   await prisma.tenant.delete({ where: { id: tenantId } });
 }
 
@@ -408,56 +374,8 @@ async function main() {
       return;
     }
     const tid = tenant.id;
-    await prisma.$transaction(async (tx) => {
-      for (const [model, where] of [
-        ['orderItem', { order: { tenantId: tid } }],
-        // FK RESTRICT: phải xoá `invoices`/`electronicInvoices` TRƯỚC `order`, nếu không
-        // một dòng hoá đơn sinh ra ngoài luồng import (đơn của `demo:run`) làm cả
-        // `data:import --reset` chết và tenant demo không nạp lại được. Xem `resetTenant`.
-        ['invoice', { tenantId: tid }],
-        ['electronicInvoice', { tenantId: tid }],
-        // Bảng con của `user`/`order` phải xoá trước (FK RESTRICT) — cùng lý do và
-        // cùng danh sách với `resetTenant` ở trên.
-        ['refreshToken', { user: { tenantId: tid } }],
-        ['portalOtp', { tenantId: tid }],
-        ['portalSession', { tenantId: tid }],
-        ['supportAccessSession', { tenantId: tid }],
-        ['agentFeedback', { tenantId: tid }],
-        ['agentStep', { tenantId: tid }],
-        ['agentHumanGate', { tenantId: tid }],
-        ['agentSession', { tenantId: tid }],
-        ['notification', { tenantId: tid }],
-        ['journalPostingError', { tenantId: tid }],
-        ['journalLine', { tenantId: tid }],
-        ['journalEntry', { tenantId: tid }],
-        ['debtPayment', { debt: { tenantId: tid } }],
-        ['debt', { tenantId: tid }],
-        ['purchaseInvoiceRecord', { tenantId: tid }],
-        ['promotionUsage', { promotion: { tenantId: tid } }],
-        ['promotion', { tenantId: tid }],
-        ['serialNumber', { product: { tenantId: tid } }],
-        ['inventoryLot', { product: { tenantId: tid } }],
-        ['productVariant', { product: { tenantId: tid } }],
-        ['customerTagOnCustomer', { customer: { tenantId: tid } }],
-        ['order', { tenantId: tid }],
-        ['goodsReceiptItem', { grn: { tenantId: tid } }],
-        ['goodsReceiptNote', { tenantId: tid }],
-        ['purchaseItem', { purchaseOrder: { tenantId: tid } }],
-        ['purchaseOrder', { tenantId: tid }],
-        ['inventoryTransaction', { inventory: { tenantId: tid } }],
-        ['inventory', { tenantId: tid }],
-        ['product', { tenantId: tid }],
-        ['category', { tenantId: tid }],
-        ['customer', { tenantId: tid }],
-        ['warehouse', { tenantId: tid }],
-        ['vendor', { tenantId: tid }],
-        ['auditLog', { tenantId: tid }],
-        ['user', { tenantId: tid }],
-      ]) {
-        await tx[model].deleteMany({ where });
-      }
-    });
-    await prisma.tenant.delete({ where: { id: tid } });
+    // Danh sách bảng con + thứ tự xoá nằm trong `resetTenant` (một chỗ duy nhất).
+    await resetTenant(tid);
     console.log(`[import] đã xoá tenant demo ${tid}`);
     tenant = null;
   }

@@ -138,11 +138,47 @@ const pickDemoSku = async (tenantId) => {
     seen.add(row.product.id);
     uniqueProducts.push(row.product);
   }
-  // `orderBy` ở trên là để thứ tự ứng viên **tất định**: `findMany` không có `orderBy`
-  // thì Postgres trả thứ tự tuỳ ý và `slice(0, MAX_CANDIDATES)` có thể chọn khác nhau
-  // giữa hai lần chạy ⇒ demo trước/sau nói về hai SKU khác nhau.
+  // Chọn ứng viên ĐANG CÓ TỒN THẤP trước, rồi mới tính toán.
+  //
+  // VÌ SAO (đo được 2026-10-16 với bộ dữ liệu chuỗi siêu thị): bản cũ cắt
+  // `slice(0, MAX_CANDIDATES)` theo thứ tự `productId` (UUID ⇒ vô nghĩa với
+  // nghĩa bán hàng). Trong 600 SKU chỉ 12 SKU là "hero" (tồn thấp + có NCC),
+  // nên 20 ứng viên đầu gần như không bao giờ chạm vào hero ⇒
+  // `KHÔNG có SKU nào đủ điều kiện chạy luồng demo`.
+  //
+  // Sắp theo ATP tăng dần vẫn TẤT ĐỊNH (ATP là số trong DB), và đúng nghĩa:
+  // SKU cần nhập là SKU còn ít hàng.
+  const ids = uniqueProducts.map((p) => p.id);
+  const invRows = ids.length
+    ? await inTenant(() => prisma.inventory.findMany({
+      where: { productId: { in: ids } },
+      select: { productId: true, warehouseId: true, quantity: true, reserved: true },
+    }))
+    : [];
+  const atpTheoSanPham = new Map();
+  for (const r of invRows) {
+    atpTheoSanPham.set(r.productId, num(atpTheoSanPham.get(r.productId)) + num(r.quantity) - num(r.reserved));
+  }
+  // Chỉ ứng viên nào CÒN HÀNG Ở KHO MẶC ĐỊNH mới bán được trong bước 2.
+  //
+  // VÌ SAO (đo được 2026-10-16 trên bộ dữ liệu chuỗi siêu thị): ATP là TỔNG
+  // tồn mọi kho, còn `order.service.create` bán ở KHO MẬC ĐỊNH. SKU có tồn ở
+  // cửa hàng nhưng 0 ở kho trung tâm vẫn được tính là "còn hàng" ⇒ bước 2 văng
+  // `Số lượng phẩm ... không đủ số lượng có thể bán` và cả luồng chết.
+  const { getDefaultWarehouseId } = require(`${ROOT}/src/utils/warehouse.helper`);
+  const defaultWarehouseId = await inTenant(() => getDefaultWarehouseId());
+  const tonKhoMacDinh = new Map(
+    invRows
+      .filter((r) => r.warehouseId === defaultWarehouseId)
+      .map((r) => [r.productId, num(r.quantity) - num(r.reserved)]),
+  );
+  const daSapXep = uniqueProducts
+    .slice()
+    .sort((a, b) => num(atpTheoSanPham.get(a.id)) - num(atpTheoSanPham.get(b.id))
+      || a.sku.localeCompare(b.sku));
+
   const candidates = [];
-  for (const product of uniqueProducts.slice(0, MAX_CANDIDATES)) {
+  for (const product of daSapXep.slice(0, MAX_CANDIDATES)) {
     const input = (await inTenant(() => loadReplenishmentInput([product.id]))).get(product.id);
     if (!input) continue;
     const receipts = await inTenant(() => loadLeadTimeReceipts(product.id));
@@ -164,6 +200,7 @@ const pickDemoSku = async (tenantId) => {
   const openKeys = await inTenant(() => findOpenProposalKeys());
   const eligible = candidates.filter(
     (c) => c.atp >= 1 && c.plan.order.orderQty > 0
+      && num(tonKhoMacDinh.get(c.product.id)) >= 1
       && !openKeys.some((k) => k.startsWith(`PROPOSAL:${c.product.id}:`)),
   );
   const inScenarioBand = (c) => {
@@ -188,6 +225,7 @@ const pickDemoSku = async (tenantId) => {
   }
   return {
     ...usable[0],
+    defaultWarehouseId,
     candidates: candidates.length,
     usable: usable.length,
     pickedFrom: hero.length ? 'hero (lead time đo được + dải tình huống)' : 'fallback (chưa chạy demo:setup?)',
@@ -302,8 +340,21 @@ const purgeFlowResidue = async (tenantId, since) => {
       )).count;
       // `OrderItem` cũng không có `createdAt` ⇒ xoá theo đơn cha. `KdsTicket` trỏ tới
       // `orderItem` (FK, không cascade) ⇒ phải xoá trước.
+      //
+      // CHỈ đơn có mã `ORD-YYYYMMDD-XXXX` (do `orderService.create` sinh). Đơn của
+      // `data:import` mang `orderCode` = Order ID gốc của tệp sàn VÀ có `createdAt`
+      // theo neo A4 — ngày cuối cửa sổ rơi vào 09:00 UTC HÔM NAY, tức là "tương lai"
+      // nếu chạy demo:check trước 16:00 local. Cửa sổ thời gian đơn thuần đã từng
+      // xoá nhầm 146 đơn import thật (đo được: 5.282 → 5.136 sau một lần demo:check,
+      // 2026-10-18). Lọc theo tiền tố mã đơn là lọc theo NGUỒN GỐC, không theo giờ.
       const freshOrderIds = (await inT(() =>
-        prisma.order.findMany({ where: { createdAt: { gte: since } }, select: { id: true } }),
+        prisma.order.findMany({
+          where: {
+            createdAt: { gte: since },
+            orderCode: { startsWith: 'ORD-' },
+          },
+          select: { id: true },
+        }),
       )).map((o) => o.id);
       const freshOrderItemIds = freshOrderIds.length
         ? (await inT(() => prisma.orderItem.findMany({
@@ -324,9 +375,36 @@ const purgeFlowResidue = async (tenantId, since) => {
       deleted.invoices = freshOrderIds.length
         ? (await inT(() => prisma.invoice.deleteMany({ where: { orderId: { in: freshOrderIds } } }))).count
         : 0;
-      deleted.orders = (await inT(() =>
-        prisma.order.deleteMany({ where: { createdAt: { gte: since } } }),
-      )).count;
+      // `payments.orderId` cũng là FK **RESTRICT** và bản cleanup cũ không xoá.
+      // Đo được 2026-10-16 (bộ dữ liệu chuỗi siêu thị): `order.service.create`
+      // với `paymentStatus: PAID` sinh dòng `payments` ⇒ xoá `orders` văng
+      // `violates RESTRICT ... "payments_orderId_fkey"` ⇒ `demo:run` chết đúng
+      // lúc dọn dẹp, để lại PO + GRN + bút toán. Xoá theo đơn con TRƯỚC đơn.
+      deleted.payments = freshOrderIds.length
+        ? (await inT(() => prisma.payment.deleteMany({ where: { orderId: { in: freshOrderIds } } }))).count
+        : 0;
+      // `loyalty_transactions.orderId` không có quan hệ (không cascade, không
+      // RESTRICT) ⇒ xoá đơn xong thì dòng điểm thưởng của đơn đó VẪN ở lại.
+      // Đo được 2026-10-16: mỗi lần chạy luồng để lại đúng 1 dòng ⇒ `demo:run`
+      // báo "rác còn lại: loyalty_transactions +1" dù đã dọn hết phần còn lại.
+      deleted.loyaltyTransactions = freshOrderIds.length
+        ? (await inT(() => prisma.loyaltyTransaction.deleteMany({ where: { orderId: { in: freshOrderIds } } }))).count
+        : 0;
+      deleted.billSplits = freshOrderIds.length
+        ? (await inT(() => prisma.billSplit.deleteMany({ where: { orderId: { in: freshOrderIds } } }))).count
+        : 0;
+      deleted.promotionUsages = freshOrderIds.length
+        ? (await inT(() => prisma.promotionUsage.deleteMany({ where: { orderId: { in: freshOrderIds } } }))).count
+        : 0;
+      deleted.deliveries = freshOrderIds.length
+        ? (await inT(() => prisma.delivery.deleteMany({ where: { orderId: { in: freshOrderIds } } }))).count
+        : 0;
+      deleted.returns = freshOrderIds.length
+        ? (await inT(() => prisma.orderReturn.deleteMany({ where: { orderId: { in: freshOrderIds } } }))).count
+        : 0;
+      deleted.orders = freshOrderIds.length
+        ? (await inT(() => prisma.order.deleteMany({ where: { id: { in: freshOrderIds } } }))).count
+        : 0;
       deleted.inventoryTransactions = (await inT(() =>
         prisma.inventoryTransaction.deleteMany({
           where: { createdAt: { gte: since } },
@@ -426,16 +504,21 @@ const runDemoFlow = async ({ tenantId, onEvent = () => {} } = {}) => {
   // ── 1. chọn SKU ─────────────────────────────────────────────────────────
   picked = await step('pick-sku', async () => {
     const r = await pickDemoSku(tenantId);
+    // Dòng tồn PHẢI là của KHO MẶC ĐỊNH — cùng kho mà `order.service.create`
+    // dùng. Bản cũ đọc `findFirst({ productId })` (kho tuỳ ý) nên `soldQty` tính
+    // trên một kho khác ⇒ hoặc bán quá tồn, hoặc `cleanup` trả nhầm kho.
     const inv = await inTenant(() =>
       prisma.inventory.findFirst({
-        where: { productId: r.product.id },
+        where: { productId: r.product.id, warehouseId: r.defaultWarehouseId },
         select: { id: true, quantity: true, reserved: true, minStock: true },
       }),
     );
+    if (!inv) throw new Error('SKU được chọn không có dòng tồn ở kho mặc định');
     return {
       sku: r.product.sku,
       productName: r.product.name,
       productId: r.product.id,
+      warehouseId: r.defaultWarehouseId,
       candidates: r.candidates,
       usable: r.usable,
       pickedFrom: r.pickedFrom,
@@ -664,7 +747,16 @@ const runDemoFlow = async ({ tenantId, onEvent = () => {} } = {}) => {
     // Đo được khi viết bước này: bỏ qua thì GRN báo "PO phải ở trạng thái
     // APPROVED/ORDERED để nhận hàng" ⇒ đúng là khoảng trống, không phải lỗi cấu
     // hình. Sửa bằng cách đi đúng quy trình.
-    await inTenant(() => purchaseService.submit(po.id, approver.id));
+    //
+    // PO không phải lúc nào cũng `DRAFT`: `purchaseService.create` đặt
+    // `PENDING_APPROVAL` khi tổng tiền ≥ `poApprovalThreshold` (mặc định 5tr).
+    // Đo được 2026-10-16 trên bộ dữ liệu chuỗi siêu thị (giá niêm yết VND):
+    // PO 70 cái × giá vốn ~300k ⇒ ~21 triệu ⇒ đã ở `PENDING_APPROVAL` ⇒ gọi
+    // `submit` văng "Chỉ PO nháp mới được gửi duyệt" và luồng chết ở bước 7.
+    // Gọi `submit` đúng khi PO còn là nháp — trạng thái quyết định, không đoán.
+    if (po.status === 'DRAFT') {
+      await inTenant(() => purchaseService.submit(po.id, approver.id));
+    }
     const poApproved = await inTenant(() => purchaseService.approve(po.id, approver.role, approver.id));
     const poStatusAfter = await inTenant(() =>
       prisma.purchaseOrder.findUnique({ where: { id: po.id }, select: { status: true } }),
@@ -676,12 +768,6 @@ const runDemoFlow = async ({ tenantId, onEvent = () => {} } = {}) => {
     const totalOrdered = po.items.reduce((s, i) => s + num(i.quantity), 0);
     const targetReceived = Math.max(1, Math.floor(totalOrdered / 2));
 
-    const stockBefore = await inTenant(() =>
-      prisma.inventory.findFirst({
-        where: { productId: picked.productId },
-        select: { quantity: true, reserved: true },
-      }),
-    );
     // Ghi lại MỌI dòng tồn mà PO liên quan tới, kèm số lượng trước khi chạy.
     // `cleanup()` chỉ khôi phục `picked.inventoryId`; nếu PO có nhiều dòng thì các
     // dòng còn lại sẽ bị cộng tồn mà không được trả lại.
@@ -691,7 +777,7 @@ const runDemoFlow = async ({ tenantId, onEvent = () => {} } = {}) => {
     const stockRestore = await inTenant(() =>
       prisma.inventory.findMany({
         where: { productId: { in: po.items.map((i) => i.productId) } },
-        select: { id: true, productId: true, quantity: true, reserved: true },
+        select: { id: true, productId: true, warehouseId: true, quantity: true, reserved: true },
       }),
     );
     const debtBefore = await inTenant(() =>
@@ -726,9 +812,18 @@ const runDemoFlow = async ({ tenantId, onEvent = () => {} } = {}) => {
     // ── 7c. POST: hạch bút toán + cộng dồn công nợ ─────────────────────────
     const posted = await inTenant(() => grnService.post(note.id, approver.id));
 
-    const stockAfter = await inTenant(() =>
+    // Số tồn phải đo trên ĐÚNG dòng mà GRN vừa ghi vào (cùng `warehouseId`).
+    // Đo được 2026-10-16: bản cũ đọc `inventory.findFirst({ productId })` — dòng
+    // tồn ĐẦU TIÊN của sản phẩm, không phải dòng ở kho GRN ⇒ in ra
+    // "Tồn kho +0 (đúng bằng số hàng đạt QC)" trong khi hàng ĐÃ vào kho khác.
+    // Trên sân khấu, "số đo sai" còn tệ hơn "không có số".
+    const grnWarehouseId = note.warehouseId;
+    const stockBeforeRow = stockRestore.find(
+      (r) => r.productId === picked.productId && r.warehouseId === grnWarehouseId,
+    ) || stockRestore.find((r) => r.productId === picked.productId);
+    const stockAfterRow = await inTenant(() =>
       prisma.inventory.findFirst({
-        where: { productId: picked.productId },
+        where: { productId: picked.productId, warehouseId: grnWarehouseId },
         select: { quantity: true, reserved: true },
       }),
     );
@@ -770,7 +865,7 @@ const runDemoFlow = async ({ tenantId, onEvent = () => {} } = {}) => {
       journalCredit: creditSum,
       journalBalanced: entry ? debitSum === creditSum && debitSum > 0 : null,
       payableAmount: num(posted?.payable?.amount),
-      stockDelta: num(stockAfter?.quantity) - num(stockBefore?.quantity),
+      stockDelta: num(stockAfterRow?.quantity) - num(stockBeforeRow?.quantity),
       debtDelta: toNum(debtAfter._sum.amount) - toNum(debtBefore._sum.amount),
       debtRowsDelta: (debtAfter._count._all || 0) - (debtBefore._count._all || 0),
       vendorName: po.vendor.name,
@@ -935,5 +1030,6 @@ module.exports = {
   captureTenantCounts,
   diffTenantCounts,
   pickDemoSku,
+  purgeFlowResidue,
   runDemoFlow,
 };
