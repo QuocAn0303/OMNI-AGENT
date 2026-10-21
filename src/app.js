@@ -153,7 +153,7 @@ const rateLimit = require('express-rate-limit')
 
 const apiLimiter = rateLimit({
   windowMs: 60 * 1000,
-  max: 100,
+  max: Number(process.env.API_RATE_LIMIT_MAX) || 1000,
   standardHeaders: true,
   legacyHeaders: false,
   // CRM audit L24: `/api/crm/track/*` dùng limiter riêng (`trackingLimiter`).
