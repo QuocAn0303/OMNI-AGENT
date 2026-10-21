@@ -394,28 +394,6 @@ export default function SmartApprovalCard({ gate, onDone }) {
         />
       </Space>
 
-      <Space direction="vertical" size={4} style={{ display: 'flex', margin: '12px 0' }}>
-        <label htmlFor={`purchase-quantity-${gate.id}`}>
-          <Text strong>{t('purchaseDecision.label')}</Text>
-        </label>
-        <InputNumber
-          id={`purchase-quantity-${gate.id}`}
-          min={1}
-          max={2147483647}
-          step={1}
-          value={quantity}
-          onChange={(value) => { setQuantity(value); setDraftError(null); setAckDrift(false); }}
-          placeholder={t('purchaseDecision.placeholder')}
-          disabled={busy || aiBusy || decided}
-          status={quantity !== null && !quantityValid ? 'error' : undefined}
-          style={{ width: '100%', maxWidth: 360 }}
-        />
-        <Text type="secondary">{t('purchaseDecision.help')}</Text>
-        {quantityValid && (
-          <Text strong>{t('purchaseDecision.total', { total: money(quantity * Number(item.unitCost)) })}</Text>
-        )}
-      </Space>
-
       {missingCost && (
         <Alert
           type="error"
@@ -520,7 +498,24 @@ export default function SmartApprovalCard({ gate, onDone }) {
         draftError={draftError}
       />
 
-      <Space wrap style={{ marginTop: 12 }}>
+      <Space wrap align="end" style={{ marginTop: 12 }}>
+        <Space direction="vertical" size={4}>
+          <label htmlFor={`purchase-quantity-${gate.id}`}>
+            <Text strong>{t('purchaseDecision.label')}</Text>
+          </label>
+          <InputNumber
+            id={`purchase-quantity-${gate.id}`}
+            min={1}
+            max={2147483647}
+            step={1}
+            value={quantity}
+            onChange={(value) => { setQuantity(value); setDraftError(null); setAckDrift(false); }}
+            placeholder={t('purchaseDecision.placeholder')}
+            disabled={busy || aiBusy || decided}
+            status={quantity !== null && !quantityValid ? 'error' : undefined}
+            style={{ width: 260, maxWidth: '100%' }}
+          />
+        </Space>
         {stuck ? (
           <Button type="primary" icon={<ReloadOutlined />} loading={busy} onClick={retry}>
             Thử lại tạo PO
@@ -546,6 +541,13 @@ export default function SmartApprovalCard({ gate, onDone }) {
               Từ chối
             </Button>
           </>
+        )}
+      </Space>
+
+      <Space direction="vertical" size={4} style={{ display: 'flex', marginTop: 8 }}>
+        <Text type="secondary">{t('purchaseDecision.help')}</Text>
+        {quantityValid && (
+          <Text strong>{t('purchaseDecision.total', { total: money(quantity * Number(item.unitCost)) })}</Text>
         )}
       </Space>
 
