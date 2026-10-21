@@ -1,4 +1,17 @@
 {
+  "purchaseDecision": {
+    "suggested": "Suggested for reference:",
+    "label": "Quantity you decide to purchase",
+    "placeholder": "Enter purchase quantity",
+    "help": "AI provides a recommendation. Enter a positive whole number; the supplier message and approved PO will use your quantity.",
+    "invalid": "Enter a whole number between 1 and 2,147,483,647.",
+    "total": "Total for your selected quantity: {{total}}",
+    "enterToDraft": "Enter your purchase quantity above to draft the supplier message.",
+    "updating": "Updating the message with your new quantity…",
+    "draftQuantity": "The message uses your selected quantity: {{quantity}}.",
+    "humanDecides": "The approver chooses the quantity",
+    "driftHelp": "Confirm you have reviewed the changed data. The PO will use the quantity you entered."
+  },
   "topbar": {
     "profile": "Profile",
     "settings": "Settings",

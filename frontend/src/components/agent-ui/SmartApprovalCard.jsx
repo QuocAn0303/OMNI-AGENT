@@ -19,8 +19,9 @@
  *
  * Hợp đồng API: xem `src/api/agentGates.js`.
  */
-import { useMemo, useState } from 'react';
-import { Alert, Button, Card, Descriptions, Divider, Input, Modal, Space, Statistic, Tag, Typography, message } from 'antd';
+import { useEffect, useMemo, useState } from 'react';
+import { useTranslation } from 'react-i18next';
+import { Alert, Button, Card, Descriptions, Divider, Input, InputNumber, Modal, Space, Statistic, Tag, Typography, message } from 'antd';
 import {
   CheckOutlined,
   CloseOutlined,
@@ -95,7 +96,8 @@ function DriftDiff({ diff }) {
  * KHÔNG dùng icon cho hai nhãn hàng rào: chữ thuần để trích chép lên slide
  * không bị vỡ khi sao chép.
  */
-function AiExplainBlock({ block, onExplain, onTamper, busy }) {
+function AiExplainBlock({ block, onExplain, onTamper, busy, quantity, quantityValid, draftError }) {
+  const { t } = useTranslation();
   if (!block) {
     return (
       <Space wrap style={{ marginTop: 12 }}>
@@ -114,6 +116,7 @@ function AiExplainBlock({ block, onExplain, onTamper, busy }) {
 
   const g = block.guardrail || {};
   const tampered = block.simulateTamper === true;
+  const draftReady = quantityValid && block.selectedQuantity === quantity;
 
   return (
     <div style={{ marginTop: 12, padding: 12, border: '1px solid #f0f0f0', borderRadius: 8 }}>
@@ -135,12 +138,21 @@ function AiExplainBlock({ block, onExplain, onTamper, busy }) {
           <Text strong>Tin nhắn đặt hàng gửi nhà cung cấp</Text>
           <Tag color="default">chỉ soạn — chưa gửi</Tag>
         </Space>
-        <Paragraph
-          copyable={{ text: block.vendorMessage, tooltips: ['Sao chép tin nhắn', 'Đã sao chép'] }}
-          style={{ marginBottom: 0, whiteSpace: 'pre-wrap' }}
-        >
-          {block.vendorMessage}
-        </Paragraph>
+        {draftReady ? (
+          <Paragraph
+            copyable={{ text: block.vendorMessage, tooltips: ['Sao chép tin nhắn', 'Đã sao chép'] }}
+            style={{ marginBottom: 0, whiteSpace: 'pre-wrap' }}
+          >
+            {block.vendorMessage}
+          </Paragraph>
+        ) : (
+          <Text type={draftError ? 'danger' : 'secondary'}>
+            {draftError || t(quantityValid ? 'purchaseDecision.updating' : 'purchaseDecision.enterToDraft')}
+          </Text>
+        )}
+        {draftReady && (
+          <Text type="secondary">{t('purchaseDecision.draftQuantity', { quantity })}</Text>
+        )}
 
         <Divider style={{ margin: '4px 0' }} />
 
@@ -207,6 +219,7 @@ function AiExplainBlock({ block, onExplain, onTamper, busy }) {
  * `AiExplainBlock` ở trên.
  */
 export default function SmartApprovalCard({ gate, onDone }) {
+  const { t } = useTranslation();
   const [busy, setBusy] = useState(false);
   const [aiBusy, setAiBusy] = useState(false);
   const [aiBlock, setAiBlock] = useState(null);
@@ -215,11 +228,41 @@ export default function SmartApprovalCard({ gate, onDone }) {
   const [ackDrift, setAckDrift] = useState(false);
   const [result, setResult] = useState(null);
   const [block, setBlock] = useState(null);
+  const [quantity, setQuantity] = useState(null);
+  const [draftError, setDraftError] = useState(null);
 
   const payload = gate?.actionPayload || {};
   const item = Array.isArray(payload.items) ? payload.items[0] : null;
   const rationale = payload.rationale || {};
   const age = useMemo(() => ageOf(gate?.createdAt), [gate?.createdAt]);
+  const quantityValid = Number.isInteger(quantity) && quantity > 0 && quantity <= 2147483647;
+  const aiOpened = !!aiBlock;
+  const draftStale = !!aiBlock && aiBlock.selectedQuantity !== quantity;
+
+  // Hide the previous draft immediately while refreshing. Ignore late responses
+  // so changing the quantity quickly cannot restore an obsolete message.
+  useEffect(() => {
+    if (!aiOpened || !quantityValid || !draftStale || aiBusy) return;
+    let active = true;
+    const timer = setTimeout(async () => {
+      try {
+        const next = await explainProposal(gate.id, { quantity, mode: 'template' });
+        if (active) {
+          setAiBlock((previous) => ({
+            ...previous,
+            selectedQuantity: next.selectedQuantity,
+            selectedTotal: next.selectedTotal,
+            vendorMessage: next.vendorMessage,
+            vendorMessageSource: next.vendorMessageSource,
+          }));
+          setDraftError(null);
+        }
+      } catch (error) {
+        if (active) setDraftError(error.response?.data?.message || error.message);
+      }
+    }, 250);
+    return () => { active = false; clearTimeout(timer); };
+  }, [gate.id, quantity, quantityValid, draftStale, aiBusy, aiOpened]);
 
   if (!item) return null;
 
@@ -228,6 +271,10 @@ export default function SmartApprovalCard({ gate, onDone }) {
   const stuck = gate?.status === 'APPROVED' && !gate?.resultRef;
 
   const submit = async (decision, note) => {
+    if (decision === 'APPROVED' && !quantityValid) {
+      message.warning(t('purchaseDecision.invalid'));
+      return;
+    }
     setBusy(true);
     setBlock(null);
     try {
@@ -237,6 +284,7 @@ export default function SmartApprovalCard({ gate, onDone }) {
         // `acknowledgeDrift` CHỈ có tác dụng ở nhánh DRIFT_BLOCK. Gửi luôn
         // `false` mặc định để không vô tình bỏ qua một lần chặn nào khác.
         acknowledgeDrift: decision === 'APPROVED' ? ackDrift : false,
+        ...(decision === 'APPROVED' ? { quantity } : {}),
       });
       setResult({ decision, po: res?.po || null });
       message.success(res?.message || (decision === 'APPROVED' ? 'Đã phê duyệt' : 'Đã từ chối'));
@@ -288,8 +336,9 @@ export default function SmartApprovalCard({ gate, onDone }) {
   const runAi = async (simulateTamper) => {
     setAiBusy(true);
     try {
-      const res = await explainProposal(gate.id, { simulateTamper });
+      const res = await explainProposal(gate.id, { simulateTamper, ...(quantityValid ? { quantity } : {}) });
       setAiBlock(res);
+      setDraftError(null);
       message.success(
         simulateTamper
           ? 'Đã chạy test hàng rào: xem trạng thái bên dưới.'
@@ -321,6 +370,7 @@ export default function SmartApprovalCard({ gate, onDone }) {
       style={{ margin: '8px 0', borderLeft: `3px solid ${missingCost ? '#ff4d4f' : '#faad14'}` }}
     >
       <Paragraph style={{ marginBottom: 8 }}>
+        <Text type="secondary">{t('purchaseDecision.suggested')} </Text>
         <Text strong>{item.quantity}</Text> × <Text strong>{money(item.unitCost)}</Text>
         {' = '}
         <Text strong>{money(payload.totalEstimate)}</Text>
@@ -342,6 +392,28 @@ export default function SmartApprovalCard({ gate, onDone }) {
           value={rationale.demandPerDay ?? '—'}
           valueStyle={{ fontSize: 14 }}
         />
+      </Space>
+
+      <Space direction="vertical" size={4} style={{ display: 'flex', margin: '12px 0' }}>
+        <label htmlFor={`purchase-quantity-${gate.id}`}>
+          <Text strong>{t('purchaseDecision.label')}</Text>
+        </label>
+        <InputNumber
+          id={`purchase-quantity-${gate.id}`}
+          min={1}
+          max={2147483647}
+          step={1}
+          value={quantity}
+          onChange={(value) => { setQuantity(value); setDraftError(null); setAckDrift(false); }}
+          placeholder={t('purchaseDecision.placeholder')}
+          disabled={busy || aiBusy || decided}
+          status={quantity !== null && !quantityValid ? 'error' : undefined}
+          style={{ width: '100%', maxWidth: 360 }}
+        />
+        <Text type="secondary">{t('purchaseDecision.help')}</Text>
+        {quantityValid && (
+          <Text strong>{t('purchaseDecision.total', { total: money(quantity * Number(item.unitCost)) })}</Text>
+        )}
       </Space>
 
       {missingCost && (
@@ -409,7 +481,7 @@ export default function SmartApprovalCard({ gate, onDone }) {
               </label>
             </Space>
           }
-          description="Đây là xác nhận của người, không phải override của hệ thống. PO sẽ dùng đúng số lượng trong đề xuất đã bị lệch."
+          description={t('purchaseDecision.driftHelp')}
         />
       )}
 
@@ -443,6 +515,9 @@ export default function SmartApprovalCard({ gate, onDone }) {
         busy={aiBusy}
         onExplain={() => runAi(false)}
         onTamper={() => runAi(true)}
+        quantity={quantity}
+        quantityValid={quantityValid}
+        draftError={draftError}
       />
 
       <Space wrap style={{ marginTop: 12 }}>
@@ -456,7 +531,7 @@ export default function SmartApprovalCard({ gate, onDone }) {
               type="primary"
               icon={<CheckOutlined />}
               loading={busy}
-              disabled={decided || block?.drift === 'NO_LONGER_NEEDED'}
+              disabled={decided || aiBusy || !quantityValid || block?.drift === 'NO_LONGER_NEEDED'}
               onClick={() => submit('APPROVED', 'Duyệt qua màn hình duyệt')}
             >
               Duyệt

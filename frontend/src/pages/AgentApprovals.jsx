@@ -4,7 +4,7 @@
  * Tối thiểu cho luồng demo (T12): danh sách đề xuất PENDING + các đề xuất đã
  * duyệt nhưng PO chưa tạo được (trạng thái lơ lửng). Mọi quyết định đi qua
  * human-gate ở backend — trang này KHÔNG có đường tắt, không có nút "duyệt hàng
- * loạt", không có ô nhập số lượng tự do.
+ * loạt". Người duyệt tự nhập số lượng mua, độc lập với số gợi ý.
  *
  * Điểm cần biết: `/api/agent/human-gates` chỉ trả gate `PENDING`, nên phần
  * "trạng thái lơ lửng" không lấy được từ endpoint đó. Trang này vì vậy đánh dấu
@@ -12,6 +12,7 @@
  * nó có. Sửa ở gói sau cần một endpoint listing theo trạng thái.
  */
 import { useCallback, useEffect, useState } from 'react';
+import { useTranslation } from 'react-i18next';
 import { Alert, Button, Card, Col, Empty, Row, Skeleton, Tag, Typography } from 'antd';
 import { ReloadOutlined } from '@ant-design/icons';
 import { getPendingGates } from '../api/agentGates';
@@ -28,6 +29,7 @@ const KNOWN_GAPS = [
 ];
 
 export default function AgentApprovals() {
+  const { t } = useTranslation();
   const [loading, setLoading] = useState(true);
   const [gates, setGates] = useState([]);
   const [error, setError] = useState(null);
@@ -87,7 +89,7 @@ export default function AgentApprovals() {
               </Text>
               <div style={{ marginTop: 8 }}>
                 <Tag color="orange">Không duyệt hàng loạt</Tag>
-                <Tag color="orange">Không sửa số đề xuất</Tag>
+                <Tag color="orange">{t('purchaseDecision.humanDecides')}</Tag>
               </div>
             </Card>
           </Col>

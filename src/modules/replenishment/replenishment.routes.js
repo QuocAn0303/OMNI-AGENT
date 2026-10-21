@@ -292,6 +292,11 @@ router.post(
  *           schema:
  *             type: object
  *             properties:
+ *               quantity:
+ *                 type: integer
+ *                 minimum: 1
+ *                 maximum: 2147483647
+ *                 description: Số lượng do người dùng chọn cho tin nhắn NCC; không sửa số gợi ý của công thức
  *               simulateTamper:
  *                 type: boolean
  *                 default: false
@@ -325,6 +330,7 @@ router.post(
           gateId: req.params.gateId,
           simulateTamper,
           mode,
+          quantity: req.body?.quantity,
         }),
       );
       success(res, result);

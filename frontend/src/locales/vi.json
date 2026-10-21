@@ -1,4 +1,17 @@
 {
+  "purchaseDecision": {
+    "suggested": "Gợi ý tham khảo:",
+    "label": "Số lượng bạn quyết định nhập",
+    "placeholder": "Nhập số lượng cần mua",
+    "help": "AI chỉ hỗ trợ đề xuất. Bạn tự nhập số nguyên lớn hơn 0; số này sẽ được dùng cho tin nhắn NCC và PO khi duyệt.",
+    "invalid": "Vui lòng nhập số lượng là số nguyên từ 1 đến 2.147.483.647.",
+    "total": "Tổng tiền theo số lượng bạn chọn: {{total}}",
+    "enterToDraft": "Nhập số lượng bạn quyết định mua ở ô phía trên để soạn tin nhắn NCC.",
+    "updating": "Đang cập nhật tin nhắn theo số lượng mới…",
+    "draftQuantity": "Tin nhắn dùng đúng số lượng bạn chọn: {{quantity}}.",
+    "humanDecides": "Người duyệt quyết định số lượng",
+    "driftHelp": "Xác nhận bạn đã xem thay đổi dữ liệu. PO sẽ dùng đúng số lượng bạn nhập."
+  },
   "topbar": {
     "profile": "Hồ sơ",
     "settings": "Cài đặt",

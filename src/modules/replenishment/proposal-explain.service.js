@@ -41,6 +41,7 @@ const {
   assertNumbersUnchanged,
 } = require('./proposal-explain.llm');
 const { PO_PROPOSAL } = require('../ai/agent.humangate');
+const { withPurchaseQuantity } = require('./proposal-quantity');
 
 const n = (v) => (Number.isFinite(Number(v)) ? Number(v) : 0);
 
@@ -170,15 +171,22 @@ const explainProposalForGate = async ({
   productId,
   simulateTamper = false,
   mode = 'auto',
+  quantity,
 }) => {
   const gate = await loadGate({ tenantId, gateId, productId });
   const input = gateToExplainInput(gate);
+  const selectedPayload = quantity === undefined ? null : withPurchaseQuantity(gate.actionPayload, quantity);
+  const vendorInput = selectedPayload
+    ? gateToExplainInput({ ...gate, actionPayload: selectedPayload })
+    : input;
   if (!input.sku) {
     throw new ApiError('Thẻ duyệt này không có mã hàng trong payload — không giải thích được', 409);
   }
 
   const explain = await explainProposal(input, { mode });
-  const vendor = await draftVendorMessage(input, { mode });
+  // A human selection uses an exact template, so the quantity cannot be omitted
+  // or swapped for another allowed number by the LLM.
+  const vendor = await draftVendorMessage(vendorInput, { mode: selectedPayload ? 'template' : mode });
 
   // Hàng rào chạy LẠI ở đây để UI có con số "đã kiểm chứng" — hai hàm trên chỉ
   // fallback khi vi phạm mà không nói lại là đã kiểm.
@@ -233,11 +241,15 @@ const explainProposalForGate = async ({
 
   if (!simulateTamper) {
     const guardExplanation = reportGuard(explain.explanation, payloadForGuard);
-    const guardVendor = reportGuard(vendor.vendorMessage, payloadForGuard);
+    const guardVendor = reportGuard(vendor.vendorMessage, {
+      ...payloadForGuard, orderQty: vendorInput.orderQty, total: vendorInput.total,
+    });
     const passed = guardExplanation.passed && guardVendor.passed;
     return {
       gateId: gate.id,
       gateStatus: gate.status,
+      selectedQuantity: selectedPayload ? quantity : null,
+      selectedTotal: selectedPayload?.totalEstimate ?? null,
       sku: input.sku,
       productName: input.name,
       vendorName: input.vendorName,
@@ -259,6 +271,7 @@ const explainProposalForGate = async ({
       guardrail: {
         passed,
         checkedNumbers: guardExplanation.checkedNumbers,
+        vendorCheckedNumbers: guardVendor.checkedNumbers,
         inventedNumbers: [
           ...new Set([...guardExplanation.inventedNumbers, ...guardVendor.inventedNumbers]),
         ],
@@ -291,6 +304,8 @@ const explainProposalForGate = async ({
   return {
     gateId: gate.id,
     gateStatus: gate.status,
+    selectedQuantity: selectedPayload ? quantity : null,
+    selectedTotal: selectedPayload?.totalEstimate ?? null,
     sku: input.sku,
     productName: input.name,
     vendorName: input.vendorName,

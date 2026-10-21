@@ -539,6 +539,51 @@ const decide = (body, id = "gate-po-1") =>
   });
 
 describe("P0-3 · HTTP decide", () => {
+  test('số lượng người duyệt chọn được lưu nguyên tử và dùng cho PO, không gây drift giả', async () => {
+    let stored = poGate();
+    mockAgentHumanGate.findFirst.mockImplementation(async () => stored);
+    mockAgentHumanGate.updateMany.mockImplementation(async ({ data }) => {
+      stored = { ...stored, ...data };
+      return { count: 1 };
+    });
+
+    const res = await decide({ decision: 'APPROVED', note: 'Mua theo nhu cầu thực tế', quantity: 75 });
+    const json = await res.json();
+    expect(res.status).toBe(200);
+    expect(json.data.actionPayload).toMatchObject({
+      suggestedQuantity: 30,
+      quantitySelectedByHuman: true,
+      totalEstimate: 3375000,
+      items: [{ quantity: 75 }],
+    });
+    expect(mockAgentHumanGate.updateMany.mock.calls[0][0]).toMatchObject({
+      where: { id: 'gate-po-1', status: 'PENDING' },
+      data: { status: 'APPROVED', decidedById: 'u-admin', actionPayload: { items: [{ quantity: 75 }] } },
+    });
+    expect(mockPurchaseCreate.mock.calls[0][0].items[0].quantity).toBe(75);
+    expect(mockAgentSession.update.mock.calls[0][0].data.finalResult.payload.items[0].quantity).toBe(75);
+  });
+
+  test.each([0, -3, 1.5, null, '', '75', true, 2147483648])('từ chối số lượng không hợp lệ %p trước khi ghi quyết định', async (quantity) => {
+    mockAgentHumanGate.findFirst.mockResolvedValue(poGate());
+    const res = await decide({ decision: 'APPROVED', note: 'ok', quantity });
+    expect(res.status).toBe(400);
+    expect(mockAgentHumanGate.updateMany).not.toHaveBeenCalled();
+    expect(mockPurchaseCreate).not.toHaveBeenCalled();
+  });
+
+  test('chọn số lượng khác vẫn kiểm tra dữ liệu tồn mới nhất', async () => {
+    const { withPurchaseQuantity } = require('../src/modules/replenishment/proposal-quantity');
+    const gate = poGate({ status: 'APPROVED' });
+    gate.actionPayload = withPurchaseQuantity(gate.actionPayload, 75);
+    mockAgentHumanGate.findFirst.mockResolvedValue(gate);
+    setRecomputedInput({ inventories: [{ quantity: 5000, reserved: 0 }] });
+    await expect(gateExec.executeGate(gate.id, 'u-admin')).rejects.toMatchObject({
+      status: 409, drift: 'NO_LONGER_NEEDED',
+    });
+    expect(mockPurchaseCreate).not.toHaveBeenCalled();
+  });
+
   test("APPROVED đề xuất PO → trả mã PO, selfApproved=false cho SYSTEM_EVENT", async () => {
     mockAgentHumanGate.findFirst.mockImplementation(async ({ where }) =>
       where.id ? poGate({ status: "APPROVED" }) : poGate({ status: "APPROVED" }),

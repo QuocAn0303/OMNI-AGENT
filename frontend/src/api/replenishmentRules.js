@@ -32,6 +32,7 @@ export const explainProposal = (gateId, opts = {}) =>
   axios.post(`/replenishment/proposals/${gateId}/explain`, {
     simulateTamper: opts.simulateTamper === true,
     mode: opts.mode === 'template' ? 'template' : 'auto',
+    ...(opts.quantity !== undefined ? { quantity: opts.quantity } : {}),
   }).then(unwrap);
 
 /** Danh sách SKU dưới ROP kèm số lượng đề xuất (read-only). */

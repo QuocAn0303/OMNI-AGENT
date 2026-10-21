@@ -209,7 +209,8 @@ const revalidate = async (gate, { acknowledgeDrift = false, recompute = recomput
   const proposed = {
     atp: payload.rationale?.inventoryPosition ?? payload.rationale?.atp,
     rop: payload.rationale?.rop,
-    orderQty: item.quantity,
+    // Drift measures changes in the formula, not the person's chosen quantity.
+    orderQty: payload.suggestedQuantity ?? item.quantity,
     unitCost: item.unitCost,
   };
   const current = {

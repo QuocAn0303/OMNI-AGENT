@@ -41,6 +41,7 @@ const {
   PO_PROPOSAL,
 } = require('./agent.humangate');
 const { executeGate, retryExecution } = require('./agent.gate.exec');
+const { withPurchaseQuantity } = require('../replenishment/proposal-quantity');
 
 // ─────────────────────────────────────────────────────────────
 // M3: Role matrix cho tool AI
@@ -970,13 +971,26 @@ router.post('/human-gates/:id/decide', authorize('ADMIN', 'MANAGER'), async (req
     if (gate.status !== 'PENDING') throw { status: 400, message: `Gate is already ${gate.status}` };
     if (new Date(gate.expiresAt) < new Date()) throw { status: 400, message: 'Gate has expired' };
 
+    // Store the person's quantity in the same conditional write as the decision.
+    // Existing clients can omit quantity; the approval screen always supplies it.
+    let actionPayload = null;
+    if (decision === 'APPROVED' && req.body.quantity !== undefined) {
+      if (gate.actionType !== PO_PROPOSAL) {
+        throw { status: 400, message: 'Gate này không hỗ trợ chọn số lượng nhập' };
+      }
+      actionPayload = withPurchaseQuantity(gate.actionPayload || {}, req.body.quantity);
+    }
+
     // ĐẢO TRẠNG THÁI BẰNG updateMany CÓ ĐIỀU KIỆN, không dùng update().
     // `update()` đọc-rồi-ghi nên hai request song song đều thấy PENDING và cùng
     // ghi được ⇒ bấm duyệt hai lần tạo hai PO. `updateMany` khoá dòng, chỉ một
     // bên nhận count=1, bên kia nhận count=0 ⇒ 409 (00b §10 test #3).
     const claimed = await prisma.agentHumanGate.updateMany({
       where: { id, status: 'PENDING' },
-      data: buildDecisionData({ decision, note, userId: req.user.id }),
+      data: {
+        ...buildDecisionData({ decision, note, userId: req.user.id }),
+        ...(actionPayload ? { actionPayload } : {}),
+      },
     });
     if (claimed.count !== 1) {
       throw { status: 409, message: 'Gate đã được xử lý bởi người khác' };
@@ -1012,7 +1026,7 @@ router.post('/human-gates/:id/decide', authorize('ADMIN', 'MANAGER'), async (req
             finalResult: {
               approved: true,
               actionType: gate.actionType,
-              payload: gate.actionPayload,
+              payload: updated.actionPayload,
               selfApproved,
               ...(po ? { poId: po.id, poCode: po.poCode } : {}),
             },
