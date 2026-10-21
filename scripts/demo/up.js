@@ -1,21 +1,17 @@
 'use strict';
 
 /**
- * scripts/demo/up.js — rút gọn luồng demo AISC26: nạp dữ liệu → bật UI.
+ * scripts/demo/up.js — rút gọn luồng demo AISC26: từ DB trống → bật UI.
  *
- * Mặc định làm đủ các bước (idempotent, an toàn chạy lặp):
- *   1. Nếu tenant demo chưa có user → `data:import -- --reset --apply`
- *   2. `demo:login -- --apply` (bật đăng nhập + gói business)
- *   3. `seed:supermarket:demo` (600 SKU + dữ liệu bán hàng) — trừ khi --skip-supermarket
- *   4. `demo:setup` (PO+GRN lịch sử cho lead time) — trừ khi --skip-setup
- *   5. Bật backend + frontend
+ * Tự chạy migrate, seed plan (nếu thiếu), đảm bảo tenant/user demo, login,
+ * seed supermarket, setup lead time, rồi bật backend + frontend.
+ * Idempotent, an toàn chạy lặp.
  *
  * Cờ:
  *   --bootstrap-only      chỉ nạp dữ liệu, không bật UI
  *   --ui-only             chỉ bật UI
  *   --skip-supermarket    bỏ qua seed supermarket demo
  *   --skip-setup          bỏ qua demo:setup
- *   --skip-import         không tự chạy data:import dù thiếu user
  */
 require('dotenv').config();
 const { spawn, execSync } = require('child_process');
@@ -27,7 +23,10 @@ const bootstrapOnly = argv.includes('--bootstrap-only');
 const uiOnly = argv.includes('--ui-only');
 const skipSupermarket = argv.includes('--skip-supermarket');
 const skipSetup = argv.includes('--skip-setup');
-const skipImport = argv.includes('--skip-import');
+
+const SLUG = 'omni-demo-mo-phong';
+const TENANT_NAME = 'OMNI DEMO (MÔ PHỎNG — dữ liệu chuỗi siêu thị Việt Nam)';
+const DEMO_EMAIL = 'demo-mo-phong@local.invalid';
 
 function run(cmd) {
   console.log('\n> ' + cmd);
@@ -35,20 +34,41 @@ function run(cmd) {
 }
 
 const prisma = require(path.join(root, 'src/config/prisma'));
-const { runWithTenant } = require(path.join(root, 'src/config/tenantContext'));
 
-async function demoUserCount() {
-  const t = await prisma.tenant.findUnique({ where: { slug: 'omni-demo-mo-phong' }, select: { id: true } });
-  if (!t) return 0;
-  return runWithTenant(t.id, () => prisma.user.count({ where: { tenantId: t.id } }));
+async function ensureDemoTenantAndUser() {
+  let tenant = await prisma.tenant.findUnique({ where: { slug: SLUG } });
+  if (!tenant) {
+    tenant = await prisma.tenant.create({ data: { name: TENANT_NAME, slug: SLUG } });
+    console.log('✓ Đã tạo tenant demo:', SLUG);
+  }
+  const userId = tenant.id + ':demo-user';
+  const user = await prisma.user.findUnique({ where: { id: userId } });
+  if (!user) {
+    await prisma.user.create({
+      data: {
+        id: userId,
+        tenantId: tenant.id,
+        email: DEMO_EMAIL,
+        password: 'khong-dang-nhap-duoc',
+        fullName: 'Kế toán demo (MÔ PHỎNG)',
+        role: 'ADMIN',
+        isActive: true,
+        emailVerified: false,
+        registrationStatus: 'PENDING',
+      },
+    });
+    console.log('✓ Đã tạo user demo:', DEMO_EMAIL);
+  }
 }
 
 async function main() {
   if (!uiOnly) {
-    const n = await demoUserCount().catch(() => 0);
-    if (n === 0 && !skipImport) {
-      run('npm run data:import -- --reset --apply');
-    }
+    run('npm run db:migrate:deploy');
+
+    const plan = await prisma.subscriptionPlan.findUnique({ where: { key: 'business' } }).catch(() => null);
+    if (!plan) run('npm run db:seed');
+
+    await ensureDemoTenantAndUser();
     run('npm run demo:login -- --apply');
     if (!skipSupermarket) run('npm run seed:supermarket:demo');
     if (!skipSetup) run('npm run demo:setup');
