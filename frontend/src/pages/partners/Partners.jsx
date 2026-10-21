@@ -18,7 +18,7 @@ import { Link } from "react-router-dom";
 import { useTranslation } from "react-i18next";
 import {
   Table, Card, Button, Space, Input, Select, Tag, Modal, Form, InputNumber,
-  Popconfirm, Tooltip, Row, Col, Alert, Spin, Empty, App,
+  Popconfirm, Tooltip, Row, Col, Alert, Spin, Empty, message,
 } from "antd";
 import {
   PlusOutlined, ReloadOutlined, SearchOutlined, InfoCircleOutlined, StopOutlined,
@@ -31,7 +31,7 @@ import { partnerTypeOptions, commissionTypeOptions, PARTNER_TYPE_META, commissio
 
 export default function Partners() {
   const { t } = useTranslation();
-  const { message } = App.useApp();
+  // Dùng API tĩnh của antd để tránh lỗi thiếu <App> context
 
   const [rows, setRows] = useState([]);
   const [stats, setStats] = useState(null);
