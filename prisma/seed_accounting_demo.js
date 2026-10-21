@@ -96,13 +96,14 @@ async function seedFiscalPeriods() {
 
 async function seedVendors() {
   console.log("→ Creating vendors...");
+  const DEFAULT_VENDOR_EMAIL = "an7091@gmail.com";
   const vendorData = [
     {
       code: "NCC-001",
       name: "Công ty TNHH Nguyên liệu Hương Liệu",
       taxCode: "0312345678",
       phone: "0901234567",
-      email: "sales@huonglieu.vn",
+      email: DEFAULT_VENDOR_EMAIL,
       address: "12 Nguyễn Văn Linh, Q.7, TP.HCM",
       contactPerson: "Nguyễn Thị Lan",
       paymentTerms: 30,
@@ -112,7 +113,7 @@ async function seedVendors() {
       name: "Cơ sở Sáp nến Việt Hưng",
       taxCode: "0398765432",
       phone: "0907654321",
-      email: "vihung@gmail.com",
+      email: DEFAULT_VENDOR_EMAIL,
       address: "45 Lê Văn Sỹ, Q.3, TP.HCM",
       paymentTerms: 15,
     },
@@ -120,6 +121,7 @@ async function seedVendors() {
       code: "NCC-003",
       name: "Bao bì Đại Phát",
       phone: "0902223333",
+      email: DEFAULT_VENDOR_EMAIL,
       address: "88 Cách Mạng Tháng 8, Q.10, TP.HCM",
       paymentTerms: 30,
     },
@@ -128,13 +130,14 @@ async function seedVendors() {
       name: "Dịch vụ vận chuyển GHN",
       taxCode: "0309090909",
       phone: "1900636677",
-      email: "b2b@ghn.vn",
+      email: DEFAULT_VENDOR_EMAIL,
       paymentTerms: 7,
     },
     {
       code: "NCC-005",
       name: "Chủ nhà thuê mặt bằng Q1",
       phone: "0911111111",
+      email: DEFAULT_VENDOR_EMAIL,
       address: "120 Nguyễn Huệ, Q.1, TP.HCM",
       paymentTerms: 0,
     },
@@ -143,7 +146,7 @@ async function seedVendors() {
       name: "Công ty In ấn Minh Long",
       taxCode: "0311223344",
       phone: "02838222222",
-      email: "minhlong@print.vn",
+      email: DEFAULT_VENDOR_EMAIL,
       paymentTerms: 30,
     },
   ];

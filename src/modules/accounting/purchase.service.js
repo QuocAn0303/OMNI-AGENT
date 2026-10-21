@@ -23,13 +23,8 @@
  */
 // src/modules/accounting/purchase.service.js
 const prisma = require("../../config/prisma");
-const { getDefaultWarehouseId, findInventory } = require("../../utils/warehouse.helper");
-const autopostService = require("./autopost.service");
-const postingErrorService = require("./posting-error.service");
 const { withCodeRetry } = require("./journal.service");
 const auditService = require("../audit/audit.service");
-const debtService = require("../debt/debt.service");
-const logger = require("../../utils/logger");
 
 // Ngưỡng duyệt PO: đọc CÀI ĐẶT của tenant, thiếu thì mặc định 5tr.
 // Dùng chung `settings.service` để việc đọc có `orderBy` xác định —
@@ -108,7 +103,10 @@ const getById = async (id) => {
 };
 
 const create = async (data, userId) => {
-  const { vendorId, items = [], expectedAt, note, invoiceNumber } = data;
+  // `decided`: PO sinh từ luồng đã CÓ QUYẾT ĐỊNH MUA (người duyệt bấm Duyệt ở thẻ
+  // đề xuất nhập). Với PO thủ công qua API thì không có cờ này → giữ DRAFT như cũ
+  // (route schema của Zod strip key lạ nên client không thể lạm dụng).
+  const { vendorId, items = [], expectedAt, note, invoiceNumber, decided = false } = data;
   if (!items.length) throw { status: 400, message: "Phải có ít nhất 1 mặt hàng" };
   // vendorId là quan hệ bắt buộc — chặn ở đây để trả 400 rõ ràng
   // thay vì để Prisma ném "Argument `vendor` is missing" (500).
@@ -125,7 +123,12 @@ const create = async (data, userId) => {
 
   const threshold = await getPoApprovalThreshold();
   const needsApproval = total >= threshold;
-  const status = needsApproval ? "PENDING_APPROVAL" : "DRAFT";
+  // PO sinh từ đề xuất ĐÃ duyệt: dưới nguong thì `APPROVED` thẳng — quyết định mua
+  // đã có ở thẻ duyệt, không quay lại DRAFT để người dùng phải "Gửi duyệt" thêm lần
+  // nữa (trước đây luồng đề xuất luôn rớt về DRAFT ⇒ không thấy nút Tạo GRN).
+  // Vượt ngưỡng tiền vẫn `PENDING_APPROVAL`: ngưỡng là kiểm soát lần hai, AI/kênh
+  // đề xuất không được phép vượt qua.
+  const status = needsApproval ? "PENDING_APPROVAL" : decided ? "APPROVED" : "DRAFT";
 
   const po = await withCodeRetry(
     () => generateCode(),
@@ -136,6 +139,7 @@ const create = async (data, userId) => {
           date: new Date(),
           vendorId,
           status,
+          approvedById: status === "APPROVED" ? userId : null,
           paymentStatus: "UNPAID",
           subtotal,
           taxAmount,
@@ -272,135 +276,41 @@ if (toNum(po.total) >= threshold && !["ADMIN", "MANAGER"].includes(approverRole)
   return updated;
 };
 
-const receive = async (id, userId) => {
-  const postingPayloadHolder = { skip: false, payload: null };
-
-  const updated = await prisma.$transaction(async (tx) => {
-      const po = await tx.purchaseOrder.findUnique({
-        where: { id },
-        include: { vendor: true, items: { include: { product: { include: { inventories: true } } } } },
-      });
-      if (!po) throw { status: 404, message: "Không tìm thấy PO" };
-
-      if (po.status === "RECEIVED") {
-        postingPayloadHolder.skip = true;
-        return tx.purchaseOrder.findUnique({
-          where: { id },
-          include: { vendor: true, items: { include: { product: true } } },
-        });
-      }
-
-      const r = await tx.purchaseOrder.updateMany({
-        where: { id, status: "APPROVED" },
-        data: { status: "RECEIVED", receivedAt: new Date() },
-      });
-      if (r.count === 0) {
-        throw { status: 400, message: "PO phải ở trạng thái APPROVED để nhập kho" };
-      }
-
-      const whId = await getDefaultWarehouseId(tx);
-      for (const item of po.items) {
-        let inv = item.product.inventories?.find((i) => i.warehouseId === whId);
-        if (!inv) {
-          inv = await findInventory(tx, item.productId, whId);
-        }
-        if (!inv) {
-          inv = await tx.inventory.create({
-            data: { productId: item.productId, warehouseId: whId, quantity: 0, minStock: 10 },
-          });
-        }
-
-        const oldQty = inv.quantity;
-        const oldCost = toNum(item.product.costPrice);
-        const addQty = item.quantity;
-        const unitCost = toNum(item.unitCost);
-        const newQty = oldQty + addQty;
-        const newCost =
-          newQty > 0 ? round2((oldQty * oldCost + addQty * unitCost) / newQty) : unitCost;
-
-        await tx.inventory.update({
-          where: { id: inv.id },
-          data: { quantity: { increment: addQty } },
-        });
-        await tx.product.update({
-          where: { id: item.productId },
-          data: { costPrice: newCost },
-        });
-        await tx.inventoryTransaction.create({
-          data: {
-            inventoryId: inv.id,
-            type: "IMPORT",
-            quantity: addQty,
-            note: `Nhập kho - PO ${po.poCode}`,
-            unitCost: Math.round(unitCost * 100) / 100,
-            createdById: userId,
-          },
-        });
-
-        const poLotCode = `${po.poCode}-${item.product.sku || item.productId.slice(0, 8)}`;
-        const existingLot = await tx.inventoryLot.findFirst({
-          where: { lotCode: poLotCode, productId: item.productId, warehouseId: whId },
-        });
-        if (existingLot) {
-          await tx.inventoryLot.update({
-            where: { id: existingLot.id },
-            data: { quantity: { increment: addQty } },
-          });
-        } else {
-          await tx.inventoryLot.create({
-            data: {
-              lotCode: poLotCode,
-              productId: item.productId,
-              warehouseId: whId,
-              quantity: addQty,
-              originalQty: addQty,
-              // Lot phải mang giá vốn: `calculateFifoCost` đọc `unitCost` từ lot,
-              // thiếu nó thì giá vốn FIFO rơi về `Product.costPrice` trung bình
-              // và sai ngay khi giá các lần nhập khác nhau.
-              unitCost: Math.round(unitCost * 100) / 100,
-              poId: po.id,
-            },
-          });
-        }
-      }
-
-      const fresh = await tx.purchaseOrder.findUnique({
-        where: { id },
-        include: { vendor: true, items: { include: { product: true } } },
-      });
-
-      if (["UNPAID", "PARTIAL"].includes(fresh.paymentStatus || "UNPAID")) {
-        await debtService.createPayableForPoInTx(tx, { po: fresh, userId });
-      }
-
-      postingPayloadHolder.payload = autopostService.buildPurchaseReceivedEntry({
-        purchaseOrder: fresh,
-        vendor: fresh.vendor,
-        userId,
-      });
-
-      await auditService
-        .log({
-          userId,
-          action: "PO_RECEIVE",
-          entity: "PurchaseOrder",
-          entityId: id,
-          before: { status: "APPROVED" },
-          after: { status: "RECEIVED", receivedAt: fresh.receivedAt },
-        })
-        .catch(() => {});
-
-      return fresh;
-    });
-
-  if (!postingPayloadHolder.skip && postingPayloadHolder.payload) {
-    await postingErrorService.tryPostOrQueue(
-      () => autopostService.postPurchaseReceived({ purchaseOrder: updated, vendor: updated.vendor, userId }),
-      { source: "PURCHASE", sourceId: updated.id, payload: postingPayloadHolder.payload },
-    );
-  }
-
+const order = async (id, userId) => {
+  const po = await prisma.purchaseOrder.findUnique({ where: { id } });
+  if (!po) throw { status: 404, message: "Không tìm thấy PO" };
+  if (po.status !== "APPROVED") throw { status: 400, message: "Chỉ PO đã duyệt mới được gửi NCC" };
+  const updated = await prisma.purchaseOrder.update({
+    where: { id },
+    data: { status: "ORDERED" },
+    include: { vendor: true, items: { include: { product: true } } },
+  });
+  await auditService
+    .log({
+      userId,
+      action: "PO_ORDER",
+      entity: "PurchaseOrder",
+      entityId: id,
+      before: { status: po.status },
+      after: { status: "ORDERED" },
+    })
+    .catch(() => {});
   return updated;
+};
+
+const receive = async (id, userId) => {
+  const po = await prisma.purchaseOrder.findUnique({ where: { id }, select: { id: true, poCode: true, status: true } });
+  if (!po) throw { status: 404, message: "Không tìm thấy PO" };
+  if (po.status === "RECEIVED" || po.status === "PAID") {
+    return prisma.purchaseOrder.findUnique({
+      where: { id },
+      include: { vendor: true, items: { include: { product: true } } },
+    });
+  }
+  throw {
+    status: 410,
+    message: `PO ${po.poCode} phải nhập qua Phiếu nhận hàng (GRN): /grn?poId=${id}. Luồng nhập trực tiếp đã ngừng để giữ đối soát 3-way.`,
+  };
 };
 
 const pay = async (id, { amount, method = "BANK_TRANSFER" }, userId) => {
@@ -495,4 +405,4 @@ const cancel = async (id, userId) => {
   return updated;
 };
 
-module.exports = { list, getById, create, submit, approve, receive, pay, cancel };
+module.exports = { list, getById, create, submit, approve, order, receive, pay, cancel };

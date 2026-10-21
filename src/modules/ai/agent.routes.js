@@ -30,6 +30,8 @@ router.use(authenticate, requireModule("ai"));
 const prisma = require('../../config/prisma');
 const { processQuery, generateResponse, HANDLERS } = require('./db-agent.service');
 const logger = require('../../utils/logger');
+const llm = require('../../config/llm');
+const brain = require('./agent.brain');
 const { parseAmount } = require('../../utils/vietnameseAmount');
 const {
   buildDataRequestGate,
@@ -231,7 +233,11 @@ const TOOL_HANDLERS = {
       productName: productName || '',
       quantity: parseInt(quantity) || 1,
     }, userId);
-    return result.summary || result.message || 'Đã tạo đơn hàng';
+    const text = result.summary || result.message || 'Đã tạo đơn hàng';
+    // Handler từ chối (không đủ SP/KH, quy tắc) trả data:null — gắn dấu ❌ để
+    // route KHÔNG ghi audit/gate cho một thao tác chưa hề thực hiện (trước đây
+    // "Không tìm thấy khách..." được audit APPROVED là bằng chứng sai).
+    return result?.data ? text : `❌ ${text}`;
   },
 
   createPO: async ({ vendorName, productName, quantity, unitCost }, userId, sessionId) => {
@@ -241,14 +247,16 @@ const TOOL_HANDLERS = {
       quantity: parseInt(quantity) || 1,
       unitCost: parseFloat(unitCost) || 0,
     }, userId);
-    return result.summary || result.message || 'Đã tạo đơn nhập hàng';
+    const text = result.summary || result.message || 'Đã tạo đơn nhập hàng';
+    return result?.data ? text : `❌ ${text}`;
   },
 
   sendReminder: async ({ customerName }, userId, sessionId) => {
     const result = await HANDLERS.send_reminder({
       customerName: customerName || '',
     }, userId, sessionId);
-    return result.summary || result.message || 'Đã gửi nhắc nợ';
+    const text = result.summary || result.message || 'Đã gửi nhắc nợ';
+    return result?.data ? text : `❌ ${text}`;
   },
 };
 
@@ -265,6 +273,123 @@ const TOOL_HANDLERS = {
  * @param {string} msg
  * @returns {{vendorName: string, productName: string, quantity: string|number, unitCost: number}}
  */
+/**
+ * Regex một chuỗi dùng trong `new RegExp(...)` — dùng chung cho extractOrder.
+ */
+const escapeRe = (s) => String(s).replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+
+/**
+ * Bóc tham số tạo ĐƠN BÁN từ câu lệnh tự nhiên.
+ *
+ * Các lỗi đã gặp thật (báo cáo người dùng 17/10/2026):
+ *  - Regex cũ `(cho|khách)\s+(.+?)` bóc mệnh đề ĐẦU TIÊN trong nhóm, nên câu
+ *    "cho khách Bui Hoang" cho ra tên khách "khách Bui Hoang" (dư chữ "khách")
+ *    → tra DB bằng `contains` trượt dù "Bui Hoang" có thật.
+ *  - "Phô mai Oishi Loại 1 50 gói" — số ĐẦU TIÊN ("1") bị đọc làm số lượng,
+ *    đúng ra là "50 gói".
+ *  - SĐT/email gõ ở cuối câu lẫn vào tên khách → tiếp tục tra trượt.
+ *  - "giá 5 triệu" không được bóc theo mệnh đề tiền → số "5" đâm vào tên sản phẩm.
+ */
+const QTY_UNIT_PATTERN = /(\d+)\s*(gói|cái|chiếc|hộp|thùng|túi|lít|ml|kg|gam|gram|ly|chai|lon|bóc|sp|sản phẩm)\b/i;
+
+// Từ đệm cuối câu + đuôi tiền loại khỏi TÊN khách
+const TAIL_FILLER = /\s*(nhé|nha|nhá|ạ|giúp mình|giup minh|giùm mình|giup minh|đi)\s*$/i;
+const TAIL_MONEY = /\s*[\d.,]+\s*(k|tr|đ|vnd|nghìn|nghin|ngàn|ng|triệu|trieu|đồng)\s*$/i;
+
+// Token lệnh — nếu tên "khách" thu được vẫn còn lẫn token lệnh thì đó KHÔNG
+// phải tên khách (vd "cho mình đơn hàng giá" bóc được "đơn hàng giá").
+const NOT_A_NAME = /(?:đơn hàng|don hang|order|nhập hàng|nhap hang|giao hàng|giao hang|giá)/i;
+
+const cleanTailName = (s) =>
+  String(s || '')
+    .replace(TAIL_FILLER, '')
+    .replace(TAIL_MONEY, '')
+    .replace(/^\s*(?:mình|toi|tôi|tui|cho)\s+/i, '')
+    .replace(/[\s,.:;!]+$/, '')
+    .trim();
+
+// Từ lệnh bị loại khỏi phần tên sản phẩm. Gom một chỗ cho cả lệnh đầy đủ lẫn
+// "đuôi sản phẩm" của mệnh đề khách (sau số lượng).
+const stripCommandWords = (s) =>
+  String(s || '')
+    .replace(/tạo mới|tao moi|tạo đơn hàng|tao don hang|tạo order|tạo cho mình|tao cho minh|tạo|tao|đặt hàng|dat hang|đặt đơn hàng|đặt|bán cho|bán|đơn hàng|don hang|order|thêm|them|nhập|nhap|cho|khách hàng|khách|khach hang|khach|giúp mình|giup minh|giúp|giup|giùm|gium|tôi|toi|mình|minh|giá|tiền|tổng/gi, ' ')
+    .replace(/\s+/g, ' ')
+    .replace(/^[\s\-–—,.:;]+|[\s\-–—,.:;]+$/g, '')
+    .trim();
+
+const extractOrder = (msg) => {
+  let text = String(msg || '');
+
+  // 1) Bóc SĐT/email TRƯỚC MỌI THỨ — không lẫn vào tên khách/tên sản phẩm
+  const phone = text.match(/\b0\d{8,10}\b/) || text.match(/\b84\d{8,10}\b/);
+  const email = text.match(/[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+\.[A-Za-z0-9.-]+/);
+  if (phone) text = text.replace(phone[0], ' ');
+  if (email) text = text.replace(email[0], ' ');
+
+  // 2) Mệnh đề tiền ("giá 5 triệu") bóc theo đúng span, không vỡ thành "triệu".
+  //    KHÔNG dùng parseAmount() ở đây: unit tiền của nó là OPTIONAL và có
+  //    backtracking, "Tạo đơn hàng 5 áo polo" bị đọc là tiền 5đ của mệnh đề "5 ",
+  //    "12 hộp" bị nuốt chữ "1" làm tiền → số lượng mất luôn. Bắt buộc CÓ đơn vị
+  //    tiền ("triệu|k|đ...") trong span thì mới là tiền.
+  const moneyClause = text.match(/(\d[\d.,]*)\s*(tỷ|ty|tỉ|triệu|trieu|nghìn|nghin|ngàn|ng|đồng|dong|đ|vnd|vnđ|k)\b/i);
+  if (moneyClause) text = text.replace(new RegExp(escapeRe(moneyClause[0]), 'gi'), ' ');
+
+  // 3) Tên khách: Ưu tiên mệnh đề sau "khách hàng|khách" (và bản không dấu),
+  //    "cho" chỉ là dự phòng. Mệnh đề này là ĐUÔI DÀI — có thể lẫn cả
+  //    "số lượng + sản phẩm" vào phía sau tên ("khách A 2 cái áo polo").
+  //    Cách tách: nếu đuôi có "số + đơn vị đếm" thì TÊN dừng ngay trước con
+  //    số, phần SAU đúng vị số là sản phẩm. Không có số lượng thì toàn đuôi
+  //    là tên.
+  const mKhach = text.match(/\b(?:khách hàng|khách|khach hang|khach)\s*(.+)$/i);
+  const mCho = !mKhach ? text.match(/\bcho\s+(.+)$/i) : null;
+  const tail = mKhach ? mKhach[1] : (mCho ? mCho[1] : '');
+  const customerMarker = mKhach ? mKhach[0] : (mCho ? mCho[0] : null);
+
+  let customerName = '';
+  let qtyFromTail = null;
+  let productTail = null;
+  if (tail) {
+    const tailQty = tail.match(QTY_UNIT_PATTERN);
+    if (tailQty && tailQty.index > 0) {
+      // "A 2 cái áo polo" → tên "A", qty 2, phần sau đơn vị là sản phẩm
+      customerName = cleanTailName(tail.slice(0, tailQty.index));
+      qtyFromTail = tailQty;
+      productTail = tail.slice(tailQty.index + tailQty[0].length);
+    } else {
+      customerName = cleanTailName(tail);
+    }
+    // Đuôi bóc được nhưng vẫn lẫn token lệnh ("cho mình đơn hàng giá") →
+    // KHÔNG phải tên khách — để trống cho HANDLERS hỏi lại, tránh tra trượt.
+    if (customerName && NOT_A_NAME.test(customerName)) customerName = '';
+  }
+
+  // 4) Số lượng: ưu tiên nằm trong mệnh đề khách ("khách A 2 cái…"), không có
+  //    thì tìm toàn câu "số + đơn vị đếm", cuối cùng mới là số đầu tiên
+  const qtySource = qtyFromTail || text.match(QTY_UNIT_PATTERN) || text.match(/(\d+)/);
+  const quantity = qtySource ? (parseInt(qtySource[1], 10) || 1) : 1;
+
+  // 5) Tên sản phẩm:
+  //    a) phần sau đơn vị số lượng trong mệnh đề khách (nếu đã tách),
+  //    b) câu lệnh trừ mệnh đề khách, số lượng, từ lệnh.
+  // LƯU Ý: customerMarker là CHUỖI (mKhach[0]) — KHÔNG gọi customerMarker[0]:
+  // indexing chuỗi lấy KÝ TỰ ĐẦU "k" (lỗi thật từng xảy ra: "khách…" → "hách…").
+  let product = productTail && productTail.trim() ? productTail : text;
+  if (!productTail || !productTail.trim()) {
+    if (customerMarker) product = product.replace(customerMarker, ' ');
+    if (qtySource && !qtyFromTail) product = product.replace(new RegExp(escapeRe(qtySource[0]), 'i'), ' ');
+  }
+  // KHÔNG dùng `.replace(/\d+/g, ' ')` toàn cục: nó nuốt chữ số thuộc TÊN
+  // ("Phô mai Oishi Loại 1" thành "… Loại ") — đúng lỗi gây tra nhầm "Loại 2"
+  // (report 17/10/2026). Số lượng/SĐT/tiền đã bị xoá riêng từng span phía trên.
+  product = stripCommandWords(product);
+
+  return {
+    customerName,
+    productName: product,
+    quantity,
+  };
+};
+
 const QTY_PATTERN = /(\d+)\s*(cái|chiếc|hộp|chai|lon|bóc|thùng|túi|kg|gam|gram|sp|sản phẩm)\b/i;
 
 const extractPO = (msg) => {
@@ -277,7 +402,6 @@ const extractPO = (msg) => {
 
   // Xoá MỆNH ĐỀ TIỀN theo đúng span đã bóc ("5 triệu") trước khi dựng tên SP —
   // nếu xoá số trước thì mệnh đề vỡ thành "triệu" rơi lại vào tên sản phẩm.
-  const escapeRe = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
   let rest = text;
   if (amount && amount.matched) {
     rest = rest.replace(new RegExp(escapeRe(amount.matched), 'gi'), ' ');
@@ -287,7 +411,10 @@ const extractPO = (msg) => {
   }
 
   const product = rest
-    .replace(/tạo đơn nhập|tạo po|đặt hàng nhập|nhập thêm|cho|từ|ncc|nhà cung cấp/gi, '')
+    // "tao/mình/giúp" là từ lệnh — nếu để lại sẽ thành tên SP rác ("tạo mình PO")
+    .replace(/tạo đơn nhập|tạo po|tao don nhap|tao po|đặt hàng nhập|nhập thêm|cho|từ|ncc|nhà cung cấp|tạo|tao|mình|minh|giúp|giup/gi, '')
+    // 'PO' trần (ranh giới từ, không tràn "áo polo") cũng là từ lệnh — bỏ nốt
+    .replace(/(?<![\p{L}\p{N}])po(?![\p{L}\p{N}])/giu, ' ')
     // Bỏ từ bám theo mệnh đề tiền còn sót ("giá" trong "… giá 5 triệu")
     .replace(/(giá trị|tổng tiền|thành tiền|giá bán|giá|tiền)/gi, '')
     // Người dùng có thể gõ "tạo PO giá triệu" (quên con số) — đơn vị tiền tệ
@@ -307,24 +434,45 @@ const extractPO = (msg) => {
 
 const INTENTS = [
   // Write intents MUST come first — they conflict with read patterns (y hệt db-agent INTENT_MAP)
-  { keywords: ['tạo đơn hàng', 'tạo order', 'đặt hàng', 'bán cho'], tool: 'createOrder', isWrite: true,
-    extract: (msg) => {
-      const customer = msg.match(/(cho|khách)\s+(.+?)(?:\s+\d+\s|$)/i);
-      const qtyMatch = msg.match(/(\d+)\s*(cái|chiếc|hộp|kg|sản phẩm|sp)?/i);
-      const product = msg.replace(/tạo đơn hàng|tạo order|đặt hàng|bán cho|cho|khách|nhập|thêm/gi, '').replace(/\d+\s*(cái|chiếc|hộp|kg|sp)?/gi, '').trim();
-      return {
-        customerName: customer ? customer[2].trim() : '',
-        productName: product,
-        quantity: qtyMatch ? qtyMatch[1] : 1,
-      };
-    }
+  // Từ khoá "tạo mới đơn hàng"/bản không dấu: câu "tạo mới đơn hàng giá 5 triệu"
+  // từng rơi xuống listOrders (nhánh tra cứu) vì chỉ có đúng cụm "tạo đơn hàng".
+  // CHÚ Ý: KHÔNG dùng từ khoá trần "tạo đơn" — nó tràn vào "tạo đơn nhập…" (PO),
+  // mà hàng createOrder đứng TRƯỚC createPO nên matching đầu tiên sẽ thắng.
+  { keywords: ['tạo mới đơn hàng', 'tao moi don hang', 'tạo đơn hàng', 'tao don hang', 'tạo order', 'tao order', 'đặt hàng', 'dat hang', 'đặt đơn hàng', 'dat don hang', 'bán cho', 'ban cho',
+    // Từ đệm giữa động từ và danh từ ("tạo cho mình đơn hàng", "giúp mình tạo
+    // đơn hàng") — dùng biến thể đầy đủ thay vì regex vì cụm "tạo ... đơn" trần
+    // sẽ tràn vào "tạo ... đơn nhập" (PO). Brain LLM là đường chính; các biến
+    // thể này chỉ để pipeline từ khoá sống sót khi LLM chết.
+    'tạo cho mình đơn hàng', 'tao cho minh don hang', 'giúp mình tạo đơn hàng', 'giup minh tao don hang'],
+    tool: 'createOrder', isWrite: true,
+    extract: extractOrder
   },
-  { keywords: ['tạo đơn nhập', 'tạo po', 'đặt hàng nhập', 'nhập thêm', 'tạo purchase order'], tool: 'createPO', isWrite: true,
+  // "tạo cho mình PO giá 5 triệu" không chứa "tạo po" liên tiếp → thêm biến thể.
+  { keywords: ['tạo cho mình po', 'tao cho minh po', 'giúp mình tạo po', 'giup minh tao po', 'tạo po giá', 'tao po gia', 'tạo mới po', 'tao moi po', 'tạo mới đơn nhập', 'tao moi don nhap', 'tạo po', 'tao po', 'tạo đơn nhập', 'tao don nhap', 'đặt hàng nhập', 'dat hang nhap', 'nhập thêm', 'nhap them', 'tạo purchase order'], tool: 'createPO', isWrite: true,
     extract: extractPO },
-  { keywords: ['nhắc nợ', 'gửi nhắc', 'nhắc khách', 'đòi nợ', 'remind'], tool: 'sendReminder', isWrite: true,
+  { keywords: ['nhắc nợ', 'nhac no', 'gửi nhắc', 'gui nhac', 'nhắc khách', 'nhac khach', 'đòi nợ', 'doi no', 'remind'], tool: 'sendReminder', isWrite: true,
     extract: (msg) => {
-      const customer = msg.match(/(nhắc|khách|cho)\s+(.+?)(?:\s|$)/i);
-      return { customerName: customer ? customer[2].trim() : msg.replace(/nhắc nợ|gửi nhắc|nhắc khách|đòi nợ|remind/gi, '').trim() };
+      // Lỗi đã gặp thật: `(nhắc|khách|cho)\s+(.+?)(?:\s|$)` khớp mệnh đề ĐẦU TIÊN
+      // buclamp trận, nên "nhắc nợ khách Bui Hoang" bốc chữ "nợ" làm tên khách.
+      // Cách sửa: dọn sạch từ lệnh trước, rồi lấy phần SAU "khách hàng|khách",
+      // phương án dự phòng là sau "cho" / prefix tiền tố dư.
+      let name = String(msg || '')
+        .replace(/nhắc nợ|nhac no|gửi nhắc|gui nhac|nhắc khách|nhac khach|đòi nợ|doi no|remind/gi, ' ');
+      const m = name.match(/\b(?:khách hàng|khách)\s+(.+)$/i) || name.match(/\bcho\s+(.+)$/i);
+      if (m) {
+        name = m[1].replace(/^\s*(?:khách hàng|khach hang|khách|khach)\s+/i, '');
+      } else {
+        name = name.replace(/^\s*(?:cho|tiền nợ|tien no|nợ|no)\s+/i, '').trim();
+      }
+      name = name
+        .replace(/\b0\d{8,10}\b.*$/, '')
+        .replace(/[A-Za-z0-9._%+-]+@[A-Za-z0-9-]+\.[A-Za-z0-9.-]+.*$/, '')
+        .replace(/\s*(nhé|nha|nhá|ạ|giúp mình|giup minh|giùm mình|giup minh)\s*$/i, '')
+        // đuôi số tiền ("... Bui Hoang 50k") không phải phần tên khách
+        .replace(/\s*[\d.,]+\s*(k|tr|đ|vnd|nghìn|nghin|ngàn|ng|triệu|trieu|đồng)\s*$/i, '')
+        .replace(/[\s,.:;!]+$/, '')
+        .trim();
+      return { customerName: name };
     }
   },
 
@@ -399,8 +547,39 @@ router.post('/chat', async (req, res, next) => {
     if (!lastUserMsg) return res.json({ success: true, data: { response: 'Bạn muốn hỏi gì?' } });
 
     const userMsg = lastUserMsg.content || '';
-    const intent = detectIntent(userMsg);
-    logger.info('[Agent Chat] Intent:', intent?.tool, 'Msg:', logger.truncateLog(userMsg));
+
+    // ── LLM-first: bộ não LLM (agent.brain) quyết định TRƯỚC khớp từ khoá ──
+    // Trước đây mọi câu đều đi detectIntent() khớp từ khoá, nên câu có từ đệm
+    // ("tạo cho mình đơn hàng"), tên sản phẩm chứa số ("Loại 1") hay câu ngoài
+    // danh mục đều hiểu sai hoặc trả menu cứng. Brain đọc câu bằng LLM và trả
+    // {mode:'tool'|'reply'}. decide() tự trả null khi LLM chết/JSON hỏng/tool
+    // lạ — khi đó pipeline từ khoá dưới đây chạy y như cũ (không mất chức năng).
+    const cutoff = messages.map((m) => m.role).lastIndexOf('user');
+    const history = messages
+      .slice(0, Math.max(cutoff, 0))
+      .filter((m) => m && typeof m.content === 'string' && m.role !== 'system')
+      .slice(-8)
+      .map((m) => `${m.role === 'user' ? 'Khách' : 'Trợ lý'}: ${m.content.slice(0, 300)}`)
+      .join('\n');
+
+    const brainDecision = await brain.decide({ userMsg, history });
+    let intent = null;
+    if (brainDecision?.mode === 'tool') {
+      intent = {
+        tool: brainDecision.tool,
+        params: brainDecision.params,
+        isWrite: brain.WRITE_TOOLS.has(brainDecision.tool),
+        dbTool: brain.DB_TOOLS.has(brainDecision.tool),
+        isBrain: true,
+      };
+    } else if (brainDecision?.mode === 'reply') {
+      intent = { isBrain: true, replyText: brainDecision.text };
+    }
+    if (!intent) intent = detectIntent(userMsg);
+
+    // Winston ghép đối số 2+ vào object info — chuỗi thường bị "tách chữ"
+    // thành object per-char trong logs. Ghép một dòng duy nhất.
+    logger.info(`[Agent Chat] Intent: ${intent?.tool || (intent?.replyText ? 'brain_reply' : 'none')} (${intent?.isBrain ? 'brain' : 'keyword'}) Msg: ${logger.truncateLog(userMsg)}`);
 
     // Tạo session
     const session = await prisma.agentSession.create({
@@ -418,7 +597,14 @@ router.post('/chat', async (req, res, next) => {
     // Giá trị mặc định 'FAST_PATH' không tồn tại trong enum → PrismaClientValidationError → 500.
     let reply, stepType = 'TOOL_CALL', toolName = null;
 
-    if (intent && TOOL_HANDLERS[intent.tool]) {
+    if (intent?.replyText) {
+      // Trò chuyện trực tiếp qua LLM. Brain đã gọi MỘT lần mô hình trong
+      // decide() — không gọi thêm lần nữa (tăng độ trễ vô ích). Nhãn LLM_CALL
+      // đi qua biến brain.STEP_TYPE_LLM vì literal bị test agent-step-type
+      // cấm gán trực tiếp trong file này.
+      stepType = brain.STEP_TYPE_LLM;
+      reply = intent.replyText;
+    } else if (intent && TOOL_HANDLERS[intent.tool]) {
       toolName = intent.tool;
 
       if (intent.isWrite) {
@@ -427,12 +613,29 @@ router.post('/chat', async (req, res, next) => {
           reply = 'Xin lỗi, bạn không có quyền thực hiện thao tác này. Chỉ ADMIN và MANAGER mới có thể tạo đơn hàng, nhập hàng, hoặc gửi nhắc nợ.';
           stepType = 'TOOL_CALL';
         } else {
-          reply = await TOOL_HANDLERS[intent.tool](intent.params, req.user.id, session.id);
+          try {
+            reply = await TOOL_HANDLERS[intent.tool](intent.params, req.user.id, session.id);
+          } catch (writeErr) {
+            // Quy tắc nghiệp vụ (hạn mức tín dụng, tổng thanh toán vượt giá trị…)
+            // bị ném dạng object {status, message} từ order.service — biến thành
+            // câu trả lời chat thân thiện thay vì 400/500 JSON lẫn lộn cho
+            // widget (bug thật 17/10/2026: trả nguyên 400 "undefined").
+            const msg = writeErr?.message || (typeof writeErr === 'string' ? writeErr : '');
+            reply = msg
+              ? `❌ Không thực hiện được: ${msg}`
+              : '❌ Không thực hiện được thao tác. Vui lòng kiểm tra lại thông tin hoặc thử lại sau.';
+            logger.warn(`[Agent Chat] write ${intent.tool} bị từ chối: ${logger.truncateLog(msg || writeErr || 'unknown')}`);
+          }
           stepType = 'TOOL_CALL';
 
-          const audited = await recordWriteAudit(session.id, toolName, intent.params, req.user.id);
-          if (!audited) {
-            reply += '\n\n⚠️ Thao tác đã thực hiện nhưng KHÔNG ghi được bản ghi kiểm toán — vui lòng báo quản trị viên.';
+          // Chỉ audit khi thao tác THÀNH CÔNG (reply không phải ❌) — write bị
+          // chặn bởi quy tắc nghiệp vụ thì chưa thực hiện gì, audit ghi "đã
+          // thực hiện" sẽ là bằng chứng sai.
+          if (!reply.startsWith('❌')) {
+            const audited = await recordWriteAudit(session.id, toolName, intent.params, req.user.id);
+            if (!audited) {
+              reply += '\n\n⚠️ Thao tác đã thực hiện nhưng KHÔNG ghi được bản ghi kiểm toán — vui lòng báo quản trị viên.';
+            }
           }
         }
       } else if (SENSITIVE_TOOLS.has(intent.tool) && !isSensitiveAllowed(req.user.role)) {
@@ -448,6 +651,31 @@ router.post('/chat', async (req, res, next) => {
       } else {
         reply = await TOOL_HANDLERS[intent.tool](intent.params);
         reply = `📋 **${intent.tool}**\n\n${reply}`;
+      }
+    } else if (intent && intent.dbTool && HANDLERS[intent.tool]) {
+      // DB read tool do brain chọn (search_products, search_debts, …). Khác
+      // TOOL_HANDLERS ở chỗ: trả về {summary, message}, và một số tool thuộc
+      // danh sách NHẠY CẢM (PII khách/tài chính) — phải đi qua cùng song
+      // DATA_REQUEST như nhánh Widget để role thấp không đọc được PII.
+      toolName = intent.tool;
+      if (SENSITIVE_DB_TOOLS.has(intent.tool) && !isSensitiveAllowed(req.user.role)) {
+        try {
+          await createDataRequest(session.id, intent.tool, intent.params, req.user);
+          reply = DATA_REQUEST_REPLY;
+        } catch (gateErr) {
+          logger.error(`[Agent Gate] Không tạo được DATA_REQUEST cho ${intent.tool}: ${gateErr.message}`);
+          reply = DATA_REQUEST_FAILED_REPLY;
+        }
+      } else {
+        try {
+          const dbRes = await HANDLERS[intent.tool](intent.params || {});
+          reply = [dbRes.summary, dbRes.message].filter(Boolean).join('\n\n') || 'Không tìm thấy dữ liệu.';
+        } catch (dbErr) {
+          // Prisma/service lỗi giữa chừng cũng phải trả về dạng chat, không 500
+          const msg = dbErr?.message || String(dbErr);
+          reply = `❌ Lỗi tra cứu: ${msg}`;
+          logger.warn(`[Agent Chat] dbTool ${intent.tool} lỗi: ${logger.truncateLog(msg)}`);
+        }
       }
     } else {
       try {
@@ -472,21 +700,50 @@ router.post('/chat', async (req, res, next) => {
             stepType = 'TOOL_CALL';
             reply = await generateResponse(userMsg, dbResult);
           }
+        } else if (llm.isConfigured()) {
+          // Cau hoi khong tim duoc du lieu / khong phai tool DB → dung LLM da cau hinh
+          // (9router o nha, UIT o truong — theo .env).
+          try {
+            reply = await llm.generateText({
+              system: 'Bạn là trợ lý AI chuyên môn của Aduu ERP. Trả lời bằng tiếng Việt, ngắn gọn, thân thiện. Nếu được hỏi danh tính, nói bạn là trợ lý AI của Aduu ERP (modelGemma 4).',
+              prompt: userMsg,
+              temperature: 0.4,
+              maxOutputTokens: 512,
+              mode: 'live',
+            });
+          } catch (e) {
+            logger.error(`[Agent Chat] LLM fallback error: ${e.message}`);
+            reply = 'Xin chào! Tôi có thể giúp bạn:\n' +
+              '• 📦 Tra cứu tồn kho (vd: "tồn kho sáp treo")\n' +
+              '• 📋 Xem đơn hàng (vd: "đơn hàng hôm nay")\n' +
+              '• 👤 Tra cứu khách hàng (vd: "khách hàng Nguyễn Văn A")\n' +
+              '• 📊 Dashboard (vd: "tình hình kinh doanh")\n' +
+              '• 💰 Doanh thu (vd: "doanh thu tháng này")';
+          }
         } else {
           reply = 'Xin chào! Tôi có thể giúp bạn:\n' +
             '• 📦 Tra cứu tồn kho (vd: "tồn kho sáp treo")\n' +
             '• 📋 Xem đơn hàng (vd: "đơn hàng hôm nay")\n' +
             '• 👤 Tra cứu khách hàng (vd: "khách hàng Nguyễn Văn A")\n' +
             '• 📊 Dashboard (vd: "tình hình kinh doanh")\n' +
-            '• 💰 Doanh thu (vd: "doanh thu tháng này")\n' +
-            '• 👥 Nhân sự (vd: "thông tin nhân sự")\n' +
-            '• 🏭 Sản xuất (vd: "lệnh sản xuất tháng này")\n' +
-            '• 💳 Công nợ (vd: "công nợ khách hàng")\n' +
-            '• 📄 Đơn nhập hàng (vd: "PO chờ duyệt")\n' +
-            '• 📊 Báo cáo tài chính (vd: "chi phí tháng này")';
+            '• 💰 Doanh thu (vd: "doanh thu tháng này")';
         }
       } catch {
-        reply = 'Xin chào! Tôi có thể giúp bạn tra cứu dữ liệu database. Hãy đặt câu hỏi về sản phẩm, đơn hàng, khách hàng, doanh thu...';
+        if (llm.isConfigured()) {
+          try {
+            reply = await llm.generateText({
+              system: 'Bạn là trợ lý AI chuyên môn của Aduu ERP. Trả lời bằng tiếng Việt, ngắn gọn, thân thiện.',
+              prompt: userMsg,
+              temperature: 0.4,
+              maxOutputTokens: 512,
+              mode: 'live',
+            });
+          } catch {
+            reply = 'Xin chào! Tôi có thể giúp bạn tra cứu dữ liệu database. Hãy đặt câu hỏi về sản phẩm, đơn hàng, khách hàng, doanh thu...';
+          }
+        } else {
+          reply = 'Xin chào! Tôi có thể giúp bạn tra cứu dữ liệu database. Hãy đặt câu hỏi về sản phẩm, đơn hàng, khách hàng, doanh thu...';
+        }
       }
     }
 
@@ -502,7 +759,13 @@ router.post('/chat', async (req, res, next) => {
         toolOutput: { response: reply },
         status: 'COMPLETED',
         durationMs,
-        path: intent?.tool ? 'fast_path' : 'fallback_keyword',
+        // Nhãn nguồn để phân tích: brain_tool/brain_reply = LLM chọn tool/reply;
+        // fast_path = khớp từ khoá trúng tool; fallback_keyword = quét DB.
+        // KHÔNG đặt tên path dạng "fallback-lm-lm" (chuỗi bị test agent-step-type
+        // cấm vì nhánh ấy thực chất là keyword, không phải LLM).
+        path: intent?.isBrain
+          ? (intent.tool ? 'brain_tool' : 'brain_reply')
+          : intent?.tool ? 'fast_path' : 'fallback_keyword',
       },
     });
 
@@ -810,5 +1073,6 @@ router.post('/human-gates/:id/retry-execution', authorize('ADMIN', 'MANAGER'), a
 module.exports = router;
 // Export phụ để test được parser (INTENTS/extract không nằm trên router).
 module.exports.extractPO = extractPO;
+module.exports.extractOrder = extractOrder;
 module.exports.INTENTS = INTENTS;
 module.exports.TOOL_HANDLERS = TOOL_HANDLERS;

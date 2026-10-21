@@ -52,8 +52,8 @@ const create = async (poId, { warehouseId = null, receivedAt = null, items = [] 
     include: { items: true },
   });
   if (!po) throw { status: 404, message: "Không tìm thấy PO" };
-  if (!["APPROVED", "ORDERED"].includes(po.status)) {
-    throw { status: 400, message: "PO phải ở trạng thái APPROVED/ORDERED để nhận hàng" };
+  if (!["APPROVED", "ORDERED", "PARTIALLY_RECEIVED"].includes(po.status)) {
+    throw { status: 400, message: "PO phải ở trạng thái APPROVED/ORDERED (đã gửi NCC) để nhận hàng" };
   }
 
   // Số lượng đã nhận (GRN POSTED) theo từng PurchaseItem
@@ -117,6 +117,41 @@ const create = async (poId, { warehouseId = null, receivedAt = null, items = [] 
   }).catch(() => {});
 
   return code;
+};
+
+// Nhan nhanh cho shop nho: create (DRAFT) + QC dat toan bo + post trong 1 lan.
+// Van sinh du GRN POSTED + but toan + cong no de ke toan dung, ai can QC chat thi di duong 3 buoc.
+const quickReceive = async (poId, { warehouseId = null } = {}, userId, client = prisma) => {
+  const po = await client.purchaseOrder.findUnique({
+    where: { id: poId },
+    include: { items: true },
+  });
+  if (!po) throw { status: 404, message: "Không tìm thấy PO" };
+  const postedItems = await client.goodsReceiptItem.findMany({
+    where: { grn: { purchaseOrderId: poId, status: "POSTED" } },
+    select: { purchaseItemId: true, receivedQty: true },
+  });
+  const receivedByItem = {};
+  for (const it of postedItems) {
+    receivedByItem[it.purchaseItemId] = (receivedByItem[it.purchaseItemId] || 0) + it.receivedQty;
+  }
+  const items = po.items
+    .map((pi) => ({
+      purchaseItemId: pi.id,
+      productId: pi.productId,
+      receivedQty: pi.quantity - (receivedByItem[pi.id] || 0),
+    }))
+    .filter((i) => i.receivedQty >= 1);
+  if (!items.length) throw { status: 400, message: "PO đã nhận đủ hàng" };
+  const grn = await create(poId, { warehouseId, items }, userId, client);
+  const full = await client.goodsReceiptNote.findUnique({ where: { id: grn.id }, include: { items: true } });
+  await recordQc(
+    grn.id,
+    full.items.map((i) => ({ itemId: i.id, passQty: i.receivedQty, rejectQty: 0 })),
+    userId,
+    client,
+  );
+  return post(grn.id, userId, client);
 };
 
 // Ghi nhận QC từng line: passQty + rejectQty <= receivedQty → QC_DONE
@@ -320,10 +355,16 @@ const post = async (id, userId, client = prisma) => {
       _sum: { receivedQty: true },
     });
     const ordered = grn.purchaseOrder.items.reduce((s, i) => s + i.quantity, 0);
-    if ((agg._sum?.receivedQty ?? 0) >= ordered && ["APPROVED", "ORDERED"].includes(grn.purchaseOrder.status)) {
+    const received = agg._sum?.receivedQty ?? 0;
+    if (received >= ordered && ["APPROVED", "ORDERED", "PARTIALLY_RECEIVED"].includes(grn.purchaseOrder.status)) {
       await tx.purchaseOrder.update({
         where: { id: grn.purchaseOrderId },
         data: { status: "RECEIVED", receivedAt: new Date() },
+      });
+    } else if (received > 0 && received < ordered && ["APPROVED", "ORDERED", "PARTIALLY_RECEIVED"].includes(grn.purchaseOrder.status)) {
+      await tx.purchaseOrder.update({
+        where: { id: grn.purchaseOrderId },
+        data: { status: "PARTIALLY_RECEIVED" },
       });
     }
 
@@ -475,4 +516,4 @@ const getById = async (id, client = prisma) => {
   return grn;
 };
 
-module.exports = { create, recordQc, post, list, getById };
+module.exports = { create, recordQc, post, quickReceive, list, getById };

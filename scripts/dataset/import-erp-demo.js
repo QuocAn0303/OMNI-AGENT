@@ -417,8 +417,8 @@ async function main() {
     });
     const vendor = await prisma.vendor.upsert({
       where: { id: `${tenantId}:vendor-chinh` },
-      create: { id: `${tenantId}:vendor-chinh`, tenantId, code: VENDOR_CODE, name: VENDOR_NAME, paymentTerms: 7 },
-      update: {},
+      create: { id: `${tenantId}:vendor-chinh`, tenantId, code: VENDOR_CODE, name: VENDOR_NAME, email: 'an7091@gmail.com', paymentTerms: 7 },
+      update: { email: 'an7091@gmail.com' },
     });
 
     // --- sản phẩm + tồn (giả định A1) ------------------------------------

@@ -191,6 +191,24 @@ describe('vai trò #2: LLM chỉ nhận số đã tính sẵn, không được s
     expect(assertNumbersUnchanged('nhu cầu khoảng 2 mỗi ngày', { demandPerDay: 2.1 }).ok).toBe(true);
   });
 
+  // SỬA 2026-10-19: LLM chép lại số payload nguyên văn ("32.955/ngày" khi
+  // demandPerDay: 32.955) bị quét thành 32955 ⇒ cả lời giải thích ĐÚNG lùi về
+  // mẫu, UI báo "mẫu (LLM không khả dụng)" dù LLM vẫn ổn. Dấu nghìn/thập phân
+  // 3 chữ số phải được thử lại theo nghĩa thập phân. Tamper "530" vẫn bị chặn.
+  test('thập phân 3 chữ số chép lại từ payload không bị coi là số bịa', () => {
+    // Các case thật từ logs/error.log 05:20 & 08:42 (SKU 85099F, 20712…).
+    expect(assertNumbersUnchanged('Nhu cầu 32.955/ngày', { demandPerDay: 32.955 }).ok).toBe(true);
+    expect(assertNumbersUnchanged('đề xuất nhập 611, nhu cầu 27.125/ngày', { orderQty: 611, demandPerDay: 27.125 }).ok).toBe(true);
+    expect(assertNumbersUnchanged('phủ 115.625 đơn vị/ngày', { demandPerDay: 115.625 }).ok).toBe(true);
+    // Dạng phẩy thập phân của LLM ("27,125") cũng phải đạt.
+    expect(assertNumbersUnchanged('nhu cầu 27,125/ngày', { demandPerDay: 27.125 }).ok).toBe(true);
+    expect(assertNumbersUnchanged('còn 1.300 ngày sơ tán', { daysOfCoverLeft: 1.3 }).ok).toBe(true);
+    // Tamper demo: số lượng đổi thành "530" (không dấu phân tách) — vẫn bị chặn.
+    expect(assertNumbersUnchanged('đề xuất nhập 530 đơn vị', { orderQty: 523 }).ok).toBe(false);
+    // Số bịa hoàn toàn không khớp bất kỳ số nào (kể cả /1000) — vẫn bị chặn.
+    expect(assertNumbersUnchanged('tổng 975.000 đ', { total: 12345 }).ok).toBe(false);
+  });
+
   test('LLM lỗi/429/503 ⇒ mẫu, KHÔNG ném lỗi ra ngoài', async () => {
     llmPolicy.callTask.mockResolvedValue({ ok: false, text: null, reason: 'LLM_ERROR:Gemini HTTP 503', mode: 'live' });
     const r = await explainProposal(payload);

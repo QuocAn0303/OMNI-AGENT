@@ -700,21 +700,87 @@ const HANDLERS = {
 
   // ════════════════ WRITE TOOLS ════════════════
 
+  /**
+   * Tra cứu khách hàng chịu lỗi dấu/chữ dư ("khách Bui Hoang", "Bui Hoang" vs
+   * "Bùi Hoàng", SĐT ở cuốicâu).
+   *
+   * Lượt 1: `contains`Insensitive + SĐT — phủ đại đa số (tên gõ đúng)).
+   * Lượt 2 (dự phòng): lấy tối đa 500 khách mới nhất rồi so sánh bằng
+   * `stripDiacritics` — người dùng gõ không dấu ("bui hoang") vẫn khớp tên có
+   * dấu ("Bùi Hoàng"). Giới hạn 500 vì tenant demo có thể có hàng nghìn khách,
+   * quét vô hạn là mất kiểm soát.
+   */
+  findCustomerByQuery: async (query) => {
+    const q = String(query || '').trim();
+    if (!q) return null;
+    const direct = await prisma.customer.findFirst({
+      where: {
+        isActive: true,
+        OR: [
+          { name: { contains: q, mode: 'insensitive' } },
+          { phone: { contains: q } },
+        ],
+      },
+    });
+    if (direct) return direct;
+    try {
+      const wanted = stripDiacritics(q).toLowerCase();
+      const candidates = await prisma.customer.findMany({
+        where: { isActive: true },
+        orderBy: { createdAt: 'desc' },
+        take: 500,
+      });
+      return (candidates || []).find((c) => stripDiacritics(c.name).toLowerCase().includes(wanted)) || null;
+    } catch (e) {
+      logger.error(`[DB Agent] Fallback tra cứu khách không dấu lỗi: ${e.message}`);
+      return null;
+    }
+  },
+
+  /**
+   * Tra cứu sản phẩm chịu lỗi dấu / gõ SKU.
+   *
+   * Lượt 1: `name contains`Insensitive — phủ đại đa số (tên gõ đúng).
+   * Lượt 2: `sku contains` — người dùng gõ mã thay vì tên.
+   * Lượt 3 (dự phòng): quét tối đa 500 sản phẩm mới nhất so sánh bằng
+   * `stripDiacritics` — "phan mai oishi loai 1" vẫn khớp "Phô mai Oishi
+   * Loại 1". Giới hạn 500 giống findCustomerByQuery để không quét vô hạn
+   * với tenant hàng nghìn SKU.
+   */
+  findProductByQuery: async (query) => {
+    const q = String(query || '').trim();
+    if (!q) return null;
+    const byName = await prisma.product.findFirst({
+      where: { isActive: true, name: { contains: q, mode: 'insensitive' } },
+    });
+    if (byName) return byName;
+    const bySku = await prisma.product.findFirst({
+      where: { isActive: true, sku: { contains: q, mode: 'insensitive' } },
+    });
+    if (bySku) return bySku;
+    try {
+      const wanted = stripDiacritics(q).toLowerCase();
+      const candidates = await prisma.product.findMany({
+        where: { isActive: true },
+        orderBy: { createdAt: 'desc' },
+        take: 500,
+      });
+      return (candidates || []).find((p) => stripDiacritics(p.name).toLowerCase().includes(wanted)) || null;
+    } catch (e) {
+      logger.error(`[DB Agent] Fallback tra cứu sản phẩm không dấu lỗi: ${e.message}`);
+      return null;
+    }
+  },
+
+
+
   create_order: async (params = {}, userId = null) => {
     const orderService = require('../orders/order.service');
 
     const customerQuery = params.customerName || params.customerPhone || '';
     let customerId = params.customerId;
     if (!customerId && customerQuery) {
-      const customer = await prisma.customer.findFirst({
-        where: {
-          isActive: true,
-          OR: [
-            { name: { contains: customerQuery, mode: 'insensitive' } },
-            { phone: { contains: customerQuery } },
-          ],
-        },
-      });
+      const customer = await HANDLERS.findCustomerByQuery(customerQuery);
       if (customer) customerId = customer.id;
       else return { data: null, total: 0, summary: `Không tìm thấy khách hàng "${customerQuery}". Vui lòng kiểm tra lại tên hoặc SĐT.`, message: '' };
     }
@@ -736,15 +802,23 @@ const HANDLERS = {
       if (pid) {
         product = await prisma.product.findUnique({ where: { id: pid } });
       } else if (name) {
-        product = await prisma.product.findFirst({ where: { name: { contains: name, mode: 'insensitive' }, isActive: true } });
+        // findProductByQuery: name contains → SKU → quét không dấu. Trước đây
+        // chỉ `name contains` nên "phan mai oishi loai 1" (không dấu) báo
+        // không tìm thấy dù sản phẩm tồn tại.
+        product = await HANDLERS.findProductByQuery(name);
       }
       if (!product) return { data: null, total: 0, summary: `Không tìm thấy sản phẩm "${name || pid}". Vui lòng kiểm tra lại.`, message: '' };
-      resolvedItems.push({ productId: product.id, quantity: parseInt(item.quantity) || 1, price: Number(item.price || product.price) });
+      // Giữ tên đã resolve để summary hiển thị TÊN thay vì UUID — `order.items`
+      // trả về từ orderService.create có thể thiếu include product (bug thật
+      // 17/10/2026: "1x efb21a2d-…" cho người dùng).
+      resolvedItems.push({ productId: product.id, productName: product.name || name || pid, quantity: parseInt(item.quantity) || 1, price: Number(item.price || product.price) });
     }
 
     const order = await orderService.create({
       customerId: customerId || null,
-      items: resolvedItems,
+      // orderService.create chỉ cần {productId, quantity, price} — không truyền
+      // productName (trường phụ chỉ để dựng summary) vào items.
+      items: resolvedItems.map((i) => ({ productId: i.productId, quantity: i.quantity, price: i.price })),
       paymentMethod: params.paymentMethod || 'CASH',
       status: params.status || 'PENDING',
       note: params.note || `[Tạo bởi AI Agent] ${params.note || ''}`,
@@ -754,7 +828,7 @@ const HANDLERS = {
     return {
       data: order,
       total: 1,
-      summary: `✅ Đã tạo đơn hàng ${order.orderCode} thành công!\nTổng tiền: ${Number(order.total).toLocaleString()}đ\nSản phẩm: ${resolvedItems.map(i => `${i.quantity}x ${order.items?.find(oi => oi.productId === i.productId)?.product?.name || i.productId}`).join(', ')}`,
+      summary: `✅ Đã tạo đơn hàng ${order.orderCode} thành công!\nTổng tiền: ${Number(order.total).toLocaleString()}đ\nSản phẩm: ${resolvedItems.map(i => `${i.quantity}x ${i.productName || i.productId}`).join(', ')}`,
       message: '',
     };
   },
@@ -823,7 +897,8 @@ const HANDLERS = {
       if (pid) {
         product = await prisma.product.findUnique({ where: { id: pid } });
       } else if (name) {
-        product = await prisma.product.findFirst({ where: { name: { contains: name, mode: 'insensitive' }, isActive: true } });
+        // findProductByQuery: name contains → SKU → quét không dấu — như create_order
+        product = await HANDLERS.findProductByQuery(name);
       }
       if (!product) return { data: null, total: 0, summary: `Không tìm thấy sản phẩm "${name || pid}".`, message: '' };
       resolvedItems.push({
@@ -867,14 +942,17 @@ const HANDLERS = {
     if (debtId) {
       debt = await prisma.debt.findUnique({ where: { id: debtId }, include: { customer: { select: { name: true, phone: true } } } });
     } else if (customerQuery) {
-      debt = await prisma.debt.findFirst({
-        where: {
-          customer: { name: { contains: customerQuery, mode: 'insensitive' }, isActive: true },
-          status: { in: ['OPEN', 'PARTIAL', 'OVERDUE'] },
-        },
-        orderBy: { dueDate: 'asc' },
-        include: { customer: { select: { name: true, phone: true } } },
-      });
+      // Tra khách qua findCustomerByQuery (chịu lỗi dấu) rồi tìm công nợ theo
+      // customerId — trước đây tra `customer.name contains customerQuery`, câu
+      // có chữ dư ("nợ", "khách ...") làm trượt và báo sai "không có công nợ".
+      const customer = await HANDLERS.findCustomerByQuery(customerQuery);
+      if (customer) {
+        debt = await prisma.debt.findFirst({
+          where: { customerId: customer.id, status: { in: ['OPEN', 'PARTIAL', 'OVERDUE'] } },
+          orderBy: { dueDate: 'asc' },
+          include: { customer: { select: { name: true, phone: true } } },
+        });
+      }
     }
 
     if (!debt) {

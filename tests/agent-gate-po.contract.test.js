@@ -250,6 +250,17 @@ test("số lượng lệch quá ngưỡng → 409 kèm diff, chưa acknowledge t
     // PO vẫn dùng số lượng trong payload mà người duyệt đã nhìn thấy.
     expect(mockPurchaseCreate.mock.calls[0][0].items[0].quantity).toBe(30);
   });
+
+  test("PO sinh từ gate mang cờ decided:true — purchase.create tự quyết định trạng thái", async () => {
+    mockAgentHumanGate.findFirst.mockResolvedValue(poGate({ status: "APPROVED" }));
+
+    await gateExec.executeGate("g1", "u1");
+
+    expect(mockPurchaseCreate).toHaveBeenCalledTimes(1);
+    // Cờ này là thứ khiến PO dưới ngưỡng ra thẳng APPROVED thay vì DRAFT —
+    // thiếu nó thì nút "Tạo GRN" không bao giờ hiện sau khi duyệt đề xuất.
+    expect(mockPurchaseCreate.mock.calls[0][0].decided).toBe(true);
+  });
 });
 
 describe("D6 · THIẾU GIÁ VỐN → 409 MISSING_COST, KHÔNG tạo PO giá 0", () => {

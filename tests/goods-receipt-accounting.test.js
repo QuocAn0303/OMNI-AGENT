@@ -234,7 +234,7 @@ describe("GRN POSTED đóng vòng mua hàng (bút toán + công nợ)", () => {
     expect(tx.goodsReceiptNote.update).toHaveBeenCalled();
   });
 
-  test("PO nhận đủ mới chuyển RECEIVED; nhận thiếu thì giữ nguyên (backorder)", async () => {
+  test("PO nhận đủ mới chuyển RECEIVED; nhận thiếu thì PARTIALLY_RECEIVED (backorder)", async () => {
     // Trong transaction `aggregate` đọc trên `tx`; ở phần TỔNG KẾT lại đọc trên
     // `client` (mặc định `prisma`). Vì vậy mock CẢ HAI để dữ liệu khớp.
     // aggregate trả 160/200 ⇒ chưa đủ ⇒ KHÔNG chuyển RECEIVED.
@@ -246,7 +246,9 @@ describe("GRN POSTED đóng vòng mua hàng (bút toán + công nợ)", () => {
     prisma.$transaction.mockImplementation((fn) => fn(txPartial));
 
     const outPartial = await grnService.post("grn-1", "u1");
-    expect(txPartial.purchaseOrder.update).not.toHaveBeenCalled();
+    expect(txPartial.purchaseOrder.update).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: "po-1" }, data: expect.objectContaining({ status: "PARTIALLY_RECEIVED" }) }),
+    );
     expect(outPartial.fullyReceived).toBe(false);
     expect(outPartial.remainingQty).toBe(40);
 

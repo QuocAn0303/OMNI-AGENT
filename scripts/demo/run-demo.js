@@ -18,8 +18,8 @@
  *
  * Mặc định dọn lại DB sau khi chạy (`--keep` để giữ lại PO để xem trên giao diện).
  *
- * Nhãn phạm vi: dữ liệu MÔ PHỎNG (dựng từ UCI Online Retail II, CC BY 4.0 —
- * xem docs/aisc26/02-data.md). Mọi số dưới đây là số hệ thống TÍNH RA trên dữ
+ * Nhãn phạm vi: dữ liệu MÔ PHỎNG (chuỗi siêu thị Việt Nam — xem
+ * `docs/aisc26/DATASET-SUPERMARKET-SPEC.md`). Mọi số dưới đây là số hệ thống TÍNH RA trên dữ
  * liệu đó, KHÔNG phải hiệu quả đo được trên doanh nghiệp thật.
  */
 
@@ -28,6 +28,7 @@ const { assertLocalDb } = require('../lib/assert-local-db');
 assertLocalDb('demo:run');
 
 const prisma = require('../../src/config/prisma');
+const { runWithTenant } = require('../../src/config/tenantContext');
 const { runDemoFlow, DEMO_SLUG } = require('./demo-flow');
 
 const keep = process.argv.includes('--keep');
@@ -45,12 +46,21 @@ async function main() {
   const tid = tenant.id;
   const started = Date.now();
 
+  // Tiền tệ đọc từ cấu hình tenant, KHÔNG ghi cứng "GBP": bộ dữ liệu chuỗi siêu
+  // thị dùng VND, in "GBP" trên sân khấu là nói sai số trước mặt khán giả.
+  const settings = await runWithTenant(tid, () => prisma.companySettings.findFirst({
+    where: { tenantId: tid },
+    orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+    select: { currency: true },
+  }));
+  const cur = settings?.currency || 'VND';
+
   line('╔══════════════════════════════════════════════════════════════════════╗');
   line('║  LUỒNG DEMO — cảnh báo sắp hết hàng → duyệt → tạo PO → NHẬP KHO    ║');
   line('║  → BÚT TOÁN + CÔNG NỢ. Toàn bộ vòng mua hàng khép kín.               ║');
-  line('║  Dữ liệu MÔ PHỎNG (UCI Online Retail II, CC BY 4.0) · KHÔNG có LLM ║');
+  line('║  Dữ liệu MÔ PHỎNG (chuỗi siêu thị Việt Nam) · KHÔNG có LLM        ║');
   line('╚══════════════════════════════════════════════════════════════════════╝');
-  line(`[demo] tenant: ${tenant.name}`);
+  line(`[demo] tenant: ${tenant.name} · tiền tệ ${cur}`);
 
   const flow = await runDemoFlow({
     tenantId: tid,
@@ -66,8 +76,8 @@ async function main() {
   line(`   Mức tồn thấp  ${n(p.minStock)}   ROP ${n(s.rop)}   nhu cầu/ngày ${s.demandPerDay}`);
 
   head('BƯỚC 3–4  CÔNG THỨC TÍNH RA ĐỀ XUẤT (không LLM)');
-  line(`   Đơn giá       ${s.unitCost} GBP/cái (giá niêm yết — dataset KHÔNG có giá vốn, xem 02-data.md §6.4)`);
-  line(`   Đề xuất nhập   ${n(s.orderQty)} × ${n(s.unitCost)} = ${n(s.totalEstimate)} GBP`);
+  line(`   Đơn giá       ${n(s.unitCost)} ${cur}/cái (giá vốn trong bộ dữ liệu demo)`);
+  line(`   Đề xuất nhập   ${n(s.orderQty)} × ${n(s.unitCost)} = ${n(s.totalEstimate)} ${cur}`);
   line(`   NCC            ${s.vendorName}`);
   line(`   Lead time      ${s.leadTimeDays} ngày ${s.leadTimeEstimated ? '(UƯỚC LƯỢNG — chưa đủ lịch sử nhận hàng)' : '(ĐO ĐƯỢC từ lịch sử PO → GRN)'}`);
   line(`   Cờ thiếu giá vốn ${p.missingCost === true ? 'CÓ' : 'KHÔNG'}`);
@@ -76,7 +86,7 @@ async function main() {
 
   head('BƯỚC 5-6  NGƯỜI DUYỆT QUA HUMAN-GATE → TẠO PO');
   line(`   Người duyệt    ${s.approver}`);
-  line(`   Kết quả        tạo đúng ${flow.poCheck.found} PO → ${s.poCode} (${n(s.poTotal)} GBP — tiền tệ của dataset, KHÔNG quy đổi)`);
+  line(`   Kết quả        tạo đúng ${flow.poCheck.found} PO → ${s.poCode} (${n(s.poTotal)} ${cur} — KHÔNG quy đổi)`);
 
   // ── BƯỚC ĐÓNG VÒNG (thêm 2026-10-13) ──────────────────────────────────
   // Khối này là phần trả lời trực tiếp cho câu hỏi khó nhất của ban giám khảo:
@@ -88,12 +98,12 @@ async function main() {
   line('                   (duyệt đề xuất ở bước 5 ≠ duyệt đơn mua ở bước 7 — 2 chốt kiểm riêng)');
   line(`   Phiếu nhập     ${g.grnCode}`);
   line(`   Hàng đạt QC    ${n(g.acceptedQty)}   còn phải giao nốt ${n(g.remainingQty)}`);
-  line(`   Giá trị nhận   ${n(g.receivedValue)} GBP`);
+  line(`   Giá trị nhận   ${n(g.receivedValue)} ${cur}`);
   line(`   Tồn kho        +${n(g.stockDelta)} (đúng bằng số hàng ĐẠT QC)`);
   line(`   BÚT TOÁN      ${g.journalEntryCode || 'KHÔNG CÓ — hạch lỗi'}`);
   line(`                   Nợ ${n(g.journalDebit)} = Có ${n(g.journalCredit)}${g.journalBalanced === true ? '  (CÂN BẰNG)' : ''}`);
   line('                   Nợ 156 tồn kho + Nợ 1331 công nợ phải trả = Có 331 công nợ phải có');
-  line(`   Công nợ NCC    +${n(g.debtDelta)} GBP với ${g.vendorName}`);
+  line(`   Công nợ NCC    +${n(g.debtDelta)} ${cur} với ${g.vendorName}`);
   line('');
   line('   ▸ Trước 2026-10-12: GRN chỉ cộng tồn kho, KHÔNG ghi bút toán, KHÔNG tạo công nợ.');
   line('     Đo được 39 PO đã nhận hàng thật mà không có dòng bút toán nào.');
@@ -109,7 +119,8 @@ async function main() {
   line('   · HTTP: bước 5 gọi executeGate trực tiếp đúng thứ tự route; phần HTTP có script riêng check:humangate.');
 
   if (keep) {
-    line('\n[demo] --keep: GIỮ lại PO và đề xuất để mở giao diện xem. Dọn tay: node scripts/demo/clean-demo.js');
+    line('\n[demo] --keep: GIỮ lại PO và đề xuất để mở giao diện xem.');
+    line('[demo] Dọn tay (đưa về trạng thái trước buổi demo): npm run demo:restore -- --apply');
   } else {
     const res = await flow.cleanup();
     line(`\n[demo] đã dọn: ${JSON.stringify(res.deleted)}`);

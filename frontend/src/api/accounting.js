@@ -54,6 +54,7 @@ export const getPurchaseOrder = (id) => axios.get(`/purchase-orders/${id}`).then
 export const createPurchaseOrder = (data) => axios.post("/purchase-orders", data).then(unwrap);
 export const submitPurchaseOrder = (id) => axios.post(`/purchase-orders/${id}/submit`).then(unwrap);
 export const approvePurchaseOrder = (id) => axios.post(`/purchase-orders/${id}/approve`).then(unwrap);
+export const orderPurchaseOrder = (id) => axios.post(`/purchase-orders/${id}/order`).then(unwrap);
 export const receivePurchaseOrder = (id) => axios.post(`/purchase-orders/${id}/receive`).then(unwrap);
 export const payPurchaseOrder = (id, data) => axios.post(`/purchase-orders/${id}/payment`, data).then(unwrap);
 export const cancelPurchaseOrder = (id) => axios.post(`/purchase-orders/${id}/cancel`).then(unwrap);

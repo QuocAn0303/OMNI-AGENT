@@ -52,7 +52,7 @@ const DON_DUOC = [
 ];
 
 async function donDep(tenantId) {
-  console.log('\n[0/8] Don dep du lieu cu (theo thu tu phu thuoc)');
+  console.log('\n[0/7] Don dep du lieu cu (theo thu tu phu thuoc)');
   let tong = 0;
   const thatBai = [];
   for (const [bang] of DON_DUOC) {
@@ -119,6 +119,26 @@ async function verify() {
   them('giao dich loyalty', await w('loyaltyTransaction'), 'PHAI > 0');
   them('cong no', await w('debt'), '> 0');
 
+  // ── LUỒNG DEMO AISC: có SKU dưới ROP + có NCC để bấm "Tạo đề xuất" ──────
+  // Đo bằng ĐÚNG hàm mà UI dùng (`smart-guide.service.getReorderSuggestions`) ⇒
+  // số in ra chính là số dòng tab "Đề xuất nhập" sẽ hiện. Không có phần này thì
+  // bộ dữ liệu vẫn "đẹp" nhưng demo trên UI trống — đã xảy ra 2026-10-16.
+  const duoiRop = await runWithTenant(t.id, async () => {
+    const svc = require('../../../src/modules/smart-guide/smart-guide.service');
+    const out = await svc.getReorderSuggestions(t.id);
+    return out.suggestions || [];
+  });
+  const coNcc = duoiRop.filter((r) => r.suggestedVendor);
+  them('SKU duoi ROP', duoiRop.length, 'PHAI >= 1');
+  them('  co NCC (nut Tao de xuat sang)', coNcc.length, 'PHAI >= 1');
+  if (coNcc.length) {
+    const r = coNcc[0];
+    console.log('   ' + r.sku.padEnd(12) + ' ton ' + String(r.currentStock).padStart(5)
+      + ' / ROP ' + String(r.rop).padStart(5)
+      + ' · de xuat ' + String(r.suggestedReorderQty).padStart(5)
+      + ' · lead ' + r.leadTimeDays + ' ngay ' + (r.leadTimeEstimated ? '(uoc luong)' : '(do duoc)'));
+  }
+
   // Phân bố khách hàng
   const ks = await prisma.customer.findMany({ where: { tenantId: t.id }, select: { id: true } });
   const idSet = new Set(ks.map((k) => k.id));
@@ -137,8 +157,8 @@ async function verify() {
 
   // Mùa vụ
   const theoThang = new Array(12).fill(0);
-  const dsOD2 = await prisma.order.findMany({ where: { tenantId: t.id }, select: { orderDate: true } });
-  dsOD2.forEach((o) => { theoThang[new Date(o.orderDate).getUTCMonth()] += 1; });
+  const dsOD2 = await prisma.order.findMany({ where: { tenantId: t.id }, select: { createdAt: true } });
+  dsOD2.forEach((o) => { theoThang[new Date(o.createdAt).getUTCMonth()] += 1; });
 
   console.log('\n=== KIỂM CHỨNG BỘ DỮ LIỆU CHUỖI SIÊU THỊ ===\n');
   let sai = 0;
@@ -192,8 +212,15 @@ async function main() {
   if (!user) { console.log('Tenant khong co user nao de gan nguoi tao'); process.exitCode = 1; return; }
 
   const tenantId = tenant.id;
+  // Tên tenant vẫn ghi "UCI Online Retail II" từ `data:import` trong khi dữ liệu
+  // đã là chuỗi siêu thị Việt Nam ⇒ mọi nhãn in ra trên sân khấu sai nguồn.
+  // Đổi tên + mô tả ở đây (không đổi `slug` — nhiều script bám theo nó).
+  await prisma.tenant.update({
+    where: { id: tenant.id },
+    data: { name: 'OMNI DEMO (MÔ PHỎNG — dữ liệu chuỗi siêu thị Việt Nam)' },
+  });
   const buoc = (n, ten, fn) => {
-    console.log(`\n[${n}/8] ${ten}`);
+    console.log(`\n[${n}/7] ${ten}`);
     const tg = Date.now();
     return Promise.resolve(fn()).then((r) => {
       console.log(`      xong sau ${((Date.now() - tg) / 1000).toFixed(1)}s`);
@@ -208,14 +235,17 @@ async function main() {
   const danhMuc = await buoc(1, 'Danh muc', () => S.BUOC_DANH_MUC(tenantId));
   const ncc = await buoc(2, 'Nha cung cap', () => S.BUOC_NCC(tenantId));
   const kho = await buoc(3, 'Kho + cua hang', () => S.BUOC_KHO(tenantId));
-  const sanPham = await buoc(4, 'San pham', () => S.BUOC_SAN_PHAM(tenantId, danhMuc));
+  // `BUOC_SAN_PHAM(tenantId, danhMuc, soSanPham)` — thiếu tham số thứ 3 thì vòng
+// lặp `for (i < undefined)` không chạy lần nào ⇒ **0 sản phẩm**, và mọi bước sau
+// (tồn kho, đơn hàng, chuyển kho, kiểm kê) ra 0 dòng mà không báo lỗi.
+const sanPham = await buoc(4, 'San pham', () => S.BUOC_SAN_PHAM(tenantId, danhMuc, S.SO_SAN_PHAM));
   const khach = await buoc(5, 'Khach hang', () => S.BUOC_KHACH(tenantId));
   const ton = await buoc(6, 'Ton kho mo dau', () => S.BUOC_TON_DAU(tenantId, sanPham, kho));
 
   const btt = await S.taiKhoan(tenantId);
   const ctx = { tenantId, danhMuc, ncc, kho, sanPham, khach, ton, userId: user.id, btt };
 
-  await buoc(8, 'Vong mua hang + ban hang + van hanh', async () => {
+  await buoc(7, 'Vong mua hang + ban hang + van hanh', async () => {
     const tienDaTra = new Map();
     await S.BUOC_MUA_HANG(ctx);
     const ban = await S.BUOC_BAN_HANG(ctx);
@@ -235,8 +265,12 @@ async function main() {
     const tk112 = btt.get('112');
     const theoNgay = new Map();
     ban.dsDon.forEach((o) => {
-      const k = o.orderDate.toISOString().slice(0, 10);
-      if (!theoNgay.has(k)) theoNgay.set(k, { tong: 0, von: 0, ngay: o.orderDate });
+      // `Order` KHÔNG có cột `orderDate` — ngày bán là `createdAt`. Đọc `orderDate`
+      // trả `undefined` ⇒ `.toISOString()` ném TypeError và cả lượt seed chết
+      // SAU khi đã ghi hết dữ liệu.
+      const d = new Date(o.createdAt);
+      const k = d.toISOString().slice(0, 10);
+      if (!theoNgay.has(k)) theoNgay.set(k, { tong: 0, von: 0, ngay: d });
       const g = theoNgay.get(k);
       g.tong += ban.tongTheoDon.get(o.id) || 0;
     });
@@ -250,14 +284,14 @@ async function main() {
     let jeBan = 0;
     for (const [k, g] of theoNgay) {
       if (tk511 && tk632 && tk111) {
-        await S.ghiButToan(btt, 'JEB' + k.replace(/-/g, ''), g.ngay,
+        await S.ghiButToan(tenantId, btt, 'JEB' + k.replace(/-/g, ''), g.ngay,
           `Bán hàng ngày ${k} (${g.tong.toLocaleString('vi-VN')} đ)`,
           [
-            { tk: tk111, no: Number((g.tong * 0.42).toFixed(2)) },
-            { tk: tk112, no: Number((g.tong * 0.58).toFixed(2)) },
-            { tk: tk511, co: Number(g.tong.toFixed(2)) },
-            { tk: tk632, no: Number((g.tong * giaVon).toFixed(2)) },
-            { tk: tk111, co: Number((g.tong * giaVon).toFixed(2)) },
+            { tk: '111', no: Number((g.tong * 0.42).toFixed(2)) },
+            { tk: '112', no: Number((g.tong * 0.58).toFixed(2)) },
+            { tk: '511', co: Number(g.tong.toFixed(2)) },
+            { tk: '632', no: Number((g.tong * giaVon).toFixed(2)) },
+            { tk: '111', co: Number((g.tong * giaVon).toFixed(2)) },
           ],
           'ORDER');
         jeBan += 1;

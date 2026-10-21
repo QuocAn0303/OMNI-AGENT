@@ -118,8 +118,40 @@ const assertNumbersUnchanged = (text, payload) => {
     scanText = scanText.split(s).join('__ID__');
   }
 
-  const invented = [...extractNumbers(scanText)].filter((n) => !allowed.has(n));
-  return { ok: invented.length === 0, invented };
+  // SỬA 2026-10-19 — LỖI THẬT, đo trên HTTP thật (`[explain] LLM thêm/sửa số:
+  // 32955 / 27125 / 115625 → dùng mẫu`, logs/error.log 05:20 & 08:42): LLM chép
+  // lại số của payload NGUYÊN VĂN kèm phần thập phân 3 chữ số ("32.955/ngày"
+  // khi payload có `demandPerDay: 32.955`) và bị đọc thành 32955. Mỗi lần đó là
+  // một lời giải thích ĐÚNG bị bỏ, đề xuất về MẪU — UI hiển thị "mẫu (LLM không
+  // khả dụng)" dù LLM (UIT) vẫn kết nối bình thường.
+  //
+  // NGHI NGỜ THẬP PHÂN: nhóm `\d[.,]\d{3}\b` (một dấu chấm/phẩy + ĐÚNG 3 chữ số)
+  // là TRƯỜNG HỢP MỜ — với quy ước VN đó là phần nghìn, với JSON/thập phân là
+  // dấu thập phân. Khi số đã quét KHÔNG có trong tập cho phép, thử LẠI nghĩa
+  // thập phân (chia 1000): khớp một số đã cho (hoặc biến thể làm tròn của nó)
+  // ⇒ là chép lại số, KHÔNG phải bịa. Tamper mô phỏng viết "530" (không có dấu
+  // phân tách) vẫn rớt như cũ — hành vi demo không đổi.
+  const invented = [];
+  for (const m of String(scanText || '').matchAll(/\d[\d.,]*/g)) {
+    const raw = m[0];
+    const cleaned = Number(raw.replace(/[.,](?=\d{3}\b)/g, '').replace(',', '.'));
+    if (!Number.isFinite(cleaned) || allowed.has(cleaned)) continue;
+    if (/\d[.,]\d{3}\b/.test(raw)) {
+      const dec = cleaned / 1000;
+      let asDecimal = allowed.has(dec);
+      // Biến thể làm tròn của nghĩa thập phân: LLM viết "27.1" khi payload
+      // là 27.125 — đã được tập `allowed` phủ sẵn ở dạng trực tiếp; ở đây chỉ
+      // cần phủ các dạng LLM chép lại có thêm bớt chữ số ("32.9550", "27.1250").
+      if (!asDecimal) {
+        for (const digits of [0, 1, 2, 3, 4]) {
+          if (allowed.has(Number(dec.toFixed(digits)))) { asDecimal = true; break; }
+        }
+      }
+      if (asDecimal) continue;
+    }
+    invented.push(cleaned);
+  }
+  return { ok: invented.length === 0, invented: [...new Set(invented)] };
 };
 
 const SYSTEM_EXPLAIN = [

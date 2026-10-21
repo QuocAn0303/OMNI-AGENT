@@ -8,6 +8,41 @@
 
 ---
 
+## Vòng lặp mỗi buổi demo (LÀM TRƯỚC, 2 LỆNH)
+
+Demo trên UI **tiêu tốn dữ liệu**: bấm `Duyệt` là sinh PO thật, `Ghi sổ cái` ở GRN
+là cộng tồn + bút toán + công nợ NCC. Xong buổi trình bày thì tenant demo **không
+còn trạng thái ban đầu** ⇒ buổi sau bấm lại sẽ trống (SKU đã có PO đang trên
+đường nên hệ thống cố ý không sinh đề xuất trùng).
+
+```bash
+npm run demo:snapshot        # 1. chụp trạng thái HIỆN TẠI (trước buổi demo)
+npm run demo:preflight       # 2. đo: còn bao nhiêu SKU dưới ROP / nút bấm được
+                            #    ⇒ "≥ 1 dòng có NCC" mới lên sân khấu được
+...                          # 3. demo trên UI
+npm run demo:restore -- --apply   # 4. sau buổi demo: đưa về đúng trạng thái đã chụp
+```
+
+`demo:restore` tự **đo lại** và in `0 bảng lệch` nếu đã về đúng trạng thái. Nếu
+tab `Đề xuất nhập` vẫn trống sau khi restore ⇒ **Ctrl+F5** (trang có cache tab).
+
+> Chụp xong thì đừng làm việc thật khác trên tenant demo nếu không muốn mất:
+> `demo:restore` xoá **mọi** dòng tạo sau thời điểm chụp.
+
+Nếu `demo:preflight` báo `0 SKU dưới ROP` ⇒ **dữ liệu** chứ không phải code.
+Nạp lại bộ dữ liệu chuỗi siêu thị (khoảng 1 phút) rồi chụp lại:
+
+```bash
+npm run seed:supermarket:demo   # 600 SKU · 4.400 đơn · 12 SKU "hero" dưới ROP có NCC
+npm run demo:snapshot
+npm run demo:preflight          # phải in "SKU DƯỚI ROP >= 1" và "có NCC >= 1"
+```
+
+> Bộ cũ (`data:import`, UCI Online Retail II) vẫn chạy được:
+> `npm run data:import -- --reset --apply --days 34` + `npm run demo:setup`.
+
+---
+
 ## Bước 0 — Đăng nhập (làm trước)
 
 Mở `http://localhost:5173`

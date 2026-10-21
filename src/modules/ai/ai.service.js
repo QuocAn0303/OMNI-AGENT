@@ -7,6 +7,7 @@
 const prisma = require("../../config/prisma");
 const logger = require('../../utils/logger');
 const { getTenantId } = require("../../config/tenantContext");
+const llm = require("../../config/llm");
 
 // --------------- Ollama Config ---------------
 const OLLAMA_BASE = process.env.OLLAMA_URL || "http://localhost:11434";
@@ -376,7 +377,15 @@ Quy tac:
 
 const chat = async (req, res) => {
   try {
-    const { message, history = [] } = req.body;
+    // Ho tro ca dang { message, history } cua RAG cu va dang { messages } cua widget.
+    let message = req.body?.message;
+    let history = req.body?.history || [];
+    if (!message && Array.isArray(req.body?.messages)) {
+      const msgs = req.body.messages;
+      const lastUser = [...msgs].reverse().find((m) => m?.role === 'user');
+      message = lastUser?.content;
+      history = msgs.slice(0, msgs.length - 1).filter((m) => m?.role === 'user' || m?.role === 'assistant');
+    }
 
     if (!message || !message.trim()) {
       return res.status(400).json({ success: false, message: "Vui lòng nhap câu hỏi" });
@@ -439,13 +448,34 @@ const chat = async (req, res) => {
 
     ollamaMessages.push({ role: "user", content: userMessage });
 
-    // 5. Call Ollama
-    const reply = await ollamaChat(ollamaMessages);
+    // 5. Goi LLM cloud da cau hinh (9router/UIT theo .env), dung model san co.
+    //    History duoc ghep vao prompt vi generateText chi nhan system + prompt.
+    const promptParts = [];
+    for (const h of recentHistory) {
+      if (h.role === "user" || h.role === "assistant") {
+        promptParts.push(`${h.role === "user" ? "Người dùng" : "Trợ lý"}: ${h.content}`);
+      }
+    }
+    promptParts.push(`Người dùng: ${userMessage}`);
+    promptParts.push("Trợ lý:");
+    const prompt = promptParts.join("\n");
+
+    if (!llm.isConfigured()) {
+      throw new Error("LLM cloud chua cau hinh (thieu API key / provider)");
+    }
+
+    const reply = await llm.generateText({
+      system: SYSTEM_PROMPT,
+      prompt,
+      temperature: 0.3,
+      maxOutputTokens: 1024,
+      mode: "live",
+    });
 
     res.json({
       success: true,
       reply: reply || "Xin loi, toi không the trả lời luc nay.",
-      model: CHAT_MODEL,
+      model: llm.describe().model,
       sources: contextDocs.map((d) => ({
         type: d.entity_type,
         id: d.entity_id,
@@ -456,10 +486,12 @@ const chat = async (req, res) => {
     logger.error(`[ai] chat error: ${error?.message || error}`);
 
     let errorMsg = "Loi xu ly AI";
-    if (error.cause?.code === "ECONNREFUSED" || error.message?.includes("ECONNREFUSED")) {
-      errorMsg = `Không the ket noi Ollama tai ${OLLAMA_BASE}. Vui lòng kiem tra Ollama da chay chua (ollama serve).`;
-    } else if (error.message?.includes("model")) {
-      errorMsg = `Model '${CHAT_MODEL}' chua duoc tai. Chay: ollama pull ${CHAT_MODEL}`;
+    if (error.code === "REAL_DATA_BLOCKED") {
+      errorMsg = "LLM bi chan gui du lieu that. Dat LLM_DATA_TAG=mophong hoac LLM_ALLOW_REAL_DATA=1.";
+    } else if (error.message?.includes("chua cau hinh")) {
+      errorMsg = "LLM cloud chua cau hinh. Kiem tra LLM_PROVIDER va API key trong .env, sau do chay npm run check:llm.";
+    } else {
+      errorMsg = `Khong the goi LLM (${llm.describe().model}): ${error.message}`;
     }
 
     res.status(500).json({ success: false, message: errorMsg });

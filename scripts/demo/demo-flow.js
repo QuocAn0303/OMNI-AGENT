@@ -739,25 +739,28 @@ const runDemoFlow = async ({ tenantId, onEvent = () => {} } = {}) => {
     if (!po.items.length) throw new Error('PO không có dòng hàng — không đóng được vòng mua hàng');
 
     // ── 7a'. DUYỆT ĐƠN MUA ────────────────────────────────────────────────
-    // PO do AI đề xuất sinh ra ở trạng thái **DRAFT**, còn `grnService.create` chỉ
-    // nhận PO `APPROVED`/`ORDERED`. Đây là hành vi ĐÚNG và cần nói ra: **duyệt đề
-    // xuất ≠ duyệt đơn mua**. Người duyệt thẻ ở bước 6 chỉ chấp thuận "đề xuất này
-    // đáng tạo"; đơn mua vẫn phải qua bước duyệt thứ hai theo ngưỡng tiền.
+    // Trước 2026-10-19: PO sinh từ đề xuất luôn rớt về `DRAFT` (dưới ngưỡng) hoặc
+    // `PENDING_APPROVAL` (vượt ngưỡng) — "duyệt đề xuất ≠ duyệt đơn mua" — nên
+    // `grnService.create` từ chối với "PO phải APPROVED/ORDERED".
     //
-    // Đo được khi viết bước này: bỏ qua thì GRN báo "PO phải ở trạng thái
-    // APPROVED/ORDERED để nhận hàng" ⇒ đúng là khoảng trống, không phải lỗi cấu
-    // hình. Sửa bằng cách đi đúng quy trình.
-    //
-    // PO không phải lúc nào cũng `DRAFT`: `purchaseService.create` đặt
-    // `PENDING_APPROVAL` khi tổng tiền ≥ `poApprovalThreshold` (mặc định 5tr).
-    // Đo được 2026-10-16 trên bộ dữ liệu chuỗi siêu thị (giá niêm yết VND):
-    // PO 70 cái × giá vốn ~300k ⇒ ~21 triệu ⇒ đã ở `PENDING_APPROVAL` ⇒ gọi
-    // `submit` văng "Chỉ PO nháp mới được gửi duyệt" và luồng chết ở bước 7.
-    // Gọi `submit` đúng khi PO còn là nháp — trạng thái quyết định, không đoán.
+    // Nay `executeGate` gửi cờ `decided: true`: PO dưới ngưỡng ra thẳng `APPROVED`
+    // (quyết định mua đã có ở thẻ duyệt); vượt ngưỡng vẫn `PENDING_APPROVAL` vì
+    // ngưỡng tiền là kiểm soát lần hai. Script đi theo TRẠNG THÁI THẬT, không đoán:
+    //   DRAFT              → submit rồi approve (đường thủ công còn sót)
+    //   PENDING/_APPROVAL  → approve
+    //   APPROVED           → bỏ qua, dùng nguyên trạng thái
     if (po.status === 'DRAFT') {
       await inTenant(() => purchaseService.submit(po.id, approver.id));
     }
-    const poApproved = await inTenant(() => purchaseService.approve(po.id, approver.role, approver.id));
+    const afterSubmit = await inTenant(() =>
+      prisma.purchaseOrder.findUnique({ where: { id: po.id }, select: { status: true } }),
+    );
+    if (['PENDING', 'PENDING_APPROVAL'].includes(afterSubmit?.status)) {
+      await inTenant(() => purchaseService.approve(po.id, approver.role, approver.id));
+    }
+    const poApproved = await inTenant(() =>
+      prisma.purchaseOrder.findUnique({ where: { id: po.id }, include: { vendor: true, items: true } }),
+    );
     const poStatusAfter = await inTenant(() =>
       prisma.purchaseOrder.findUnique({ where: { id: po.id }, select: { status: true } }),
     );

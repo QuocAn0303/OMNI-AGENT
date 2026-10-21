@@ -111,9 +111,11 @@ Hệ thống cố tình làm lệch một con số rồi chạy lại hàng rào
 
 ## Slide 7 — Vòng đóng kín, có số bút toán
 
-**Bấm:** `KẾ TOÁN & TÀI CHÍNH` → `Mua hàng` → mở đơn vừa tạo
+**Bấm:** `KẾ TOÁN & TÀI CHÍNH` → `Mua hàng` → mở đơn vừa tạo → bấm `Gửi NCC` (APPROVED → ORDERED)
 
-**Bấm:** `Phiếu nhận hàng (GRN)` → mở một phiếu
+*(PO từ ngưỡng duyệt 5tr trở lên sẽ có thêm 1 bước `Duyệt` trước khi `Gửi NCC` — kiểm soát lần hai theo số tiền, AI không vượt qua được.)*
+
+**Bấm tiếp trong chi tiết PO:** `Tạo GRN` (hoặc `Nhận nhanh` cho shop nhỏ) → sang `/grn?poId=…` → nhập `SL nhận` → `Ghi nhận QC` (đạt/lỗi) → `Nhập kho (POSTED)` → quay lại tab `Phiếu nhận hàng — đã nhận X/Y` (PO lật PARTIALLY_RECEIVED khi nhận 1 đợt, RECEIVED khi đủ hàng)
 
 **Bấm:** `Sổ kế toán` → mở bút toán sinh từ phiếu đó
 
@@ -133,29 +135,38 @@ Chỉ vào: **Nợ 156 · Nợ 1331 · Có 331**
 
 **Nói:**
 
-> 120 cặp tên hàng trên sàn — mã hàng. Người gán tay, gán mù, tách sẵn 60 ca
-> kiểm định và 60 ca phát triển. Chạy trên máy chủ trường, **không giới hạn lần
-> gọi**.
+> 120 cặp tên hàng trên sàn — mã hàng. Trong đó **107 cặp đã gắn nhãn tay**; chia
+> sẵn **60 ca kiểm định** và **60 ca phát triển**. Tập kiểm định có **56/60 ca có
+> nhãn**. Người gán là **một người** — chưa có người gán thứ hai, nên **κ = null**.
+
+> Chạy trên máy chủ trường (UIT, `gemma-4-26b`), **không giới hạn số lần gọi** như
+> Gemini free tier.
 
 > Nhưng **chúng tôi không dùng tổng điểm làm con số chính**. Bảng từng ca mới là
 > bằng chứng — và nó đã phát hiện ra điều mà điểm số giấu.
 
 ---
 
-## Slide 9 — Đo 5 lần, không trích một số
+## Slide 9 — Đo lại, không trích một số
 
-| Lần | F1 | Chuyển người duyệt | Độ đúng thô |
+| Nguồn / cách đo | F1 | Chuyển người duyệt | Độ đúng thô |
 |---|---:|---:|---:|
-| 1–5 | **0,8972** | **1,67 %** | 48/56 |
-| *(đo đối chiếu)* chỉ công thức | 0,8515 | 13,33 % | 48/56 |
+| UIT, 1 lần chạy lưu được (`sku-eval-last-run.json`) | **0,8972** | **1,67 %** | 48/56 |
+| Chỉ công thức (đo đối chiếu) | 0,8515 | 13,33 % | 48/56 |
+| Gemini, 5 lần | 0,8654–0,8868 | 3,33–6,67 % | — |
 
-CI95 chênh lệch = **[0,0008 ; 0,0969]** — không chứa 0.
+CI95 chênh lệch F1 trên lần chạy UIT lưu được = **[0,0008 ; 0,0969]** — không chứa 0.  
+Trên Gemini: CI95 **luôn chứa 0** (5/5 lần).
 
 **Nói:**
 
-> **5/5 lần y hệt nhau.** Chúng tôi đo trên ba model khác hàng — Gemini, Ollama,
-> UIT — và cả ba cho cùng kết quả. Con số trình bày ở đây là số **đo lại được**,
-> không phải số may rủi.
+> Trên UIT, hybrid giảm chuyển người từ **13,33% xuống 1,67%** và CI95 của chênh lệch
+> F1 **không chứa 0**. Trên Gemini, F1 dao động **0,8654–0,8868** và CI95 **luôn
+> chứa 0** — nên trên Gemini chúng tôi **không kết luận** "AI tốt hơn công thức".
+
+> Đội báo cáo **5/5 lần trên UIT cho kết quả giống nhau**; repo hiện lưu được **1
+> artifact UIT** (`sku-eval-last-run.json`). Con số trình bày là số **đo lại được trên
+> UIT**, không phải số đẹp nhất được chọn ra.
 
 ---
 
@@ -163,25 +174,36 @@ CI95 chênh lệch = **[0,0008 ; 0,0969]** — không chứa 0.
 
 **Nói (đây là slide quan trọng nhất, nói chậm):**
 
-> Trên 56 ca có nhãn, hệ thống đúng 48. Nhưng khi mở từng ca ra, trong **8 ca bị
-> đánh dấu sai, có 7 ca là người gán nhầm, không phải hệ thống sai**.
+> Trên 56 ca có nhãn, hệ thống đúng 48 (85,71%). Nhưng khi mở từng ca ra, cả **8 ca
+> hệ thống tự khớp nhưng nhãn khác** đều có cùng một dấu vết: hệ thống chọn mã khớp
+> đúng tên trên sàn — còn người gán chọn mã khác màu, khác trọng lượng hoặc khác họ
+> hàng sản phẩm. Trong đó 3 ca **trùng khít từng chữ**.
 
 Chỉ vào bảng (mở file `docs/aisc26/notes/sku-eval-cases.csv` trước khi lên sân khấu):
 
 | Tên trên sàn | Hệ thống chọn | Người gán |
 |---|---|---|
-| `ALARM CLOCK BAKELIKE RED` | `ALARM CLOCK BAKELIKE RED` | `...BAKELIKE PINK` |
-| `Area Patrolled Metal Sign` | `AREA PATROLLED METAL SIGN` | `TOILET METAL SIGN` |
-| `ASSORTED COLOURS SILK FAN` | `ASSORTED COLOURS SILK FAN` | `ASSORTED FLOWER COLOUR "LEIS"` |
+| `ALARM CLOCK BAKELIKE RED` | `ALARM CLOCK BAKELIKE RED` **(trùng khít)** | `...BAKELIKE PINK` |
+| `Area Patrolled Metal Sign` | `AREA PATROLLED METAL SIGN` **(trùng khít)** | `TOILET METAL SIGN` |
+| `ASSORTED COLOURS SILK FAN` | `ASSORTED COLOURS SILK FAN` **(trùng khít)** | `ASSORTED FLOWER COLOUR "LEIS"` |
+| `BAG 250g SWIRLY MARBLES (VN)` | `BAG 250g SWIRLY MARBLES` | `JUMBO BAG APPLES` |
 
-**Không có ca nào hệ thống sai mà nhãn đúng.**
+8 ca `SAI` trong `sku-eval-cases.csv` là: 2 ca `ALARM CLOCK BAKELIKE RED`, 2 ca
+`ASSORTED COLOURS SILK FAN`, 1 ca `Area Patrolled Metal Sign`, 3 ca `BAG ... SWIRLY
+MARBLES`. Trong đó `BAG 125g SWIRLY MARBLES` là nghi vấn hai chiều: tên sàn ghi
+125g, nhưng hàng thật ngoài cửa hàng có thể là 250g — **chỉ người gán thứ hai gán
+mù và người thứ ba phân xử mới quyết được**.
+
+**Chưa phát hiện ca nào trong 8 ca auto-sai mà nhãn rõ ràng đúng hơn** — nhưng đây
+là quan sát trên 8 ca, không phải chứng minh. "Chưa phát hiện" không phải "chứng
+minh được".
 
 **Nói tiếp:**
 
-> Nghĩa là **85,71 % là mức thấp của độ đúng thật**, không phải mức cao. Và
-> chúng tôi **không sửa nhãn rồi báo lại con số đẹp hơn** — làm vậy là bịa kết
-> quả. Nhãn phải do người thứ hai gán độc lập rồi người thứ ba phân xử. Việc đó
-> chưa xong, nên chúng tôi **chưa công bố độ chính xác nào**.
+> 85,71% **có thể là mức thấp của độ đúng thật**, nhưng chưa thể kết luận. Và chúng
+> tôi **không sửa nhãn rồi báo lại con số đẹp hơn** — làm vậy là bịa kết quả. Nhãn
+> phải do người thứ hai gán độc lập rồi người thứ ba phân xử. Việc đó chưa xong,
+> nên chúng tôi **chưa công bố độ chính xác nào**.
 
 ---
 
@@ -194,7 +216,8 @@ Chỉ vào bảng (mở file `docs/aisc26/notes/sku-eval-cases.csv` trước khi
 > Câu trả lời của chúng tôi không phải một con số. Nó là **quy trình kiểm được
 > chuỗi số đó**:
 >
-> - Mọi con số trên slide này đều có **một lệnh kiểm tra** sinh ra nó.
+> - Các chỉ số F1/CI lấy từ `sku-eval-last-run.json`; phân tích 8 ca SAI lấy từ
+>   `sku-eval-cases.csv`. Không có số nào ước lượng.
 > - Với con số độ đúng, chúng tôi **mở từng ca** — và chính việc đó phát hiện ra
 >   lỗi trong dữ liệu của chính chúng tôi.
 > - Chúng tôi **từ chối công bố** một con số mà chúng tôi biết là đo trên nhãn
@@ -206,18 +229,21 @@ Chỉ vào bảng (mở file `docs/aisc26/notes/sku-eval-cases.csv` trước khi
 
 # PHẦN D — MỞ LẠI (2 slide)
 
-## Slide 12 — Chúng tôi tìm ra 3 lỗ hổng trong chính sản phẩm mình
+## Slide 12 — Chúng tôi tìm ra 5 lỗ hổng UI và 1 lỗi sinh mã đêm trong chính sản phẩm mình
 
 **Nói:**
 
-> Khi chuẩn bị demo, chúng tôi bấm thử từng nút trên giao diện — và tìm ra ba
-> chỗ hỏng, đều là lỗi thật, đều đã sửa và có kiểm chứng:
+> Khi chuẩn bị demo, chúng tôi bấm thử từng nút trên giao diện — và tìm ra **sáu**
+> chỗ hỏng, đều là lỗi thật, đều đã sửa và có kiểm chứng: 5 lỗ hổng UI trong bảng
+> dưới đây + 1 lỗi sinh mã đơn trùng mỗi đêm (xem "Nói thêm").
 
 | Lỗi | Trước | Nay |
 |---|---|---|
 | **Đề xuất nhập không tạo được từ trình duyệt** — có API nhưng không hàm nào gọi tới | màn duyệt luôn trống | có nút `Tạo đề xuất` |
 | **98/105 nút chết** vì SKU chưa có NCC — bấm mới biết lỗi | báo lỗi sau khi bấm | nút mờ kèm lý do ngay |
 | **Đăng nhập báo "Dữ liệu không hợp lệ"** khi dán email dính khoảng trắng — thông báo không chỉ ra lỗi ở đâu | không biết sửa gì | tự cắt khoảng trắng, báo đúng lỗi |
+| **Sửa NCC để trống ô bị chặn** — schema backend từ chối `null` mà form gửi lên | luôn báo sai dữ liệu khi lưu | form gửi null vẫn lưu được, kèm 5 test |
+| **Duyệt đề xuất xong, PO rớt về "Nháp"** — duyệt đề xuất không ra "Đã duyệt" | không thấy nút Tạo GRN, vòng mua hàng đứt giữa chừng | PO dưới ngưỡng ra thẳng Đã duyệt, có cờ `decided` + test contract |
 
 **Nói thêm:**
 
@@ -249,8 +275,9 @@ Chỉ vào bảng (mở file `docs/aisc26/notes/sku-eval-cases.csv` trước khi
 
 > Chúng tôi không đến đây để bảo hệ thống của mình hoàn hảo. Ngược lại — phần
 > lớn những gì chúng tôi tìm ra trong vòng này là lỗi của **chính chúng tôi**:
-> 10 lỗi trong hệ thống, 7/8 lỗi trong tập dữ liệu đánh giá, 3 lỗ hổng trên
-> giao diện tìm ra khi bấm thử.
+> 12 lỗi trong hệ thống (theo `00-index.md` §3.2), 8/56 ca auto-sai trong tập dữ
+> liệu đánh giá đều là nghi vấn nhãn, và 5 lỗ hổng UI + 1 lỗi sinh mã đêm tìm ra
+> khi bấm thử — kể cả những lỗ mới nhất tìm ra ngay trong buổi chuẩn bị hôm nay.
 
 > Thứ chúng tôi muốn nhận là **một phản hồi trung thực** về chỗ nào chúng tôi
 > đang nói quá và chỗ nào chúng tôi đã nói thẳng là chưa có.

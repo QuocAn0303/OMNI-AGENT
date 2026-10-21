@@ -349,6 +349,10 @@ const check = await revalidate(gate, { acknowledgeDrift, recompute });
         vendorId: payload.vendorId,
         expectedAt: payload.expectedAt,
         note: buildNote(gateId, payload.note),
+        // Người duyệt đã bấm Duyệt ở thẻ đề xuất = quyết định mua đã có. Gửi cờ
+        // `decided` để PO dưới ngưỡng tiền ra thẳng APPROVED (sẵn sàng "Gửi NCC"),
+        // không quay lại DRAFT rồi phải duyệt thêm lần nữa.
+        decided: true,
         items: [
           {
             productId: item.productId,

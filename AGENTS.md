@@ -474,6 +474,10 @@ npm run llm:labels             # Sinh bộ 120 cặp SKU chờ GÁN TAY (cột l
 npm run demo:login             # Bật đăng nhập + gói `business` cho tenant MÔ PHỎNG (idempotent, dry-run mặc định)
 npm run smoke:demo-flow        # 12 assertion trên DB thật: chọn SKU → đơn → CDC → gate → duyệt → PO
 npm run demo:run               # Chạy luồng demo không cần giao diện (in 6 khối)
+npm run demo:snapshot          # Chụp trạng thái tenant demo TRƯỚC buổi demo (data/demo-snapshot.json)
+npm run demo:preflight         # Đo trước khi lên sân khấu: SKU dưới ROP + nút "Tạo đề xuất" bấm được
+npm run demo:restore -- --apply # Sau buổi demo: xoá mọi dòng tạo sau lúc chụp + hoàn nguyên tồn/giá vốn
+npm run seed:supermarket:demo  # Nạp bộ dữ liệu chuỗi siêu thị (600 SKU · 12 hero dưới ROP có NCC) ~1 phút
 
 # PRM — quản trị đối tác (đối tác đầu ra: giới thiệu khách, hoa hồng, lợi nhuận ròng)
 npm run check:prm:migration     # Hỏi DB thật: bảng/cột/index/KIỂU CỘT/khoá ngoại PRM (8 mục)
