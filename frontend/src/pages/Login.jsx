@@ -17,7 +17,7 @@ import { useNavigate, Link } from "react-router-dom";
 import { useTranslation } from 'react-i18next';
 import useAuthStore from "../stores/authStore";
 import axiosInstance from "../api/axios";
-import ParticleWave from "../components/shared/ParticleWave";
+import JarvisHologramCore from "../components/shared/JarvisHologramCore";
 
 /**
  * Login — Split layout: brand bên trái, form bên phải
@@ -70,7 +70,7 @@ export default function Login() {
     <div className="login-page">
       {/* LEFT: Brand panel */}
       <section className="login-brand" aria-hidden="true">
-        <ParticleWave />
+        <JarvisHologramCore />
         <div className="login-brand__header">
           <div className="login-brand__logo">A</div>
           <div>
