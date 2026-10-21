@@ -79,7 +79,8 @@
     "active": "Active",
     "inactive": "Inactive",
     "total": "Total",
-    "status": "Status"
+    "status": "Status",
+    "refresh": "Refresh"
   },
   "auth": {
     "login": "Login",
@@ -168,7 +169,10 @@
     "empty": "No customers yet",
     "tags": "Tags",
     "count": "{{count}} customers",
-    "filteredBySegment": "Filtered by segment"
+    "filteredBySegment": "Filtered by segment",
+    "zaloUserId": "Zalo User Id",
+    "zaloUserIdHelp": "Zalo User Id Help",
+    "zaloUserIdPlaceholder": "Zalo User Id Placeholder"
   },
   "products": {
     "title": "Products",
@@ -281,7 +285,9 @@
       "CUSTOMER_CHANGE": "Customer changed mind",
       "EXPIRED": "Expired",
       "OTHER": "Other"
-    }
+    },
+    "exportBtn": "Export Btn",
+    "exportError": "Export Error"
   },
   "onboarding": {
     "title": "System Setup",
@@ -482,7 +488,8 @@
       "allFeatures": "All features",
       "apiAccess": "API access",
       "prioritySupport": "Priority support"
-    }
+    },
+    "select": "Select"
   },
   "promotions": {
     "title": "Promotions",
@@ -1435,6 +1442,97 @@
     "alert.contested": "{{count}} customers referred by more than one partner",
     "alert.contestedDesc": "The system credits only the first recorded partner. Verify before paying commission to avoid paying twice.",
     "alert.coverage": "Only {{coverage}}% of converted customers have enough data to predict value",
-    "alert.coverageDesc": "Predicted value covers only customers with enough purchase history. Use the 'Actual spend' column to compare across all customers."
+    "alert.coverageDesc": "Predicted value covers only customers with enough purchase history. Use the 'Actual spend' column to compare across all customers.",
+    "alert": {
+      "contested": "Contested",
+      "contestedDesc": "Contested Desc",
+      "coverage": "Coverage",
+      "coverageDesc": "Coverage Desc",
+      "predicted": "Predicted",
+      "predictedDesc": "Predicted Desc"
+    },
+    "card": {
+      "convertedCustomers": "Converted Customers",
+      "funnel": "Funnel",
+      "funnelAll": "Funnel All",
+      "info": "Info",
+      "ranking": "Ranking",
+      "referrals": "Referrals"
+    },
+    "col": {
+      "actualValue": "Actual Value",
+      "churn": "Churn",
+      "code": "Code",
+      "commission": "Commission",
+      "commissionPaid": "Commission Paid",
+      "conversionRate": "Conversion Rate",
+      "converted": "Converted",
+      "convertedAt": "Converted At",
+      "customer": "Customer",
+      "name": "Name",
+      "netProfit": "Net Profit",
+      "predictedValue": "Predicted Value",
+      "rank": "Rank",
+      "referralDate": "Referral Date",
+      "referrals": "Referrals",
+      "referredName": "Referred Name",
+      "referredPhone": "Referred Phone",
+      "roiValue": "Roi Value",
+      "segment": "Segment",
+      "status": "Status",
+      "type": "Type"
+    },
+    "confirmDeactivate": "Confirm Deactivate",
+    "confirmDeactivateDesc": "Confirm Deactivate Desc",
+    "created": "Created",
+    "deactivated": "Deactivated",
+    "field": {
+      "commissionPercent": "Commission Percent",
+      "contactName": "Contact Name",
+      "fixedCommission": "Fixed Commission",
+      "notes": "Notes",
+      "phone": "Phone",
+      "referredEmail": "Referred Email",
+      "referredName": "Referred Name",
+      "referredPhone": "Referred Phone"
+    },
+    "kpi": {
+      "activePartners": "Active Partners",
+      "commission": "Commission",
+      "conversionRate": "Conversion Rate",
+      "converted": "Converted",
+      "netProfit": "Net Profit",
+      "overallConversion": "Overall Conversion",
+      "predictedValue": "Predicted Value",
+      "roiOnCommission": "Roi On Commission",
+      "roiValue": "Roi Value",
+      "totalPartners": "Total Partners"
+    },
+    "loadFailed": "Load Failed",
+    "metric": {
+      "actual": "Actual",
+      "predicted": "Predicted"
+    },
+    "referralAdded": "Referral Added",
+    "restored": "Restored",
+    "saveFailed": "Save Failed",
+    "tooltip": {
+      "contested": "Contested",
+      "coverage": "Coverage",
+      "insufficientData": "Insufficient Data",
+      "percentInput": "Percent Input",
+      "predictedValue": "Predicted Value",
+      "referredPhone": "Referred Phone",
+      "unattached": "Unattached"
+    },
+    "totalRecords": "Total Records"
+  },
+  "admin": {
+    "created": "Created",
+    "name": "Name",
+    "plan": "Plan",
+    "status": "Status",
+    "title": "Title",
+    "users": "Users"
   }
 }
