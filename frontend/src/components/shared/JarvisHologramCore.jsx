@@ -34,6 +34,7 @@ export default function JarvisHologramCore() {
     const particleTex = new THREE.CanvasTexture(texCanvas);
 
     const group = new THREE.Group();
+    group.position.x = 24;
     scene.add(group);
 
     // --- Layer 1: Quantum Particle Sphere ---

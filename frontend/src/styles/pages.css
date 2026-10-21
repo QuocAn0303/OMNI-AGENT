@@ -290,7 +290,7 @@
   align-items: center;
   gap: var(--space-3);
   position: relative;
-  z-index: 1;
+  z-index: 10;
 }
 
 .login-brand__logo {
@@ -308,8 +308,13 @@
 
 .login-brand__body {
   position: relative;
-  z-index: 1;
+  z-index: 10;
   max-width: 480px;
+  padding: var(--space-6);
+  border-radius: var(--radius-lg);
+  background: radial-gradient(circle at center, rgba(3, 7, 18, 0.75) 0%, rgba(3, 7, 18, 0) 70%);
+  backdrop-filter: blur(4px);
+  -webkit-backdrop-filter: blur(4px);
 }
 
 .login-brand__headline {
@@ -317,27 +322,33 @@
   font-weight: 700;
   line-height: 1.15;
   letter-spacing: -0.03em;
-  color: #fff;
+  color: #ffffff;
   margin-bottom: var(--space-4);
+  text-shadow: 0 0 20px rgba(255, 255, 255, 0.6), 0 2px 10px rgba(0, 0, 0, 0.8);
 }
 
 .login-brand__headline-accent {
-  color: var(--accent);
-  font-style: italic;
-  font-weight: 500;
+  font-style: normal;
+  font-weight: 800;
+  background: linear-gradient(to right, #00f0ff, #facc15);
+  -webkit-background-clip: text;
+  background-clip: text;
+  color: transparent;
+  filter: drop-shadow(0 0 25px rgba(0, 240, 255, 0.5));
 }
 
 .login-brand__description {
   font-size: 16px;
-  color: rgba(255, 255, 255, 0.7);
+  color: #cbd5e1;
   line-height: 1.6;
+  letter-spacing: 0.05em;
 }
 
 .login-brand__footer {
   font-size: 12px;
   color: rgba(255, 255, 255, 0.4);
   position: relative;
-  z-index: 1;
+  z-index: 10;
 }
 
 .login-form-wrapper {
