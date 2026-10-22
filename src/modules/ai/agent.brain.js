@@ -35,7 +35,7 @@ const { parseAmount } = require('../../utils/vietnameseAmount');
 // DB read tools (snake_case, trả về {summary, message, data} từ HANDLERS).
 const WIDGET_TOOLS = [
   'createOrder', 'createPO', 'sendReminder',
-  'queryInventory', 'listOrders', 'getOrderDetail', 'customerLookup',
+  'queryInventory', 'queryReplenishment', 'listOrders', 'getOrderDetail', 'customerLookup',
   'viewDashboard', 'getRevenue',
   'queryChurnAlerts', 'queryRfmSegments', 'queryLeads', 'queryGrn', 'queryPurchaseInvoices',
 ];
@@ -94,6 +94,7 @@ const SYSTEM_PROMPT = [
   '- createPO: tạo ĐƠN NHẬP từ nhà cung cấp. params: vendorName, productName, quantity (số), unitCost (số tiền nhập, VND)',
   '- sendReminder: gửi lời nhắc khách còn nợ. params: customerName (tên hoặc SĐT)',
   '- queryInventory: xem tồn kho theo sản phẩm. params: query (từ khoá, để trống nếu câu không nêu tên)',
+  '- queryReplenishment: kiểm tra mặt hàng nào cần nhập / sắp hết theo công thức ROP. params: query (tên hàng hoặc SKU NGUYÊN VĂN, kể cả lỗi chính tả; để trống nếu hỏi tất cả). Chỉ tra cứu, không tạo PO. Tên gần giống sẽ được đối chiếu danh mục và hỏi lại nếu chưa rõ.',
   '- listOrders: đơn hàng mới nhất. params: status (PENDING|CONFIRMED|SHIPPING|COMPLETED|CANCELLED, tùy chọn)',
   '- getOrderDetail: chi tiết một đơn. params: orderCode (vd ORD-20261017-0008)',
   '- customerLookup: tra khách theo tên/SĐT. params: query',

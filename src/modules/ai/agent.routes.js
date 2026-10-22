@@ -42,6 +42,7 @@ const {
 } = require('./agent.humangate');
 const { executeGate, retryExecution } = require('./agent.gate.exec');
 const { withPurchaseQuantity } = require('../replenishment/proposal-quantity');
+const { detectReplenishmentRequest, queryReplenishment } = require('./replenishment-chat.service');
 
 // ─────────────────────────────────────────────────────────────
 // M3: Role matrix cho tool AI
@@ -122,6 +123,7 @@ const recordWriteAudit = async (sessionId, actionType, params, userId) => {
 };
 
 const TOOL_HANDLERS = {
+  queryReplenishment,
   queryInventory: async ({ query }) => {
     const q = query || '';
     const items = await prisma.inventory.findMany({
@@ -563,8 +565,12 @@ router.post('/chat', async (req, res, next) => {
       .map((m) => `${m.role === 'user' ? 'Khách' : 'Trợ lý'}: ${m.content.slice(0, 300)}`)
       .join('\n');
 
-    const brainDecision = await brain.decide({ userMsg, history });
-    let intent = null;
+    const previousReply = messages.slice(0, cutoff).filter((m) => m?.role === 'assistant').pop()?.content || '';
+    const replenishmentRequest = detectReplenishmentRequest(userMsg, previousReply);
+    const brainDecision = replenishmentRequest ? null : await brain.decide({ userMsg, history });
+    let intent = replenishmentRequest
+      ? { tool: 'queryReplenishment', params: replenishmentRequest, isWrite: false }
+      : null;
     if (brainDecision?.mode === 'tool') {
       intent = {
         tool: brainDecision.tool,
@@ -650,7 +656,7 @@ router.post('/chat', async (req, res, next) => {
           reply = DATA_REQUEST_FAILED_REPLY;
         }
       } else {
-        reply = await TOOL_HANDLERS[intent.tool](intent.params);
+        reply = await TOOL_HANDLERS[intent.tool](intent.params, req.user);
         reply = `📋 **${intent.tool}**\n\n${reply}`;
       }
     } else if (intent && intent.dbTool && HANDLERS[intent.tool]) {
