@@ -103,7 +103,7 @@ router.get("/", async (req, res, next) => {
  *         description: "1 = kèm cả deal Thắng/Thua"
  *         schema: { type: string, example: "1" }
  *     responses:
- *       200: { description: columns[] + summary }
+ *       200: { description: "columns[] + summary" }
  */
 router.get("/board", async (req, res, next) => {
   try {

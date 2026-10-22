@@ -21,7 +21,12 @@ const strongPassword = z
 const loginPassword = z.string().min(6, "Mật khẩu tối thiểu 6 ký tự");
 
 const loginSchema = z.object({
-  email: z.string().email("Email không hợp lệ"),
+  // `.trim()` chạy TRƯỚC khi validate: dán email từ clipboard hay mang theo
+  // khoảng trắng đầu/cuối, không có nó thì Zod báo "Email không hợp lệ" và
+  // giao diện hiện chung chung "Dữ liệu không hợp lệ" — người dùng không có
+  // cách nào đoán lỗi ở đâu. Đã kiểm chứng: `z.string().trim().email()` PASS với
+  // khoảng trắng, `z.string().email()` FAIL.
+  email: z.string().trim().email("Email không hợp lệ"),
   password: loginPassword,
 });
 

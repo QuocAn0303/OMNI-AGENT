@@ -22,7 +22,7 @@ const analyticsService = require("./analytics.service");
  * Query params: from (YYYY-MM-DD), to (YYYY-MM-DD), groupBy (day|week|month)
  * Used by frontend Analytics.jsx
  */
-router.use(requireModule("analytics"));
+router.use(authenticate, requireModule("analytics"));
 
 router.get("/", authenticate, authorize("ADMIN", "MANAGER"), async (req, res, next) => {
   try {
@@ -62,7 +62,7 @@ router.get("/", authenticate, authorize("ADMIN", "MANAGER"), async (req, res, ne
  *         name: clvLimit
  *         schema: { type: integer, default: 20 }
  *     responses:
- *       200: { description: totals, rfmSegments[], tiers[], clv{}, churn{}, atRisk[], topClv[] }
+ *       200: { description: "totals, rfmSegments[], tiers[], clv, churn, atRisk, topClv" }
  */
 router.get("/customer-insights", authenticate, authorize("ADMIN", "MANAGER"), async (req, res, next) => {
   try {
@@ -75,6 +75,32 @@ router.get("/customer-insights", authenticate, authorize("ADMIN", "MANAGER"), as
       clvLimit: clamp(req.query.clvLimit, 20),
     });
     res.json({ success: true, data });
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * @swagger
+ * /api/analytics/retention-kpi:
+ *   get:
+ *     summary: KPI giữ chân — cohort, khách rủi ro, hiệu quả win-back (AN.4)
+ *     tags: [Analytics]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: query
+ *         name: months
+ *         schema: { type: integer, default: 6 }
+ *     responses:
+ *       200: { description: "customers{}, cohorts[], winback{}, caveats[]" }
+ */
+router.get("/retention-kpi", authenticate, authorize("ADMIN", "MANAGER"), async (req, res, next) => {
+  try {
+    const months = Number(req.query.months);
+    const out = await analyticsService.retentionKpi({
+      months: Number.isFinite(months) && months > 0 ? Math.min(24, Math.floor(months)) : 6,
+    });
+    res.json({ success: true, data: out });
   } catch (err) {
     next(err);
   }

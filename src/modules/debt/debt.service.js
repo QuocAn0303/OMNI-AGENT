@@ -82,21 +82,63 @@ const createReceivableForOrderInTx = async (tx, { order, userId }) => {
   return debt;
 };
 
-const createPayableForPoInTx = async (tx, { po, userId }) => {
+/**
+ * Tạo (hoặc cập nhật) công nợ phải trả cho PO — idempotent theo `poId`.
+ *
+ * @param {object} tx       - Prisma transaction client
+ * @param {object} po       - PurchaseOrder
+ * @param {string} userId
+ * @param {object} [opts]
+ * @param {number} [opts.amount]  - Giá trị hàng THỰC NHẬN. Bỏ trống = toàn bộ PO
+ *   (đường legacy nhập trọn vẹn). GRN truyền giá trị `passQty` vì có thể nhập
+ *   từng phần và có hàng bị QC loại — ghi công nợ theo tổng PO khi đó sẽ phải trả
+ *   cho hàng chưa nhận và không bao giờ được xuất hóa đơn.
+ * @param {number} [opts.dueDateOffsetDays] - Số ngày đến hạn. Mặc định lấy
+ *   `paymentTerms` của NCC; trước đây hard-code 30 ngày bỏ qua điều khoản này.
+ */
+const createPayableForPoInTx = async (tx, { po, userId, amount = null, dueDateOffsetDays = null }) => {
   if (!["UNPAID", "PARTIAL"].includes(po.paymentStatus || "UNPAID")) return null;
-  const unpaid = round2(toNum(po.total) - toNum(po.paidAmount));
-  if (unpaid <= 0) return null;
-  const exists = await tx.debt.findUnique({ where: { poId: po.id } });
-  if (exists) return exists;
+  const alreadyPaid = toNum(po.paidAmount);
 
+  // `amount` là TỔNG giá trị hàng ĐÃ NHẬN TÍCH LUỸ của PO, KHÔNG phải riêng lần
+  // nhận này. So sánh "giá trị lần này" với "tổng công nợ đang có" sẽ hỏng khi
+  // nhập từng phần: lần 2 (400k) bị trừ nhầm vào tổng lần 1 (2.600k) nên không
+  // bao giờ cộng thêm.
+  const receivedValue = amount == null ? toNum(po.total) : toNum(amount);
+  const target = round2(receivedValue - alreadyPaid);
+  if (target <= 0) return null;
+
+  const existing = await tx.debt.findUnique({ where: { poId: po.id } });
+
+  // PO đã có công nợ: chỉ nới thêm tới `target`. KHÔNG giảm — nếu đã trả một phần
+  // thì giảm `amount` sẽ làm `paidAmount > amount` và ghi sai sổ công nợ.
+  if (existing) {
+    const missing = round2(target - toNum(existing.amount));
+    if (missing <= 0) return existing;
+    const nextAmount = round2(toNum(existing.amount) + missing);
+    const updated = await tx.debt.update({
+      where: { id: existing.id },
+      data: { amount: nextAmount, status: statusFromAmounts(nextAmount, toNum(existing.paidAmount), existing.dueDate) },
+    });
+    await tx.vendor.update({
+      where: { id: po.vendorId },
+      data: { totalDebt: { increment: missing } },
+    });
+    return updated;
+  }
+
+  const days =
+    dueDateOffsetDays == null
+      ? toNum(po.vendor?.paymentTerms) || 30
+      : Number(dueDateOffsetDays);
   const dueDate = new Date();
-  dueDate.setDate(dueDate.getDate() + 30);
+  dueDate.setDate(dueDate.getDate() + days);
   const debt = await tx.debt.create({
     data: {
       id: randomUUID(),
       type: "PAYABLE",
       status: "OPEN",
-      amount: unpaid,
+      amount: target,
       paidAmount: 0,
       dueDate,
       vendorId: po.vendorId,
@@ -106,7 +148,7 @@ const createPayableForPoInTx = async (tx, { po, userId }) => {
   });
   await tx.vendor.update({
     where: { id: po.vendorId },
-    data: { totalDebt: { increment: unpaid } },
+    data: { totalDebt: { increment: target } },
   });
   await auditService
     .log({
@@ -115,7 +157,7 @@ const createPayableForPoInTx = async (tx, { po, userId }) => {
       entity: "Debt",
       entityId: debt.id,
       before: null,
-      after: { poId: po.id, amount: unpaid },
+      after: { poId: po.id, amount: target },
     })
     .catch(() => {});
   return debt;

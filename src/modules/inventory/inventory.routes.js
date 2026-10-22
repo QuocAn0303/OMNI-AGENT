@@ -30,6 +30,121 @@ const { z } = require("zod");
 router.use(authenticate, requireModule("inventory"));
 router.use("/cycle-counts", cycleCountRoutes);
 
+/**
+ * Quy tắc nhập hàng (Odoo `Reordering Rules`).
+ *
+ * Ghi vào `Inventory` theo (sản phẩm × kho) — đúng chỗ `minStock` đã nằm. Trường
+ * `null` = "chưa cấu hình" ⇒ động cơ dùng mặc định của hệ thống (lead time đo
+ * được từ lịch sử PO→GRN, serviceLevel 0,95, bán lẻ từng cái). KHÔNG dùng 0
+ * làm "chưa cấu hình" vì 0 là giá trị có nghĩa (tồn tối thiểu bằng 0).
+ *
+ * Miền giá trị được chặn ở CẢ ba tầng: Zod (báo lỗi cho UI), CHECK constraint ở DB
+ * (chặn cả script/import chạy ngoài app), và `calcSafetyStock` ném 400 khi service
+ * level ngoài bảng z.
+ */
+const ruleSchema = z.object({
+  minStock: z.number().int().min(0).optional(),
+  maxStock: z.number().int().positive().nullable().optional(),
+  leadTimeDays: z.number().int().positive().nullable().optional(),
+  packMultiple: z.number().int().min(1).max(100000).optional(),
+  serviceLevel: z.number().gt(0).lt(1).nullable().optional(),
+});
+
+/** @swagger
+ * /api/inventory/rules:
+ *   get:
+ *     summary: Xem quy tắc nhập hàng của SKU trong kho
+ *     tags: [Inventory]
+ *     security: [{ bearerAuth: [] }]
+ *     parameters:
+ *       - in: query
+ *         name: productId
+ *         schema: { type: string, format: uuid }
+ *       - in: query
+ *         name: warehouseId
+ *         schema: { type: string }
+ *     responses:
+ *       200: { description: Danh sách quy tắc }
+ */
+router.get("/rules", authorize("ADMIN", "MANAGER", "WAREHOUSE"), async (req, res, next) => {
+  try {
+    const { productId, warehouseId } = req.query;
+    const where = {};
+    if (productId) where.productId = productId;
+    if (warehouseId) where.warehouseId = warehouseId;
+    const rows = await prisma.inventory.findMany({
+      where,
+      orderBy: [{ product: { sku: "asc" } }],
+      select: {
+        id: true, productId: true, warehouseId: true, quantity: true, reserved: true,
+        minStock: true, maxStock: true, leadTimeDays: true, packMultiple: true, serviceLevel: true,
+        product: { select: { sku: true, name: true, costPrice: true } },
+        warehouse: { select: { code: true, name: true, isDefault: true } },
+      },
+    });
+    success(res, rows);
+  } catch (err) {
+    next(err);
+  }
+});
+
+/**
+ * @swagger
+ * /api/inventory/rules:
+ *   put:
+ *     summary: Cập nhật quy tắc nhập hàng cho (sản phẩm × kho)
+ *     tags: [Inventory]
+ *     security: [{ bearerAuth: [] }]
+ *     responses:
+ *       200: { description: Đã lưu quy tắc }
+ *       400: { description: Giá trị ngoài miền cho phép }
+ */
+router.put("/rules", authorize("ADMIN", "MANAGER"), async (req, res, next) => {
+  try {
+    const { inventoryId, ...rest } = req.body || {};
+    if (!inventoryId) throw { status: 400, message: "Thiếu inventoryId" };
+    const data = ruleSchema.parse(rest);
+
+    const inv = await prisma.inventory.update({
+      where: { id: inventoryId },
+      data: {
+        ...(data.minStock !== undefined ? { minStock: data.minStock } : {}),
+        ...(data.maxStock !== undefined ? { maxStock: data.maxStock } : {}),
+        ...(data.leadTimeDays !== undefined ? { leadTimeDays: data.leadTimeDays } : {}),
+        ...(data.packMultiple !== undefined ? { packMultiple: data.packMultiple } : {}),
+        ...(data.serviceLevel !== undefined ? { serviceLevel: data.serviceLevel } : {}),
+      },
+      select: {
+        id: true, productId: true, warehouseId: true, minStock: true, maxStock: true,
+        leadTimeDays: true, packMultiple: true, serviceLevel: true,
+        product: { select: { sku: true, name: true } },
+      },
+    });
+
+    // Ghi nhận thay đổi chính sách tồn kho — ai đổi, đổi sang gì, từ gì.
+    const auditService = require("../audit/audit.service");
+    await auditService.log({
+      userId: req.user.id,
+      action: "UPDATE_REPLENISHMENT_RULE",
+      entity: "Inventory",
+      entityId: inv.id,
+      after: {
+        productId: inv.productId,
+        sku: inv.product?.sku,
+        minStock: inv.minStock,
+        maxStock: inv.maxStock,
+        leadTimeDays: inv.leadTimeDays,
+        packMultiple: inv.packMultiple,
+        serviceLevel: inv.serviceLevel,
+      },
+    });
+
+    success(res, inv, "Đã lưu quy tắc nhập hàng");
+  } catch (err) {
+    next(err);
+  }
+});
+
 router.get("/", authorize("ADMIN", "MANAGER", "WAREHOUSE"), async (req, res, next) => {
   try {
     const { warehouseId, page, limit } = req.query;

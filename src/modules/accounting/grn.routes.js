@@ -104,6 +104,19 @@ router.post("/:id/post", authorize("ADMIN", "MANAGER", "WAREHOUSE"), async (req,
   }
 });
 
+router.post("/quick-receive", authorize("ADMIN", "MANAGER", "WAREHOUSE"), async (req, res, next) => {
+  try {
+    const schema = z.object({
+      purchaseOrderId: z.string().min(1),
+      warehouseId: z.string().optional().nullable(),
+    });
+    const data = schema.parse(req.body);
+    success(res, await service.quickReceive(data.purchaseOrderId, { warehouseId: data.warehouseId }, req.user.id), "Đã nhận nhanh (GRN POSTED)");
+  } catch (e) {
+    next(e);
+  }
+});
+
 router.get("/", authorize("ADMIN", "MANAGER", "WAREHOUSE", "ACCOUNTANT"), async (req, res, next) => {
   try {
     success(res, await service.list(req.query));

@@ -81,6 +81,22 @@ const ALLOWED_TABLES = {
     fields: ["id", "purchaseOrderId", "invoiceNumber", "invoiceAmount", "invoiceTax", "matchStatus", "varianceAmount", "variancePct", "createdAt"],
     label: "Hoá đơn NCC (3-way matching)",
   },
+  // ==================== PRM: đối tác đầu ra (giới thiệu khách, hoa hồng) ====================
+  // KHÁC `vendors`: đó là nhà cung cấp đầu vào (SRM). Ở đây là đối tác marketing.
+  //
+  // KHÔNG đưa `referredPhone`/`referredEmail` vào whitelist. Báo cáo xuất ra
+  // CSV/Excel cho người dùng cuối, đưa số điện thoại người được giới thiệu vào đó
+  // là mở rộng rủi ro dữ liệu cá nhân không cần thiết cho phép tính ROI.
+  partners: {
+    fields: ["id", "code", "name", "type", "commissionType", "commissionRate", "fixedCommission",
+      "contactName", "isActive", "createdAt"],
+    label: "Đối tác (PRM)",
+  },
+  partner_referrals: {
+    fields: ["id", "partnerId", "referralCode", "converted", "referralDate", "convertedAt",
+      "sourceSnapshot", "createdAt"],
+    label: "Lượt giới thiệu của đối tác (PRM)",
+  },
   // ==================== CRM Sales Pipeline (Lead / Deal / Organization) ====================
   crm_leads: {
     fields: ["id", "leadName", "email", "mobileNo", "jobTitle", "source", "status", "leadOwnerId",
@@ -147,7 +163,11 @@ const resolveCrmOwnerIds = async (table, user) => {
 
 const getTables = () => Object.entries(ALLOWED_TABLES).map(([key, v]) => ({ key, label: v.label, fields: v.fields }));
 
-const validateConfig = ({ table, fields, filters = [], groupBy, orderBy, aggregate }) => {
+// `fields` KHÔNG bắt buộc: báo cáo dạng tổng hợp (aggregate + groupBy) không có
+// danh sách cột — ví dụ R-02 "COUNT(id) GROUP BY rfmSegment". Trước đây thiếu
+// mặc định `= []` khiến `runQuery` ném `fields is not iterable` ⇒ 5 báo cáo mặc
+// định (R-02/04/05/06/08) chạy không được.
+const validateConfig = ({ table, fields = [], filters = [], groupBy, orderBy, aggregate }) => {
   if (!ALLOWED_TABLES[table]) throw { status: 400, message: `Bảng '${table}' không được phép` };
   const allowed = ALLOWED_TABLES[table].fields;
   for (const f of fields) {
@@ -163,7 +183,7 @@ const validateConfig = ({ table, fields, filters = [], groupBy, orderBy, aggrega
 
 // Execute a safe query via prisma.$queryRawUnsafe with parameterized values
 const runQuery = async (config, { limit = 100, user = null } = {}) => {
-  const { table, fields, filters = [], groupBy, orderBy, aggregate } = config;
+  const { table, fields = [], filters = [], groupBy, orderBy, aggregate } = config;
   validateConfig(config);
 
   // ---- Multi-tenant: luôn ép WHERE tenantId (trừ SUPER_OMEGA bypass) ----

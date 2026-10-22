@@ -33,10 +33,19 @@ const axiosInstance = axios.create({
 
 // Request Interceptor: thêm Bearer token vào mỗi request nếu có
 // M7+ (security): token đọc từ Zustand store (in-memory) — KHÔNG đọc localStorage
+//
+// Security (H2): khi store đã logout (token = null) phải XOÁ header chứ không chỉ
+// bỏ qua. Axios merge `defaults.headers.common` vào `config.headers` TRƯỚC khi
+// interceptor chạy, nên chỉ `if (token)` là token cũ vẫn được gửi đi. Trên máy POS
+// dùng chung, thu ngân A logout rồi B đăng nhập → mọi request vẫn mang session của A.
 axiosInstance.interceptors.request.use(
   (config) => {
     const token = useAuthStore.getState().token;
-    if (token) config.headers.Authorization = `Bearer ${token}`;
+    if (token) {
+      config.headers.Authorization = `Bearer ${token}`;
+    } else if (config.headers) {
+      delete config.headers.Authorization;
+    }
     return config;
   },
   (error) => Promise.reject(error),
@@ -90,10 +99,11 @@ axiosInstance.interceptors.response.use(
         const response = await axios.post(`${API_BASE_URL}/auth/refresh`, {}, { withCredentials: true });
         const newToken = response.data?.data?.token;
         if (newToken) {
-          // M7+: lưu token mới vào store (in-memory) — không đụng localStorage
+          // M7+: lưu token mới vào store (in-memory) — không đụng localStorage.
+          // KHÔNG ghi vào axiosInstance.defaults: interceptor đã gắn header cho mọi
+          // request, ghi thêm vào đây chỉ tạo một bản sao token tồn đọng qua các lần
+          // logout (H2). `originalRequest.headers` là duy nhất cần set lại.
           useAuthStore.getState().setToken(newToken);
-          axiosInstance.defaults.headers.common.Authorization =
-            "Bearer " + newToken;
           processQueue(null, newToken);
           originalRequest.headers.Authorization = "Bearer " + newToken;
           return axiosInstance(originalRequest);
@@ -110,13 +120,31 @@ axiosInstance.interceptors.response.use(
     }
 
     if (!status || status >= 500) {
-      Sentry.captureException(err, {
-        tags: { api_url: originalRequest?.url, http_status: status },
-      });
+      // H1 (security): KHÔNG truyền `err` vào Sentry. `err` là AxiosError, các
+      // property enumerable của nó (config, request, response) chứa
+      // `config.headers.Authorization` (JWT đang hiệu lực) và `config.data`
+      // (toàn bộ payload: CCCD, số điện thoại, lương, số tài khoản NH). SDK Sentry
+      // copy chúng vào event.extra và không tự lọc Authorization. Một lỗi 500 bất
+      // kỳ ở bất kỳ endpoint nào cũng đủ để gửi token + PII lên SaaS bên thứ ba —
+      // vô hiệu hoá đúng biện pháp "token chỉ nằm trong memory" của dự án.
+      // Chỉ log chuỗi đã lọc, không log object có thể chứa bí mật.
+      Sentry.captureMessage(
+        `API ${status ?? "network-error"} ${originalRequest?.method ?? "?"} ${originalRequest?.url ?? "?"}`,
+        "error",
+      );
     }
 
     return Promise.reject(err);
   },
 );
+
+/**
+ * Xoá mọi dấu vết credential trên axios instance.
+ * Gọi từ `authStore.logout()` để token của user vừa đăng xuất không còn sót ở
+ * `defaults.headers` (H2) — kể cả khi một component còn mount gọi request.
+ */
+export function clearAuthHeaders() {
+  delete axiosInstance.defaults.headers.common.Authorization;
+}
 
 export default axiosInstance;

@@ -300,6 +300,74 @@ const buildPurchaseReceivedEntry = ({ purchaseOrder, vendor, userId }) => {
   };
 };
 
+/**
+ * Bút toán nhập hàng THEO GRN (Goods Receipt Note).
+ *
+ * VÌ SAO CẦN HÀM RIÊNG (không dùng `buildPurchaseReceivedEntry`):
+ * `buildPurchaseReceivedEntry` ghi theo TỔNG PO — đúng cho đường legacy
+ * `purchase.service.receive` (nhập trọn vẹn, một lần). Nhưng GRN cho phép
+ *   - nhập TỪNG PHẦN (backorder: còn thiếu thì PO giữ `APPROVED`), và
+ *   - QC loại hàng (`rejectQty`).
+ * Ghi theo tổng PO trong hai trường hợp đó sẽ vượt giá trị hàng thực nhận ⇒
+ * tài sản tồn kho trên sổ cái không khớp tồn kho thật. Vì vậy tính trên
+ * `passQty` (số lượng ĐẠT) của từng dòng GRN, và khấu trừ thuế theo tỷ lệ
+ * nhận/đặt.
+ *
+ * Bút toán VAS: Nợ 156 (hàng tồn kho) + Nợ 1331 (VAT đầu vào) = Có 331 (nợ phải trả).
+ *
+ * `operation` gắn `GRN:<id>` ⇒ mỗi GRN một bút toán riêng, nên nhập từng phần
+ * không đè lên nhau, và `journal.service` tự chặn ghi trùng khi retry.
+ *
+ * @returns {object|null} payload cho `postBuiltEntry`, hoặc null khi không có hàng đạt.
+ */
+const buildGoodsReceiptEntry = ({ grn, purchaseOrder, vendor, userId }) => {
+  // Chỉ tính dòng có hàng ĐẠT (passQty > 0); hàng bị QC loại không vào kho.
+  const accepted = (grn.items || []).filter((i) => Number(i.passQty || 0) > 0);
+  if (!accepted.length) return null;
+
+  let subtotal = 0;
+  let tax = 0;
+  for (const i of accepted) {
+    const qty = Number(i.passQty || 0);
+    const ordered = Number(i.purchaseItem?.quantity || 0);
+    const unitCost = Number(i.purchaseItem?.unitCost || 0);
+    subtotal += qty * unitCost;
+    // Thuế của dòng tính theo tỷ lệ số lượng đã nhận trên số lượng đặt.
+    // Nhận một nửa thì chỉ khấu trừ một nửa VAT — tránh tạo quyền trừ quá thực tế.
+    if (ordered > 0) tax += Number(i.purchaseItem?.taxAmount || 0) * (qty / ordered);
+  }
+  subtotal = round2(subtotal);
+  tax = round2(tax);
+  const total = round2(subtotal + tax);
+  if (total <= 0) return null;
+
+  const lines = [
+    { accountCode: "156", debit: subtotal, description: `Nhap kho - GRN ${grn.grnCode} (PO ${purchaseOrder.poCode})` },
+  ];
+  if (tax > 0) {
+    lines.push({ accountCode: "1331", debit: tax, description: `VAT dau vao - GRN ${grn.grnCode}` });
+  }
+  lines.push({
+    accountCode: "331",
+    credit: total,
+    description: `Phai tra NCC - ${vendor.name}`,
+    partyType: "VENDOR",
+    partyId: vendor.id,
+  });
+
+  return {
+    date: grn.receivedAt || new Date(),
+    description: `Nhập hàng từ ${vendor.name} - GRN ${grn.grnCode} (PO ${purchaseOrder.poCode})`,
+    source: "PURCHASE",
+    sourceId: purchaseOrder.id,
+    operation: `GRN:${grn.id}`,
+    userId,
+    lines,
+    // Giá trị hàng ĐẠT để `grn.service` tạo công nợ phải trả tương ứng.
+    goodsReceiptValue: total,
+  };
+};
+
 const buildPurchasePaymentEntry = ({ purchaseOrder, vendor, amount, method, userId, paymentId }) => {
   if (amount <= 0) return null;
 
@@ -530,6 +598,7 @@ const postOrderReturn = (input, tx) => postBuiltEntry(buildOrderReturnEntry(inpu
 const postExpense = (input, tx) => postBuiltEntry(buildExpenseEntry(input), tx);
 const postExpensePayment = (input, tx) => postBuiltEntry(buildExpensePaymentEntry(input), tx);
 const postPurchaseReceived = (input, tx) => postBuiltEntry(buildPurchaseReceivedEntry(input), tx);
+const postGoodsReceipt = (input, tx) => postBuiltEntry(buildGoodsReceiptEntry(input), tx);
 const postPurchasePayment = (input, tx) => postBuiltEntry(buildPurchasePaymentEntry(input), tx);
 const postPayrollAccrual = (input, tx) => postBuiltEntry(buildPayrollAccrualEntry(input), tx);
 const postCapitalContribution = (input, tx) => postBuiltEntry(buildCapitalContributionEntry(input), tx);
@@ -538,12 +607,16 @@ const postInventoryAdjustment = (input, tx) => postBuiltEntry(buildInventoryAdju
 const postAssetAcquisition = (input, tx) => postBuiltEntry(buildAssetAcquisitionEntry(input), tx);
 
 module.exports = {
+  // Hạt dữ liệu dùng chung: gọi khi payload ĐÃ dựng sẵn (ví dụ `grn.service.post`
+  // dựng trong transaction rồi ghi sau commit để lỗi hạch không rollback kho).
+  postBuiltEntry,
   buildOrderCompletedEntry,
   buildPaymentEntry,
   buildOrderReturnEntry,
   buildExpenseEntry,
   buildExpensePaymentEntry,
   buildPurchaseReceivedEntry,
+  buildGoodsReceiptEntry,
   buildPurchasePaymentEntry,
   buildPayrollAccrualEntry,
   buildCapitalContributionEntry,
@@ -555,6 +628,7 @@ module.exports = {
   postExpense,
   postExpensePayment,
   postPurchaseReceived,
+  postGoodsReceipt,
   postPurchasePayment,
   postPayrollAccrual,
   postCapitalContribution,

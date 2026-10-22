@@ -50,7 +50,7 @@ router.get("/", async (req, res, next) => {
  *     tags: [CRM]
  *     security: [{ bearerAuth: [] }]
  *     responses:
- *       200: { description: steps[] + total }
+ *       200: { description: "steps[] + total" }
  */
 router.get("/funnel", async (req, res, next) => {
   try {

@@ -1,5 +1,5 @@
 import { message } from 'antd';
-import { useCallback } from 'react';
+import { useCallback, useMemo } from 'react';
 import { useTranslation } from 'react-i18next';
 
 const useToast = () => {
@@ -8,7 +8,7 @@ const useToast = () => {
   const error = useCallback((msg) => message.error(msg || t('common.error')), [t]);
   const info = useCallback((msg) => message.info(msg), []);
   const warning = useCallback((msg) => message.warning(msg), []);
-  return { success, error, info, warning };
+  return useMemo(() => ({ success, error, info, warning }), [success, error, info, warning]);
 };
 
 export default useToast;

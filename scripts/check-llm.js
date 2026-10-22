@@ -19,10 +19,9 @@ const llm = require("../src/config/llm");
   console.log(`configured : ${info.configured}`);
 
   if (!info.configured) {
-    console.log("\n✗ Chưa cấu hình LLM cloud. Thêm vào .env:");
-    console.log("  LLM_PROVIDER=gemini");
-    console.log("  GEMINI_API_KEY=<key>");
-    console.log("  LLM_MODEL=gemini-3.8-flash");
+    console.log("\n✗ Chưa cấu hình LLM cloud. Thêm vào .env (chọn 1):");
+    console.log("  [UIT]  LLM_PROVIDER=uit + LLM_UIT_API_KEY=<key-truong>  (chỉ chạy trong mạng UIT)");
+    console.log("  [Gemini] LLM_PROVIDER=gemini + GEMINI_API_KEY=<key> + LLM_MODEL=gemini-3.8-flash");
     process.exit(1);
   }
 
@@ -31,8 +30,7 @@ const llm = require("../src/config/llm");
   try {
     models = await llm.listModels();
     console.log(`tổng cộng: ${models.length} model`);
-    const flash = models.filter((m) => m.includes("flash")).slice(0, 10);
-    console.log("một vài model 'flash': " + flash.join(", "));
+    console.log("một vài model: " + models.slice(0, 10).join(", "));
     if (models.includes(info.model)) {
       console.log(`✓ LLM_MODEL=${info.model} có trong danh sách`);
     } else {

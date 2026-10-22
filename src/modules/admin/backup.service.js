@@ -10,6 +10,44 @@ const { encryptFile, decryptFile } = require('../../utils/crypto');
 const execFileAsync = util.promisify(execFile);
 const BACKUP_DIR = process.env.BACKUP_DIR || path.join(process.cwd(), 'backups');
 
+/**
+ * Dò đường dẫn `pg_dump` / `pg_restore`.
+ *
+ * VÌ SAO CẦN: `execFile('pg_dump')` chỉ chạy được khi thư mục `bin` của PostgreSQL
+ * nằm trong PATH. Trên Windows, cài PostgreSQL kiểu mặc định KHÔNG thêm `bin` vào
+ * PATH → `spawn pg_dump ENOENT`. Trước đây lỗi này làm cron "Daily backup" (02:00)
+ * ném lỗi mỗi đêm trên máy dev, và backup im lặng không tạo ra.
+ *
+ * Thứ tự dò:
+ *   1. Biến môi trường `PG_DUMP_PATH` / `PG_RESTORE_PATH` (nếu admin đặt).
+ *   2. Gọi tên lệnh trần — để Linux/Docker dùng bản trong PATH.
+ *   3. Các thư mục cài đặt phổ biến trên Windows.
+ *
+ * @param {string} tool 'pg_dump' | 'pg_restore'
+ * @returns {string} lệnh để truyền cho execFile
+ */
+const resolvePgTool = (tool) => {
+  const explicitEnv = tool === 'pg_dump' ? process.env.PG_DUMP_PATH : process.env.PG_RESTORE_PATH;
+  if (explicitEnv && fs.existsSync(explicitEnv)) return explicitEnv;
+
+  const isWindows = process.platform === 'win32';
+  const bin = isWindows ? '.exe' : '';
+  const candidates = isWindows
+    ? [
+        'C:\\Program Files\\PostgreSQL\\18\\bin',
+        'C:\\Program Files\\PostgreSQL\\17\\bin',
+        'C:\\Program Files\\PostgreSQL\\16\\bin',
+        'C:\\Program Files\\PostgreSQL\\15\\bin',
+      ]
+    : ['/usr/lib/postgresql/17/bin', '/usr/lib/postgresql/16/bin', '/usr/local/pgsql/bin', '/usr/bin'];
+  for (const dir of candidates) {
+    const full = path.join(dir, `${tool}${bin}`);
+    if (fs.existsSync(full)) return full;
+  }
+  // Không tìm thấy → trả tên lệnh trần để phát sinh lỗi có thông báo rõ ràng.
+  return tool;
+};
+
 const ensureDir = () => {
   if (!fs.existsSync(BACKUP_DIR)) fs.mkdirSync(BACKUP_DIR, { recursive: true });
 };
@@ -23,7 +61,7 @@ const create = async (userId) => {
   const dbUrl = new URL(process.env.DATABASE_URL);
   const dbName = dbUrl.pathname.replace('/', '');
 
-  await execFileAsync('pg_dump', [
+  await execFileAsync(resolvePgTool('pg_dump'), [
     '-h', dbUrl.hostname,
     '-p', dbUrl.port || '5432',
     '-U', dbUrl.username,
@@ -49,7 +87,11 @@ const create = async (userId) => {
     },
   });
 
-  auditService.log({ userId, action: 'CREATE_BACKUP', entity: 'AdminBackup', entityId: record.id, after: { filename, sizeBytes: stats.size, encrypted: true } });
+  // `tenantId` truyền `null` TƯỜNG MINH: `AdminBackup` là bảng NỀN TẢNG (không có
+  // `tenantId`), người chạy backup có thể là `SUPER_ADMIN` đa tenant ⇒ không thể gán
+  // một tenant duy nhất mà không bịa dữ liệu. Xem ngoại lệ có điều kiện trong
+  // `scripts/lib/tenant-null-exceptions.js`.
+  auditService.log({ userId, tenantId: null, action: 'CREATE_BACKUP', entity: 'AdminBackup', entityId: record.id, after: { filename, sizeBytes: stats.size, encrypted: true } });
   return record;
 };
 
@@ -76,7 +118,7 @@ const restore = async (id, userId) => {
   }
 
   try {
-    await execFileAsync('pg_restore', [
+    await execFileAsync(resolvePgTool('pg_restore'), [
       '-h', dbUrl.hostname,
       '-p', dbUrl.port || '5432',
       '-U', dbUrl.username,
@@ -94,4 +136,4 @@ const restore = async (id, userId) => {
   }
 };
 
-module.exports = { create, list, restore };
+module.exports = { create, list, restore, resolvePgTool };

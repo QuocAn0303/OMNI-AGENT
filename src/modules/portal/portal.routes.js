@@ -141,12 +141,24 @@
 // src/modules/portal/portal.routes.js — no auth middleware (uses portal token)
 const router = require("express").Router();
 const rateLimit = require("express-rate-limit");
-const { requireModule } = require("../../middleware/plan.middleware");
 const { runWithTenant } = require("../../config/tenantContext");
 const { success, error } = require("../../utils/response");
 const svc = require("./portal.service");
 
-router.use(requireModule("portal"));
+// KHÔNG gắn `requireModule("portal")` ở đây — sửa 2026-10-14.
+//
+// Lý do: mọi route trong file này là route KHÁCH HÀNG (`/otp/*` đăng nhập bằng
+// OTP, còn lại dùng `withCustomer` — token phiên khách, không phải JWT nhân viên).
+// `requireModule` đọc `req.user?.tenantId` và `return next()` khi không có
+// ⇒ trên các route này nó LUÔN chạy tiếp, tức **không chặn được gì cả**.
+//
+// Trước đây dòng này trông như một paywall nhưng là mã chết, dễ khiến người đọc
+// (hoặc giám khảo) tin rằng portal bị chặn theo gói. Thực tế thì gói được kiểm
+// ở phía CHỦ SHOP khi bật/tắt portal, không phải ở phía khách.
+//
+// Thêm `authenticate` để "sửa thứ tự" như 5 file kia sẽ làm HỎNG portal:
+// khách hàng không có JWT nhân viên nên không đăng nhập được vào chính cổng
+// xem đơn của mình.
 
 const otpLimiter = rateLimit({
   windowMs: 60 * 1000,

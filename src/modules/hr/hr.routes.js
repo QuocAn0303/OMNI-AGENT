@@ -29,7 +29,7 @@ const { authenticate, authorize } = require("../../middleware/auth.middleware");
 const { requireModule, checkFeature } = require("../../middleware/plan.middleware");
 const controller = require("./hr.controller");
 
-router.use(requireModule("hr"));
+router.use(authenticate, requireModule("hr"));
 
 router.get("/employees", authenticate, authorize("ADMIN", "MANAGER"), controller.listEmployees);
 router.post(

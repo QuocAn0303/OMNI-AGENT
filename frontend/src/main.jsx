@@ -28,6 +28,22 @@ if (import.meta.env.VITE_SENTRY_DSN) {
     environment: import.meta.env.MODE,
     tracesSampleRate: import.meta.env.PROD ? 0.1 : 0,
     integrations: [Sentry.browserTracingIntegration()],
+    // H1 (security): dọn PII/credential trước khi gửi lên Sentry.
+    // Access token của dự án chỉ nằm trong memory (Zustand), nên đây là biện pháp
+    // bảo vệ duy nhất chống việc token bị lộ qua telemetry. `event.request.headers`
+    // chứa Authorization/Cookie; `event.extra` là nơi SDK chép các property
+    // enumerable của Error — với AxiosError đó là `config` (kèm headers + data),
+    // `request`, `response`. Xoá cả ba trước khi event rời browser.
+    sendDefaultPii: false,
+    beforeSend(event) {
+      if (event.request) {
+        delete event.request.headers;
+        delete event.request.cookies;
+        delete event.request.data;
+      }
+      delete event.extra;
+      return event;
+    },
   });
 }
 

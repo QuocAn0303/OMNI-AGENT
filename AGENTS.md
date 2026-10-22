@@ -57,15 +57,21 @@ erp-system/
 │   └── realtime/
 │       └── socket.js                             # Socket.IO + Redis adapter, mapping user-tenants, rooms
 ├── prisma/
-│   ├── schema.prisma                             # 133 models, 59 enums — Single source of truth
+│   ├── schema.prisma                             # 153 models, 71 enums — Single source of truth
 │   ├── startup.js                                # Unified startup (migrate + seed)
 │   ├── seed.js                                   # Seed: admin@candory.com / 123456 + dữ liệu mẫu
 │   ├── seed_accounting.js                        # Chart of Accounts (~33 TK VAS)
-│   └── seed_accounting_demo.js                   # Dữ liệu demo kế toán (user order/invoice/journal)
+│   ├── seed_accounting_demo.js                   # Dữ liệu demo kế toán (user order/invoice/journal
+│   ├── seed_phase1_crm.js                        # Seed CRM tenant demo (>=300 dòng/bảng)
+│   └── seed_prm.js                               # Seed PRM — 5 đối tác, 455 lượt giới thiệu, 83 khách chuyển đổi)
 ├── tests/
 │   ├── setup.js                                  # Jest setup — mock warehouse.helper, set env
 │   ├── accounting.test.js, agent-handlers.test.js, automation.service.test.js, ...
-│   └── (19 test files)
+│   ├── partner.service.test.js / partner-referral.service.test.js / partner-roi.service.test.js
+│   ├── partner-scope.test.js                     # Rò dữ liệu giữa người thuê + không lộ PII
+│   ├── partner-lead-attach.test.js               # Gắn lead từ webhook, gắn bổ sung khi lượt đã có
+│   ├── partner-routing.test.js                   # Thứ tự mount route (Express thật)
+│   └── (87 test files)
 ├── frontend/                                     # React + Vite
 │   ├── src/
 │   │   ├── main.jsx                              # Entry - init i18n + ErrorBoundary + Suspense
@@ -113,7 +119,7 @@ erp-system/
 
 ## Database Schema
 
-### Enums đầy đủ (59 enums, trích những cái quan trọng)
+### Enums đầy đủ (71 enums, trích những cái quan trọng)
 
 ```
 Role:              SUPER_OMEGA_ULTRA_ADMIN | SUPER_ADMIN | ADMIN | MANAGER | ACCOUNTANT | CASHIER | WAREHOUSE
@@ -194,7 +200,7 @@ Các model có `isActive`:
 
 ---
 
-## 54 Backend Modules
+## 60 Backend Modules
 
 | Nhóm | Module | Files | Mô tả |
 |------|--------|-------|-------|
@@ -224,6 +230,7 @@ Các model có `isActive`:
 | | import | routes (1 file) | Import Excel sản phẩm/KH/NCC |
 | | production | bom/work-order/quality routes+service | BOM đa cấp, lệnh SX, WorkCenter, Routing, Quality |
 | **CRM** | customers | routes/service | KH 360, tier, loyalty points |
+| | partners | partner/referral/roi service + 3 routes + roles | PRM — hồ sơ đối tác, lượt giới thiệu, phễu, ROI (dùng chung gói `crm`) |
 | | crm | campaigns/segments/tasks/tags/notes | Marketing Email+Zalo, phân khúc, nhiệm vụ CSKH |
 | | store-credit | routes/service | Tín dụng KH |
 | | loyalty | routes/service | Tích điểm, loyalty rules |
@@ -455,10 +462,35 @@ npm run db:seed:accounting     # Chỉ seed accounting (CoA)
 npm run db:seed:accounting-demo# Chỉ seed accounting demo data
 npm run db:studio              # Prisma Studio GUI
 npm test                       # Jest (--runInBand)
-npm run check:modules          # Load 184 module bằng Node thật — bắt lỗi "app không boot được" (export trước khai báo, circular require)
+npm run check:modules          # Load 204 module bằng Node thật — bắt lỗi "app không boot được" (export trước khai báo, circular require)
 npm run check:humangate        # Human-gate qua HTTP THẬT (login → chat → gate → duyệt). Cần backend đang chạy + DB seed. -- --keep để giữ dữ liệu test
 npm run smoke:humangate        # Smoke test human-gate trên DB thật (tự dọn dẹp, KHÔNG cần server)
 npm run check:llm              # Gọi thật 1 request LLM provider + in provider/model/configured
+npm run llm:policy             # In chế độ LLM + có/không key (KHÔNG in giá trị key)
+npm run llm:eval               # Đo P/R/F1 khớp SKU — TỪ CHỐI chạy nếu chưa có nhãn tay
+npm run llm:labels             # Sinh bộ 120 cặp SKU chờ GÁN TAY (cột label_* để trống)
+
+# Luồng demo AISC26
+npm run demo:login             # Bật đăng nhập + gói `business` cho tenant MÔ PHỎNG (idempotent, dry-run mặc định)
+npm run smoke:demo-flow        # 12 assertion trên DB thật: chọn SKU → đơn → CDC → gate → duyệt → PO
+npm run demo:run               # Chạy luồng demo không cần giao diện (in 6 khối)
+npm run demo:snapshot          # Chụp trạng thái tenant demo TRƯỚC buổi demo (data/demo-snapshot.json)
+npm run demo:preflight         # Đo trước khi lên sân khấu: SKU dưới ROP + nút "Tạo đề xuất" bấm được
+npm run demo:restore -- --apply # Sau buổi demo: xoá mọi dòng tạo sau lúc chụp + hoàn nguyên tồn/giá vốn
+npm run seed:supermarket:demo  # Nạp bộ dữ liệu chuỗi siêu thị (600 SKU · 12 hero dưới ROP có NCC) ~1 phút
+
+# PRM — quản trị đối tác (đối tác đầu ra: giới thiệu khách, hoa hồng, lợi nhuận ròng)
+npm run check:prm:migration     # Hỏi DB thật: bảng/cột/index/KIỂU CỘT/khoá ngoại PRM (8 mục)
+npm run smoke:prm               # 41 khẳng định trên DB thật, tự dọn dẹp (-- --keep để giữ dữ liệu)
+npm run seed:prm                # Xem kế hoạch nạp dữ liệu mẫu (DRY-RUN)
+npm run seed:prm:apply          # Nạp 5 đối tác + 455 lượt giới thiệu + 83 khách chuyển đổi
+npm run seed:prm:reset         # Xoá sạch dữ liệu PRM (kể cả dòng mồ côi tenantId NULL)
+npm run prm:i18n                # Chèn khoá dịch `prm.*` vào vi.json + en.json, tự báo lệch
+
+# Mô hình dự báo rời bỏ — huấn luyện Python, dự đoán Node
+npm run ml:compare:python       # So sánh 5 thuật toán trên cùng cách tách theo thời gian
+npm run ml:train:python         # Huấn luyện LightGBM → churn-lgbm.json (+ native.txt để đối chiếu)
+npm run ml:verify:trees         # Chứng minh bộ đi cây Node khớp LightGBM trên 500 mẫu
 
 # Frontend
 cd frontend
@@ -504,6 +536,56 @@ Khi seed_accounting_demo cũng tạo user demo và dữ liệu kế toán mẫu.
 - Frontend tự động detect API URL từ `frontend/.env` (do backend ghi khi khởi động)
 - **Thêm model có `tenantId` vào schema** → phải thêm vào `TENANT_SCOPED_MODELS` trong `config/prisma.js`
 - **Route file** viết theo pattern: `authenticate` → `authorize` → try/catch with `next(e)`
+
+### Quy ước PRM (`src/modules/partners`)
+
+Những điểm dưới đây đều từ lỗi đã xảy ra thật. Đọc trước khi sửa phần này.
+
+- **Thứ tự mount route quyết định kết quả.** `partner.routes` có `GET /:id`. Nếu nó
+  được mount ở `"/"` **trước** router `/referrals` và `/roi`, Express sẽ khớp
+  `"/referrals"` vào `/:id` với `id = "referrals"` rồi dừng, và `GET
+  /api/partners/referrals` trả 404. **Đừng đảo thứ tự trong `partners/index.js`.**
+  `tests/partner-routing.test.js` dựng Express thật để canh điều này.
+- **Mốc cuối của phễu là `CONVERTED`, không phải `CUSTOMER`.** `CUSTOMER` là giá trị
+  của enum khác (`LeadStatus`) và không tồn tại trong `CrmLeadStatus`. Dùng sai thì
+  `stages["CUSTOMER"]` luôn `undefined` và cột cuối luôn bằng 0.
+- **`markConverted(leadId)` chỉ chạy được nếu `partner_referrals.leadId` đã được
+  gắn.** Khi webhook gặp số điện thoại đã có lượt giới thiệu (do nhân viên nhập
+  tay), `attachToLead` phải **gắn bổ sung** `leadId` vào dòng cũ chứ không bỏ qua.
+  Bỏ qua thì lượt đó không bao giờ được tính chuyển đổi và đối tác mất hoa hồng âm
+  thầm. `tests/partner-lead-attach.test.js` khoá lại hành vi này.
+- **Đặt `markConverted` SAU `orderService.create` trong `deals.service.js`.** Đặt
+  trước sẽ tính hoa hồng cho đơn không tồn tại khi tạo đơn lỗi.
+- **Cột `type`/`commissionType` của `partners` là enum, không phải `TEXT`.** Migration
+  `20261008130000_prm_partner_columns_to_enum` sửa việc này; `check:prm:migration` hỏi
+  đúng **kiểu cột**, không chỉ kiểm tra cột tồn tại. Cột tồn tại nhưng sai kiểu thì
+  mọi truy vấn vào bảng đều hỏng với lỗi `type "public.PartnerType" does not exist`.
+- **Hoa hồng KHÔNG đổi theo `metric` đang xem.** Cơ sở tính tách khỏi `metric` trong
+  `roi.service.js`. Số tiền phải trả là số tiền phải trả, không phải số dự báo.
+- **Báo cáo phải kèm `coverage`.** `clvPredicted` rỗng với khách chưa đủ hai đơn
+  hoàn tất, nên giá trị dự báo chỉ phủ một phần khách chuyển đổi.
+- **`customerId`/`leadId` là khoá mềm, cố ý không có khoá ngoại.** Xoá mềm khách hàng
+  không được làm mất chứng cứ tính hoa hồng. Chỉ `partnerId` có khoá ngoại CASCADE.
+- **PRM dùng chung khoá gói `"crm"`**, không tạo khoá mới — tạo khoá mới sẽ khoá
+  module với toàn bộ khách hàng cũ đã mua gói `crm`.
+- **Nếu sửa schema enum, nhớ `npx prisma generate`** — client được sinh từ schema.
+
+### Quy ước mô hình dự báo rời bỏ (`scripts/ml`)
+
+- **Huấn luyện bằng Python, dự đoán bằng Node thuần.** Ranh giới là tệp
+  `data/dataset/churn/churn-lgbm.json`. Sửa định dạng tệp thì phải sửa cả
+  `src/modules/customers/churn-trees.service.js` và chạy `npm run ml:verify:trees`.
+- **`monotone_constraints` là BẮT BUỘC, không phải tuỳ chọn.** Bản không ràng buộc đã
+  cho xác suất LOWER cho khách im lặng 300 ngày so với khách vừa mua 3 ngày, vì
+  chỉ 0.37% mẫu huấn luyện có `recency > 300`. Ràng buộc `recencyDays +1`,
+  `monthsIdle +1`, `frequency -1` vừa sửa lỗi vừa **tăng** AUC 0.6804 → 0.6812.
+- **Ngưỡng lấy từ OOF, không lấy từ tập train.** `thr_train` = 0.145 còn
+  `thr_oof` = 0.176. Dùng ngưỡng tập train thì ma trận nhầm lẫn và
+  `decisionThreshold` phải dùng hai ngưỡng khác nhau trong cùng một tệp.
+- **Kiểm tra chiều đơn điệu trước khi tin kết quả.** `tests/churn-model.service.test.js`
+  có khẳng định "khách im lặng lâu hơn ⇒ p lớn hơn"; khẳng định này bắt được đúng
+  lỗi trên.
+- **Chỉ số phải lấy từ `metrics` của tệp mô hình**, không ghi tay trong báo cáo.
 
 <!-- gitnexus:start -->
 # GitNexus — Code Intelligence

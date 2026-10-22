@@ -34,6 +34,10 @@ const collect = (dir, suffix) =>
 const files = [
   ...collect(MODULES_DIR, ".service.js"),
   ...collect(MODULES_DIR, ".routes.js"),
+  // Hàm công thức thuần (modules/replenishment/*.calc.js). Chúng không có
+  // side-effect nên `require` vẫn an toàn, và lỗi export trước khi khai báo /
+  // circular require vẫn bắt được như hai loại trên.
+  ...collect(MODULES_DIR, ".calc.js"),
 ];
 
 const failures = [];

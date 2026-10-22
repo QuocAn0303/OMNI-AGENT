@@ -23,7 +23,7 @@ const svc = require("./fixed-assets.service");
 
 const ok = (res, data) => res.json({ success: true, data });
 
-router.use(requireModule("fixed-assets"));
+router.use(authenticate, requireModule("fixed-assets"));
 
 // Categories
 router.get("/categories", authenticate, authorize("ADMIN", "MANAGER", "ACCOUNTANT"), async (req, res, next) => {

@@ -70,6 +70,13 @@ const grnRoutes = require("./modules/accounting/grn.routes");
 const purchaseInvoiceRoutes = require("./modules/accounting/purchase-invoice.routes");
 const churnRoutes = require("./modules/customers/churn.routes");
 const webhookLeadRoutes = require("./modules/crm/webhook-lead.routes");
+// PRM (2026-10): quản trị đối tác đầu ra. GOM ba nhóm dưới một tiền tố:
+//   /api/partners          hồ sơ đối tác
+//   /api/partner-referrals lượt giới thiệu
+//   /api/partner-roi       báo cáo hiệu quả
+// Tách khỏi `crm` vì đối tác là đối tượng khác khách hàng (khớp với `Vendor` ở
+// phía nhà cung cấp). Xem `src/modules/partners/index.js`.
+const partnerRoutes = require("./modules/partners");
 const promotionRoutes = require("./modules/promotions/promotion.routes");
 const invoiceRoutes = require("./modules/orders/invoice.routes");
 const storeCreditRoutes = require("./modules/customers/store-credit.routes");
@@ -100,10 +107,14 @@ const portalRoutes = require("./modules/portal/portal.routes");
 const integrationRoutes = require("./modules/integrations/integration.routes");
 const webhookRoutes = require("./modules/integrations/webhook.routes");
 const smartGuideRoutes = require("./modules/smart-guide/smart-guide.routes");
+const replenishmentRoutes = require("./modules/replenishment/replenishment.routes");
 const menuRoutes = require("./modules/menu/menu.routes");
 const tableRoutes = require("./modules/tables/table.routes");
 const kdsRoutes = require("./modules/kds/kds.routes");
 const printerRoutes = require("./modules/printers/printer.routes");
+const evidenceRoutes = require("./modules/evidence/evidence.routes");
+const rfqRoutes = require("./modules/rfq/rfq.routes");
+const supplyRoutes = require("./modules/supply/supply.routes");
 const qrOrderingRoutes = require("./modules/qr-ordering/qr-ordering.routes");
 const paymentGatewayRoutes = require("./modules/payment-gateway/payment-gateway.routes");
 const foodDeliveryRoutes = require("./modules/food-delivery/food-delivery.routes");
@@ -142,7 +153,7 @@ const rateLimit = require('express-rate-limit')
 
 const apiLimiter = rateLimit({
   windowMs: 60 * 1000,
-  max: 100,
+  max: Number(process.env.API_RATE_LIMIT_MAX) || 1000,
   standardHeaders: true,
   legacyHeaders: false,
   // CRM audit L24: `/api/crm/track/*` dùng limiter riêng (`trackingLimiter`).
@@ -383,6 +394,9 @@ app.use("/api/admin", adminRoutes);
 app.use("/api/admin", backupRoutes);
 app.use("/api/subscriptions", subscriptionRoutes);
 app.use("/api/crm", crmRoutes);
+// PRM: đặt SAU `/api/crm` và dùng đường dẫn không chồng lẫn, để thêm ba prefix
+// /api/partners, /api/partner-referrals, /api/partner-roi (gom trong index.js).
+app.use("/api/partners", partnerRoutes);
 app.use("/api/projects", projectRoutes);
 app.use("/api/production", productionRoutes);
 app.use("/api/einvoice", einvoiceRoutes);
@@ -400,6 +414,10 @@ app.use("/api/integrations", integrationRoutes);
 app.use("/api/webhooks", webhookRoutes);
 app.use("/api/webhook", webhookLeadRoutes);
 app.use("/api/smart-guide", smartGuideRoutes);
+app.use("/api/replenishment", replenishmentRoutes);
+app.use("/api/evidence", evidenceRoutes);
+app.use("/api/rfq", rfqRoutes);
+app.use("/api/supply", supplyRoutes);
 app.use("/api/menu", menuRoutes);
 app.use("/api/tables", tableRoutes);
 app.use("/api/kds", kdsRoutes);

@@ -23,7 +23,7 @@ const { requireModule } = require("../../middleware/plan.middleware");
 const svc = require("./timesheet.service");
 const mgr = ["ADMIN", "MANAGER"];
 
-router.use(requireModule("projects"));
+router.use(authenticate, requireModule("projects"));
 
 // GET /api/projects/:id/timesheet
 router.get("/", authenticate, async (req, res, next) => {

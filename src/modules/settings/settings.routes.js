@@ -113,20 +113,33 @@ router.post('/seed-template', authenticate, authorize('ADMIN'), async (req, res,
     }
 
     const settings = await settingsService.getOrCreate();
-    if (settings.demoSeeded) {
-      return success(res, { message: 'Demo data already seeded', created: 0 });
-    }
 
-    const warehouse = await prisma.warehouse.create({
-      data: { code: 'KHOCHINH', name: 'Kho chinh', address: settings.address || '', isDefault: true },
-    });
+    // Cho phép seed lại nhiều lần: tìm kho đã có thay vì tạo mới (code warehouse là
+    // UNIQUE toàn cục nên tạo trùng sẽ lỗi 500). Nếu chưa có thì mới tạo.
+    let warehouse = await prisma.warehouse.findFirst({ where: { code: 'KHOCHINH' } });
+    if (!warehouse) {
+      try {
+        warehouse = await prisma.warehouse.create({
+          data: { code: 'KHOCHINH', name: 'Kho chinh', address: settings.address || '', isDefault: true },
+        });
+      } catch {
+        warehouse = await prisma.warehouse.findFirst({ where: { code: 'KHOCHINH' } });
+      }
+    }
+    if (!warehouse) {
+      throw { status: 500, message: 'Không thể tạo hoặc tìm thấy kho mặc định' };
+    }
 
     const createdCategories = [];
     for (const cat of tpl.categories) {
       try {
         const c = await prisma.category.create({ data: { name: cat.name, description: cat.desc || '' } });
         createdCategories.push(c);
-      } catch { /* duplicate name — skip */ }
+      } catch {
+        // Lặp lại nhiều lần: danh mục đã tồn tại ⇒ tìm lại để map sản phẩm.
+        const existing = await prisma.category.findFirst({ where: { name: cat.name } });
+        if (existing) createdCategories.push(existing);
+      }
     }
 
     let totalProducts = 0;

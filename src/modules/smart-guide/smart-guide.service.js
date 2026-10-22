@@ -127,105 +127,160 @@ async function getPricingInsights(tenantId) {
 // ==================== REORDER SUGGESTIONS ====================
 
 /**
- * Get smart reorder suggestions with vendor info and priority
+ * Gợi ý nhập hàng — DÙNG CHUNG engine ROP của module `replenishment`.
+ *
+ * LỊCH SỬ (2026-10-04): hàm này trước đây tự tính bằng công thức riêng
+ * `(safetyStock * 2 - quantity) * 1.2` với ngưỡng `10` HARD-CODE ở
+ * `prisma.inventory.fields?.minStock ? undefined : 10` — biểu thức đó luôn ra
+ * `10` vì `prisma.inventory.fields` không tồn tại. Hệ quả: màn hình khách thấy
+ * ("Trợ lý KD" → tab Nhập hàng) cho ra con số KHÁC hẳn con số engine ROP đã
+ * nghiên cứu và backtest. Cùng một cơ sở dữ liệu cho ra hai câu trả lời khác nhau.
+ *
+ * Nay mọi số đều do `planReplenishment` tính — cùng hàm dùng khi tạo đề xuất PO
+ * thật, nên màn hình và hành động không thể lệch nhau.
+ *
+ * Tên trường trả về GIỮ NGUYÊN (`suggestedReorderQty`, `priority`, `message`…) để
+ * không phải sửa frontend; bổ sung thêm số bằng chứng để người dùng thấy "vì sao".
  */
+const REORDER_CANDIDATE_LIMIT = 150;
+
 async function getReorderSuggestions(tenantId) {
-  const lowStock = await prisma.inventory.findMany({
-    where: {
-      quantity: { lte: prisma.inventory.fields?.minStock ? undefined : 10 },
+  const {
+    loadReplenishmentInput,
+    loadLeadTimeReceipts,
+  } = require('../replenishment/replenishment.suggest');
+  const {
+    planReplenishment,
+    classifyUnitCost,
+    REVIEW_PERIOD_DAYS,
+    NEED_REPLENISHMENT,
+    STOCKOUT,
+  } = require('../replenishment/replenishment.calc');
+
+  // Ứng viên: lấy SKU có tồn thấp nhất trước (rẻ hơn hẳn so với quét toàn bộ
+  // catalog), rồi để engine quyết định có thật sự dưới ROP hay không.
+  const candidates = await prisma.product.findMany({
+    where: { isActive: true, inventories: { some: {} } },
+    select: {
+      id: true,
+      sku: true,
+      name: true,
+      unit: true,
+      costPrice: true,
+      category: { select: { name: true } },
+      inventories: { select: { quantity: true, minStock: true, warehouse: { select: { name: true } } } },
     },
-    include: {
-      product: {
-        include: { category: true },
-      },
-      warehouse: true,
-    },
+    take: REORDER_CANDIDATE_LIMIT,
+    orderBy: { inventories: { _count: 'asc' } },
   });
 
-  // Filter in JS since Prisma can't compare field-to-field directly
-  const filtered = lowStock.filter((inv) => inv.quantity <= (inv.minStock || 10));
-
-  // Get sold quantities in last 30 days for velocity
-  const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 3600 * 1000);
-  const productIds = filtered.map((f) => f.productId);
-
-  const salesVelocity = {};
-  if (productIds.length > 0) {
-    const orderItems = await prisma.orderItem.findMany({
-      where: {
-        productId: { in: productIds },
-        order: { createdAt: { gte: thirtyDaysAgo }, status: 'COMPLETED' },
-      },
-      select: { productId: true, quantity: true },
-    });
-
-    for (const oi of orderItems) {
-      if (!salesVelocity[oi.productId]) salesVelocity[oi.productId] = 0;
-      salesVelocity[oi.productId] += oi.quantity;
-    }
+  if (candidates.length === 0) {
+    return { suggestions: [], summary: { total: 0, urgentCount: 0, highCount: 0, noVendorCount: 0 } };
   }
 
-  // Get last vendor for each product
-  const lastVendors = {};
-  if (productIds.length > 0) {
-    const lastPos = await prisma.purchaseItem.findMany({
-      where: { productId: { in: productIds } },
-      include: {
-        purchaseOrder: { select: { vendor: { select: { id: true, name: true } }, createdAt: true } },
-      },
-      orderBy: { purchaseOrder: { createdAt: 'desc' } },
-    });
+  const ids = candidates.map((p) => p.id);
+  const inputs = await loadReplenishmentInput(ids);
 
+  const rows = await Promise.all(
+    candidates.map(async (p) => {
+      const input = inputs.get(p.id);
+      if (!input) return null;
+      const receipts = await loadLeadTimeReceipts(p.id);
+      const cost = classifyUnitCost(p.costPrice);
+      const plan = planReplenishment({
+        dailySales: input.dailySales,
+        inventories: input.inventories,
+        receipts,
+        unitCost: cost.value,
+        reviewPeriodDays: REVIEW_PERIOD_DAYS,
+        onOrder: input.onOrder,
+      });
+      return { p, plan, cost };
+    }),
+  );
+
+  const needList = rows.filter(
+    (r) =>
+      r &&
+      (r.plan.status === NEED_REPLENISHMENT || r.plan.status === STOCKOUT) &&
+      // `calcOrderQty` có thể trả 0 khi ROP = 0 (chưa có nhu cầu). Báo "nhập 0"
+      // là vô nghĩa — đường ghi đề xuất PO cũng lọc đúng như vậy.
+      r.plan.order.orderQty > 0,
+  );
+
+  // NCC từ PO gần nhất — cùng nguồn với đường ghi đề xuất.
+  const vendors = {};
+  if (needList.length) {
+    const lastPos = await prisma.purchaseItem.findMany({
+      where: { productId: { in: needList.map((r) => r.p.id) } },
+      select: {
+        productId: true,
+        purchaseOrder: { select: { vendor: { select: { id: true, name: true } } } },
+      },
+      orderBy: { purchaseOrder: { date: 'desc' } },
+    });
     const seen = new Set();
     for (const pi of lastPos) {
-      if (!seen.has(pi.productId)) {
-        seen.add(pi.productId);
-        lastVendors[pi.productId] = pi.purchaseOrder?.vendor || null;
-      }
+      if (seen.has(pi.productId)) continue;
+      seen.add(pi.productId);
+      vendors[pi.productId] = pi.purchaseOrder?.vendor || null;
     }
   }
 
-  const suggestions = filtered.map((inv) => {
-    const safetyStock = inv.minStock || 10;
-    const weeklySales = (salesVelocity[inv.productId] || 0) / 4.3;
-    const weeksUntilEmpty = weeklySales > 0 ? inv.quantity / weeklySales : Infinity;
-    const vendor = lastVendors[inv.productId];
+  const suggestions = needList.map(({ p, plan }) => {
+    const atp = plan.atp.atp;
+    const minStock = Math.max(
+      ...p.inventories.map((i) => i.minStock || 0),
+      Math.ceil(plan.rop.rop),
+    );
+    const vendor = vendors[p.id] || null;
 
     let priority;
-    if (inv.quantity === 0) priority = 'URGENT';
-    else if (inv.quantity <= safetyStock / 3) priority = 'HIGH';
-    else if (inv.quantity <= safetyStock / 2) priority = 'MEDIUM';
+    if (plan.status === STOCKOUT || atp === 0) priority = 'URGENT';
+    else if (atp <= plan.safety.safetyStock) priority = 'HIGH';
+    else if (atp <= plan.rop.rop) priority = 'MEDIUM';
     else priority = 'LOW';
 
     let message;
-    if (inv.quantity === 0) {
-      message = `HẾT HÀNG! Cần nhập gấp — đã hết từ ${inv.product.name}.`;
-    } else if (weeksUntilEmpty < 1) {
-      message = `Chỉ còn ${inv.quantity} ${inv.product.unit || 'cái'} — dùng chưa tới 1 tuần.`;
+    if (plan.status === STOCKOUT || atp === 0) {
+      message = `HẾT HÀNG! Cần nhập gấp — đã hết từ ${p.name}.`;
+    } else if (plan.daysOfCover !== null && plan.daysOfCover < plan.lead.leadTimeDays) {
+      message = `Còn ${atp} ${p.unit || 'cái'} — chỉ đủ ${plan.daysOfCover} ngày, ngắn hơn lead time ${plan.lead.leadTimeDays} ngày.`;
     } else {
-      message = `Còn ${inv.quantity}/${safetyStock} ${inv.product.unit || 'cái'} — nên nhập thêm sớm.`;
+      message = `Còn ${atp}/${Math.ceil(plan.rop.rop)} ${p.unit || 'cái'} — đã dưới điểm đặt lại, nên nhập thêm sớm.`;
     }
 
-    const reorderQty = Math.max(1, Math.ceil((safetyStock * 2 - inv.quantity) * 1.2));
-
     return {
-      productId: inv.productId,
-      productName: inv.product.name,
-      sku: inv.product.sku,
-      category: inv.product.category?.name || null,
-      warehouse: inv.warehouse?.name || null,
-      currentStock: inv.quantity,
-      minStock: safetyStock,
-      weeklySales: round1(weeklySales),
-      weeksUntilEmpty: weeksUntilEmpty === Infinity ? null : round1(weeksUntilEmpty),
-      suggestedReorderQty: reorderQty,
+      productId: p.id,
+      productName: p.name,
+      sku: p.sku,
+      category: p.category?.name || null,
+      warehouse: p.inventories[0]?.warehouse?.name || null,
+      currentStock: atp,
+      onOrder: plan.atp.onOrder,
+      minStock,
+      rop: Math.ceil(plan.rop.rop),
+      safetyStock: Math.ceil(plan.safety.safetyStock),
+      demandPerDay: plan.demand.demandPerDay,
+      demandMethod: plan.demand.method,
+      leadTimeDays: plan.lead.leadTimeDays,
+      leadTimeEstimated: plan.lead.estimated,
+      daysOfCover: plan.daysOfCover ?? null,
+      weeklySales: plan.demand.demandPerDay * 7,
+      weeksUntilEmpty:
+        plan.demand.demandPerDay > 0 ? atp / (plan.demand.demandPerDay * 7) : null,
+      suggestedReorderQty: plan.order.orderQty,
+      unitCost: plan.rationale.unitCost,
+      missingCost: plan.missingCost,
+      totalEstimate: plan.order.totalEstimate,
       suggestedVendor: vendor ? { id: vendor.id, name: vendor.name } : null,
       priority,
+      status: plan.status,
       message,
+      rationale: plan.rationale,
     };
   });
 
-  // Sort: URGENT > HIGH > MEDIUM > LOW
   const priorityOrder = { URGENT: 0, HIGH: 1, MEDIUM: 2, LOW: 3 };
   suggestions.sort((a, b) => priorityOrder[a.priority] - priorityOrder[b.priority]);
 
@@ -236,6 +291,8 @@ async function getReorderSuggestions(tenantId) {
       urgentCount: suggestions.filter((s) => s.priority === 'URGENT').length,
       highCount: suggestions.filter((s) => s.priority === 'HIGH').length,
       noVendorCount: suggestions.filter((s) => !s.suggestedVendor).length,
+      leadTimeEstimatedCount: suggestions.filter((s) => s.leadTimeEstimated).length,
+      engine: 'replenishment/planReplenishment',
     },
   };
 }

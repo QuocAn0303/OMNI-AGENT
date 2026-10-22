@@ -14,6 +14,9 @@
  * Giữ dữ liệu để debug: -- --keep
  */
 require("dotenv").config();
+const { assertLocalDb } = require("./lib/assert-local-db");
+assertLocalDb("smoke-crm-phase4-campaign");
+const { captureBaseline, verifyTeardown } = require("./lib/teardown");
 const prisma = require("../src/config/prisma");
 const { runWithTenant } = require("../src/config/tenantContext");
 const tracking = require("../src/modules/crm/campaign-tracking.service");
@@ -73,6 +76,9 @@ const cleanup = async () => {
   await del("customerSegment", () =>
     prisma.customerSegment.deleteMany({ where: { name: { startsWith: TAG } } }));
   if (cid.length) await del("customer", () => prisma.customer.deleteMany({ where: { id: { in: cid } } }));
+  // `campaigns.service` ghi audit log; không có FK tới `tenants` ⇒ phải xoá
+  // TRƯỚC tenant, nếu không sẽ thành MỒ CÔI-TENANT.
+  if (created.tenants.length) await del("auditLog", () => prisma.auditLog.deleteMany({ where: { tenantId: { in: created.tenants } } }).then(() => ({})));
   if (created.users.length) await del("user", () => prisma.user.deleteMany({ where: { id: { in: created.users } } }));
   if (created.tenants.length) await del("tenant", () => prisma.tenant.deleteMany({ where: { id: { in: created.tenants } } }));
 
@@ -90,10 +96,21 @@ const cleanup = async () => {
     pass += 1;
     console.log("  OK   dọn dẹp sạch, không sót dữ liệu test");
   }
+
+  // Verify dùng chung: bắt cả trường hợp bảng KHÔNG nằm trong danh sách trên
+  // bị rò, và bắt mồ côi-tenant tăng thêm so với baseline lúc bắt đầu.
+  try {
+    await verifyTeardown(created.tenants, prisma);
+  } catch (e) {
+    fail += 1;
+    console.log(`  FAIL ${e.message}`);
+  }
 };
 
 (async () => {
   cleanupRef = cleanup; // để catch gọi được
+  // Baseline mồ côi-tenant TRƯỚC khi seed (xem scripts/lib/teardown.js).
+  await captureBaseline(prisma);
   // ---------------------------------------------------------------- setup
   section("1. Tạo dữ liệu thật (tenant + campaign + recipients)");
   const tenant = await prisma.tenant.create({

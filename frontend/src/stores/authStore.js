@@ -14,7 +14,7 @@
  * - useAuthStore: Zustand hook xuất dạng named + default
  */
 import { create } from "zustand";
-import api from "../api/axios";
+import api, { clearAuthHeaders } from "../api/axios";
 
 const initialTheme = localStorage.getItem("theme") || "light";
 const initialBeginnerMode = localStorage.getItem("beginnerMode") !== "false";
@@ -72,6 +72,10 @@ const useAuthStore = create((set, get) => ({
     localStorage.removeItem("originalToken");
     localStorage.removeItem("businessTemplate");
     localStorage.removeItem("accountingMode");
+    // Xoá Authorization đã merge vào axios defaults (H2). Nếu bỏ qua, thu ngân A
+    // logout rồi B đăng nhập trên cùng máy POS thì các request sau vẫn mang
+    // session của A cho tới khi reload trang.
+    clearAuthHeaders();
     set({
       user: null,
       token: null,

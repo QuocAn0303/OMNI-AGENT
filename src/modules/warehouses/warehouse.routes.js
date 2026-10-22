@@ -16,10 +16,60 @@
 const router = require("express").Router();
 const { z } = require("zod");
 const warehouseService = require("./warehouse.service");
+const treeService = require("./warehouse-tree.service");
 const { authenticate, authorize } = require("../../middleware/auth.middleware");
 const { success, created } = require("../../utils/response");
 
 router.use(authenticate);
+
+/**
+ * Cây vị trí trong kho (Odoo `stock.location`).
+ *
+ * THỨ TỰ ROUTE CÓ Ý NGHĨA: `GET /tree/flat` phải khai TRƯỚC `GET /:id/tree`,
+ * nếu không Express sẽ khớp "tree" vào `:id` và trả nhầm cây của kho có id="tree".
+ * Cùng lý do với bài học `tests/partner-routing.test.js` trong module PRM.
+ */
+router.get("/tree/flat", authorize("ADMIN", "MANAGER", "WAREHOUSE"), async (req, res, next) => {
+  try {
+    success(res, await treeService.listFlat({ warehouseId: req.query.warehouseId }));
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.get("/:id/tree", authorize("ADMIN", "MANAGER", "WAREHOUSE"), async (req, res, next) => {
+  try {
+    success(res, await treeService.getTree(req.params.id));
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.post("/:id/locations", authorize("ADMIN", "MANAGER"), async (req, res, next) => {
+  try {
+    const data = z
+      .object({
+        code: z.string().min(1),
+        name: z.string().min(1),
+        locationType: z.enum(["PHYSICAL", "VIEW", "INTERNAL"]).optional(),
+      })
+      .parse(req.body);
+    created(res, await treeService.createLocation({ warehouseId: req.params.id, ...data }, req.user.id));
+  } catch (err) {
+    next(err);
+  }
+});
+
+router.patch("/:id/location-type", authorize("ADMIN", "MANAGER"), async (req, res, next) => {
+  try {
+    const { locationType } = z
+      .object({ locationType: z.enum(["PHYSICAL", "VIEW", "INTERNAL"]) })
+      .parse(req.body);
+    success(res, await treeService.setLocationType(req.params.id, locationType, req.user.id));
+  } catch (err) {
+    next(err);
+  }
+});
 
 router.get("/", authorize("ADMIN", "MANAGER", "WAREHOUSE"), async (req, res, next) => {
   try {

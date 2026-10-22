@@ -23,6 +23,7 @@
 // Khi credentials chưa cấu hình → mock mode.
 const https = require("https");
 const http = require("http");
+const crypto = require("crypto");
 const config = require("../../integrations/integration-config.service");
 
 const _readCfg = async () => {
@@ -91,7 +92,23 @@ async function _getToken(c) {
 }
 
 let _mockSeq = 0;
-const _mockInvoiceNo = () => String(++_mockSeq).padStart(7, "0");
+/**
+ * Số HĐĐT giả — phải **không trùng được giữa các tiến trình**, vì `invoiceNo` là
+ * UNIQUE toàn cục. Trước đây chỉ đếm trong bộ nhớ (`++_mockSeq`), nên mỗi lần khởi
+ * động Node lại bắt đầu từ `0000001` ⇒ lần chạy thứ hai của cùng một ngày đâm vào
+ * `Unique constraint failed on the fields: ("invoiceNo")` và **làm hỏng cả luồng
+ * demo** (đơn demo không dọn được vì `invoices.orderId` là FK RESTRICT).
+ *
+ * Sửa: thêm ngày + hậu tố ngẫu nhiên 6 ký tự. Tiền tố `MOCK` là bắt buộc — để không
+ * bao giờ nhầm số giả với số HĐĐT thật của VNPT.
+ */
+const _mockInvoiceNo = () => {
+  const day = new Date().toISOString().slice(0, 10).replace(/-/g, "");
+  _mockSeq += 1;
+  return `MOCK-${day}-${String(_mockSeq).padStart(4, "0")}-${crypto
+    .randomBytes(3)
+    .toString("hex")}`;
+};
 
 async function issueInvoice(p) {
   const c = await _readCfg();

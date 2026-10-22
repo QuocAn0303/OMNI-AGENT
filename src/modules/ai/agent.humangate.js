@@ -80,6 +80,76 @@ const buildReminderGate = ({ sessionId, debtId, customerName, remaining, message
   expiresAt: nowPlus(GATE_TTL_MS),
 });
 
+/** actionType cua de xuat PO. KHAC 'DATA_REQUEST'/'SEND_REMINDER' — nhanh resume
+ *  trong routes chi kich hoat cho dung actionType nay. */
+const PO_PROPOSAL = 'PURCHASE_ORDER_PROPOSAL';
+
+/** Khoa trong payload de chong tao trung de xuat: PROPOSAL:<productId>:<vendorId> */
+const poProposalKey = (productId, vendorId) => `PROPOSAL:${productId}:${vendorId}`;
+
+/**
+ * Gate de xuat don nhap hang — PENDING, CHUA co PO ton tai.
+ *
+ * Day la gate co hieu luc dau tien trong he thong: `buildWriteActionGate` o tren
+ * ghi sau khi hanh dong da xong (status APPROVED) nen khong chan gi. Gate nay
+ * ghi TRUOC, va PO chi duoc tao khi ADMIN/MANAGER bam duyet.
+ *
+ * `actionPayload` khong chua so san tinh san — nguoi duyet/UI doc
+ * `payload.rationale`. Cac so QUYET DINH nam o `payload.items` va
+ * `payload.fingerprint`; executor KHONG tinh lai tu chung (no tinh lai tu DB
+ * va so san bang `evaluateProposalFreshness`, xem agent.gate.exec.js).
+ *
+ * TTL giu nguyen GATE_TTL_MS = 24h. Da can nhac mot phuong an TTL 8h cho rieng
+ * de xuat PO, nhung cau hang mo 8h sang se khong bao gio thay de xuat CDC sinh
+ * luc 22h. Bao ve ve do la cach dung co dieu kien cua muc 2.1 trong 00b.
+ */
+const buildPoProposalGate = ({
+  sessionId,
+  productId,
+  sku,
+  productName,
+  vendorId,
+  vendorName,
+  quantity,
+  unitCost,
+  totalEstimate,
+  expectedAt = null,
+  proposalKey,
+  fingerprint,
+  rationale = {},
+  leadTimeDays = null,
+  leadTimeEstimated = null,
+  missingCost = false,
+}) => ({
+  sessionId,
+  actionType: PO_PROPOSAL,
+  actionPayload: {
+    kind: PO_PROPOSAL,
+    proposalKey: proposalKey || poProposalKey(productId, vendorId),
+    // MỘT dòng hàng mỗi đề xuất (đơn giản hoá cố ý - xem 00b §6).
+    items: [{ productId, sku, productName, quantity, unitCost }],
+    vendorId,
+    vendorName,
+    totalEstimate,
+    expectedAt,
+    fingerprint,
+    leadTimeDays,
+    leadTimeEstimated,
+    rationale,
+    // D6: đề xuất sinh lúc SKU CHƯA có giá vốn dùng được. Executor dùng cờ này
+    // để biết cần chặn 409 thay vì tạo PO với tổng tiền 0.
+    missingCost: missingCost === true,
+  },
+  actionSummary: clip(
+    `De xuat nhap ${quantity} x ${productName || sku} tu ${vendorName || 'NCC'}` +
+    ` (${Number(totalEstimate || 0).toLocaleString('vi-VN')} VND)` +
+    `${leadTimeEstimated ? ` — lead time ${leadTimeDays} ngay la UOC LUONG` : ''}`,
+  ),
+  triggerRule: 'REPLENISHMENT_ATP_LE_ROP',
+  status: 'PENDING',
+  expiresAt: nowPlus(GATE_TTL_MS),
+});
+
 /**
  * Payload cho prisma.agentHumanGate.update() khi nguoi dung phe duyet/tu choi.
  * TEN field phai khop chinh xac schema: decidedById / decisionNote / decidedAt.
@@ -136,9 +206,12 @@ const sweepExpiredHumanGates = async (client = null) => {
 module.exports = {
   GATE_TTL_MS,
   clip,
+  PO_PROPOSAL,
+  poProposalKey,
   buildDataRequestGate,
   buildWriteActionGate,
   buildReminderGate,
+  buildPoProposalGate,
   buildDecisionData,
   createGate,
   sweepExpiredHumanGates,

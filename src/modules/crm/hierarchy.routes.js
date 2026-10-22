@@ -44,7 +44,7 @@ const setReportsToSchema = z.object({
  *     tags: [CRM]
  *     security: [{ bearerAuth: [] }]
  *     responses:
- *       200: { description: Cây lồng nhau { roots, totals } }
+ *       200: { description: "Cây lồng nhau: roots, totals" }
  */
 router.get("/", async (req, res, next) => {
   try {

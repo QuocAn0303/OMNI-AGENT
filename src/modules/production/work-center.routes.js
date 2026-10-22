@@ -18,7 +18,7 @@ const { requireModule } = require("../../middleware/plan.middleware");
 const svc = require("./work-center.service");
 const mgr = ["ADMIN", "MANAGER"];
 
-router.use(requireModule("production"));
+router.use(authenticate, requireModule("production"));
 
 router.get("/", authenticate, async (req, res, next) => {
   try { res.json({ success: true, data: await svc.list() }); } catch (e) { next(e); }

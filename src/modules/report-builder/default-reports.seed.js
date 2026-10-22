@@ -1,7 +1,7 @@
 /**
- * modules/report-builder/default-reports.seed.js — 10 báo cáo phân tích mặc định (Mục 8)
+ * modules/report-builder/default-reports.seed.js — 12 báo cáo phân tích mặc định (Mục 8)
  *
- * Seed 10 SavedReport (R-01 → R-10) cho tenant, dùng Report Builder hiện có
+ * Seed 12 SavedReport (R-01 → R-12) cho tenant, dùng Report Builder hiện có
  * (query builder an toàn — mọi config đều thuộc whitelist ALLOWED_TABLES của
  * report-builder.service.js). Idempotent theo tên report trong tenant.
  *
@@ -15,6 +15,8 @@
  * R-08 QC Pass Rate (nhận hàng PO)      → goods_receipt_items SUM passQty by product
  * R-09 AP Aging (tuổi nợ NCC)           → debts type PAYABLE (dueDate + amount/paid)
  * R-10 Hiệu quả kênh nguồn Lead         → customers group by referralSource
+ * R-11 Lợi nhuận ròng theo đối tác       → partner_referrals (đã chuyển đổi)
+ * R-12 Tỷ lệ chuyển đổi theo đối tác    → partner_referrals group by partnerId
  */
 const prisma = require("../../config/prisma");
 
@@ -96,6 +98,31 @@ const DEFAULT_REPORTS = [
     name: "R-10 Hiệu quả kênh nguồn Lead",
     description: "Số lead/khách theo nguồn (webhook đa kênh)",
     config: { table: "customers", aggregate: { fn: "COUNT", field: "id" }, groupBy: "referralSource" },
+  },
+  // R-11 và R-12 là phần PRM. Cả hai chỉ dùng bảng đã nằm trong ALLOWED_TABLES của
+  // report-builder.service.js — thêm bảng ngoài whitelist là mở đường đọc dữ liệu
+  // mà không kiểm soát.
+  {
+    code: "R-11",
+    name: "R-11 Lợi nhuận ròng theo đối tác",
+    description: "Xếp hạng đối tác theo lợi nhuận ròng (giá trị khách − hoa hồng)",
+    config: {
+      table: "partner_referrals",
+      fields: ["partnerId", "referredName", "converted", "referralDate", "convertedAt"],
+      filters: [{ field: "converted", op: "=", value: true }],
+      orderBy: { field: "convertedAt", dir: "desc" },
+    },
+  },
+  {
+    code: "R-12",
+    name: "R-12 Tỷ lệ chuyển đổi theo đối tác",
+    description: "Đếm lượt giới thiệu đã chuyển đổi / chưa chuyển đổi theo từng đối tác",
+    config: {
+      table: "partner_referrals",
+      aggregate: { fn: "COUNT", field: "id" },
+      groupBy: "partnerId",
+      filters: [{ field: "converted", op: "=", value: true }],
+    },
   },
 ];
 

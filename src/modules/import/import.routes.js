@@ -34,7 +34,29 @@ const upload = multer({
   },
 });
 
-router.use(requireModule("import"));
+/** Số dòng tối đa cho một lần import — chặn file .xlsx 10MB làm nghẽn request. */
+const MAX_IMPORT_ROWS = 5000;
+
+/**
+ * M5 (security): thông điệp lỗi cho từng dòng trong response.
+ * KHÔNG trả `err.message` của Prisma ra client — trong đó có tên model, tên
+ * field, chữ ký input type (PrismaClientValidationError) hoặc TOÀN BỘ câu SQL
+ * (P2010/P2011). Endpoint này trả HTTP 200 kèm mảng lỗi nên không đi qua
+ * error.middleware — phải lọc tại chỗ.
+ */
+const rowErrorMessage = (err, fallback) => {
+  const code = err?.code;
+  if (code === 'P2002') return 'Dữ liệu trùng lặp (đã tồn tại)';
+  if (code === 'P2003') return 'Dữ liệu tham chiếu không tồn tại';
+  if (code === 'P2025') return 'Không tìm thấy bản ghi';
+  if (code === 'P2000') return 'Giá trị vượt quá độ dài cho phép';
+  // Mọi lỗi khác (kể cả lỗi không phải Prisma) chỉ trả thông điệp chung.
+  // Chi tiết đầy đủ đã được logger ghi lại server-side.
+  require('../../utils/logger').error('[import] row error:', err);
+  return fallback;
+};
+
+router.use(authenticate, requireModule("import"));
 
 // GET /api/import/template/:type — tải file mẫu
 router.get('/template/:type', authenticate, async (req, res, next) => {
@@ -89,6 +111,13 @@ router.post('/products', authenticate, authorize('ADMIN', 'MANAGER'), upload.sin
       rows.push({ rowNum: i, data: obj });
     });
 
+    // Chặn file quá lớn: multer cho phép 10MB nhưng một .xlsx 10MB có thể chứa
+    // hơn 100k dòng, mỗi dòng một lượt ghi DB trong cùng một request → nghẽn
+    // server. Trả 413 ngay thay vì giày CPU và giữ connection.
+    if (rows.length > MAX_IMPORT_ROWS) {
+      throw { status: 413, message: `File có ${rows.length} dòng, vượt giới hạn ${MAX_IMPORT_ROWS} dòng mỗi lần import` };
+    }
+
     // Validate
     const valid = [];
     for (const { rowNum, data } of rows) {
@@ -116,26 +145,31 @@ router.post('/products', authenticate, authorize('ADMIN', 'MANAGER'), upload.sin
     for (const data of valid) {
       try {
         const categoryId = catMap[data.category] || defaultCat.id;
-        await prisma.product.upsert({
-          where: { sku: String(data.sku) },
-          create: {
-            sku: String(data.sku),
-            name: String(data.name),
-            price: Number(data.price),
-            costPrice: Number(data.costPrice),
-            unit: data.unit ? String(data.unit) : 'cái',
-            description: data.description ? String(data.description) : null,
-            categoryId,
-          },
-          update: {
-            name: String(data.name),
-            price: Number(data.price),
-            costPrice: Number(data.costPrice),
-          },
-        });
+        const sku = String(data.sku);
+        const payload = {
+          name: String(data.name),
+          price: Number(data.price),
+          costPrice: Number(data.costPrice),
+          unit: data.unit ? String(data.unit) : 'cái',
+          description: data.description ? String(data.description) : null,
+          categoryId,
+        };
+
+        // M12: `Product` có `@@unique([sku, tenantId])` — KHÔNG có `@unique` đơn
+        // trên `sku`. `upsert({ where: { sku } })` vì thế không thỏa
+        // ProductWhereUniqueInput và Prisma reject MỌI dòng: tính năng import sản
+        // phẩm chưa bao giờ hoạt động. Tự tra cứu rồi create/update theo `id`:
+        // extension vẫn khoanh vùng tenant cho cả hai lệnh (findFirst và update
+        // đều merge `tenantId` vào `where`), nên không mất rào an toàn multi-tenant.
+        const existing = await prisma.product.findFirst({ where: { sku } });
+        if (existing) {
+          await prisma.product.update({ where: { id: existing.id }, data: payload });
+        } else {
+          await prisma.product.create({ data: { sku, ...payload } });
+        }
         imported++;
       } catch (err) {
-        importErrors.push({ message: `SKU ${data.sku}: ${err.message}` });
+        importErrors.push({ message: `SKU ${data.sku}: ${rowErrorMessage(err, 'Không lưu được dòng này')}` });
       }
     }
 
@@ -161,6 +195,10 @@ router.post('/customers', authenticate, authorize('ADMIN', 'MANAGER'), upload.si
       rows.push({ rowNum: i, data: obj });
     });
 
+    if (rows.length > MAX_IMPORT_ROWS) {
+      throw { status: 413, message: `File có ${rows.length} dòng, vượt giới hạn ${MAX_IMPORT_ROWS} dòng mỗi lần import` };
+    }
+
     for (const { rowNum, data } of rows) {
       if (!data.name) { errors.push({ row: rowNum, message: 'Thiếu tên khách hàng' }); continue; }
       try {
@@ -174,7 +212,7 @@ router.post('/customers', authenticate, authorize('ADMIN', 'MANAGER'), upload.si
         });
         imported++;
       } catch (err) {
-        errors.push({ row: rowNum, message: err.message.includes('Unique') ? `SĐT ${data.phone} đã tồn tại` : err.message });
+        errors.push({ row: rowNum, message: rowErrorMessage(err, 'Số điện thoại đã tồn tại') });
       }
     }
 
@@ -200,6 +238,10 @@ router.post('/vendors', authenticate, authorize('ADMIN', 'MANAGER'), upload.sing
       rows.push({ rowNum: i, data: obj });
     });
 
+    if (rows.length > MAX_IMPORT_ROWS) {
+      throw { status: 413, message: `File có ${rows.length} dòng, vượt giới hạn ${MAX_IMPORT_ROWS} dòng mỗi lần import` };
+    }
+
     for (const { rowNum, data } of rows) {
       if (!data.code) { errors.push({ row: rowNum, message: 'Thiếu mã NCC' }); continue; }
       if (!data.name) { errors.push({ row: rowNum, message: 'Thiếu tên NCC' }); continue; }
@@ -222,7 +264,7 @@ router.post('/vendors', authenticate, authorize('ADMIN', 'MANAGER'), upload.sing
         });
         imported++;
       } catch (err) {
-        errors.push({ row: rowNum, message: err.message });
+        errors.push({ row: rowNum, message: rowErrorMessage(err, 'Mã NCC đã tồn tại') });
       }
     }
 

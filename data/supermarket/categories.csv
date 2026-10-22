@@ -1,0 +1,58 @@
+﻿name,parent,group,is_group
+Thuc pham tuoi song,,Thuc pham tuoi song,1
+Rau cu tuoi,Thuc pham tuoi song,Thuc pham tuoi song,0
+Trai cay tuoi,Thuc pham tuoi song,Thuc pham tuoi song,0
+Thit heo,Thuc pham tuoi song,Thuc pham tuoi song,0
+Thit ga,Thuc pham tuoi song,Thuc pham tuoi song,0
+Thit bo,Thuc pham tuoi song,Thuc pham tuoi song,0
+Hai san tuoi,Thuc pham tuoi song,Thuc pham tuoi song,0
+Trung,Thuc pham tuoi song,Thuc pham tuoi song,0
+Sua & Do uong,,Sua & Do uong,1
+Sua tuoi,Sua & Do uong,Sua & Do uong,0
+Sua chua,Sua & Do uong,Sua & Do uong,0
+Sua dau nanh,Sua & Do uong,Sua & Do uong,0
+Nuoc khoang,Sua & Do uong,Sua & Do uong,0
+Tra,Sua & Do uong,Sua & Do uong,0
+Nuoc uong,Sua & Do uong,Sua & Do uong,0
+Cafe,Sua & Do uong,Sua & Do uong,0
+Thuc pham kho & Gia vi,,Thuc pham kho & Gia vi,1
+Gao & ngu coc,Thuc pham kho & Gia vi,Thuc pham kho & Gia vi,0
+Mi & banh pho,Thuc pham kho & Gia vi,Thuc pham kho & Gia vi,0
+Dau an,Thuc pham kho & Gia vi,Thuc pham kho & Gia vi,0
+Nuoc mam & gia vi,Thuc pham kho & Gia vi,Thuc pham kho & Gia vi,0
+Gia vi,Thuc pham kho & Gia vi,Thuc pham kho & Gia vi,0
+Duong & muoi,Thuc pham kho & Gia vi,Thuc pham kho & Gia vi,0
+Tuong & dưa giac vi,Thuc pham kho & Gia vi,Thuc pham kho & Gia vi,0
+Do an nhanh & Dong lanh,,Do an nhanh & Dong lanh,1
+Mi goi & thuc pham san,Do an nhanh & Dong lanh,Do an nhanh & Dong lanh,0
+Do an dong lanh,Do an nhanh & Dong lanh,Do an nhanh & Dong lanh,0
+Xuc xich & gio,Do an nhanh & Dong lanh,Do an nhanh & Dong lanh,0
+Banh keo & do ngot,Do an nhanh & Dong lanh,Do an nhanh & Dong lanh,0
+Do gia dung,,Do gia dung,1
+Nuoc rua bat,Do gia dung,Do gia dung,0
+Bot giat & nuoc giat,Do gia dung,Do gia dung,0
+Nuoc tay rua,Do gia dung,Do gia dung,0
+Giay & bong,Do gia dung,Do gia dung,0
+Dung cu nha bep,Do gia dung,Do gia dung,0
+Cham soc ca nhan,,Cham soc ca nhan,1
+Dau goi & dau xa,Cham soc ca nhan,Cham soc ca nhan,0
+Sua tam & xa phong,Cham soc ca nhan,Cham soc ca nhan,0
+Cham soc da,Cham soc ca nhan,Cham soc ca nhan,0
+Ve sinh rang mieng,Cham soc ca nhan,Cham soc ca nhan,0
+Cham soc toc,Cham soc ca nhan,Cham soc ca nhan,0
+Me & be,,Me & be,1
+Sua cong thuc,Me & be,Me & be,0
+Ta giay,Me & be,Me & be,0
+Cham soc be,Me & be,Me & be,0
+Do uong co con,,Do uong co con,1
+Bia,Do uong co con,Do uong co con,0
+Rou,Do uong co con,Do uong co con,0
+Tap hoa & Do an vat,,Tap hoa & Do an vat,1
+Do an vat,Tap hoa & Do an vat,Tap hoa & Do an vat,0
+Hat & qua kho,Tap hoa & Do an vat,Tap hoa & Do an vat,0
+Gia vi mang theo,Tap hoa & Do an vat,Tap hoa & Do an vat,0
+Banh keo & Do an vat,,Banh keo & Do an vat,1
+Banh keo,Banh keo & Do an vat,Banh keo & Do an vat,0
+Banh quy,Banh keo & Do an vat,Banh keo & Do an vat,0
+Socola,Banh keo & Do an vat,Banh keo & Do an vat,0
+Snack,Banh keo & Do an vat,Banh keo & Do an vat,0

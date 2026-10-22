@@ -47,6 +47,12 @@ const MASKERS = {
   // CRM Sales Pipeline: CrmLead.mobileNo là cùng dạng PII với phone (chỉ model này
   // dùng tên field mobileNo → thêm vào không ảnh hưởng model nào khác).
   mobileNo: maskPhone,
+  // PRM: lượt giới thiệu lưu SĐT/email dưới tên referredPhone/referredEmail.
+  // response.js mask tự động qua maskPII nên phải đăng ký cả hai key này,
+  // nếu không CASHIER xem list referral sẽ thấy full SĐT trong khi xem Customer
+  // thì bị mask — lộ PII không nhất quán.
+  referredPhone: maskPhone,
+  referredEmail: maskEmail,
   email: maskEmail,
   taxCode: maskTaxCode,
   address: maskAddress,
