@@ -60,6 +60,9 @@ function jestLikeMock() {
 }
 
 const prisma = require("../src/config/prisma");
+const { assertLocalDb } = require("./lib/assert-local-db");
+assertLocalDb("smoke-crm-phase4-send");
+const { captureBaseline, verifyTeardown } = require("./lib/teardown");
 const { runWithTenant } = require("../src/config/tenantContext");
 const campaignsService = require("../src/modules/crm/campaigns.service");
 const tracking = require("../src/modules/crm/campaign-tracking.service");
@@ -92,14 +95,29 @@ const cleanup = async () => {
   await del("customerCampaign", () => prisma.customerCampaign.deleteMany({ where: { name: { startsWith: TAG } } }));
   if (created.segment) await del("customerSegment", () => prisma.customerSegment.delete({ where: { id: created.segment } }).then(() => ({})));
   if (created.customers.length) await del("customer", () => prisma.customer.deleteMany({ where: { id: { in: created.customers } } }));
+  // `campaigns.service` ghi audit log khi tạo/đổi chiến dịch. Không có FK tới
+  // `tenants` ⇒ xoá tenant xong thì log thành MỒ CÔI-TENANT (đo được 2 dòng
+  // mỗi lần chạy). Xoá TRƯỚC tenant.
+  if (created.tenant) await del("auditLog", () => prisma.auditLog.deleteMany({ where: { tenantId: created.tenant } }).then(() => ({})));
   if (created.users.length) await del("user", () => prisma.user.deleteMany({ where: { id: { in: created.users } } }));
   if (created.tenant) await del("tenant", () => prisma.tenant.delete({ where: { id: created.tenant } }).then(() => ({})));
   const left = await prisma.tenant.count({ where: { slug: { startsWith: TAG } } });
   if (left) { fail += 1; console.log(`  FAIL còn ${left} tenant sót`); }
   else { pass += 1; console.log("  OK   dọn dẹp sạch"); }
+
+  // Verify dùng chung: bắt cả bảng ngoài danh sách trên bị rò, và bắt
+  // mồ côi-tenant tăng thêm so với baseline lúc bắt đầu.
+  try {
+    await verifyTeardown(created.tenant ? [created.tenant] : [], prisma);
+  } catch (e) {
+    fail += 1;
+    console.log(`  FAIL ${e.message}`);
+  }
 };
 
 (async () => {
+  // Baseline mồ côi-tenant TRƯỚC khi seed (xem scripts/lib/teardown.js).
+  await captureBaseline(prisma);
   section("1. Chuẩn bị: tenant, user, khách hàng, segment");
   const tenant = await prisma.tenant.create({ data: { name: `${TAG}`, slug: TAG, isActive: true } });
   created.tenant = tenant.id;

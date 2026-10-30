@@ -85,6 +85,14 @@ router.post("/:id/approve", authorize("ADMIN", "MANAGER"), async (req, res, next
   }
 });
 
+router.post("/:id/order", authorize("ADMIN", "MANAGER", "WAREHOUSE"), async (req, res, next) => {
+  try {
+    success(res, await purchaseService.order(req.params.id, req.user.id), "Đã gửi NCC");
+  } catch (e) {
+    next(e);
+  }
+});
+
 router.post("/:id/receive", authorize("ADMIN", "MANAGER", "WAREHOUSE"), async (req, res, next) => {
   try {
     success(res, await purchaseService.receive(req.params.id, req.user.id), "Đã nhập kho");

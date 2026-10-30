@@ -13,8 +13,23 @@
  */
 
 const { queryModel, startPythonProcess } = require('./agent.llm');
-const { HANDLERS, resolveIntent, extractParams } = require('./db-agent.service');
+const { HANDLERS, resolveIntent, extractParams, isWriteTool } = require('./db-agent.service');
 const logger = require('../../utils/logger');
+
+/**
+ * Endpoint này là READ-ONLY. Write tool bị chặn ở đây (service) chứ không chỉ ở
+ * route, vì `chat()` là hàm được require ở nhiều nơi — chặn ở route là chặn hụt.
+ *
+ * LLM tự chọn tool, nên không thể tin prompt nói "chọn tool phù hợp": `create_po`
+ * là một tool hợp lệ trong danh mục và LLM hoàn toàn có thể chọn nó khi người
+ * dùng hỏi "tạo đơn nhập cho tôi". Đường hợp lệ cho hành động ghi là
+ * `POST /api/agent/chat` (tool nhận diện chủ động + human-gate).
+ */
+const WRITE_TOOL_REFUSAL = (tool) => ({
+  success: false,
+  message: `Thao tác "${tool}" là hành động ghi dữ liệu và không được phép qua đường tra cứu ngôn ngữ tự nhiên. ` +
+    `Vui lòng dùng POST /api/agent/chat — thao tác đó sẽ đi qua human-gate và cần người duyệt.`,
+});
 
 const TOOL_DESCRIPTIONS = [
   { name: 'search_products', desc: 'Tra cứu sản phẩm', params: 'search (từ khóa), categoryId (danh mục), minPrice, maxPrice, limit, sortBy (price/name/createdAt), sortOrder (asc/desc)' },
@@ -43,50 +58,78 @@ const TOOL_DESCRIPTIONS = [
   { name: 'search_purchase_invoices', desc: 'Tra cứu hóa đơn NCC + 3-way matching', params: 'matchStatus (PENDING/MATCHED/VARIANCE_HOLD/APPROVED_OVERRIDE), limit' },
   { name: 'search_vendor_performance', desc: 'Hiệu suất nhà cung cấp (Kraljic, OTIF, defect, grade)', params: 'limit' },
 
-  // Write tools — HÀNH ĐỘNG (cần xác nhận human-gate)
-  { name: 'create_order', desc: 'Tạo đơn hàng mới', params: 'customerName (tên KH), customerPhone (SĐT KH), items (mảng [{productName, quantity, price}]), paymentMethod (CASH/BANK_TRANSFER/CARD), note (ghi chú)' },
-  { name: 'create_po', desc: 'Tạo đơn nhập hàng mới', params: 'vendorName (tên NCC), items (mảng [{productName, quantity, unitCost}]), note (ghi chú), expectedAt (ngày dự kiến nhận)' },
-  { name: 'send_reminder', desc: 'Gửi nhắc nợ cho khách hàng', params: 'customerName (tên KH), debtId (ID công nợ), message (nội dung nhắc)' },
+  // PRM tools — ĐỐI TÁC ĐẦU RA (giới thiệu khách, hoa hồng). KHÁC search_vendors và
+  // search_vendor_performance ở trên, đó là nhà cung cấp đầu vào phía SRM.
+  { name: 'search_partner_performance', desc: 'Xếp hạng đối tác theo lợi nhuận ròng (giá trị khách − hoa hồng)', params: 'sortBy (profit/revenue/conversion/referrals), metric (predicted/actual), limit' },
+  { name: 'search_partner_referrals', desc: 'Chi tiết một đối tác: khách đã chuyển đổi, CLV từng khách, phễu giới thiệu', params: 'partnerId hoặc partnerCode (mã ĐT-YYYYMM-XXXX)' },
 ];
+// Write tools (create_order / create_po / send_reminder) CỐ TÌNH không nằm trong
+// danh mục này: endpoint này read-only, mọi write tool đều bị từ chối ở `chat()`.
+// Quảng bá tool rồi từ chối nó chỉ tốn thêm một vòng LLM để trả lời "không".
 
+/**
+ * Dựng prompt liệt kê công cụ cho LLM chọn.
+ *
+ * ============================================================================
+ * VÌ SAO PROMPT NÀY VIẾT CÓ DẤU
+ * Bản đầu tiên viết không dấu ("Ban la tro ly ERP Aduu chuyen mon"). Lý do có
+ * lẽ là e người đọc file gặp lỗi encoding — nhưng tệp này vốn đã chứa tiếng
+ * Việt có dấu ở ngay các quy tắc phía dưới, nên không có lý do kỹ thuật nào cả.
+ *
+ * Mất dấu làm khó đọc với người, và làm mô hình khó phân biệt: "tra cuu hoa don"
+ * (tra cứu hóa đơn) và "tra cuu hoa dan" (tra cứu hòa dan) trở thành hai chuỗi gần
+ * như giống nhau. Các mô hình ngôn ngữ hiện đại đọc tiếng Việt có dấu không khó
+ * hơn — có dấu còn giúp tách từ tốt hơn vì dấu là ranh giới âm vị.
+ *
+ * Lưu ý: câu hỏi của người dùng có dấu hay không đều chạy được. Phía `db-agent.js`
+ * đã chuẩn hoá bỏ dấu CẢ HAI vế khi so khớp (xem `resolveIntent`), nên prompt
+ * viết có dấu ở đây không ảnh hưởng gì tới việc người dùng gõ không dấu.
+ * ============================================================================
+ */
 function buildToolPrompt(query) {
-  return `Ban la tro ly ERP Aduu chuyen mon. Nhiem vu: chon cong cu (tool) phu hop nhat va trich xuat tham so tu câu hỏi.
+  return `Bạn là trợ lý ERP Aduu chuyên môn. Nhiệm vụ: chọn công cụ (tool) phù hợp nhất và trích xuất tham số từ câu hỏi.
 
-Cac cong cu:
-- search_products: Tim kiem sản phẩm. Tham so: search (ten/SKU), categoryId, minPrice, maxPrice, limit, sortBy (price/name/createdAt), sortOrder (asc/desc)
-- search_orders: Tim kiem đơn hàng. Tham so: status (PENDING/CONFIRMED/SHIPPING/COMPLETED/CANCELLED), paymentStatus (UNPAID/PAID/PARTIAL), period (today/this_month/last_month/this_year), customerId, minTotal, maxTotal, limit
-- search_customers: Tim kiem khách hàng. Tham so: search (ten/SDT/email), tier, hasDebt (true), minSpent, sortBy (totalSpent/createdAt), limit
-- search_inventory: Tra cuu tồn kho. Tham so: search (ten sản phẩm), warehouseId, lowStock (true: chi lay hang sắp hết), productId, limit
-- get_revenue: Thong ke doanh thu. Tham so: period (today/this_month/last_month/this_year), status
-- search_finance: Tra cuu tai chinh. Tham so: type (expenses/journal/accounts), period, limit
-- search_hr: Tra cuu nhan su. Tham so: type (payroll/attendance), search, period, limit
-- search_production: Tra cuu san xuat. Tham so: type (work_orders/bom/lots), status, expiringSoon(true), limit
-- search_debts: Tra cuu công nợ. Tham so: customerId, status, type (RECEIVABLE/PAYABLE), limit
-- search_vendors: Tra cuu nha cung cap. Tham so: search (ten/MST), limit
-- search_purchase_orders: Tra cuu don nhập hàng (PO). Tham so: status, vendorId, period, limit
-- search_promotions: Tra cuu khuyen mai. Tham so: status, type, limit
-- search_invoices: Tra cuu hoa don. Tham so: period, limit
-- search_churn_alerts: Tra cuu canh bao churn/khach san mat. Tham so: status (PENDING/TRIGGERED/RETAINED/LOST), riskLevel (LOW/MEDIUM/HIGH/CRITICAL), limit
-- search_customer_rfm: Phan khuc RFM/CLV khach hang. Tham so: segment (Champions/Loyal/Potential/At-Risk/Hibernating), tier, hasDebt, limit
-- search_leads: Tra cuu lead CRM/webhook. Tham so: leadStatus (NEW/CONTACTED/QUALIFIED/DEAD), limit
-- search_grn: Tra cuu phieu nhap kho GRN. Tham so: status (DRAFT/QC_PENDING/QC_DONE/POSTED), limit
-- search_purchase_invoices: Tra cuu hoa don NCC / doi soat 3-way. Tham so: matchStatus (PENDING/MATCHED/VARIANCE_HOLD), limit
-- search_vendor_performance: Hieu suat nha cung cap (Kraljic/OTIF/grade). Tham so: limit
-- get_dashboard: Dashboard tong quan kinh doanh. (không can tham so)
+Các công cụ:
+- search_products: Tìm kiếm sản phẩm. Tham số: search (tên/SKU), categoryId, minPrice, maxPrice, limit, sortBy (price/name/createdAt), sortOrder (asc/desc)
+- search_orders: Tìm kiếm đơn hàng. Tham số: status (PENDING/CONFIRMED/SHIPPING/COMPLETED/CANCELLED), paymentStatus (UNPAID/PAID/PARTIAL), period (today/this_month/last_month/this_year), customerId, minTotal, maxTotal, limit
+- search_customers: Tìm kiếm khách hàng. Tham số: search (tên/SĐT/email), tier, hasDebt (true), minSpent, sortBy (totalSpent/createdAt), limit
+- search_inventory: Tra cứu tồn kho. Tham số: search (tên sản phẩm), warehouseId, lowStock (true: chỉ lấy hàng sắp hết), productId, limit
+- get_revenue: Thống kê doanh thu. Tham số: period (today/this_month/last_month/this_year), status
+- search_finance: Tra cứu tài chính. Tham số: type (expenses/journal/accounts), period, limit
+- search_hr: Tra cứu nhân sự. Tham số: type (payroll/attendance), search, period, limit
+- search_production: Tra cứu sản xuất. Tham số: type (work_orders/bom/lots), status, expiringSoon (true), limit
+- search_debts: Tra cứu công nợ. Tham số: customerId, status, type (RECEIVABLE/PAYABLE), limit
+- search_vendors: Tra cứu nhà cung cấp. Tham số: search (tên/MST), limit
+- search_purchase_orders: Tra cứu đơn nhập hàng (PO). Tham số: status, vendorId, period, limit
+- search_promotions: Tra cứu khuyến mãi. Tham số: status, type, limit
+- search_invoices: Tra cứu hóa đơn BÁN RA. Tham số: period, limit
+- search_churn_alerts: Tra cứu cảnh báo churn / khách sắp mất. Tham số: status (PENDING/TRIGGERED/RETAINED/LOST), riskLevel (LOW/MEDIUM/HIGH/CRITICAL), limit
+- search_customer_rfm: Phân khúc RFM/CLV khách hàng. Tham số: segment (Champions/Loyal/Potential/At-Risk/Hibernating), tier, hasDebt, limit
+- search_leads: Tra cứu lead CRM/webhook. Tham số: leadStatus (NEW/CONTACTED/QUALIFIED/DEAD), limit
+- search_grn: Tra cứu phiếu nhận kho GRN. Tham số: status (DRAFT/QC_PENDING/QC_DONE/POSTED), limit
+- search_purchase_invoices: Tra cứu hóa đơn NCC / đối soát 3-way. Tham số: matchStatus (PENDING/MATCHED/VARIANCE_HOLD), limit
+- search_vendor_performance: Hiệu suất nhà cung cấp ĐẦU VÀO (Kraljic/OTIF/grade). Tham số: limit
+- search_partner_performance: Xếp hạng đối tác ĐẦU RA theo lợi nhuận ròng (giá trị khách − hoa hồng). Dùng khi hỏi về đối tác, affiliate, người giới thiệu, hoa hồng. Tham số: sortBy (profit/revenue/conversion/referrals), metric (predicted/actual), limit
+- search_partner_referrals: Chi tiết MỘT đối tác (khách đã chuyển đổi, CLV từng khách, phễu giới thiệu). Dùng khi câu hỏi có mã ĐT-YYYYMM-XXXX. Tham số: partnerCode hoặc partnerId
+- get_dashboard: Dashboard tổng quan kinh doanh. (không cần tham số)
 
-- create_order: TAO đơn hàng moi (can ADMIN/MANAGER). Tham so: customerName, customerPhone, items (mang [{productName, quantity, price}]), paymentMethod (CASH/BANK_TRANSFER/CARD), note
-- create_po: TAO don nhập hàng moi (can ADMIN/MANAGER). Tham so: vendorName, items (mang [{productName, quantity, unitCost}]), note, expectedAt
-- send_reminder: GUI nhắc nợ cho khach (can ADMIN/MANAGER). Tham so: customerName, debtId, message
+Quy tắc:
+1. Chọn công cụ phù hợp nhất với câu hỏi
+2. Trích xuất tham số từ câu hỏi (tên, thời gian, trạng thái, số lượng...)
+3. Nếu có "top N" hoặc "N mới nhất" → set limit = N
+4. Nếu có "tháng này/tuần này/hôm nay" → set period tương ứng
+5. Nếu có "kế toán", "sổ cái", "kết chuyển", "khấu hao", "thuế" → dùng search_finance
+6. Nếu có "công thức", "cách tính" → cố gắng tìm công cụ liên quan
+7. PHÂN BIỆT HAI PHÍA ĐẦU VÀO: nhà cung cấp (mua hàng, đầu vào) và đối tác (giới thiệu khách, đầu ra).
+   "Nhà cung cấp/NCC/Kraljic/OTIF" → phía nhà cung cấp. "Đối tác/affiliate/giới thiệu/hoa hồng/ĐT-" → phía đối tác.
+8. PHÂN BIỆT HAI LOẠI HÓA ĐƠN: hóa đơn bán ra (search_invoices) và hóa đơn mua của nhà cung cấp (search_purchase_invoices). Câu có "NCC" hoặc "mua" là hóa đơn mua.
+9. Câu hỏi có dấu hay không dấu đều được, kể cả mã ĐT-202610-0001 hay dt-202610-0001.
 
-Quy tac:
-1. Chon cong cu phu hop nhat voi câu hỏi
-2. Trich xuat tham so tu câu hỏi (ten, thời gian, trang thai, số lượng...)
-3. Neu co "top N" hoac "N moi nhat" → set limit = N
-4. Neu co "thang nay/tuan nay/hom nay" → set period tuong ung
-5. Neu co "ke toan", "sổ cái", "kết chuyển", "khau hao", "thue" → dung search_finance
-6. Neu co "cong thuc", "cach tinh" → co gang tim tool lien quan
+CHỈ ĐƯỢC CHỌN CÔNG CỤ TRA CỨU Ở TRÊN. Endpoint này không tạo và không sửa
+dữ liệu. Nếu câu hỏi yêu cầu tạo đơn / tạo đơn nhập / gửi nhắc nợ, hãy trả
+{"tool":"unknown","params":{}} — thao tác đó đi qua kênh khác có human-gate.
 
-Tra ve JSON DUY NHAT dang: { "tool": "ten_tool", "params": { ... } }
+Trả về JSON DUY NHẤT dạng: { "tool": "tên_tool", "params": { ... } }
 KHONG them text nao khac ngoai JSON.
 
 Câu hỏi: "${query}"`;
@@ -165,6 +208,12 @@ async function chat(query) {
       };
     }
     intent = { tool, params: extractParams(query, tool) };
+  }
+
+  // Chặn write tool TRƯỚC khi log và trước khi execute.
+  if (isWriteTool(intent.tool)) {
+    logger.warn(`[LLM-Chat] Từ chối write tool "${intent.tool}" trên đường tra cứu NL`);
+    return WRITE_TOOL_REFUSAL(intent.tool);
   }
 
   // Step 3: Execute tool

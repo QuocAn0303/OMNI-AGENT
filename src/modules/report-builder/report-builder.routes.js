@@ -20,7 +20,7 @@ const { requireModule } = require("../../middleware/plan.middleware");
 const svc = require("./report-builder.service");
 const mgr = ["ADMIN", "MANAGER"];
 
-router.use(requireModule("report-builder"));
+router.use(authenticate, requireModule("report-builder"));
 
 router.get("/tables", authenticate, (req, res) => res.json({ success: true, data: svc.getTables() }));
 

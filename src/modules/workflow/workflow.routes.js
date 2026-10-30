@@ -6,7 +6,7 @@ const { sendSuccess } = require("../../utils/response");
 const { createWorkflowSchema, updateWorkflowSchema, decideSchema } = require("./workflow.validation");
 const mgr = ["ADMIN", "MANAGER"];
 
-router.use(requireModule("workflows"));
+router.use(authenticate, requireModule("workflows"));
 
 router.get("/", authenticate, authorize(...mgr), async (req, res, next) => {
   try { sendSuccess(res, await svc.listWorkflows()); } catch (e) { next(e); }

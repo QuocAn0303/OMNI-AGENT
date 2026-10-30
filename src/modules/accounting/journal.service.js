@@ -29,14 +29,43 @@ const auditService = require("../audit/audit.service");
 const toNum = (v) => Number(v || 0);
 const round2 = (n) => Math.round((Number(n) + Number.EPSILON) * 100) / 100;
 
+/**
+ * Sinh mã bút toán `JE-YYYYMMDD-XXXX`.
+ *
+ * Dùng SỐ THỨ TỰ LỚN NHẤT trong ngày, KHÔNG dùng `count + 1`.
+ * `count + 1` hỏng khi chuỗi có lỗ hổng — mà chuỗi có lỗ hổng là chuyện thường:
+ * bút toán bị đảo/xoá, kỳ bị dọn khi chạy lại seed, tenant bị xoá. Khi đó mã mới
+ * đâm đúng vào một mã đã tồn tại, `create` ném P2002, và `postEntry` chỉ bắt
+ * được va chạm theo `(source, sourceId, operation)` chứ không bắt va chạm `entryCode`
+ * ⇒ MỌI bút toán còn lại trong ngày đó đều thất bại.
+ * Đã xảy ra thật 2026-10-12 sau khi script dọn dẹp xoá bút toán: 2 GRN không ghi
+ * được sổ cái vì lý do này.
+ *
+ * `MAX(suffix)` đọc đúng số đã dùng gần nhất nên chỉ tăng, không bao giờ lùi.
+ *
+ * QUAN TRỌNG — đọc KHÔNG qua tenant extension:
+ * `JournalEntry.entryCode` có ràng buộc `@unique` TOÀN CỤC, nhưng `findFirst` của
+ * extension chỉ thấy dòng của tenant hiện tại. Hai tenant cùng ghi sẽ cùng thấy
+ * `max` giống nhau và sinh ra CÙNG một mã ⇒ P2002. Đã xảy ra thật: tenant demo max
+ * `JE-20261012-0039` trong khi 18 dòng `tenantId = NULL` đã chiếm `0040..0057`
+ * ⇒ mọi bút toán của tenant demo trong ngày đó đều hỏng.
+ * Vì vậy đọc bằng raw SQL (raw không bị extension lọc). Đây là bộ đếm ký ứu dụng
+ * của hệ thống, không phải dữ liệu nghiệp vụ của tenant, nên đọc toàn cục là đúng.
+ */
 const generateEntryCode = async (tx = prisma) => {
   const today = new Date().toISOString().slice(0, 10).replace(/-/g, "");
-  const start = new Date();
-  start.setHours(0, 0, 0, 0);
-  const count = await tx.journalEntry.count({
-    where: { createdAt: { gte: start } },
-  });
-  return `JE-${today}-${String(count + 1).padStart(4, "0")}`;
+  const prefix = `JE-${today}-`;
+  // `journalEntry` được map sang bảng `journal_entries` và `entryCode` sang
+  // `"entryCode"`. `$queryRaw` (không phải Unsafe) đi qua extension nên vẫn bị lọc
+  // theo tenant ⇒ phải dùng `$queryRawUnsafe` cho truy vấn bộ đếm này.
+  const rows = await tx.$queryRawUnsafe(
+    `SELECT "entryCode" FROM "journal_entries"
+      WHERE "entryCode" LIKE $1
+      ORDER BY "entryCode" DESC LIMIT 1`,
+    `${prefix}%`,
+  );
+  const lastSeq = rows?.[0]?.entryCode ? Number(String(rows[0].entryCode).slice(prefix.length)) || 0 : 0;
+  return `${prefix}${String(lastSeq + 1).padStart(4, "0")}`;
 };
 
 // Helper: thực thi `fn(code)` với mã được sinh, retry khi gặp unique violation P2002.
@@ -430,6 +459,8 @@ const getEntryById = async (id) => {
 };
 
 module.exports = {
+  // Xuất ra để test khoá hành vi chống lỗ hổng chuỗi mã (xem chú thích hàm).
+  generateEntryCode,
   postEntry,
   reverseEntry,
   getAccountBalance,

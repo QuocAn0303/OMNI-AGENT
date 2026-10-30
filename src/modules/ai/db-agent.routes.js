@@ -3,8 +3,8 @@
  * 
  * Tổng quan:
  * - Cung cấp endpoint chat để truy vấn database bằng ngôn ngữ tự nhiên
- * - Yêu cầu xác thực JWT (authenticate)
- * - Gọi db-agent.service để xử lý intent và thực thi Prisma query
+ * - Yêu cầu xác thực JWT (authenticate) + phân quyền (authorize)
+ * - READ-ONLY: write tool bị từ chối ở service `chat()` (xem WRITE_TOOL_REFUSAL)
  * 
  * Endpoints:
  * - POST /query: Nhận câu hỏi NL, trả về kết quả database + response text
@@ -12,14 +12,29 @@
  */
 
 const express = require('express');
-const { authenticate } = require('../../middleware/auth.middleware');
-const { HANDLERS, processQuery, generateResponse } = require('./db-agent.service');
+const { authenticate, authorize } = require('../../middleware/auth.middleware');
+const { requireModule } = require('../../middleware/plan.middleware');
+const { HANDLERS, processQuery, generateResponse, isWriteTool } = require('./db-agent.service');
 const { chat } = require('./llm-chat.service');
 
-const router = express.Router();
-router.use(authenticate);
+/**
+ * Endpoint này trả về dữ liệu nhạy cảm (công nợ, sổ cái, hồ sơ KH) cho bất kỳ
+ * câu hỏi NL nào. Trước đây nó chỉ có `authenticate` — role CASHIER/WAREHOUSE
+ * đăng nhập là tra được. Danh sách role khớp với SENSITIVE_ALLOWED_ROLES ở
+ * agent.routes.js để hai đường chat không lệch nhau.
+ */
+const READ_ROLES = [
+  'SUPER_OMEGA_ULTRA_ADMIN',
+  'SUPER_ADMIN',
+  'ADMIN',
+  'MANAGER',
+  'ACCOUNTANT',
+];
 
-router.post('/query', async (req, res, next) => {
+const router = express.Router();
+router.use(authenticate, requireModule("ai"));
+
+router.post('/query', authorize(...READ_ROLES), async (req, res, next) => {
   try {
     const { query, useLlm = true } = req.body;
     if (!query || !query.trim()) {
@@ -46,10 +61,13 @@ router.post('/query', async (req, res, next) => {
   }
 });
 
-router.get('/tools', (req, res) => {
+router.get('/tools', authorize(...READ_ROLES), (req, res) => {
   const tools = Object.keys(HANDLERS).map(name => ({
     name,
     description: getToolDescription(name),
+    // Endpoint này read-only: đánh dấu tool ghi để client không hiển thị
+    // chúng như thể gọi được ở đây.
+    executableHere: !isWriteTool(name),
   }));
   res.json({ success: true, data: tools });
 });

@@ -40,7 +40,7 @@ const upload = multer({
 });
 const ok = (res, data) => res.json({ success: true, data });
 
-router.use(requireModule("bank-reco"));
+router.use(authenticate, requireModule("bank-reco"));
 
 // GET /api/bank-reco/bank-accounts — danh sách TK ngân hàng để chọn khi import sao kê
 // L9: thông tin TK ngân hàng là dữ liệu tài chính nhạy cảm — chỉ quản lý/kế toán

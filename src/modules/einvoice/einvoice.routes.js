@@ -88,7 +88,7 @@ const { requireModule } = require("../../middleware/plan.middleware");
 const { success } = require("../../utils/response");
 const svc = require("./einvoice.service");
 
-router.use(requireModule("einvoice"));
+router.use(authenticate, requireModule("einvoice"));
 
 // GET /api/einvoice - danh sách HĐĐT
 router.get("/", authenticate, authorize("ADMIN", "MANAGER", "ACCOUNTANT"), async (req, res, next) => {

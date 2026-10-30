@@ -17,6 +17,11 @@
 const prisma = require('../../config/prisma');
 const logger = require('../../utils/logger');
 const { buildReminderGate, createGate } = require('./agent.humangate');
+// PRM: hai tool tra cứu đối tác gọi thẳng service để dùng chung công thức lợi nhuận
+// ròng. Nếu viết truy vấn riêng ở đây thì sẽ có hai nơi tính tiền và một nơi sai.
+const roiService = require('../partners/roi.service');
+const referralService = require('../partners/referral.service');
+const { stripDiacritics } = require('../../utils/vietnamese');
 
 // ─── HELPERS ───
 
@@ -63,6 +68,23 @@ function buildWhere(filters = {}, searchFields = [], extraKeys = []) {
 }
 
 // ─── TOOL HANDLERS ───
+
+/**
+ * Tool có TÁC DỤNG PHỤ (ghi dữ liệu). Danh sách này là nguồn duy nhất —
+ * mọi entrypoint phải hỏi ở đây trước khi execute, không tự liệt kê lại.
+ *
+ * Lý do tồn tại: `POST /api/db-agent/query` mặc định `useLlm=true`, LLM tự
+ * chọn tool rồi `chat()` gọi thẳng `HANDLERS[tool]` — không kiểm tra tool có
+ * phải write hay không. Trước khi có set này, CASHIER/WAREHOUSE đã đăng nhập
+ * gọi được create_order/create_po mà không cần quyền, không audit, không gate.
+ *
+ * Write tool KHÔNG được chạy ở bất kỳ đường chat NL nào. Đường hợp lệ duy nhất
+ * là tool nhận diện chủ động + human-gate: xem modules/ai/agent.routes.js.
+ */
+const WRITE_TOOLS = new Set(['create_order', 'create_po', 'send_reminder']);
+
+/** Tool có ghi dữ liệu hay không (dùng bởi route và service để chặn trước khi execute). */
+const isWriteTool = (tool) => WRITE_TOOLS.has(tool);
 
 const HANDLERS = {
 
@@ -517,6 +539,102 @@ const HANDLERS = {
     };
   },
 
+  // ════════════════ PRM TOOLS (đối tác đầu ra — hoa hồng, hiệu quả) ════════════════
+
+  /**
+   * Xếp hạng hiệu quả đối tác.
+   *
+   * Dùng lại `roi.service.js` thay vì tự viết truy vấn: công thức lợi nhuận ròng có
+   * ba chỗ phải chốt (CLV dự báo hay thực tế, hoa hồng theo tỷ lệ hay cố định, khách
+   * thiếu dữ liệu thì tính sao) và nếu có hai nơi tính thì chắc chắn một nơi sai.
+   *
+   * Cố tình KHÔNG trả tên và số điện thoại khách hàng. `roi.service.js` xếp hạng
+   * ở cấp đối tác, đây chỉ cần tên đối tác và số liệu — trả PII lên trợ lý sẽ phải
+   * qua cổng phê duyệt và làm nhiễu câu trả lời.
+   */
+  search_partner_performance: async (params = {}) => {
+    const SORT = { revenue: 'revenue', conversion: 'conversion', profit: 'profit', referrals: 'referrals' };
+    const { partners, totals, metricLabel } = await roiService.ranking({
+      metric: params.metric === 'actual' ? 'actual' : 'predicted',
+      sortBy: SORT[params.sortBy] || 'profit',
+      limit: Math.min(Number(params.limit) || 10, 50),
+    });
+    if (!partners.length) {
+      return { data: [], total: 0, summary: 'Chưa có đối tác nào trong hệ thống.', message: '' };
+    }
+    return {
+      data: partners,
+      total: partners.length,
+      summary:
+        `${partners.length} đối tác · đo theo ${metricLabel} · ` +
+        `${totals.converted}/${totals.referrals} lượt chuyển đổi ` +
+        `(${totals.overallConversionRate}%) · lợi nhuận ròng ${Number(totals.netProfit).toLocaleString()}đ ` +
+        `− hoa hồng ${Number(totals.commission).toLocaleString()}đ`,
+      message: partners.map(p =>
+        `#${p.rank} ${p.name} (${p.code}) — ${p.converted}/${p.referrals} khách chuyển đổi ` +
+        `(${p.conversionRate}%) — giá trị ${Number(p.predictedValue).toLocaleString()}đ ` +
+        `— hoa hồng ${Number(p.commission).toLocaleString()}đ — lợi nhuận ròng ${Number(p.netProfit).toLocaleString()}đ` +
+        (p.coverage < 100 ? ` [chỉ ${p.coverage}% khách đủ dữ liệu dự báo]` : '')
+      ).join('\n'),
+    };
+  },
+
+  /** Chi tiết một đối tác và phễu chuyển đổi của họ. */
+  search_partner_referrals: async (params = {}) => {
+    // Cho phép gọi bằng MÃ đối tác (`ĐT-202610-0001`) vì đó là thứ người dùng đọc
+    // trên báo cáo in ra, không phải UUID.
+    let partnerId = params.partnerId || null;
+    if (!partnerId && params.partnerCode) {
+      // So khớp không phân biệt hoa thường và không phân biệt có dấu: người dùng gõ
+      // "dt-202610-0001" (bàn phím không bật được dấu, hoặc chép lại từ báo cáo xuất
+      // Excel) vẫn phải ra đúng đối tác. So khớp chính xác byte sẽ trả "không tìm
+      // thấy" cho một đối tác có thật.
+      // Prefilter theo đuôi số để không nạp toàn bảng partners mỗi lần chat.
+      const wanted = stripDiacritics(String(params.partnerCode)).toLowerCase();
+      const digits = String(params.partnerCode).replace(/\D/g, '');
+      const tail = digits.length >= 4 ? digits.slice(-4) : digits;
+      const candidates = await prisma.partner.findMany({
+        where: tail ? { code: { contains: tail } } : {},
+        select: { id: true, code: true },
+        take: 50,
+      });
+      const byCode = candidates.find((p) => stripDiacritics(p.code).toLowerCase() === wanted);
+      if (!byCode) {
+        return {
+          data: [],
+          total: 0,
+          summary: `Không tìm thấy đối tác mã ${params.partnerCode}.`,
+          message: '',
+        };
+      }
+      partnerId = byCode.id;
+    }
+    if (!partnerId) {
+      return { data: [], total: 0, summary: 'Thiếu partnerId hoặc mã đối tác.', message: '' };
+    }
+    const [detail, funnelRow] = await Promise.all([
+      roiService.detail(partnerId),
+      referralService.funnel({ partnerId }),
+    ]);
+    const p = detail.partner;
+    const f = funnelRow[0];
+    return {
+      data: { partner: p, customers: detail.customers, funnel: f },
+      total: p.converted,
+      summary: `${p.name} (${p.code}) — ${p.converted}/${p.referrals} lượt chuyển đổi (${p.conversionRate}%)`,
+      message: [
+        `Đối tác ${p.name} — loại ${p.type} — hoa hồng ${p.commissionType === 'PERCENT_OF_CLV' ? p.commissionPercent + '%' : Number(p.fixedCommission).toLocaleString() + 'đ/khách'}`,
+        `Phễu: ${f ? f.funnel.map(s => `${s.stage} ${s.count}`).join(' → ') : 'chưa có dữ liệu lead'}${f && f.dead ? ` (loại ${f.dead})` : ''}`,
+        ...detail.customers.slice(0, 10).map(c =>
+          `• ${c.name || 'KH đã xoá mềm'}${c.rfmSegment ? ` [${c.rfmSegment}]` : ''} — ` +
+          `CLV dự báo ${c.predictedValue != null ? Number(c.predictedValue).toLocaleString() + 'đ' : 'chưa đủ dữ liệu'}` +
+          ` — đã chi ${Number(c.actualValue).toLocaleString()}đ` +
+          (c.churnProbability != null ? ` — churn ${Math.round(c.churnProbability * 100)}%` : '')
+        ),
+      ].join('\n'),
+    };
+  },
+
   search_grn: async (params = {}) => {
     const where = {};
     const VALID_GRN_STATUS = ['DRAFT', 'QC_PENDING', 'QC_DONE', 'POSTED'];
@@ -582,21 +700,87 @@ const HANDLERS = {
 
   // ════════════════ WRITE TOOLS ════════════════
 
+  /**
+   * Tra cứu khách hàng chịu lỗi dấu/chữ dư ("khách Bui Hoang", "Bui Hoang" vs
+   * "Bùi Hoàng", SĐT ở cuốicâu).
+   *
+   * Lượt 1: `contains`Insensitive + SĐT — phủ đại đa số (tên gõ đúng)).
+   * Lượt 2 (dự phòng): lấy tối đa 500 khách mới nhất rồi so sánh bằng
+   * `stripDiacritics` — người dùng gõ không dấu ("bui hoang") vẫn khớp tên có
+   * dấu ("Bùi Hoàng"). Giới hạn 500 vì tenant demo có thể có hàng nghìn khách,
+   * quét vô hạn là mất kiểm soát.
+   */
+  findCustomerByQuery: async (query) => {
+    const q = String(query || '').trim();
+    if (!q) return null;
+    const direct = await prisma.customer.findFirst({
+      where: {
+        isActive: true,
+        OR: [
+          { name: { contains: q, mode: 'insensitive' } },
+          { phone: { contains: q } },
+        ],
+      },
+    });
+    if (direct) return direct;
+    try {
+      const wanted = stripDiacritics(q).toLowerCase();
+      const candidates = await prisma.customer.findMany({
+        where: { isActive: true },
+        orderBy: { createdAt: 'desc' },
+        take: 500,
+      });
+      return (candidates || []).find((c) => stripDiacritics(c.name).toLowerCase().includes(wanted)) || null;
+    } catch (e) {
+      logger.error(`[DB Agent] Fallback tra cứu khách không dấu lỗi: ${e.message}`);
+      return null;
+    }
+  },
+
+  /**
+   * Tra cứu sản phẩm chịu lỗi dấu / gõ SKU.
+   *
+   * Lượt 1: `name contains`Insensitive — phủ đại đa số (tên gõ đúng).
+   * Lượt 2: `sku contains` — người dùng gõ mã thay vì tên.
+   * Lượt 3 (dự phòng): quét tối đa 500 sản phẩm mới nhất so sánh bằng
+   * `stripDiacritics` — "phan mai oishi loai 1" vẫn khớp "Phô mai Oishi
+   * Loại 1". Giới hạn 500 giống findCustomerByQuery để không quét vô hạn
+   * với tenant hàng nghìn SKU.
+   */
+  findProductByQuery: async (query) => {
+    const q = String(query || '').trim();
+    if (!q) return null;
+    const byName = await prisma.product.findFirst({
+      where: { isActive: true, name: { contains: q, mode: 'insensitive' } },
+    });
+    if (byName) return byName;
+    const bySku = await prisma.product.findFirst({
+      where: { isActive: true, sku: { contains: q, mode: 'insensitive' } },
+    });
+    if (bySku) return bySku;
+    try {
+      const wanted = stripDiacritics(q).toLowerCase();
+      const candidates = await prisma.product.findMany({
+        where: { isActive: true },
+        orderBy: { createdAt: 'desc' },
+        take: 500,
+      });
+      return (candidates || []).find((p) => stripDiacritics(p.name).toLowerCase().includes(wanted)) || null;
+    } catch (e) {
+      logger.error(`[DB Agent] Fallback tra cứu sản phẩm không dấu lỗi: ${e.message}`);
+      return null;
+    }
+  },
+
+
+
   create_order: async (params = {}, userId = null) => {
     const orderService = require('../orders/order.service');
 
     const customerQuery = params.customerName || params.customerPhone || '';
     let customerId = params.customerId;
     if (!customerId && customerQuery) {
-      const customer = await prisma.customer.findFirst({
-        where: {
-          isActive: true,
-          OR: [
-            { name: { contains: customerQuery, mode: 'insensitive' } },
-            { phone: { contains: customerQuery } },
-          ],
-        },
-      });
+      const customer = await HANDLERS.findCustomerByQuery(customerQuery);
       if (customer) customerId = customer.id;
       else return { data: null, total: 0, summary: `Không tìm thấy khách hàng "${customerQuery}". Vui lòng kiểm tra lại tên hoặc SĐT.`, message: '' };
     }
@@ -618,15 +802,23 @@ const HANDLERS = {
       if (pid) {
         product = await prisma.product.findUnique({ where: { id: pid } });
       } else if (name) {
-        product = await prisma.product.findFirst({ where: { name: { contains: name, mode: 'insensitive' }, isActive: true } });
+        // findProductByQuery: name contains → SKU → quét không dấu. Trước đây
+        // chỉ `name contains` nên "phan mai oishi loai 1" (không dấu) báo
+        // không tìm thấy dù sản phẩm tồn tại.
+        product = await HANDLERS.findProductByQuery(name);
       }
       if (!product) return { data: null, total: 0, summary: `Không tìm thấy sản phẩm "${name || pid}". Vui lòng kiểm tra lại.`, message: '' };
-      resolvedItems.push({ productId: product.id, quantity: parseInt(item.quantity) || 1, price: Number(item.price || product.price) });
+      // Giữ tên đã resolve để summary hiển thị TÊN thay vì UUID — `order.items`
+      // trả về từ orderService.create có thể thiếu include product (bug thật
+      // 17/10/2026: "1x efb21a2d-…" cho người dùng).
+      resolvedItems.push({ productId: product.id, productName: product.name || name || pid, quantity: parseInt(item.quantity) || 1, price: Number(item.price || product.price) });
     }
 
     const order = await orderService.create({
       customerId: customerId || null,
-      items: resolvedItems,
+      // orderService.create chỉ cần {productId, quantity, price} — không truyền
+      // productName (trường phụ chỉ để dựng summary) vào items.
+      items: resolvedItems.map((i) => ({ productId: i.productId, quantity: i.quantity, price: i.price })),
       paymentMethod: params.paymentMethod || 'CASH',
       status: params.status || 'PENDING',
       note: params.note || `[Tạo bởi AI Agent] ${params.note || ''}`,
@@ -636,7 +828,7 @@ const HANDLERS = {
     return {
       data: order,
       total: 1,
-      summary: `✅ Đã tạo đơn hàng ${order.orderCode} thành công!\nTổng tiền: ${Number(order.total).toLocaleString()}đ\nSản phẩm: ${resolvedItems.map(i => `${i.quantity}x ${order.items?.find(oi => oi.productId === i.productId)?.product?.name || i.productId}`).join(', ')}`,
+      summary: `✅ Đã tạo đơn hàng ${order.orderCode} thành công!\nTổng tiền: ${Number(order.total).toLocaleString()}đ\nSản phẩm: ${resolvedItems.map(i => `${i.quantity}x ${i.productName || i.productId}`).join(', ')}`,
       message: '',
     };
   },
@@ -705,7 +897,8 @@ const HANDLERS = {
       if (pid) {
         product = await prisma.product.findUnique({ where: { id: pid } });
       } else if (name) {
-        product = await prisma.product.findFirst({ where: { name: { contains: name, mode: 'insensitive' }, isActive: true } });
+        // findProductByQuery: name contains → SKU → quét không dấu — như create_order
+        product = await HANDLERS.findProductByQuery(name);
       }
       if (!product) return { data: null, total: 0, summary: `Không tìm thấy sản phẩm "${name || pid}".`, message: '' };
       resolvedItems.push({
@@ -749,14 +942,17 @@ const HANDLERS = {
     if (debtId) {
       debt = await prisma.debt.findUnique({ where: { id: debtId }, include: { customer: { select: { name: true, phone: true } } } });
     } else if (customerQuery) {
-      debt = await prisma.debt.findFirst({
-        where: {
-          customer: { name: { contains: customerQuery, mode: 'insensitive' }, isActive: true },
-          status: { in: ['OPEN', 'PARTIAL', 'OVERDUE'] },
-        },
-        orderBy: { dueDate: 'asc' },
-        include: { customer: { select: { name: true, phone: true } } },
-      });
+      // Tra khách qua findCustomerByQuery (chịu lỗi dấu) rồi tìm công nợ theo
+      // customerId — trước đây tra `customer.name contains customerQuery`, câu
+      // có chữ dư ("nợ", "khách ...") làm trượt và báo sai "không có công nợ".
+      const customer = await HANDLERS.findCustomerByQuery(customerQuery);
+      if (customer) {
+        debt = await prisma.debt.findFirst({
+          where: { customerId: customer.id, status: { in: ['OPEN', 'PARTIAL', 'OVERDUE'] } },
+          orderBy: { dueDate: 'asc' },
+          include: { customer: { select: { name: true, phone: true } } },
+        });
+      }
     }
 
     if (!debt) {
@@ -828,14 +1024,48 @@ const INTENT_MAP = [
   { patterns: ['rfm', 'clv', 'phân khúc khách', 'giá trị vòng đời', 'churn probability'], tool: 'search_customer_rfm' },
   { patterns: ['lead', 'khách tiềm năng', 'nguồn khách', 'webhook lead'], tool: 'search_leads' },
   { patterns: ['phiếu nhập kho', 'grn', 'nhận hàng po', 'kiểm hàng'], tool: 'search_grn' },
-  { patterns: ['hóa đơn mua', 'đối soát hóa đơn', 'purchase invoice', '3-way', 'dung sai'], tool: 'search_purchase_invoices' },
+  // Thêm 'hóa đơn ncc' vì "hóa đơn NCC" là thứ mua hàng, không phải hóa đơn bán ra.
+  // Không có nó thì câu này rơi xuống `search_invoices` (hóa đơn bán) vì chuỗi "hóa đơn"
+  // khớp trước — cùng bài toán chuỗi-con với "hóa **đơn**" bị bắt bởi nhóm đơn bán.
+  { patterns: ['hóa đơn mua', 'hóa đơn ncc', 'hóa đơn nhập', 'đối soát hóa đơn', 'purchase invoice', '3-way', 'dung sai'], tool: 'search_purchase_invoices' },
   { patterns: ['kraljic', 'hiệu suất nhà cung cấp', 'scorecard', 'xếp hạng ncc', 'otif'], tool: 'search_vendor_performance' },
+  // PRM — phải đặt TRƯỚC pattern của khách hàng và của nhà cung cấp, vì câu hỏi về
+  // đối tác hay chứa từ khoá chung ("lợi nhuận", "người giới thiệu"). Đặt sau sẽ bị
+  // pattern phía trên bắt mất và trả về nhầm phân hệ.
+  //
+  // `resolveIntent` khớp bằng `lower.includes(pattern)` trên danh sách này THEO THỨ
+  // TỰ, nên chỉ pattern đầu tiên khớp mới thắng. Vì vậy nhóm đối tác gộp chung một
+  // hàng, và tool chi tiết hơn (`search_partner_referrals`) được chọn khi câu hỏi
+  // chỉ rõ đang hỏi về MỘT đối tác — kiểm bằng `tool` của pattern trước đó.
+  { patterns: ['đối tác', 'doi tac', 'partner', 'affiliate', 'hoa hồng', 'người giới thiệu',
+    // KHÔNG dùng `\b` trước `đ`. Trong regex, `\b` là ranh giới dựa trên `\w` =
+    // [A-Za-z0-9_], mà `đ` (U+0111) không thuộc tập đó ⇒ `\bđ` không bao giờ khớp.
+    // Ranh giới thật đã có sẵn ở đầu chuỗi và sau `-\d{4}` là khoảng trắng.
+    'lượt giới thiệu', 'phễu giới thiệu', /đt-\d{6}-\d{4}\b/i],
+    tool: 'search_partner_performance' },
+  // Nhóm đối tác PHẢI đứng trước nhóm nhà cung cấp và nhóm khách hàng (đã đặt ở trên),
+  // vì `resolveIntent` trả về hàng khớp đầu tiên. `search_partner_referrals` được
+  // `resolvePartnerIntent` chọn riêng khi câu hỏi có mã đối tác — xem hàm đó.
 
   { patterns: ['work order', 'lệnh sản xuất', 'lệnh sx'], tool: 'search_production' },
   { patterns: ['bom', 'định mức', 'định mức nvl', 'định mức nguyên vật liệu'], tool: 'search_production' },
   { patterns: ['lô hàng', 'lô sắp hết', 'hạn sử dụng', 'hsd', 'gần hết hạn'], tool: 'search_production' },
-  { patterns: ['đơn nhập', 'po', 'purchase order', 'nhập hàng', 'mua hàng'], tool: 'search_purchase_orders' },
-  { patterns: ['đơn hàng', 'bán hàng', 'sale', 'đơn', 'order'], tool: 'search_orders' },
+  { patterns: ['đơn nhập', 'purchase order', 'nhập hàng', 'mua hàng'], tool: 'search_purchase_orders' },
+  // `resolveIntent` dùng `lower.includes(pattern)` — chuỗi TRẦN rất dễ khớp nhầm:
+  //   'po'  khớp "áo **po**lo", "**po**stcard"  ⇒ tra đơn nhập khi khách hỏi sản phẩm
+  //   'đơn' khớp "**đơn** giá", "đơn vị"       ⇒ tra đơn bán khi khách hỏi giá
+  // Vì vậy chỉ giữ cụm nhiều từ, và dùng `\b` cho mã PO có chữ bên cạnh.
+  { patterns: [/\bpo\b/, 'p/o', 'tờ po', 'po này', 'po đó'], tool: 'search_purchase_orders' },
+  // ĐÃ BỎ pattern trần 'đơn' khỏi nhóm dưới đây.
+  //
+  // Lý do: "hóa **đơn**" là câu hỏi hỏi về HÓA ĐƠN, nhưng chuỗi con 'đơn' lại khớp
+  // nhóm này — và nhóm này đứng TRƯỚC `search_invoices`, nên trước khi sửa:
+  //     "hóa đơn" → search_orders   (SAI)
+  //     "hoa don" → search_invoices (đúng, vì 'đơn' có dấu không có trong "hoa don")
+  // Tức là viết không dấu lại CHE LỜI chứ không gây lỗi — rủi ro của việc so khớp
+  // chuỗi con trên tiếng Việt có dấu. Giữ lại cụm 'đơn hàng' và 'bán hàng' là đủ;
+  // "đơn giá"/"đơn vị" rơi về null thay vì trả nhầm, đúng như ý định ghi chú.
+  { patterns: ['đơn hàng', 'bán hàng', 'sale', 'order'], tool: 'search_orders' },
   { patterns: ['ca làm', 'chấm công', 'attendance', 'bảng lương', 'payroll', 'bang luong'], tool: 'search_hr' },
   { patterns: ['lương', 'nhân sự', 'nhân viên', 'employee', 'hr', 'hiệu suất', 'chấm công'], tool: 'search_hr' },
   { patterns: ['chi phí', 'expense', 'khoản chi', 'các khoản chi', 'bút toán', 'số dư', 'tài khoản kế toán'], tool: 'search_finance' },
@@ -855,84 +1085,237 @@ const INTENT_MAP = [
   { patterns: ['dashboard', 'tổng quan', 'tình hình', 'tong quan', 'kpi', 'business'], tool: 'get_dashboard' },
 ];
 
+// Chuẩn hoá pattern ngay lúc nạp module (xem giải thích ở `resolveIntent`).
+normalizeIntentMap(INTENT_MAP);
+
+/**
+ * Tạo một biến thể của regex đã BỎ DẤU, giữ nguyên cờ.
+ *
+ * Vì sao cần: regex viết theo thói quen tiếng Việt có dấu (`/hôm nay/`) sẽ không
+ * bao giờ khớp chuỗi đã bỏ dấu (`"hom nay"`). Bỏ dấu cả hai vế thì khớp.
+ *
+ * An toàn: chỉ bỏ dấu ở `source`. Cờ như `i`, `m` giữ nguyên, và bỏ cờ `g`/`y` vì
+ * regex có các cờ đó giữ `lastIndex` giữa các lần `test()` — dùng chung một object
+ * regex ở nhiều lần gọi cho kết quả xenh kẽ. Các regex trong tệp này đều là chuỗi
+ * đơn giản (`\b`, `\d`, `|`) nên bỏ dấu không làm đổi ý nghĩa.
+ *
+ * Dùng `function` chứ không phải `const` arrow: `normalizeIntentMap(INTENT_MAP)` chạy
+ * ngay sau khi khai báo `INTENT_MAP`, tức là trước dòng định nghĩa hàm này. Arrow
+ * gán vào `const` không được hoisting nên sẽ ném `ReferenceError` lúc nạp module.
+ */
+function deaccentedRegex(re) {
+  return new RegExp(stripDiacritics(re.source), re.flags.replace(/[gy]/g, ''));
+}
+
+/**
+ * So khớp từ khoá trên CẢ HAI vế: câu hỏi giữ dấu, và câu hỏi đã bỏ dấu.
+ *
+ * Vì sao phải chuẩn hoá thay vì viết pattern có dấu cho đủ:
+ *   - Người dùng gõ "sắp hết" (có dấu). Pattern viết "sap het" thì không khớp,
+ *     `resolveIntent` trả null ⇒ câu trả lời "tôi chưa hiểu câu hỏi của bạn".
+ *   - Người dùng gõ "hoa don" (không dấu). Pattern viết "hóa đơn" thì không khớp.
+ *
+ * Chuẩn hoá cả hai về thì bất kể gõ kiểu nào cũng khớp, và không phải thêm biến thể
+ * không dấu cho từng pattern. Trước khi sửa, có pattern thiếu biến thể nên chỉ chạy
+ * được với một kiểu gõ. Xem `utils/vietnamese.js`.
+ *
+ * Kết quả được tính MỘT LẦN lúc nạp module và ghi vào `intent.__norm`, vì
+ * `resolveIntent` chạy ở mỗi lượt chat mà danh sách không đổi.
+ */
+function normalizeIntentMap(map) {
+  for (const intent of map) {
+    const seen = new Set();
+    intent.__norm = intent.patterns.map((p) => {
+      if (typeof p !== 'string') {
+        // Regex: thử trên câu gốc và trên câu đã bỏ dấu, mỗi về một biến thể regex.
+        return { raw: p, norm: deaccentedRegex(p) };
+      }
+      const key = stripDiacritics(p).toLowerCase();
+      // Trùng sau khi bỏ dấu thì giữ một — `includes` chạy O(n) nên rút gọn danh
+      // sách có lợi, mà pattern trùng nhau không đổi kết quả khớp.
+      if (seen.has(key)) return null;
+      seen.add(key);
+      return key;
+    });
+  }
+  return map;
+}
+
 function resolveIntent(text) {
-  const lower = text.toLowerCase();
+  const raw = text.toLowerCase();
+  const lower = stripDiacritics(text).toLowerCase();
   for (const intent of INTENT_MAP) {
-    if (intent.patterns.some(p => lower.includes(p))) {
-      return intent.tool;
-    }
+    const hit = intent.__norm.some((p) => {
+      if (p === null) return false;
+      if (typeof p === 'string') return lower.includes(p);
+      return p.raw.test(raw) || p.norm.test(lower);
+    });
+    if (hit) return intent.tool;
+  }
+  return null;
+}
+
+/**
+ * Chọn tool PRM tinh vi hơn khi câu hỏi nêu rõ MỘT đối tác.
+ *
+ * Vì sao cần bước riêng: `INTENT_MAP` khớp theo thứ tự và trả về tool đầu tiên khớp,
+ * nên không thể biết "đối tác A" và "tất cả đối tác" cùng nằm trong một hàng pattern.
+ * Câu hỏi có chứa mã `ĐT-YYYYMM-XXXX` thì chắc chắn đang hỏi về một đối tác, và
+ * trả về cả bảng xếp hạng sẽ là câu trả lời sai.
+ *
+ * @returns {string|null} tool PRM, hoặc null nếu câu hỏi không nêu mã đối tác
+ */
+function resolvePartnerIntent(text) {
+  const raw = text.toLowerCase();
+  const lower = stripDiacritics(text).toLowerCase();
+  // `\b` trước `đ` không dùng được — xem giải thích ở INTENT_MAP.
+  const hasCode = /đt-\d{6}-\d{4}\b/i.test(raw) || /\bdt-\d{6}-\d{4}\b/.test(lower);
+  // Mã đối tác tự nó đã đủ để gọi tool chi tiết, không cần từ khoá "đối tác".
+  // Người dùng nhìn mã trên báo cáo in ra và gõ thẳng là hợp lý.
+  if (hasCode) return 'search_partner_referrals';
+  if (/đối tác|partner|affiliate|giới thiệu|hoa hồng/.test(raw)
+    || /doi tac|partner|affiliate|gioi thieu|hoa hong/.test(lower)) {
+    return 'search_partner_performance';
   }
   return null;
 }
 
 function extractParams(text, tool) {
   const params = {};
-  const lower = text.toLowerCase();
+  // So khớp phải chạy trên CẢ HAI dạng của câu hỏi.
+  //
+  //   raw   = giữ dấu, hạ chữ thường
+  //   lower = đã bỏ dấu
+  //
+  // Regex bên dưới viết theo thói quen tiếng Việt CÓ DẤU (`/hôm nay/`). Nếu chỉ thử
+  // trên `lower` thì regex đó không bao giờ khớp gì cả, vì `lower` không còn dấu. Nếu
+  // chỉ thử trên `raw` thì câu gõ không dấu ("hom nay") lại trượt. Thử cả hai thì
+  // không cần sửa hàng chục regex, và regex viết có hay không dấu đều chạy được.
+  //
+  // Xem `utils/vietnamese.js` để hiểu vì sao phải bỏ dấu riêng cho chữ `đ`.
+  const raw = text.toLowerCase();
+  const lower = stripDiacritics(text).toLowerCase();
+  // Regex viết có dấu phải được thử trên bản ĐÃ BỎ DẤU của chính nó, không chỉ thử
+  // nguyên bản trên `lower` — nếu không thì `/hôm nay/` không bao giờ khớp "hom nay".
+  const hit = (re) => re.test(raw) || deaccentedRegex(re).test(lower);
 
   // Period detection
-  if (/hôm nay|today/i.test(lower)) params.period = 'today';
-  else if (/hôm qua|yesterday/i.test(lower)) params.period = 'yesterday';
-  else if (/tuần này|this week/i.test(lower)) params.period = 'this_week';
-  else if (/tuần trước|last week/i.test(lower)) params.period = 'last_week';
-  else if (/tháng trước|last month/i.test(lower)) params.period = 'last_month';
-  else if (/tháng này|this month|trong tháng/i.test(lower)) params.period = 'this_month';
-  else if (/quý này|this quarter/i.test(lower)) params.period = 'this_quarter';
-  else if (/năm nay|this year/i.test(lower)) params.period = 'this_year';
+  if (hit(/hôm nay|today/i)) params.period = 'today';
+  else if (hit(/hôm qua|yesterday/i)) params.period = 'yesterday';
+  else if (hit(/tuần này|this week/i)) params.period = 'this_week';
+  else if (hit(/tuần trước|last week/i)) params.period = 'last_week';
+  else if (hit(/tháng trước|last month/i)) params.period = 'last_month';
+  else if (hit(/tháng này|this month|trong tháng/i)) params.period = 'this_month';
+  else if (hit(/quý này|this quarter/i)) params.period = 'this_quarter';
+  else if (hit(/năm nay|this year/i)) params.period = 'this_year';
 
   // Order status
-  if (/chờ xác nhận|pending/i.test(lower)) params.status = 'PENDING';
-  else if (/đã xác nhận|confirmed/i.test(lower)) params.status = 'CONFIRMED';
-  else if (/đang giao|shipping/i.test(lower)) params.status = 'SHIPPING';
-  else if (/hoàn thành|completed/i.test(lower)) params.status = 'COMPLETED';
-  else if (/đã hủy|cancelled|hủy/i.test(lower)) params.status = 'CANCELLED';
+  if (hit(/chờ xác nhận|pending/i)) params.status = 'PENDING';
+  else if (hit(/đã xác nhận|confirmed/i)) params.status = 'CONFIRMED';
+  else if (hit(/đang giao|shipping/i)) params.status = 'SHIPPING';
+  else if (hit(/hoàn thành|completed/i)) params.status = 'COMPLETED';
+  else if (hit(/đã hủy|cancelled|hủy/i)) params.status = 'CANCELLED';
 
   // Payment status
-  if (/chưa thanh toán|unpaid/i.test(lower)) params.paymentStatus = 'UNPAID';
-  else if (/đã thanh toán|paid/i.test(lower)) params.paymentStatus = 'PAID';
-  else if (/thanh toán một phần|partial/i.test(lower)) params.paymentStatus = 'PARTIAL';
+  if (hit(/chưa thanh toán|unpaid/i)) params.paymentStatus = 'UNPAID';
+  else if (hit(/đã thanh toán|paid/i)) params.paymentStatus = 'PAID';
+  else if (hit(/thanh toán một phần|partial/i)) params.paymentStatus = 'PARTIAL';
 
   // Sort / limit
-  const limitMatch = text.match(/(\d+)\s*(mới nhất|gần đây|top|đầu|first|last)/i);
+  const limitMatch = raw.match(/(\d+)\s*(mới nhất|gần đây|top|đầu|first|last)/)
+    || lower.match(/(\d+)\s*(moi nhat|gan day|top|dau|first|last)/);
   if (limitMatch) params.limit = parseInt(limitMatch[1]);
 
-  const topMatch = text.match(/(top|trên|cao nhất|nhiều nhất|lớn nhất)\s*(\d+)/i);
+  const topMatch = raw.match(/(top|trên|cao nhất|nhiều nhất|lớn nhất)\s*(\d+)/)
+    || lower.match(/(top|tren|cao nhat|nhieu nhat|lon nhat)\s*(\d+)/);
   if (topMatch) { params.limit = parseInt(topMatch[2]); params.sortOrder = 'desc'; }
 
   // Search query (extract text after specific keywords)
+  //
+  // Cắt trên ĐÚNG bản mà tìm thấy. Trước đây tìm vị trí trên `lower` (đã bỏ dấu)
+  // nhưng lại cắt trên `text` (còn dấu) — độ dài hai bản khác nhau nên câu tìm kiếm ra
+  // rác. Ở đây thử `raw` trước (marker viết có dấu, khớp nguyên văn), không khớp mới
+  // thử `lower` với marker đã bỏ dấu, và cắt trên bản tương ứng.
   const searchMarkers = ['sản phẩm', 'tìm', 'tên', 'mã', 'thông tin', 'về', 'của'];
+  const suffixStrip = /^(là|này|đó|trên|nào)\s*/i;
   for (const marker of searchMarkers) {
-    const idx = lower.indexOf(marker);
-    if (idx >= 0) {
-      const after = text.slice(idx + marker.length).trim().replace(/^(là|này|đó|trên|nào)\s*/i, '');
-      if (after.length > 1 && after.length < 100) {
-        params.search = after;
-        break;
-      }
+    const markerNorm = stripDiacritics(marker);
+    let hitIn = null;
+    let at = raw.indexOf(marker.toLowerCase());
+    if (at >= 0) hitIn = { text, at, len: marker.length };
+    if (!hitIn) {
+      at = lower.indexOf(markerNorm);
+      if (at >= 0) hitIn = { text: lower, at, len: markerNorm.length };
+    }
+    if (!hitIn) continue;
+    const after = hitIn.text
+      .slice(hitIn.at + hitIn.len)
+      .trim()
+      .replace(suffixStrip, '')
+      .trim();
+    if (after.length > 1 && after.length < 100) {
+      // Trả về bản CÓ DẦU nếu tìm thấy ở `raw`, vì đó là chuỗi người dùng gõ và
+      // dùng cho `contains` ở tầng truy vấn.
+      params.search = hitIn.text === lower ? stripDiacritics(after) : after;
+      break;
     }
   }
 
   // Production type
-  if (/lệnh sản xuất|work order|lệnh/i.test(lower)) params.type = 'work_orders';
-  else if (/bom|định mức/i.test(lower)) params.type = 'bom';
-  else if (/lô|lot|hạn sử dụng|hsd/i.test(lower)) params.type = 'lots';
+  if (hit(/lệnh sản xuất|work order|lệnh/i)) params.type = 'work_orders';
+  else if (hit(/bom|định mức/i)) params.type = 'bom';
+  else if (hit(/lô|lot|hạn sử dụng|hsd/i)) params.type = 'lots';
 
   // HR type
-  if (/lương|payroll|bảng lương/i.test(lower)) params.type = 'payroll';
-  else if (/chấm công|attendance|ca làm/i.test(lower)) params.type = 'attendance';
+  if (hit(/lương|payroll|bảng lương/i)) params.type = 'payroll';
+  else if (hit(/chấm công|attendance|ca làm/i)) params.type = 'attendance';
 
   // Finance type
-  if (/chi phí|expense/i.test(lower)) params.type = 'expenses';
-  else if (/bút toán|journal/i.test(lower)) params.type = 'journal';
-  else if (/tài khoản|số dư tài khoản/i.test(lower)) params.type = 'accounts';
+  if (hit(/chi phí|expense/i)) params.type = 'expenses';
+  else if (hit(/bút toán|journal/i)) params.type = 'journal';
+  else if (hit(/tài khoản|số dư tài khoản/i)) params.type = 'accounts';
 
   // Customer debt filter
-  if (/có nợ|đang nợ|công nợ/i.test(lower)) params.hasDebt = true;
+  if (hit(/có nợ|đang nợ|công nợ/)) params.hasDebt = true;
+
+  // PRM: tham số riêng cho hai tool đối tác.
+  //
+  // `sortBy` được chuyển thẳng từ câu hỏi vào `roi.service.js`, nơi có danh sách
+  // hợp lệ (`profit`/`revenue`/`conversion`/`referrals`) và tự gán về `profit` khi
+  // không khớp. Ở đây chỉ viết TỪ có nghĩa, không dịch từ khoá tiếng Việt thành
+  // tên cột — dịch sai thì truy vấn rác mà không báo lỗi.
+  //
+  // Mã đối tác lấy NGOÀI khối `if` bên dưới, vì mã `ĐT-YYYYMM-XXXX` tự nó đã đủ
+  // để gọi tool chi tiết mà không cần từ khoá "đối tác". Nếu để trong khối thì câu
+  // "ĐT-202610-0001 hiệu quả thế nào" không lấy được mã, dù người dùng đã gõ rõ.
+  //
+  // Lấy từ `raw` chứ không phải `lower`: service tra cứu theo mã GỐC trong cơ sở dữ
+  // liệu (`code = 'ĐT-202610-0001'`), còn `lower` đã bỏ dấu thành `DT-202610-0001`
+  // nên sẽ không tìm thấy. Người dùng gõ không dấu vẫn tra được vì tra cứu bằng
+  // `contains` sau khi chuẩn hoá — xem `search_partner_referrals`.
+  // Mã đối tác nhận được CẢ BA cách gõ: "ĐT-…", "đt-…", "DT-…". Bắt trên `raw`
+  // bằng regex có dấu, rồi trên `lower` bằng regex không dấu. Kết quả luôn được
+  // chuẩn hoá về dạng có dấu `ĐT-…` vì đó là dạng lưu trong cơ sở dữ liệu.
+  const partnerCodeMatch =
+    raw.match(/đt-\d{6}-\d{4}\b/i) || lower.match(/\bdt-\d{6}-\d{4}\b/);
+  if (partnerCodeMatch) {
+    const digits = partnerCodeMatch[0].match(/\d{6}-\d{4}/)[0];
+    params.partnerCode = `ĐT-${digits}`;
+  }
+
+  if (hit(/đối tác|partner|affiliate|giới thiệu|hoa hồng/)) {
+    if (hit(/giá trị|doanh thu|revenue|clv/)) params.sortBy = 'revenue';
+    else if (hit(/tỷ lệ|chuyển đổi|conversion/)) params.sortBy = 'conversion';
+    else if (hit(/số lượt|lượt giới thiệu/)) params.sortBy = 'referrals';
+    else params.sortBy = 'profit';
+    if (hit(/thực tế|đã thu|actual/)) params.metric = 'actual';
+  }
 
   // Low stock
-  if (/hết hàng|sắp hết|low stock|tồn thấp/i.test(lower)) params.lowStock = true;
+  if (hit(/hết hàng|sắp hết|low stock|tồn thấp/)) params.lowStock = true;
 
   // Expiring lots
-  if (/sắp hết hạn|expiring|gần hết hạn/i.test(lower)) params.expiringSoon = true;
+  if (hit(/sắp hết hạn|expiring|gần hết hạn/)) params.expiringSoon = true;
 
   return params;
 }
@@ -940,7 +1323,10 @@ function extractParams(text, tool) {
 // ─── MAIN ───
 
 async function processQuery(text) {
-  const tool = resolveIntent(text);
+  // PRM: câu hỏi có mã đối tác cần tool chi tiết hơn bảng xếp hạng tổng. Xử lý ở
+  // đây (thay vì thêm hàng pattern thứ hai) vì `resolveIntent` dừng ở hàng khớp đầu.
+  const partnerTool = resolvePartnerIntent(text);
+  const tool = partnerTool || resolveIntent(text);
   if (!tool) {
     return {
       success: false,
@@ -948,13 +1334,14 @@ async function processQuery(text) {
         `• 📦 Sản phẩm, tồn kho\n• 📋 Đơn hàng, hóa đơn\n• 👤 Khách hàng, công nợ\n` +
         `• 💰 Doanh thu, tài chính, chi phí\n• 👥 Nhân sự, lương, chấm công\n` +
         `• 🏭 Sản xuất, lệnh SX, BOM, lô hàng\n• 📊 Dashboard tổng quan\n` +
-        `• 🎯 CRM/SRM: lead, phân khúc RFM/CLV, cảnh báo churn, GRN, hóa đơn NCC, Kraljic`,
+        `• 🎯 CRM/SRM: lead, phân khúc RFM/CLV, cảnh báo churn, GRN, hóa đơn NCC, Kraljic\n` +
+        `• 🤝 PRM: đối tác, hoa hồng, lợi nhuận ròng theo đối tác, phễu chuyển đổi`,
       data: null,
     };
   }
 
   // Block write tools from processQuery — use POST /api/agent/chat for actions
-  if (['create_order', 'create_po', 'send_reminder'].includes(tool)) {
+  if (isWriteTool(tool)) {
     return {
       success: false,
       message: `Thao tác "${tool}" yêu cầu xác nhận. Vui lòng sử dụng chat agent (POST /api/agent/chat) để thực hiện hành động này.`,
@@ -1001,5 +1388,8 @@ module.exports = {
   generateResponse,
   HANDLERS,
   resolveIntent,
+  resolvePartnerIntent,
   extractParams,
+  WRITE_TOOLS,
+  isWriteTool,
 };

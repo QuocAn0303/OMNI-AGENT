@@ -17,6 +17,7 @@ import { useNavigate, Link } from "react-router-dom";
 import { useTranslation } from 'react-i18next';
 import useAuthStore from "../stores/authStore";
 import axiosInstance from "../api/axios";
+import JarvisHologramCore from "../components/shared/JarvisHologramCore";
 
 /**
  * Login — Split layout: brand bên trái, form bên phải
@@ -34,7 +35,9 @@ export default function Login() {
     setLoading(true);
     try {
       const resp = await axiosInstance.post("/auth/login", {
-        email: values.username,
+        // Cắt khoảng trắng dính khi dán từ clipboard — nguyên nhân thường gặp
+        // nhất khiến login bị từ chối với thông báo không chỉ rõ lỗi ở đâu.
+        email: String(values.username || "").trim(),
         password: values.password,
       });
       const data = resp.data?.data || {};
@@ -42,18 +45,22 @@ export default function Login() {
       const user = data.user || null;
       // M7: refresh token được set vào httpOnly cookie bởi backend — không cần xử lý ở đây
       login(user, token);
-      if (token)
-        axiosInstance.defaults.headers.common.Authorization = `Bearer ${token}`;
+      // KHÔNG ghi vào axiosInstance.defaults.headers.common: interceptor request đã
+      // gắn Authorization từ store cho mọi request (H2). Ghi thêm ở đây tạo một bản
+      // sao token tồn đọng trên instance, sống dai hơn store → sau khi logout, request
+      // kế tiếp vẫn tự động mang phiên của user vừa đăng xuất.
       if (user?.role === "SUPER_OMEGA_ULTRA_ADMIN") {
         navigate("/admin");
       } else {
         navigate("/dashboard");
       }
     } catch (err) {
-      setError(
-        err?.response?.data?.message ||
-          t('login.errorFallback'),
-      );
+      // Ưu tiên lỗi theo TRƯỜNG nếu có. API trả `{ message: "Dữ liệu không hợp lệ",
+      // errors: [{ field: "email", message: "Email không hợp lệ" }] }` cho lỗi
+      // validate. Chỉ lấy `message` chung thì người dùng thấy "Dữ liệu không hợp
+      // lệ" — không biết phải sửa ô nào, phải đoán.
+      const fieldError = err?.response?.data?.errors?.[0]?.message;
+      setError(fieldError || err?.response?.data?.message || t('login.errorFallback'));
     } finally {
       setLoading(false);
     }
@@ -63,6 +70,7 @@ export default function Login() {
     <div className="login-page">
       {/* LEFT: Brand panel */}
       <section className="login-brand" aria-hidden="true">
+        <JarvisHologramCore />
         <div className="login-brand__header">
           <div className="login-brand__logo">A</div>
           <div>

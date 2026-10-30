@@ -23,7 +23,7 @@ const svc = require("./marketplace.service");
 
 const mgr = ["ADMIN", "MANAGER"];
 
-router.use(requireModule("marketplace"));
+router.use(authenticate, requireModule("marketplace"));
 
 router.get("/shops", authenticate, async (req, res, next) => {
   try { res.json({ success: true, data: await svc.listShops() }); } catch (e) { next(e); }

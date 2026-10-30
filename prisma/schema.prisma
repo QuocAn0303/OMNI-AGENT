@@ -291,6 +291,8 @@ model User {
   expenses               Expense[]              @relation("ExpenseCreatedBy")
   expensesApproved       Expense[]              @relation("ExpenseApprovedBy")
   purchaseOrders         PurchaseOrder[]        @relation("PurchaseCreatedBy")
+  rfqsCreated           Rfq[]                 @relation("RfqCreatedBy")
+  rfqsAwarded           Rfq[]                 @relation("RfqAwardedBy")
   bankTxs                BankTransaction[]      @relation("BankTxCreatedBy")
   closedPeriods          FiscalPeriod[]         @relation("PeriodClosedBy")
   purchaseOrdersApproved PurchaseOrder[]        @relation("PurchaseApprovedBy")
@@ -418,13 +420,23 @@ model Category {
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
 
+  // Thêm 2026-10-16 — cây ngành hàng. Trước đây `Category` PHẲNG (chỉ có
+  // `name`), trong khi `Warehouse` đã có `WarehouseTree` và `Account` đã có
+  // `AccountTree`. Danh mục siêu thị bắt buộc phải có cấp cha–con
+  // ("Thực phẩm" → "Sữa & đồ uống" → "Sữa tươi"), không có thì không mô phỏng
+  // được cây ngành hàng thật.
+  parentId String?
+  parent   Category?  @relation("CategoryTree", fields: [parentId], references: [id], onDelete: Restrict)
+  children Category[] @relation("CategoryTree")
+
   products   Product[]
   promotions Promotion[]
 
   @@unique([name, tenantId])
+  @@index([tenantId, parentId])
   @@map("categories")
-@@index([tenantId])
 }
+
 
 model Product {
   id          String   @id @default(uuid())
@@ -439,6 +451,15 @@ model Product {
   isActive    Boolean  @default(true)
   createdAt   DateTime @default(now())
   updatedAt   DateTime @updatedAt
+
+  // Thêm 2026-10-16 — mã vạch ở CẤP SẢN PHẨM.
+  //
+  // Trước đây `barcode` chỉ tồn tại trên `ProductVariant`; `Product` thì không
+  // có. Siêu thị quét mã vạch ở POS, nên thiếu cột này là thiếu THẬT, không
+  // phải thiếu dữ liệu — và bài toán khớp mã mất chân trụng.
+  //
+  // `@unique` vì trùng mã thì POS không phân biệt được hai mã hàng.
+  barcode    String?   @unique
 
   categoryId String
   category   Category @relation(fields: [categoryId], references: [id])
@@ -466,6 +487,7 @@ model Product {
   combo           Combo?
   comboItems      ComboItem[]
   recipe          Recipe?
+  rfqItems        RfqItem[]
 
   bomsAsProduct             Bom[]                @relation("BomProduct")
   bomItemsAsComponent       BomItem[]            @relation("BomComponent")
@@ -500,6 +522,22 @@ model Warehouse {
   isActive  Boolean  @default(true)
   createdAt DateTime @default(now())
 
+  // Cây vị trí (Odoo `stock.location`). Mỗi kho vẫn là một KHO THẬT (giữ nguyên
+  // mọi quan hệ cũ), nhưng bên trong có cây vị trí để chia khu vực nhập / lưu /
+  // xuất / lấy hàng. `type`:
+  //   PHYSICAL  = nơi hàng thật nằm (mặc định — hành vi cũ, không đổi)
+  //   VIEW      = góc nhìn gộp nhiều vị trí, KHÔNG chứa hàng (Odoo: "View")
+  //   INTERNAL  = vị trí trung gian của luồng nhiều bước
+  // Chỉ PHYSICAL mới có tồn kho — ràng buộc này kiểm ở service, không phải DB,
+  // vì `Warehouse` không biết vị trí con của mình.
+  locationType String  @default("PHYSICAL")
+  parentId     String?
+  parent       Warehouse?  @relation("WarehouseTree", fields: [parentId], references: [id], onDelete: Restrict)
+  children     Warehouse[] @relation("WarehouseTree")
+  // Chặn xoá khi còn vị trí con — `onDelete: Restrict` ở trên đã lo, nhưng đặt
+  // tường minh để đọc dễ.
+  path String? // ví dụ "KHO-CHINH/KHU-A/KHU-B" — dựng sẵn để truy vấn nhanh
+
   inventories   Inventory[]
   orders        Order[]
   transfersFrom StockTransfer[] @relation("TransferFrom")
@@ -520,6 +558,20 @@ model Inventory {
   quantity  Int      @default(0)
   reserved  Int      @default(0)
   minStock  Int      @default(10)
+  // Quy tắc nhập hàng (mô phỏng Odoo `reordering_min_qty`/`_max_qty`) — cấu hình
+  // theo (sản phẩm × kho) vì cùng một SKU có thể tồn ở nhiều kho.
+  //   maxStock        > 0 ⇒ trần tồn; <= 0 hoặc null ⇒ KHÔNG đặt trần (vô hạn).
+  //                   Dùng cho cảnh báo tồn quá cao, không ép vào công thức ROP
+  //                   (ROP là NGƯỠNG ĐỀ XUẤT, không phải trần cứng).
+  //   leadTimeDays    > 0 ⇒ định dạng của riêng SKU này; null ⇒ dùng median từ
+  //                   lịch sử PO→GRN, rồi mới về mặc định 7 ngày.
+  //   packMultiple    > 1 ⇒ làm tròn số lượng đặt lên bội số của nhà cung cấp
+  //                   (bán lẻ VN thường bán theo thùng/hộp, không bán lẻ cái).
+  //   serviceLevel    0 < x < 1 ⇒ mức phục vụ mong muốn cho SKU này; null ⇒ 0,95.
+  maxStock     Int?
+  leadTimeDays Int?
+  packMultiple Int      @default(1)
+  serviceLevel Float?
   updatedAt DateTime @updatedAt
 
   productId   String
@@ -534,6 +586,7 @@ model Inventory {
 @@index([tenantId])
 }
 
+// Loại vị trí trong cây kho (Odoo `stock.location.usage`).
 enum StockTransferStatus {
   PENDING
   IN_TRANSIT
@@ -695,8 +748,18 @@ model Customer {
   loyaltyPoints Int          @default(0)
   // CRM: lead capture (Mục 2)
   leadStatus         LeadStatus? @default(NEW)
+  // Nguồn giới thiệu dạng VĂN BẢN tự do — giữ lại để dữ liệu cũ không mất hiệu
+  // lực. Từ khi có phân hệ PRM, nguồn có bản chuẩn hoá nằm ở `PartnerReferral`
+  // và liên kết qua `partnerReferralId` bên dưới. `referralSource` vẫn được ghi
+  // để báo cáo R-10 (nhóm theo nguồn) không phải đổi câu truy vấn.
   referralSource     String?
   zaloUserId         String?
+  // PRM: khoá mềm tới lượt giới thiệu (không khai báo @relation — xem PartnerReferral)
+  partnerReferralId  String?
+  // PRM: chi phí đã trả cho nguồn để có được khách này. Cho phép NULL vì nhiều
+  // khách đến tự nhiên; báo cáo lợi nhuận ròng đối tác dùng `commissionRate`
+  // của đối tác, còn cột này dành cho ngân sách CAC do chủ doanh nghiệp tự nhập.
+  acquiredCost       Decimal?    @db.Decimal(15, 2)
 
   // CRM: RFM động — tính lại bởi hook/cron sau mỗi đơn COMPLETED (Mục 3)
   rfmRecencyDays     Int?
@@ -2064,6 +2127,7 @@ model Vendor {
 
   expenses       Expense[]
   purchaseOrders PurchaseOrder[]
+  rfqQuotes      RfqQuote[]
   debts          Debt[]
 
   @@unique([code, tenantId])
@@ -2190,6 +2254,7 @@ enum PurchaseStatus {
   PENDING_APPROVAL
   APPROVED
   ORDERED
+  PARTIALLY_RECEIVED
   RECEIVED
   PAID
   REJECTED
@@ -2252,6 +2317,108 @@ model PurchaseItem {
 @@index([tenantId])
 }
 
+// ==================== PRM: PARTNER & REFERRAL (Quản trị đối tác) ====================
+
+// Loại đối tác. Để tách bốn nhóm vì cách tính hoa hồng và cách đo hiệu quả khác nhau:
+// AFFILIATE giới thiệu bán hàng, MARKETING_CHANNEL là kênh quảng cáo trả theo lượt
+// mở rộng, REFERRER là khách giới thiệu khách, SALES_AGENT là nhân viên nội bộ.
+// Nhóm AFFILIATE và REFERRER mới có `partner_referrals`; nhóm kia đo bằng
+// `Customer.referralSource` và chiến dịch, xem `docs/PLAN_PRM_partner_module.md`.
+enum PartnerType {
+  AFFILIATE
+  MARKETING_CHANNEL
+  REFERRER
+  SALES_AGENT
+}
+
+// Cách tính hoa hồng. PERCENT_OF_CLV nhân tỷ lệ với giá trị vòng đời dự báo của
+// khách; FIXED_PER_CUSTOMER trả một số tiền cố định cho mỗi khách chuyển đổi.
+// Hai cách cùng tồn tại vì chương trình của nhiều đối tác Việt Nam trả theo lần
+// giới thiệu, không theo tỷ lệ doanh thu.
+enum CommissionType {
+  PERCENT_OF_CLV
+  FIXED_PER_CUSTOMER
+}
+
+model Partner {
+  id              String         @id @default(uuid())
+  tenantId        String?
+  code            String // ĐT-YYYYMM-XXXX
+  name            String
+  type            PartnerType    @default(AFFILIATE)
+  commissionType  CommissionType @default(PERCENT_OF_CLV)
+  // Lưu dạng THẬP PHÂN chứ không phải phần trăm số nguyên. Khi trả ra API thì nhân
+  // 100 và đặt tên trường là `commissionPercent` cho rõ đơn vị — xem
+  // partner.service.js::serialize. Lưu 0,10 nghĩa là 10%, lưu 10 sẽ sai 100 lần.
+  commissionRate  Decimal        @default(0) @db.Decimal(12, 2)
+  fixedCommission Decimal        @default(0) @db.Decimal(15, 2)
+  contactName     String?
+  phone           String?
+  email           String?
+  isActive        Boolean        @default(true)
+  notes           String?        @db.Text
+  createdAt       DateTime       @default(now())
+  updatedAt       DateTime       @updatedAt
+
+  referrals PartnerReferral[]
+
+  // Khoá duy nhất theo MÃ chứ không theo tên: tên đối tác có thể trùng (hai cửa
+  // hàng cùng tên ở hai tỉnh), mã thì do hệ thống sinh nên không trùng.
+  @@unique([code, tenantId])
+  @@index([tenantId, isActive])
+  @@map("partners")
+}
+
+model PartnerReferral {
+  id            String    @id @default(uuid())
+  tenantId      String?
+  partnerId     String
+  // FK tới `partners`, xoá đối tác thì mất lượt giới thiệu.
+  //
+  // onDelete: Cascade là CHỦ ĐÍCH, và phải khớp với migration SQL (hiện ghi
+  // `ON DELETE CASCADE`). Không có, Prisma mặc định Restrict: schema nói chặn xoá,
+  // DB lại cho xoá — hai nơi trái ý kiến thì `migrate dev` sinh ra diff giả và, tệ
+  // hơn, môi trường nào chạy theo schema sẽ chặn xoá trong khi DB thì không.
+  //
+  // Xoá cứng đối tác vốn đã bị chặn ở tầng nghiệp vụ (xoá mềm đặt `isActive=false`)
+  // vì mất lịch sử là mất chứng cứ tính hoa hồng. Cascade chỉ là lưới an toàn cho
+  // trường hợp admin xoá thẳng trong DB, và giữ cho hành vi xoá khớp với schema.
+  partner       Partner   @relation(fields: [partnerId], references: [id], onDelete: Cascade)
+  // Hai cột dưới là KHOÁ MỀM: cố tình KHÔNG khai báo @relation.
+  //
+  // Vì sao: khách hàng trong hệ thống có thể bị xoá mền, còn lượt giới thiệu là
+  // chứng từ kinh doanh và không được mất theo khách. Khai báo quan hệ với
+  // onDelete: Cascade sẽ xoá lịch sử giới thiệu khi khách bị dọn — mất luôn
+  // chứng cứ để tính hoa hồng và đo hiệu quả đối tác. Đánh đổi ngược lại là mất
+  // ràng buộc toàn vẹn ở tầng cơ sở dữ liệu, chấp nhận được vì đây là dữ liệu
+  // lịch sử chứ không phải dữ liệu đang giao dịch.
+  leadId        String?
+  customerId    String?
+  // Mã lượt giới thiệu trả về cho đối tác, sinh ngẫu nhiên như mã ưu đãi win-back.
+  referralCode  String
+  referredName  String
+  referredPhone String?
+  referredEmail String?
+  referralDate  DateTime  @default(now())
+  converted     Boolean   @default(false)
+  convertedAt   DateTime?
+  // Giữ nguyên giá trị `Customer.referralSource` tại thời điểm ghi nhận, để truy
+  // ngược được dữ liệu cũ đã có trước khi có bảng này.
+  sourceSnapshot String?
+  createdAt      DateTime  @default(now())
+
+  // Chống gian lận phổ biến nhất trong chương trình giới thiệu: một đối tác báo
+  // cùng một số điện thoại nhiều lần để tính hoa hồng. Ràng buộc ở TẦNG DB như
+  // `CrmLead.mobileNo` — logic JavaScript không đủ vì import chạy `skipDuplicates`
+  // và hai phiên có thể chạy song song.
+  // Vẫn cho phép CÙNG một khách đến từ hai đối tác khác nhau (ràng buộc có partnerId).
+  @@unique([referralCode])
+  @@unique([partnerId, referredPhone])
+  @@index([tenantId, partnerId])
+  @@index([tenantId, converted])
+  @@map("partner_referrals")
+}
+
 // ==================== CRM: CHURN ALERT (Win-back automation — Mục 4) ====================
 
 enum ChurnRiskLevel {
@@ -2291,6 +2458,117 @@ model ChurnAlert {
 }
 
 // ==================== SRM: GOODS RECEIPT NOTE (Nhận hàng PO + QC — Mục 6) ====================
+
+// Trạng thái yêu cầu báo giá (RFQ — Request for Quotation của Odoo).
+// `OPEN` = đang chờ NCC trả lời; `AWARDED` = đã chọn NCC và tạo PO;
+// `CANCELLED` = huỷ. KHÔNG có trạng thái "đã đóng không nhận được báo giá" vì
+// cần lưu kết quả đối chiếu để giải thích vì sao chọn NCC này.
+enum RfqStatus {
+  OPEN
+  AWARDED
+  CANCELLED
+}
+
+// Báo giá của MỘT nhà cung cấp cho một RFQ.
+enum RfqQuoteStatus {
+  PENDING // chưa trả lời
+  QUOTED // đã có báo giá
+  DECLINED // NCC từ chối
+  SELECTED // được chọn
+}
+
+model Rfq {
+  id            String    @id @default(uuid())
+  tenantId      String?
+  rfqCode       String    @unique // RFQ-YYYYMMDD-XXXX
+  status        RfqStatus @default(OPEN)
+  // Hạn chót nhận báo giá — Odoo có `date_deadline`; không có thì không biết
+  // khi nào đóng được, và quy trình sẽ treo.
+  deadlineAt    DateTime?
+  note          String?   @db.Text
+  // NCC được chọn sau khi so sánh. Khoá mềm (không FK) để giữ lịch sử ngay cả
+  // khi NCC bị xoá mềm — cùng nguyên tắc với `PurchaseOrder.vendorId`.
+  awardedVendorId String?
+  awardedAt    DateTime?
+  awardedById  String?
+  awardedBy    User?     @relation("RfqAwardedBy", fields: [awardedById], references: [id], onDelete: SetNull)
+  purchaseOrderId String? @unique // PO sinh ra từ RFQ này — 1 RFQ ⇒ tối đa 1 PO
+  createdById   String
+  createdBy     User      @relation("RfqCreatedBy", fields: [createdById], references: [id])
+  createdAt     DateTime  @default(now())
+  updatedAt     DateTime  @updatedAt
+
+  quotes RfqQuote[]
+  items  RfqItem[]
+
+  @@index([tenantId, status])
+  @@map("rfqs")
+}
+
+// Một dòng hàng cần mua, dùng chung cho mọi báo giá.
+model RfqItem {
+  id       String  @id @default(uuid())
+  tenantId String?
+  rfqId    String
+  rfq      Rfq     @relation(fields: [rfqId], references: [id], onDelete: Cascade)
+  productId String?
+  product  Product? @relation(fields: [productId], references: [id], onDelete: SetNull)
+  // Tên tự do khi không gắn sản phẩm có sẵn (mua mới, chưa nhập ký mã).
+  description String?
+  quantity    Int
+  unit        String?
+  sortOrder   Int     @default(0)
+
+  quotes RfqQuoteLine[]
+
+  @@index([rfqId])
+  @@map("rfq_items")
+}
+
+// Báo giá của một NCC cho một RFQ (Odoo: `purchase.order` ở trạng thái
+// `RFQ`/`sent` với một NCC mỗi lần — ở đây gộp nhiều NCC vào một RFQ để so
+// sánh cùng lúc, vì mục tiêu là CHỌN được chứ không phải gửi cho từng NCC).
+model RfqQuote {
+  id       String         @id @default(uuid())
+  tenantId String?
+  rfqId    String
+  rfq      Rfq            @relation(fields: [rfqId], references: [id], onDelete: Cascade)
+  vendorId String
+  vendor   Vendor         @relation(fields: [vendorId], references: [id])
+  status   RfqQuoteStatus @default(PENDING)
+  // Ngày NCC cam kết giao — đầu vào để ước lượng lead time THỰC của nhà cung cấp
+  // (Odoo: `days_to_purchase` trên dòng đơn mua). CHƯA dùng để tính ROP, chỉ để
+  // so sánh và hiển thị.
+  promisedAt      DateTime?
+  // Lý do không chọn — bắt buộc để sau này giải thích được quyết định.
+  declineReason   String?
+  note            String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  lines RfqQuoteLine[]
+
+  @@unique([rfqId, vendorId]) // một NCC chỉ có một báo giá cho một RFQ
+  @@index([tenantId])
+  @@map("rfq_quotes")
+}
+
+/// Giá của từng dòng hàng trong một báo giá.
+model RfqQuoteLine {
+  id       String   @id @default(uuid())
+  tenantId String?
+  quoteId  String
+  quote    RfqQuote @relation(fields: [quoteId], references: [id], onDelete: Cascade)
+  rfqItemId String
+  rfqItem  RfqItem  @relation(fields: [rfqItemId], references: [id], onDelete: Cascade)
+  unitCost Decimal  @db.Decimal(15, 2)
+  // NCC có thể báo không đủ số lượng yêu cầu — `RfqItem.quantity` là số cần mua.
+  availableQty Int?
+
+  @@unique([quoteId, rfqItemId])
+  @@index([rfqItemId])
+  @@map("rfq_quote_lines")
+}
 
 enum GrnStatus {
   DRAFT
@@ -3421,11 +3699,16 @@ model AgentHumanGate {
   decisionNote  String?
   decidedAt     DateTime?
   expiresAt     DateTime
+  resultRef     String?
   createdAt     DateTime        @default(now())
 
   @@index([sessionId])
   @@index([status, expiresAt])
   @@index([tenantId])
+  // Truy vấn "đề xuất PO đã duyệt nhưng chưa tạo được PO" (00b §4.2).
+  // Ba điều kiện phải khớp CÙNG LÚC — resultRef null một mình không đủ vì
+  // các gate loại khác (DATA_REQUEST...) cũng có resultRef null.
+  @@index([actionType, status, resultRef])
   @@map("agent_human_gates")
 }
 
@@ -3450,6 +3733,47 @@ model AgentFeedback {
   @@index([sessionId])
   @@index([tenantId])
   @@map("agent_feedback")
+}
+
+// T13 (docs/aisc26/NIGHT-PROMPT.md §6 T13) — Sổ ghi token LLM.
+//
+// VÌ SAO: `config/llm.js` đọc `candidates[0].content.parts` và BỎ QUA
+// `usageMetadata` ⇒ không biết một luần gọi tốn bao nhiêu token, không biết chi
+// phí LLM/tenant, và không đo được "chi phí LLM" như `03-evaluation-protocol.md`
+// §5.4 yêu cầu. Đây là bảng GHI TOKEN, không phải bảng quyết định: không model
+// nào đọc nó để ra quyết định nhập hàng (xem `01-llm-role.md` §1 — LLM không
+// được chạm vào số).
+//
+// THỎA THUẬN (giữ đúng, không tự đổi):
+//   - MỗI lần gọi LLM = 1 dòng, kể cả lần thất bại (succeeded=false) — cần đủ để
+//     biết tiền đi không và tiền đi vào việc gì.
+//   - `task` là tên tác vụ hằng số (SKU_MATCH / PROPOSAL_EXPLAIN / VENDOR_MESSAGE),
+//     KHÔNG tự do: để gom được chi phí theo vai trò LLM.
+//   - `promptText`/`responseText` chỉ ghi ở chế độ `record/replay` để tái lập
+//     kết quả; KHÔNG dùng để ghi dữ liệu khách hàng thật — đường dẫn `live` chỉ
+//     được chạy trên dữ liệu công khai/mô phỏng (hiến pháp §3).
+//   - Không có quan hệ tới User: chi phí gắn với TENANT là thứ cần đo, không với
+//     người gọi.
+model LlmUsageLog {
+  id               String   @id @default(uuid())
+  tenantId         String? // NULL = lần gọi ngoài tenant context (cron/script); vẫn ghi
+  task             String // tác vụ: SKU_MATCH | PROPOSAL_EXPLAIN | VENDOR_MESSAGE
+  provider         String // gemini | openai-compatible | uit | local
+  model            String
+  mode             String // live | record | replay | fallback
+  promptTokens     Int      @default(0)
+  completionTokens Int      @default(0)
+  totalTokens      Int      @default(0)
+  latencyMs        Int      @default(0)
+  succeeded        Boolean  @default(false)
+  promptText       String?  @db.Text
+  responseText     String?  @db.Text
+  createdAt        DateTime @default(now())
+
+  @@index([tenantId, createdAt(sort: Desc)])
+  @@index([task, createdAt(sort: Desc)])
+  @@index([createdAt])
+  @@map("llm_usage_logs")
 }
 
 

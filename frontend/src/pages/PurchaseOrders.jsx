@@ -18,20 +18,23 @@ import { useNavigate } from "react-router-dom";
 import PageHeader from "../components/layout/PageHeader";
 import {
   getPurchaseOrders,
-  receivePurchaseOrder,
+  orderPurchaseOrder,
   payPurchaseOrder,
   cancelPurchaseOrder,
   submitPurchaseOrder,
   approvePurchaseOrder,
 } from "../api/accounting";
+import { quickReceiveGRN } from "../api/srm";
 import { getVendors } from "../api/accounting";
 import useAuthStore from "../stores/authStore";
 
 const STATUS_COLORS = {
   DRAFT: "default",
   PENDING: "gold",
+  PENDING_APPROVAL: "gold",
   APPROVED: "blue",
   ORDERED: "blue",
+  PARTIALLY_RECEIVED: "cyan",
   RECEIVED: "cyan",
   PAID: "green",
   CANCELLED: "red",
@@ -39,8 +42,10 @@ const STATUS_COLORS = {
 const STATUS_LABEL = {
   DRAFT: "Nháp",
   PENDING: "Chờ duyệt",
+  PENDING_APPROVAL: "Chờ duyệt",
   APPROVED: "Đã duyệt",
-  ORDERED: "Đã đặt",
+  ORDERED: "Đã gửi NCC",
+  PARTIALLY_RECEIVED: "Nhận một phần",
   RECEIVED: "Đã nhập kho",
   PAID: "Đã thanh toán",
   CANCELLED: "Đã hủy",
@@ -135,14 +140,37 @@ export default function PurchaseOrders() {
               Gửi
             </Button>
           )}
-          {r.status === "PENDING" && canApprove && (
+          {r.status === "PENDING" || r.status === "PENDING_APPROVAL" ? canApprove && (
             <Button size="small" type="link" icon={<CheckOutlined />} onClick={async () => { await approvePurchaseOrder(r.id); message.success("Đã duyệt"); load(); }}>
               Duyệt
             </Button>
-          )}
+          ) : null}
           {r.status === "APPROVED" && canWarehouse && (
-            <Button size="small" type="link" icon={<InboxOutlined />} onClick={async () => { await receivePurchaseOrder(r.id); message.success("Đã nhập kho"); load(); }}>
-              Nhập kho
+            <Button size="small" type="link" icon={<SendOutlined />} onClick={async () => { await orderPurchaseOrder(r.id); message.success("Đã gửi NCC"); load(); }}>
+              Gửi NCC
+            </Button>
+          )}
+          {(r.status === "ORDERED" || r.status === "PARTIALLY_RECEIVED") && canWarehouse && (
+            <Button size="small" type="link" icon={<InboxOutlined />} onClick={() => navigate(`/grn?poId=${r.id}`)}>
+              Tạo GRN
+            </Button>
+          )}
+          {(r.status === "ORDERED" || r.status === "PARTIALLY_RECEIVED") && canWarehouse && (
+            <Button
+              size="small"
+              type="link"
+              icon={<InboxOutlined />}
+              onClick={async () => {
+                try {
+                  await quickReceiveGRN({ purchaseOrderId: r.id });
+                  message.success("Đã nhận nhanh (GRN POSTED)");
+                  load();
+                } catch (e) {
+                  message.error(e.response?.data?.message || "Lỗi nhận nhanh");
+                }
+              }}
+            >
+              Nhận nhanh
             </Button>
           )}
           {r.status === "RECEIVED" && Number(r.paidAmount) < Number(r.total) && ["ADMIN", "MANAGER", "CASHIER"].includes(role) && (

@@ -1,0 +1,670 @@
+'use strict';
+
+/**
+ * scripts/llm/eval-sku-match.js — HARNESS ĐÁNH GIÁ KHỚP SKU THEO S10
+ *
+ * ============================================================================
+ * GIAO THỨC ĐÃ KÝ (03-evaluation-protocol.md §9) — không tự đổi
+ * ============================================================================
+ *   - Bộ nhãn ≥ 100 cặp, 2 người gán độc lập, mù với kết quả mô hình; đo đồng
+ *     thuận bằng Cohen's κ; bất đồng ⇒ người thứ 3 phân xử; κ < 0,6 ⇒ báo kèm cảnh báo.
+ *   - Chỉ số: precision@k, recall@k tại **ngưỡng điểm tin cậy chốt trước = 0,85**;
+ *     `fallbackRate` (tỉ lệ chuyển người) — luôn báo CÙNG độ chính xác, không báo riêng;
+ *     thời gian xử lý 1 cặp.
+ *   - Bắt buộc có **đối chứng baseline fuzzy không-LLM trên cùng bộ nhãn**. Không có
+ *     đối chứng thì không được nói "LLM khớp tốt hơn".
+ *   - Chỉ nói "LLM khớp tốt hơn" khi CI bootstrap **theo cặp** (seed 20261003, 1000
+ *     lần) của chênh lệch **không chứa 0**.
+ *   - `n < 100` ⇒ chỉ báo số đếm, không báo phần trăm.
+ *
+ * ============================================================================
+ * HAI ĐƯỜNG ĐỐI CHỨNG
+ * ============================================================================
+ *   A. `fuzzy`      — `SkuMatcher` thuần (không LLM). Đây là baseline bắt buộc.
+ *   B. `hybrid`     — `matchHybridBatch` (công thức + LLM ca mơ hồ + người xác nhận).
+ *
+ * Chỉ số tính trên tập **test**; tập **dev** dùng để soi (và báo cáo riêng) — không
+ * tinh chỉnh tham số trên test.
+ *
+ * ============================================================================
+ * CHẾ ĐỘ LLM
+ * ============================================================================
+ * Chế độ đọc từ `LLM_MODE` (xem `src/config/llm-policy.js`):
+ *   - `off` / `replay` ⇒ chạy được nhưng **KHÔNG được công bố số độ chính xác**;
+ *     báo cáo ghi rõ `mode` và `KHONG CONG BO` (01-llm-role.md §3.3).
+ *   - `live` / `record` ⇒ số đo được công bố kèm ngày + tên model.
+ *
+ * LỆNH:
+ *   npm run llm:eval                       # dùng nhãn tay đã gán
+ *   npm run llm:eval -- --simulated        # dùng đáp án MÔ PHỎNG (chỉ để chạy máy)
+ */
+
+const fs = require('fs');
+const path = require('path');
+require('dotenv').config();
+const { assertLocalDb } = require('../lib/assert-local-db');
+const { readCsvObjects } = require('../lib/csv');
+const ROOT = path.resolve(__dirname, '..', '..');
+
+const { SkuMatcher, AUTO_ACCEPT_SCORE, REVIEW_SCORE } = require(`${ROOT}/src/modules/import/sku-matcher`);
+const { matchHybridBatch, HUMAN_THRESHOLD } = require(`${ROOT}/src/modules/import/sku-matcher.hybrid`);
+const llmPolicy = require(`${ROOT}/src/config/llm-policy`);
+// Dùng cho đọc `LlmUsageLog` sau khi chạy (đo token thật) — xem `readUsage()`.
+const prisma = require(`${ROOT}/src/config/prisma`);
+
+const LABEL_DIR = path.join(ROOT, 'data', 'aisc26', 'skus', 'labels');
+const SHEET = path.join(LABEL_DIR, 'label-sheet.csv');
+const TRUTH_SIM = path.join(LABEL_DIR, 'truth.simulated.csv');
+const CATALOG_CSV = path.join(ROOT, 'data', 'dataset', 'sku_names.csv');
+
+/** Ngưỡng điểm tin cậy chốt trước theo S10 — dùng để quyết định "tự áp dụng". */
+const CONF_THRESHOLD = 0.85;
+/** Seed bootstrap cố định (S10 ghi rõ 20261003). */
+const SEED = 20261003;
+const RESAMPLES = 1000;
+/** Tỉ lệ test trong bộ nhãn (phần còn lại là dev). */
+const TEST_SHARE = 0.5;
+
+const mulberry32 = (seed) => {
+  let a = seed >>> 0;
+  return () => {
+    a |= 0; a = (a + 0x6d2b79f5) | 0;
+    let t = Math.imul(a ^ (a >>> 15), 1 | a);
+    t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+};
+
+const pct = (v) => (v === null || v === undefined ? null : Number((v * 100).toFixed(2)));
+const round = (v, d = 4) => (v === null || v === undefined || !Number.isFinite(v) ? null : Number(v.toFixed(d)));
+
+/** CSV đọc bằng bộ đọc chuẩn `scripts/lib/csv.js` (tên hàng có dấu phẩy/nháy kép). */
+const readCsv = (file) => readCsvObjects(fs.readFileSync(file, 'utf8'));
+
+/** Tách dev/test tất định (seed cố định ⇒ chạy lại ra CÙNG một cách chia). */
+const splitDevTest = (pairs, testShare = TEST_SHARE) => {
+  const rnd = mulberry32(SEED);
+  const tagged = pairs.map((p) => ({ ...p, _u: rnd() }));
+  tagged.sort((a, b) => (a.pair_id < b.pair_id ? -1 : 1));
+  const nTest = Math.round(tagged.length * testShare);
+  const dev = tagged.slice(0, tagged.length - nTest);
+  const test = tagged.slice(tagged.length - nTest);
+  return { dev, test };
+};
+
+/**
+ * Cohen's κ cho 2 người gán (S10).
+ *
+ * SỬA 2026-10-15 — BẢN CŨ TÍNH SAI BIẾN NÀY.
+ * Bản cũ nhận `pairs.map(p => p.labeler_a)` và `pairs.map(p => p.labeler_b)`,
+ * tức so **TÊN** hai người chứ không phải câu trả lời của họ. Hệ quả:
+ *   · hai người khác tên ⇒ mọi cặp đều "bất đồng" ⇒ κ luôn bằng 0;
+ *   · hai người cùng tên ⇒ mọi cặp đều "thống nhất" ⇒ κ luôn bằng 1.
+ * Cả hai đều là con số bùa, không đo được gì về độ tin cậy của nhãn.
+ *
+ * Nay nhận `label_a_sku` / `label_b_sku` — mỗi người một cột trả lời riêng,
+ * do `scripts/llm/label-second.js --migrate` tạo ra.
+ *
+ * Chuỗi rỗng được coi là một giá trị hợp lệ: cả hai đều để trống nghĩa là
+ * "không ứng viên nào đúng" — đó là câu trả lời có chủ đích, không phải thiếu dữ
+ * liệu. Cần hai cùng trống mới loại khỏi mẫu; chỉ một cột trống thì tính là
+ * bất đồng (vì một người nói "không", người kia nói "có").
+ */
+const cohensKappa = (a, b) => {
+  // `String(x ?? '')` — nếu không, `undefined` lọt qua `!== ''` và mọi cặp chưa
+  // được gán đều bị tính là "thống nhất". Đó chính là lỗi làm κ = 1 với n = 120
+  // khi thực tế chỉ có 6 nhãn của người B.
+  const has = (x) => String(x ?? '').trim() !== '';
+  const idx = a.map((_, i) => i).filter((i) => has(a[i]) && has(b[i]));
+  const n = idx.length;
+  if (!n) {
+    return { kappa: null, n: 0, reason: 'chua co cap nao ca hai nguoi gan cung mot nhan (can nhan lap day cot label_b_sku)' };
+  }
+  const pairs = idx.map((i) => [a[i], b[i]]);
+  const cats = [...new Set(pairs.flat())];
+  const agree = pairs.filter(([x, y]) => x === y).length;
+  const po = agree / n;
+  let pe = 0;
+  for (const c of cats) {
+    const pa = pairs.filter(([x]) => x === c).length / n;
+    const pb = pairs.filter(([, y]) => y === c).length / n;
+    pe += pa * pb;
+  }
+  const kappa = pe >= 1 ? 1 : (po - pe) / (1 - pe);
+  return {
+    kappa: round(kappa, 4),
+    n,
+    po: round(po, 4),
+    pe: round(pe, 4),
+    agree,
+    low: kappa < 0.6,
+    // Số cặp hai người trả lời khác nhau — người thứ ba phải phân xử.
+    canPhanXu: pairs.filter(([x, y]) => x !== y).length,
+  };
+};
+
+/**
+ * Chỉ số ở ngưỡng chốt trước.
+ *
+ * Một cặp là "tự áp dụng" (pred) nếu hệ thống trả về SKU **và** không yêu cầu người.
+ * Cặp nào chuyển người thì KHÔNG tính là đoán đúng/sai — nó là chi phí vận hành,
+ * và S10 yêu cầu báo `fallbackRate` cùng độ chính xác, không báo riêng.
+ *
+ * @param {Array<{pair_id, label_sku, pred_sku, needsHuman}>} rows
+ */
+const scoreAtThreshold = (rows) => {
+  let tp = 0; let fp = 0; let fn = 0; let escalated = 0;
+  for (const r of rows) {
+    const truth = r.label_sku || null;
+    const pred = r.pred_sku || null;
+    const predictedAuto = Boolean(pred) && r.needsHuman !== true;
+    if (!predictedAuto) {
+      escalated += 1;
+      if (!truth) continue;      // không có nhãn ⇒ không tính recall
+      fn += 1;                    // có nhãn nhưng hệ thống không tự áp dụng
+      continue;
+    }
+    if (!truth) { fp += 1; continue; } // hệ thống tự áp dụng mà không có nhãn để đối chiếu
+    if (pred === truth) tp += 1;
+    else fp += 1;
+  }
+  const labelled = rows.filter((r) => r.label_sku).length;
+
+  // ── ĐỘ CHÍNH XÁC THÔ (thêm 2026-10-15) ──────────────────────────────────
+  // Vì sao cần: P/R/F1 ở trên KHÔNG đủ để trả lời "sai bao nhiêu ca".
+  //
+  //  - `recall = tp/(tp+fn)` chỉ đếm FN khi ca bị ĐƯA NGƯỜI. Ca bị tự áp
+  //    dụng sai lại rơi vào `fp` — tức không bao giờ chạm recall. Hệ quả: hệ
+  //    thống trả sai 8 ca mà vẫn có recall = 1.0 nếu nó không đưa ca nào ra
+  //    người. Đọc "R = 1" là hiểu sai.
+  //  - Dòng "ngưỡng chấm: confidence >= 0.85" in ra báo cáo nhưng hàm này
+  //    không nhận tham số ngưỡng — việc lọc đã do `needsHuman` quyết từ trước.
+  //
+  // Nên thêm hai số đọc được không nhầm:
+  //  - `rawAccuracy`  : đúng / số ca có nhãn (bất kể có tự áp dụng hay không)
+  //  - `wrongAuto`    : số ca tự áp dụng SAI — đây là ca GHI SAI VÀO DB âm
+  //                     thầm, nên đáng sợ hơn cả "sai" nói chung (xem K9 ở
+  //                     scripts/smoke-import-demo.js).
+  const labelledRows = rows.filter((r) => r.label_sku);
+  const correctCount = labelledRows.filter((r) => r.pred_sku && r.pred_sku === r.label_sku).length;
+  const wrongAuto = labelledRows.filter(
+    (r) => r.pred_sku && r.pred_sku !== r.label_sku && r.needsHuman !== true,
+  ).length;
+
+  const precision = tp + fp > 0 ? tp / (tp + fp) : null;
+  const recall = tp + fn > 0 ? tp / (tp + fn) : null;
+  const f1 = precision !== null && recall !== null && precision + recall > 0
+    ? (2 * precision * recall) / (precision + recall) : 0;
+  return {
+    n: rows.length,
+    labelled,
+    tp, fp, fn,
+    precision: round(precision),
+    recall: round(recall),
+    f1: round(f1),
+    escalated,
+    fallbackRate: rows.length ? round(escalated / rows.length) : null,
+    rawCorrect: correctCount,
+    rawAccuracy: labelledRows.length ? round(correctCount / labelledRows.length) : null,
+    wrongAuto,
+  };
+};
+
+/** Bootstrap THEO CẶP của chênh lệch F1 (S10) — seed cố định, 1000 lần. */
+const bootstrapF1Diff = (rowsA, rowsB, { seed = SEED, resamples = RESAMPLES } = {}) => {
+  const n = Math.min(rowsA.length, rowsB.length);
+  if (n < 2) return { n, point: null, ciLow: null, ciHigh: null, note: 'nua du cap' };
+  const f1Of = (rows, idxSet) => {
+    let tp = 0; let fp = 0; let fn = 0;
+    idxSet.forEach((i) => {
+      const r = rows[i];
+      const truth = r.label_sku || null;
+      const predictedAuto = Boolean(r.pred_sku) && r.needsHuman !== true;
+      if (!predictedAuto) { if (truth) fn += 1; return; }
+      if (!truth) { fp += 1; return; }
+      if (r.pred_sku === truth) tp += 1; else fp += 1;
+    });
+    const p = tp + fp > 0 ? tp / (tp + fp) : 0;
+    const rcl = tp + fn > 0 ? tp / (tp + fn) : 0;
+    return p + rcl > 0 ? (2 * p * rcl) / (p + rcl) : 0;
+  };
+  const all = Array.from({ length: n }, (_, i) => i);
+  const point = f1Of(rowsA, all) - f1Of(rowsB, all);
+  const rnd = mulberry32(seed);
+  const diffs = [];
+  for (let r = 0; r < resamples; r += 1) {
+    const idx = [];
+    for (let i = 0; i < n; i += 1) idx.push(Math.floor(rnd() * n));
+    diffs.push(f1Of(rowsA, idx) - f1Of(rowsB, idx));
+  }
+  diffs.sort((x, y) => x - y);
+  const lo = diffs[Math.floor(0.025 * resamples)];
+  const hi = diffs[Math.floor(0.975 * resamples) - 1] ?? diffs[diffs.length - 1];
+  return { n, seed, resamples, point: round(point), ciLow: round(lo), ciHigh: round(hi), excludesZero: lo > 0 || hi < 0 };
+};
+
+/** Chạy baseline fuzzy thuần trên một tập cặp. */
+const runFuzzy = async (catalog, pairs) => {
+  const matcher = new SkuMatcher(catalog);
+  const t0 = Date.now();
+  const rows = pairs.map((p) => {
+    const m = matcher.match(p.external_name, {});
+    return {
+      pair_id: p.pair_id,
+      label_sku: p.label_sku || null,
+      pred_sku: m.sku || null,
+      // Fuzzy tự quyết khi AUTO_ACCEPT; dưới đó là hàng đợi người.
+      needsHuman: m.status !== 'AUTO_ACCEPT',
+      fuzzyScore: m.score,
+      reason: m.reason,
+    };
+  });
+  return { rows, ms: Date.now() - t0 };
+};
+
+/** Chạy đường lai (công thức + LLM ca mơ hồ + người xác nhận). */
+const runHybrid = async (catalog, pairs) => {
+  const t0 = Date.now();
+  const inputs = pairs.map((p) => ({ name: p.external_name, ref: p.pair_id }));
+  const res = await matchHybridBatch(inputs, catalog, { useLlm: true });
+  const byRef = new Map();
+  for (const r of [...res.matched, ...res.reviewQueue]) {
+    byRef.set(r.ref, {
+      sku: r.sku, needsHuman: r.needsHuman === true, via: r.via,
+      confidence: r.confidence, reason: r.reason,
+      // Đoán của CÔNG THỨC, để so từng ca xem LLM đã cải thiện hay làm hỏng.
+      fuzzySku: r.fuzzy?.sku ?? null,
+      fuzzyScore: r.fuzzy?.score ?? null,
+    });
+  }
+  const rows = pairs.map((p) => {
+    const hit = byRef.get(p.pair_id) || {};
+    return {
+      pair_id: p.pair_id,
+      label_sku: p.label_sku || null,
+      pred_sku: hit.sku || null,
+      needsHuman: hit.needsHuman !== false,
+      via: hit.via || 'missing',
+      confidence: hit.confidence ?? null,
+      // Sửa 2026-10-15 — các trường dưới đây để ĐỌC TỪNG CA, không chỉ đọc
+      // tổng P/R/F1. Không có chúng thì không biết LLM sai ở đâu và sai thế nào.
+      reason: hit.reason || '',
+      fuzzy_sku: hit.fuzzySku ?? null,
+      fuzzy_score: hit.fuzzyScore ?? null,
+      external_name: p.external_name,
+    };
+  });
+  return { rows, ms: Date.now() - t0, stats: res.stats };
+};
+
+const parseArgs = () => {
+  const sim = process.argv.includes('--simulated');
+  const modeIdx = process.argv.indexOf('--mode');
+  return { simulated: sim, mode: modeIdx >= 0 ? process.argv[modeIdx + 1] : undefined };
+};
+
+/**
+ * Đọc `LlmUsageLog` để đo TOKEN THẬT của lần chạy này.
+ *
+ * VÌ SAO CÓ (sửa 2026-10-14): dòng 361 cũ gán cứng
+ * `tokensPerPair: 'CHUA DO - can doc LlmUsageLog theo run nay'` — nghĩa là
+ * `tokensFromUsage` được tính rồi **vứt đi**, và không lần nào trong lịch sử
+ * dự án có con số token thật. `config/llm.js` và `writeUsageRow` của
+ * `llm-policy` đã ghi sẵn từng lần gọi vào bảng `llm_usage_logs`; chỉ là không
+ * ai đọc lại.
+ *
+ * Cửa sổ lọc = `[since, until)` quanh lần chạy + `task='SKU_MATCH'`. Khoá theo
+ * `task` vì các tác vụ khác (`PROPOSAL_EXPLAIN`, `VENDOR_MESSAGE`) dùng chung
+ * bảng và cùng có thể chạy song song.
+ *
+ * @returns {Promise<object>} số đo token/độ trễ, hoặc `{ measured:false, lyDo }`
+ */
+const readUsage = async (since, until) => {
+  try {
+    const agg = await prisma.llmUsageLog.aggregate({
+      where: { task: 'SKU_MATCH', createdAt: { gte: since, lt: until } },
+      _sum: {
+        promptTokens: true,
+        completionTokens: true,
+        totalTokens: true,
+        latencyMs: true,
+      },
+      _count: { _all: true },
+    });
+    const n = agg._count._all;
+    if (!n) return { measured: false, lyDo: 'khong co dong LlmUsageLog nao cho task SKU_MATCH trong cua so chay' };
+    return {
+      measured: true,
+      soLanGoi: n,
+      promptTokens: agg._sum.promptTokens || 0,
+      completionTokens: agg._sum.completionTokens || 0,
+      totalTokens: agg._sum.totalTokens || 0,
+      doTreTrungBinhMs: Math.round((agg._sum.latencyMs || 0) / n),
+      // Thời gian bị trả về kể cả lần lỗi — vẫn là chi phí thật của hệ thống.
+      luuY: 'doTreTrungBinhMs tinh ca lan ERROR (503/timeout) — la chi phi that',
+    };
+  } catch (e) {
+    return { measured: false, lyDo: `doc LlmUsageLog that bai: ${e.message}` };
+  }
+};
+
+const main = async () => {
+  assertLocalDb('llm:eval khong ghi DB nhung van kiem tra DATABASE_URL cho an toan');
+  const { simulated, mode: cliMode } = parseArgs();
+  // SỬA 2026-10-14 — CỜ CLI `--mode` TỪNG BỊ BỎ QUA (im lặng).
+  //
+  // BUG THẬT: `parseArgs()` trả về `{ simulated, mode }`, nhưng dòng cũ chỉ
+  // destructure `const { simulated } = parseArgs();` ⇒ `mode` bị vứt im lặng.
+  // Dòng kế bên lại `llmPolicy.resolveMode()` chỉ đọc biến môi trường
+  // `LLM_MODE` (xem `src/config/llm-policy.js:105-107`) ⇒ lệnh
+  // `npm run llm:eval -- --mode live` **vẫn chạy ở mode=off** và không báo lỗi.
+  // Tài liệu hướng dẫn sai ở 6 chỗ (00-index.md, 09-real-data-evidence.md,
+  // FILL-IN.md, MORNING-REPORT.md, STATE.md) — ai làm theo sẽ tưởng đã đo
+  // được LLM thật trong khi vẫn là đường không-LLM.
+  //
+  // SỬA: cờ CLI được ghi vào `LLM_MODE` TRƯỚC khi `resolveMode()` chạy. Thứ tự
+  // này quan trọng: `resolveMode` đọc biến môi trường lúc gọi, không phải lúc
+  // nạp module — nên phải gán trước.
+  if (cliMode) {
+    if (!['off', 'record', 'replay', 'live'].includes(cliMode)) {
+      throw new Error(
+        `--mode ${cliMode} khong hop le. Chi chap nhan: off | record | replay | live.`,
+      );
+    }
+    process.env.LLM_MODE = cliMode;
+    // `LLM_DISABLED=1` vẫn phải thắng: đó là khoá cứu, không phải tuỳ chọn.
+    console.log(`[llm:eval] --mode ${cliMode} → ep LLM_MODE=${cliMode}`);
+  }
+  const mode = llmPolicy.resolveMode();
+  if (cliMode && cliMode !== mode) {
+    console.log(
+      `[llm:eval] YEU CAU mode=${cliMode} NHUNG resolveMode() tra ${mode}` +
+      `${process.env.LLM_DISABLED === '1' ? ' (do LLM_DISABLED=1 — khoa cuu dung dat)' : ''}`,
+    );
+  }
+  const catalog = readCsv(CATALOG_CSV).map((r) => ({ sku: r.sku, name: r.name }));
+  const sheet = readCsv(SHEET);
+
+  // ── nhãn ────────────────────────────────────────────────────────────────
+  let pairs;
+  let labelSource;
+  if (simulated) {
+    if (!fs.existsSync(TRUTH_SIM)) throw new Error('thieu truth.simulated.csv');
+    const truth = new Map(readCsv(TRUTH_SIM).map((r) => [r.pair_id, r.sku]));
+    pairs = sheet.map((r) => ({
+      pair_id: r.pair_id,
+      external_name: r.external_name,
+      label_sku: truth.get(r.pair_id) || null,
+    }));
+    labelSource = 'MO PHONG (dap an cua bo sinh tep xuat don) — KHONG phai nhan nguoi';
+  } else {
+    pairs = sheet.map((r) => ({
+      pair_id: r.pair_id,
+      external_name: r.external_name,
+      label_sku: r.label_sku || null,
+      // Sửa 2026-10-15: phải đọc HAI CỘT TRẢ LỜI riêng, không phải `labeler_a/b`.
+      // Bản cũ lấy `labeler_a`/`labeler_b` — đó là cột TÊN người gán.
+      label_a_sku: r.label_a_sku ?? '',
+      label_b_sku: r.label_b_sku ?? '',
+      labeler_a: r.labeler_a || null,
+      labeler_b: r.labeler_b || null,
+      label_confidence: r.label_confidence || null,
+    }));
+    labelSource = 'nhan tay (label_sku do nguoi dien)';
+  }
+
+  const labelled = pairs.filter((p) => p.label_sku).length;
+  if (!simulated && labelled === 0) {
+    console.log('=== KHU VUC CHUA DO DUOC (BLOCKER-HUMAN) ===');
+    console.log(`Phieu ${path.relative(ROOT, SHEET)} co ${pairs.length} cap nhung COT label_sku con TRONG.`);
+    console.log('Khong co nhan tay thi khong tinh duoc precision/recall - va quy tac S10 cam do.');
+    console.log('');
+    console.log('Dung 2 nguoi gan doc lap theo huong dan, roi chay lai:');
+    console.log('  1) mo docs/aisc26/notes/sku-labeling-guide.md');
+    console.log('  2) nguoi A: chay `npm run llm:labels:b -- --migrate` mot lan de tach cot');
+    console.log('     roi gan vao `label_a_sku` / `label_a_confidence`');
+    console.log('  3) nguoi B: chay `npm run llm:labels:b -- --export`, gan vao cot `b_*`');
+    console.log('     (ban do KHONG co cot cua nguoi A — nhan MU, hai nguoi KHONG xem nhau)');
+    console.log('  4) nap nhan nguoi B: `npm run llm:labels:b -- --load`');
+    console.log('  5) chay lai: npm run llm:eval  => co Cohen kappa that');
+    console.log('');
+    console.log(`Muon chi chay may (khong cong bo so): npm run llm:eval -- --simulated`);
+    process.exit(2);
+  }
+
+  const { dev, test } = splitDevTest(pairs);
+  const usageSince = new Date();
+  const fuzzy = await runFuzzy(catalog, test);
+  const hybrid = await runHybrid(catalog, test);
+  const fuzzyDev = await runFuzzy(catalog, dev);
+  const hybridDev = await runHybrid(catalog, dev);
+  const usageUntil = new Date();
+
+  // Token thật — đọc từ DB, không đoán.
+  const usage = (mode === 'live' || mode === 'record')
+    ? await readUsage(usageSince, usageUntil)
+    : { measured: false, lyDo: `mode=${mode} — khong co lenh goi that nen khong co token` };
+  const perPair = (total, count) => (count > 0 ? Number((total / count).toFixed(1)) : null);
+  const tokensPerPairNumber = usage.measured
+    ? {
+      trenMoiCapDaDoi: perPair(usage.totalTokens, usage.soLanGoi),
+      trenMoiCapKiemDinh: perPair(usage.totalTokens, test.length),
+      trenMoiCapDaNhan: perPair(usage.totalTokens, labelled),
+    }
+    : null;
+
+  const sFuzzy = scoreAtThreshold(fuzzy.rows);
+  const sHybrid = scoreAtThreshold(hybrid.rows);
+  const boot = bootstrapF1Diff(hybrid.rows, fuzzy.rows);
+
+  const kappa = simulated
+    ? { kappa: null, n: 0, reason: 'nhan MO PHONG - khong tinh Cohen kappa duoc' }
+    : cohensKappa(pairs.map((p) => p.label_a_sku), pairs.map((p) => p.label_b_sku));
+
+  // Token: chỉ có số thật khi đã chạy live. Replay/off ⇒ 0 và ghi "chưa đo".
+  const tokensFromUsage = hybrid.stats.llmCalls > 0 && (mode === 'live' || mode === 'record');
+  const out = {
+    runId: `S10-${new Date().toISOString().replace(/[-:.TZ]/g, '').slice(0, 14)}`,
+    at: new Date().toISOString(),
+    labelSource,
+    dataset: {
+      labelSheet: path.relative(ROOT, SHEET),
+      catalog: path.relative(ROOT, CATALOG_CSV),
+      totalPairs: pairs.length,
+      labelled,
+      nhanLaMoPhong: simulated,
+    },
+    mode,
+    llm: llmPolicy.describe(),
+    confThreshold: CONF_THRESHOLD,
+    baselineThresholds: { autoAccept: AUTO_ACCEPT_SCORE, review: REVIEW_SCORE },
+    seed: SEED,
+    resamples: RESAMPLES,
+    split: { test: test.length, dev: dev.length },
+    kappa,
+    test: { fuzzy: sFuzzy, hybrid: sHybrid },
+    dev: { fuzzy: scoreAtThreshold(fuzzyDev.rows), hybrid: scoreAtThreshold(hybridDev.rows) },
+    f1DiffBootstrap: boot,
+    throughput: {
+      fuzzyMs: fuzzy.ms,
+      hybridMs: hybrid.ms,
+      msPerPairFuzzy: round(fuzzy.ms / Math.max(1, test.length), 2),
+      msPerPairHybrid: round(hybrid.ms / Math.max(1, test.length), 2),
+    },
+    llmCalls: hybrid.stats.llmCalls,
+    llmUsable: hybrid.stats.llmUsable,
+    llmRejected: hybrid.stats.llmRejected,
+    llmMisses: hybrid.stats.llmMisses,
+    // Lý do trượt tách nhóm (sửa 2026-10-14 — trước đây báo cáo gọi chung là
+    // "503/timeout", nhưng đo thật cho thấy API không hỏng).
+    llmMissBy: hybrid.stats.llmMissBy,
+    llmNoMatch: hybrid.stats.llmNoMatch,
+    tyLeDungDuoc: hybrid.stats.tyLeDungDuoc,
+    // Token/độ trễ đọc thật từ `llm_usage_logs` (sửa 2026-10-14 — trước đây gán
+    // cứng chuỗi "CHUA DO" dù đã chạy live).
+    usage,
+    // Token/cặp: chỉ ghi số khi đã chạy live thật, ngược lại ghi "chưa đo".
+    tokensPerPair: tokensFromUsage ? tokensPerPairNumber : 'CHUA DO',
+    // SỬA 2026-10-14 — `publishable` trước đây CHỈ xét `mode`, nên một lần chạy
+    // `mode=live` mà LLM **không lần nào** thành công vẫn bị gắn
+    // `publishable: true`. Hệ quả: hybrid ≡ fuzzy (vì LLM không được dùng) nhưng
+    // vẫn mang nhãn "số AI" ⇒ có thể bị đưa lên slide nhầm.
+    //
+    // Nay đòi cả hai: ĐÃ chạy live/record **và** có ít nhất 1 câu trả lời LLM
+    // dùng được. Không đạt ⇒ `publishable: false` kèm lý do.
+    publishable: (mode === 'live' || mode === 'record') && hybrid.stats.llmUsable > 0,
+    lyDoKhongCongBo: (mode !== 'live' && mode !== 'record')
+      ? `mode=${mode} — phai chay live hoac record`
+      : (hybrid.stats.llmUsable === 0
+        ? 'mode=live nhung KHONG co cau tra loi LLM nao dung duoc (het ha muc 429 / 503) '
+          + '=> hybrid chay dung bang fuzzy, khong phai so cua AI'
+        : null),
+  };
+
+  const file = path.join(ROOT, 'docs', 'aisc26', 'notes', 'sku-eval-last-run.json');
+  fs.mkdirSync(path.dirname(file), { recursive: true });
+  fs.writeFileSync(file, `${JSON.stringify(out, null, 2)}\n`, 'utf8');
+
+  // ── BẢNG TỪNG CA: bằng chứng để đọc, không chỉ để tính điểm ────────────
+  //
+  // Thêm 2026-10-15. Tổng P/R/F1 không cho biết LLM sai ở đâu và sai vì sao —
+  // nên ghi kèm từng ca. Đây là thứ đem ra trình bày được: "3 ca LLM trả lời
+  // sai, đây là 3 ca, và đây là nguyên nhân".
+  const casesFile = path.join(ROOT, 'docs', 'aisc26', 'notes', 'sku-eval-cases.csv');
+  const byId = new Map(sheet.map((r) => [r.pair_id, r]));
+  // PHẢI map trên `hybrid.rows` (dòng ĐÃ CHẤM, có pred_sku/via), KHÔNG phải
+  // `test` (cặp thô, không có 2 trường đó). Lần đầu map nhầm `test` ⇒ cột `via`
+  // và `pred_sku` ra rỗng, bảng thành vô nghĩa mà không báo lỗi.
+  const chon = new Map(hybrid.rows.map((r) => [r.pair_id, r]));
+  const caseRows = hybrid.rows.map((r) => {
+    const q = byId.get(r.pair_id) || {};
+    const truth = r.label_sku || '';
+    const pred = r.pred_sku || '';
+    const judged = Boolean(pred) && r.needsHuman !== true;
+    // Ba trạng thái phải tách bạch. Trước đây ca KHÔNG có nhãn nhưng vẫn tự áp
+    // dụng bị gán "SAI" — cộng vào số lỗi một cách sai, và đọc bảng thấy "sai"
+    // nhiều hơn thực tế. "Chưa ai kiểm" không phải "sai".
+    const ketQua = !judged ? 'CHAN_NGUOI' : (truth === '' ? 'CHUA_CO_NHAN' : (pred === truth ? 'DUNG' : 'SAI'));
+    return [
+      r.pair_id,
+      q.external_name || '',
+      q.cand1_sku, q.cand1_name,
+      q.cand2_sku, q.cand2_name,
+      q.cand3_sku, q.cand3_name,
+      q.cand4_sku, q.cand4_name,
+      q.cand5_sku, q.cand5_name,
+      r.fuzzy_sku ?? '', r.fuzzy_score ?? '',
+      pred, r.via, r.confidence ?? '',
+      truth,
+      ketQua,
+      r.reason || '',
+    ].map((c) => {
+      const s = String(c ?? '');
+      return /[",\n]/.test(s) ? `"${s.replace(/"/g, '""')}"` : s;
+    }).join(',');
+  });
+  // Chốt chặn: bảng chi tiết rỗng là vô dụng, phải nói ra chứ không ghi im lặng.
+  const coVia = caseRows.filter((l) => l.split(',')[15]).length;
+  if (coVia === 0) {
+    throw new Error(
+      'BANG TUNG CA RONG — cot "via" khong co gia tri nao. '
+      + 'Kiem tra lai: phai map tren hybrid.rows (dong da cham), khong phai test (cap tho).',
+    );
+  }
+  const caseHead = [
+    'pair_id', 'external_name',
+    'c1_sku', 'c1_name', 'c2_sku', 'c2_name', 'c3_sku', 'c3_name',
+    'c4_sku', 'c4_name', 'c5_sku', 'c5_name',
+    'fuzzy_sku', 'fuzzy_score',
+    'pred_sku', 'via', 'confidence',
+    'label_sku_dung', 'ket_qua', 'ly_do',
+  ].join(',');
+  fs.writeFileSync(casesFile, `${caseHead}\n${caseRows.join('\n')}\n`, 'utf8');
+
+  // ── in báo cáo ──────────────────────────────────────────────────────────
+  const L = [];
+  L.push('=== DANH GIA KHOIP SKU (S10) ===');
+  L.push(`run_id: ${out.runId} | mode: ${mode} | nhan: ${labelSource}`);
+  L.push(`n = ${out.dataset.totalPairs} cap (co nhan: ${labelled}) | test ${test.length} / dev ${dev.length}`);
+  L.push(`nguong cham: confidence >= ${CONF_THRESHOLD}`);
+  L.push('');
+  L.push(`BASELINE fuzzy khong-LLM : P=${sFuzzy.precision} R=${sFuzzy.recall} F1=${sFuzzy.f1} chuyen_nguoi=${pct(sFuzzy.fallbackRate)}%`);
+  L.push(`HYBRID (fuzzy + LLM)     : P=${sHybrid.precision} R=${sHybrid.recall} F1=${sHybrid.f1} chuyen_nguoi=${pct(sHybrid.fallbackRate)}%`);
+  // Độ chính xác thô đặt NGAY dưới P/R/F1 và luôn kèm phần đếm, để không ai
+  // đọc "R = 1" thành "100% chính xác". Chi tiết vì sao ở `scoreAtThreshold`.
+  const dongTho = (n, s) => `  do chinh xac tho: ${s.rawCorrect}/${s.labelled} = ${pct(s.rawAccuracy)}%`
+    + `  | tu ap dung sai (ghi sai DB am tham): ${s.wrongAuto}`;
+  L.push(dongTho('fuzzy', sFuzzy));
+  L.push(dongTho('hybrid', sHybrid));
+  L.push('');
+  L.push(`bootstrap F1(hybrid-fuzzy): ${boot.point} CI95 [${boot.ciLow}, ${boot.ciHigh}] ${boot.excludesZero ? '=> KHONG chua 0' : '=> CHUA 0'}`);
+  if (kappa.kappa === null) {
+    L.push(`Cohen kappa (2 nguoi gan): CHUA DO — ${kappa.reason || 'khong du du lieu'}`);
+    L.push('   -> chay: npm run llm:labels:b -- --export, nguoi B gan, roi --load');
+  } else {
+    L.push(`Cohen kappa (2 nguoi gan): k=${kappa.kappa} (n=${kappa.n}, thong nhat ${kappa.agree}`
+      + `, can phan xu ${kappa.canPhanXu}, po=${kappa.po}, pe=${kappa.pe})`
+      + (kappa.low ? '  <0,6 => nhan chua du tin cay' : ''));
+  }
+  // Gọi tên đúng: `llmUsable` là số ca LLM trả lời CHẮC CHẮN (confidence ≥ ngưỡng),
+  // KHÔNG phải số ca trả lời ĐÚNG. Trước đây in là "dung duoc" — cùng từ với
+  // "câu trả lời dùng được", dễ đọc nhầm thành chính xác. Số đúng phải lấy ở
+  // dòng "do chinh xac tho" và bảng từng ca.
+  L.push(`LLM goi: ${hybrid.stats.llmCalls} | tra loi chac chan (>= nguong): ${hybrid.stats.llmUsable} | truot: ${hybrid.stats.llmMisses}`);
+  if (usage.measured) {
+    L.push(
+      `TOKEN THAT  : ${usage.totalTokens} tok (prompt ${usage.promptTokens} + completion ` +
+      `${usage.completionTokens}) tren ${usage.soLanGoi} lenh goi · do tre TB ${usage.doTreTrungBinhMs} ms`,
+    );
+    L.push(
+      `token/cap   : ${tokensPerPairNumber.trenMoiCapDaDoi} tren moi lenh goi · ` +
+      `${tokensPerPairNumber.trenMoiCapKiemDinh} tren moi cap kiem dinh · ` +
+      `${tokensPerPairNumber.trenMoiCapDaNhan} tren moi cap da nhan`,
+    );
+    // Sửa 2026-10-14 — cảnh báo cũ ghi "503/timeout" cho MỌI trường hợp trượt.
+    // Đo trên DB thật cho thấy 13/13 lời gọi API đều HTTP 200: trượt phần lớn vì
+    // LLM trả JSON sai khuôn dạng, không phải vì hạ tầng. Ghi đúng nguyên nhân.
+    const missBy = hybrid.stats.llmMissBy || {};
+    const tyLe = hybrid.stats.tyLeDungDuoc;
+    const noMatch = hybrid.stats.llmNoMatch || 0;
+    L.push(`ty le LLM tra loi chac chan: ${tyLe}% (${hybrid.stats.llmUsable}/${hybrid.stats.llmCalls} ca duoc hoi)`);
+    if (noMatch > 0) {
+      L.push(`LLM tra loi "khong co ung vien nao khop": ${noMatch} ca — day la tra loi DUNG,`);
+      L.push('   khong phai loi; ca do van duoc dua nguoi xac nhan nhu moi.');
+    }
+    const thatBai = (missBy.api || 0) + (missBy.json || 0) + (missBy.hallucinatedSku || 0) + (missBy.other || 0);
+    L.push(`loi that cua LLM: ${thatBai} ca` + (thatBai ? ` (${JSON.stringify(missBy)})` : ''));
+    if (thatBai > 0) {
+      const goc = [];
+      if (missBy.api) goc.push(`${missBy.api} loi API`);
+      if (missBy.json) goc.push(`${missBy.json} JSON sai khuon dang`);
+      if (missBy.hallucinatedSku) goc.push(`${missBy.hallucinatedSku} tra ma ngoai danh sach ung vien`);
+      if (missBy.other) goc.push(`${missBy.other} ly do khac`);
+      L.push(`   Chi tiet: ${goc.join('; ')}.`);
+    }
+  } else {
+    L.push(`token/cap: CHUA DO — ${usage.lyDo}`);
+  }
+  L.push('');
+  if (!out.publishable) {
+    L.push('!! KHONG CONG BO.');
+    L.push(`   Ly do: ${out.lyDoKhongCongBo}`);
+    L.push('   Chi duoc dua vao slide khi co mode=live + ngay chay + TEN MODEL + it nhat');
+    L.push('   mot cau tra loi LLM dung duoc.');
+  }
+  if (simulated) {
+    L.push('!! NHAN LA MO PHONG (sinh tu catalog) — KHONG phai nhan nguoi, KHONG phai do chinh xac thuc te.');
+  }
+  if (labelled < 100) L.push('!! n < 100 => chi bao so dem, KHONG bao phan tram.');
+  L.push(`ghi: ${path.relative(ROOT, file)}`);
+  L.push(`ghi tung ca: ${path.relative(ROOT, casesFile)} (${caseRows.length} cap)`);
+
+  console.log(L.join('\n'));
+  await require(`${ROOT}/src/config/prisma`).$disconnect().catch(() => {});
+  process.exit(0);
+};
+
+main().catch((e) => {
+  console.error(`[llm:eval] that bai: ${e.message}`);
+  process.exit(1);
+});

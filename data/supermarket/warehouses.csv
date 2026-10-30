@@ -1,0 +1,12 @@
+﻿WH_code,name,is_default,parent,type
+DC01,Kho trung tam Cu Chi,1,,DC
+CH01,Cua hang Minh Khai Quan 1,0,DC01,STORE
+CH02,Cua hang Minh Khai Quan 3,0,DC01,STORE
+CH03,Cua hang Minh Khai Quan 5,0,DC01,STORE
+CH04,Cua hang Minh Khai Quan 7,0,DC01,STORE
+CH05,Cua hang Minh Khai Binh Thanh,0,DC01,STORE
+CH06,Cua hang Minh Khai Thu Duc,0,DC01,STORE
+CH07,Cua hang Minh Khai Quan 10,0,DC01,STORE
+CH08,Cua hang Minh Khai Tan Binh,0,DC01,STORE
+CH09,Cua hang Minh Khai Binh Duong,0,DC01,STORE
+CH10,Cua hang Minh Khai Dong Nai,0,DC01,STORE

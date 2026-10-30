@@ -111,9 +111,14 @@ const Workflows = lazy(() => import("./pages/Workflows"));
 const Integrations = lazy(() => import("./pages/Integrations"));
 const SettingsPage = lazy(() => import("./pages/Settings"));
 const AgentAnalytics = lazy(() => import("./pages/AgentAnalytics"));
+const AgentApprovals = lazy(() => import("./pages/AgentApprovals"));
 const StoreCredits = lazy(() => import("./pages/StoreCredits"));
 const SerialNumbers = lazy(() => import("./pages/SerialNumbers"));
 const SmartGuide = lazy(() => import("./pages/SmartGuide"));
+const EvidenceBacktest = lazy(() => import("./pages/EvidenceBacktest"));
+const ReplenishmentRules = lazy(() => import("./pages/ReplenishmentRules"));
+const RfqQuotation = lazy(() => import("./pages/RfqQuotation"));
+const SupplyDashboard = lazy(() => import("./pages/SupplyDashboard"));
 const Sessions = lazy(() => import("./pages/Sessions"));
 const Promotions = lazy(() => import("./pages/Promotions"));
 const ModifierGroups = lazy(() => import("./pages/ModifierGroups"));
@@ -143,6 +148,10 @@ const CrmDashboard = lazy(() => import("./pages/crm/CrmDashboard"));
 const CrmSalesHierarchy = lazy(() => import("./pages/crm/SalesHierarchy"));
 // CRM Phase 4 — RFM/CLV/churn (mục 1)
 const CrmCustomerInsights = lazy(() => import("./pages/crm/CustomerInsights"));
+// PRM — quản trị đối tác đầu ra (giới thiệu khách, hoa hồng, lợi nhuận ròng)
+const Partners = lazy(() => import("./pages/partners/Partners"));
+const PartnerDetail = lazy(() => import("./pages/partners/PartnerDetail"));
+const PartnerRoi = lazy(() => import("./pages/partners/PartnerRoi"));
 
 /** Catch-all redirect: SUPER_OMEGA_ULTRA_ADMIN → /admin, others → /dashboard */
 function RoleRedirect() {
@@ -377,6 +386,13 @@ function App() {
                 <Route path="/crm/hierarchy" element={<CrmSalesHierarchy />} />
                 <Route path="/crm/insights" element={<CrmCustomerInsights />} />
                 <Route path="/crm/dashboard" element={<CrmDashboard />} />
+                {/* PRM — đối tác đầu ra. Nhóm route này đặt trong khối CRM vì dùng
+                    chung gói `crm` và cùng bộ dữ liệu khách hàng. Phân quyền chi tiết
+                    do backend chặn (`roles.js` của PRM) — route ở đây chỉ cần quyền
+                    đọc cơ bản, CASHIER cũng xem được báo cáo. */}
+                <Route path="/prm/partners" element={<Partners />} />
+                <Route path="/prm/partners/:id" element={<PartnerDetail />} />
+                <Route path="/prm/roi" element={<PartnerRoi />} />
                 <Route path="/tags" element={<TagManagement />} />
                 <Route path="/store-credits" element={<StoreCredits />} />
               </Route>
@@ -409,10 +425,20 @@ function App() {
                 <Route path="/marketplace" element={<Marketplace />} />
               </Route>
 
+              {/* ADMIN + MANAGER + WAREHOUSE + ACCOUNTANT — chỉ số chuỗi cung ứng.
+                  Kế toán cần xem tồn kho/tồn chết, kho cần xem PO quá hạn, nên cả bốn
+                  role đều xem được; nhưng KHÔNG có nút thao tác nào trên màn này. */}
+              <Route element={<RequireRole roles={["ADMIN", "MANAGER", "WAREHOUSE", "ACCOUNTANT"]} />}>
+                <Route path="/supply" element={<SupplyDashboard />} />
+              </Route>
+
               {/* ADMIN + MANAGER — Management features (ACCOUNTANT excluded) */}
               <Route element={<RequireRole roles={["ADMIN", "MANAGER"]} />}>
                 <Route path="/agent-analytics" element={<AgentAnalytics />} />
+                <Route path="/agent-approvals" element={<AgentApprovals />} />
                 <Route path="/smart-guide" element={<SmartGuide />} />
+                <Route path="/evidence" element={<EvidenceBacktest />} />
+                <Route path="/rfq" element={<RfqQuotation />} />
                 <Route path="/projects" element={<Projects />} />
                 <Route path="/projects/:id" element={<ProjectDetail />} />
                 <Route path="/analytics" element={<Analytics />} />
@@ -463,6 +489,7 @@ function App() {
                 }
               >
                 <Route path="/inventory" element={<Inventory />} />
+                <Route path="/replenishment-rules" element={<ReplenishmentRules />} />
                 <Route path="/cycle-count" element={<CycleCount />} />
                 <Route path="/serial-numbers" element={<SerialNumbers />} />
                 <Route path="/production" element={<Production />} />

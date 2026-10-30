@@ -1,102 +1,124 @@
-const prisma = require("../../config/prisma");
+﻿const prisma = require("../../config/prisma");
+const { runWithTenant } = require("../../config/tenantContext");
 const logger = require('../../utils/logger');
 
 const LOG = "[automation]";
 
+/**
+ * Cờ bật đường đề xuất nhập hàng của `checkAutoReorder`.
+ *
+ * MẶC ĐỊNH OFF — và kể cả khi BẬT, đường này cũng KHÔNG tạo PO.
+ * Trước đây `checkAutoReorder` gọi thẳng `prisma.purchaseOrder.create` và tự
+ * đặt `status: 'APPROVED'` khi tổng tiền < 5.000.000 (ngưỡng hard-code, không đọc
+ * `companySettings.poApprovalThreshold`). Đó chính là đường né kiểm soát được
+ * nêu ở `00-scope.md` F2/F3.
+ *
+ * Nay đường này chỉ SINH ĐỀ XUẤT qua cùng cơ chế với CDC: công thức tính số →
+ * gate PENDING → ADMIN/MANAGER duyệt → mới có PO.
+ *
+ * Bật bằng: `AUTO_REORDER_PROPOSAL=1` trong .env.
+ * Tắt (mặc định): đường này KHÔNG làm gì; CDC vẫn là nguồn sinh đề xuất chính.
+ *
+ * Đọc env TẠI LỜI GỌI (không phải lúc require) để test bật/tắt được trong cùng
+ * một tiến trình — nếu đọc lúc require thì phải nạp lại cả module để đổi cờ.
+ */
+const isAutoReorderProposalEnabled = () => process.env.AUTO_REORDER_PROPOSAL === '1';
+
+/**
+ * Trễ giữa lúc đơn vừa hoàn tất và lúc đánh giá SKU.
+ *
+ * Cần trễ vì `onOrderCompleted` bắn ra khi đơn vừa `COMPLETED`; nếu đánh giá tồn
+ * tại thời điểm đó thì số tồn và lịch sử bán có thể chưa phản ánh giao dịch vừa
+ * rồi (CDC/ghi tồn chạy ở request khác). Tên hằng số thay cho số `1000` rời.
+ */
+const AUTO_REORDER_DELAY_MS = 1000;
+
+/**
+ * Khoá chống đánh giá lặp theo cặp (tenant, SKU).
+ *
+ * VÌ SAO CẦN: một SKU bán thường xuyên sẽ kích hoạt `onOrderCompleted` liên tục.
+ * Không có khoá này, mỗi đơn hoàn tất lại chạy một vòng loader 28 ngày lịch sử
+ * cho SKU đó — tốn truy vấn mà **không đổi kết luận** (ngưỡng quyết định là
+ * ATP + onOrder so với ROP, không phải số đơn).
+ *
+ * HẠN CHẾ CẦN NÓI RÕ: khoá nằm trong bộ nhớ của tiến trình. Nhiều instance
+ * (hoặc restart) thì mỗi instance một bộ; đề xuất trùng vẫn bị chặn ở tầng DB
+ * bằng `proposalKey` + `pg_advisory_xact_lock` (`replenishment.suggest`), nên
+ * khoá này chỉ tiết kiệm việc đọc, KHÔNG phải chốt chặn duy nhất.
+ */
+const AUTO_REORDER_DEDUPE_WINDOW_MS = 60_000;
+const autoReorderSeen = new Map();
+
+/** Thử "chốt" một cặp (tenant, SKU) trong cửa sổ debounce. */
+const claimAutoReorderSlot = (tenantId, productId, now = Date.now()) => {
+  const key = `${tenantId}::${productId}`;
+  const last = autoReorderSeen.get(key) || 0;
+  if (now - last < AUTO_REORDER_DEDUPE_WINDOW_MS) return false;
+  autoReorderSeen.set(key, now);
+  // Giới hạn bản ghi trong bộ nhớ: xoá mốc cũ khi bản ghi quá lớn.
+  if (autoReorderSeen.size > 5000) {
+    for (const [k, t] of autoReorderSeen) {
+      if (now - t >= AUTO_REORDER_DEDUPE_WINDOW_MS) autoReorderSeen.delete(k);
+    }
+  }
+  return true;
+};
+
+/** Xoá khoá debounce. Chỉ dùng trong test — cùng dạng `hierarchy._resetCacheForTest()`. */
+const _resetAutoReorderDedupeForTest = () => autoReorderSeen.clear();
+
 const checkAutoReorder = async (productIds, warehouseId) => {
+  if (!isAutoReorderProposalEnabled()) {
+    logger.debug(
+      `${LOG} auto-reorder TAT (AUTO_REORDER_PROPOSAL chua bat) — bo qua. ` +
+      `Khong tao PO. Nguon de xuat chinh la CDC (agent.cdc.js LOW_STOCK).`,
+    );
+    return;
+  }
   try {
-    const notif = require("../notifications/notification.service");
+    const prisma = require('../../config/prisma');
+    const { suggestForProductInTenant } = require('../replenishment/replenishment.suggest');
 
     const inventories = await prisma.inventory.findMany({
-      where: {
-        productId: { in: productIds },
-        warehouseId,
-      },
-      include: {
-        product: { select: { id: true, name: true, sku: true, costPrice: true, isActive: true } },
-      },
+      where: { productId: { in: productIds }, warehouseId },
+      include: { product: { select: { id: true, name: true, sku: true, costPrice: true, isActive: true } } },
     });
 
     for (const inv of inventories) {
       if (!inv.product?.isActive) continue;
-      const available = inv.quantity - (inv.reserved || 0);
-      if (available > inv.minStock) continue;
 
-      const lastPO = await prisma.purchaseItem.findFirst({
-        where: { productId: inv.productId },
-        orderBy: { purchaseOrder: { date: "desc" } },
-        include: { purchaseOrder: { select: { vendorId: true, vendor: { select: { id: true, name: true, isActive: true } } } } },
-      });
+      // KHÔNG lọc sơ bộ bằng `minStock`.
+      //
+      // Trước đây có `if (available > inv.minStock) continue;` với lý do tiết kiệm
+      // chi phí loader. Nhưng `minStock` KHÁC ngưỡng quyết định: `minStock` thường
+      // nhỏ hơn ROP, nên một SKU có ATP > minStock nhưng vẫn <= ROP (trường hợp rất
+      // phổ biến) sẽ bị bỏ qua ⇒ âm thầm không sinh đề xuất nhập hàng.
+      // Quyết định "có cần nhập không" phải do đúng một nơi đưa ra là `calc.js`
+      // (ATP + onOrder <= ROP). Ở đây chỉ giữ lọi rẻ tiền `isActive`.
 
-      const vendor = lastPO?.purchaseOrder?.vendor;
-      if (!vendor || !vendor.isActive) {
-        logger.info(`${LOG} auto-reorder: không tìm thấy vendor cho ${inv.product.sku}, skip`);
+      if (!inv.tenantId) {
+        logger.error(`${LOG} auto-reorder: inventory ${inv.id} không có tenantId — bỏ qua ${inv.product.sku}`);
         continue;
       }
 
-      const existingDraft = await prisma.purchaseOrder.findFirst({
-        where: {
-          vendorId: vendor.id,
-          status: "DRAFT",
-          items: { some: { productId: inv.productId } },
-        },
-      });
-      if (existingDraft) {
-        logger.info(`${LOG} auto-reorder: da co PO draft ${existingDraft.poCode} cho ${inv.product.sku}, skip`);
+      // Chống đánh giá lặp theo (tenant, SKU) — chỉ tiết kiệm việc đọc, chốt chặn
+      // trùng đề xuất vẫn nằm ở `proposalKey` + `pg_advisory_xact_lock`.
+      if (!claimAutoReorderSlot(inv.tenantId, inv.productId)) {
+        logger.debug(
+          `${LOG} auto-reorder: bo qua ${inv.product.sku} — da danh gia trong ` +
+          `${AUTO_REORDER_DEDUPE_WINDOW_MS / 1000}s qua (debounce theo tenant+SKU).`,
+        );
         continue;
       }
 
-      const reorderQty = Math.max(1, (inv.minStock * 2) - inv.quantity);
-      const unitCost = Number(inv.product.costPrice) || 0;
-      const subtotal = reorderQty * unitCost;
-
-      const today = new Date().toISOString().slice(0, 10).replace(/-/g, "");
-      const start = new Date(); start.setHours(0, 0, 0, 0);
-      const count = await prisma.purchaseOrder.count({ where: { createdAt: { gte: start } } });
-      const poCode = `PO-${today}-${String(count + 1).padStart(4, "0")}`;
-
-      const autoApprove = subtotal < 5_000_000;
-      const po = await prisma.purchaseOrder.create({
-        data: {
-          poCode,
-          vendorId: vendor.id,
-          status: autoApprove ? "APPROVED" : "DRAFT",
-          subtotal,
-          total: subtotal,
-          note: `[Auto-Reorder] ${inv.product.name} con ${inv.quantity}, minStock=${inv.minStock}`,
-          createdById: (await getSystemUserId()),
-          items: {
-            create: [{
-              productId: inv.productId,
-              quantity: reorderQty,
-              unitCost,
-              subtotal,
-            }],
-          },
-        },
-        include: { vendor: true },
+      const result = await suggestForProductInTenant({
+        tenantId: inv.tenantId,
+        productId: inv.productId,
       });
-
-      logger.info(`${LOG} auto-reorder: tao PO ${poCode} cho ${inv.product.sku}, qty=${reorderQty}, total=${subtotal}, autoApprove=${autoApprove}`);
-
-      if (autoApprove) {
-        await notif.notifyRoles(["MANAGER", "ADMIN"], {
-          type: "SYSTEM",
-          severity: "INFO",
-          title: "PO tự động đã duyệt",
-          message: `PO ${poCode}: nhap ${reorderQty} x ${inv.product.name} tu ${vendor.name} (${subtotal.toLocaleString()} VND)`,
-          link: "/purchase-orders",
-          meta: { poId: po.id, autoApproved: true },
-        });
-      } else {
-        await notif.notifyRoles(["MANAGER", "ADMIN"], {
-          type: "PO_PENDING_APPROVAL",
-          severity: "WARNING",
-          title: "PO tự động cần duyệt",
-          message: `PO ${poCode}: nhap ${reorderQty} x ${inv.product.name} tu ${vendor.name} (${subtotal.toLocaleString()} VND). Vui lòng duyet.`,
-          link: "/purchase-orders",
-          meta: { poId: po.id, autoApproved: false },
-        });
+      if (result?.needVendor) {
+        logger.info(`${LOG} auto-reorder: ${result.sku} chưa có NCC — chờ người chọn`);
+      } else if (result?.gate) {
+        logger.info(`${LOG} auto-reorder: đã tạo đề xuất ${result.gate.id} cho ${inv.product.sku}`);
       }
     }
   } catch (err) {
@@ -196,6 +218,13 @@ const debtAutoCollection = async () => {
     });
 
     for (const debt of upcomingDebts) {
+      // Cron chạy NGOÀI tenant context và các câu truy vấn ở trên cố tình quét
+      // TOÀN HỆ THỐNG (multi-tenant). Ghi thông báo ở đây sẽ tạo ra dòng
+      // `notification.tenantId = NULL` ⇒ không hiện trong UI của tenant nào và
+      // `emitToRole` bị bỏ qua. Vì vậy mọi ghi/notify phải bọc trong
+      // `runWithTenant(debt.tenantId)`.
+      if (!debt.tenantId) continue;
+      await runWithTenant(debt.tenantId, async () => {
       const remaining = Number(debt.amount) - Number(debt.paidAmount);
       const partyName = debt.customer?.name || debt.vendor?.name || "N/A";
       const daysLeft = Math.ceil((new Date(debt.dueDate) - now) / (24 * 60 * 60 * 1000));
@@ -207,7 +236,7 @@ const debtAutoCollection = async () => {
           meta: { path: ["debtId"], equals: debt.id },
         },
       });
-      if (recentNotif) continue;
+      if (recentNotif) return;
 
       await notif.notifyRoles(["MANAGER"], {
         type: "DEBT_OVERDUE",
@@ -241,6 +270,7 @@ const debtAutoCollection = async () => {
           },
         }).catch(() => {});
       }
+      });
     }
 
     const sevenDaysAgo = new Date(now.getTime() - 7 * 24 * 60 * 60 * 1000);
@@ -256,6 +286,8 @@ const debtAutoCollection = async () => {
     });
 
     for (const debt of overdueDebts7) {
+      if (!debt.tenantId) continue;
+      await runWithTenant(debt.tenantId, async () => {
       const remaining = Number(debt.amount) - Number(debt.paidAmount);
       const partyName = debt.customer?.name || debt.vendor?.name || "N/A";
       const daysOverdue = Math.ceil((now - new Date(debt.dueDate)) / (24 * 60 * 60 * 1000));
@@ -268,7 +300,7 @@ const debtAutoCollection = async () => {
           meta: { path: ["debtId"], equals: debt.id },
         },
       });
-      if (recentEscalation) continue;
+      if (recentEscalation) return;
 
       await prisma.debt.update({
         where: { id: debt.id },
@@ -283,6 +315,7 @@ const debtAutoCollection = async () => {
         link: "/debts",
         meta: { debtId: debt.id, level: "escalated", daysOverdue },
       });
+      });
     }
 
     const thirtyDaysAgo = new Date(now.getTime() - 30 * 24 * 60 * 60 * 1000);
@@ -294,6 +327,8 @@ const debtAutoCollection = async () => {
     });
 
     for (const debt of overdueDebts30) {
+      if (!debt.tenantId) continue;
+      await runWithTenant(debt.tenantId, async () => {
       const recentFlag = await prisma.notification.findFirst({
         where: {
           type: "DEBT_OVERDUE",
@@ -301,7 +336,7 @@ const debtAutoCollection = async () => {
           meta: { path: ["debtId"], equals: debt.id, path: ["level"], equals: "critical_flag" },
         },
       });
-      if (recentFlag) continue;
+      if (recentFlag) return;
 
       await prisma.debt.update({
         where: { id: debt.id },
@@ -318,6 +353,7 @@ const debtAutoCollection = async () => {
         message: `Debt ${debt.id.slice(0, 8)}: ${(Number(debt.amount) - Number(debt.paidAmount)).toLocaleString()} VND. Da danh dau can xu ly dac biet.`,
         link: "/debts",
         meta: { debtId: debt.id, level: "critical_flag" },
+      });
       });
     }
 
@@ -339,7 +375,7 @@ const onOrderCompleted = async (order, userId) => {
         checkAutoReorder(productIds, warehouseId).catch((e) =>
           logger.error(`${LOG} onOrderCompleted auto-reorder error:`, e.message)
         );
-      }, 1000);
+      }, AUTO_REORDER_DELAY_MS);
     }
 
     // Send Zalo notification to customer
@@ -603,6 +639,9 @@ const weeklyPnLEmail = async () => {
 
 module.exports = {
   checkAutoReorder,
+  AUTO_REORDER_DELAY_MS,
+  AUTO_REORDER_DEDUPE_WINDOW_MS,
+  _resetAutoReorderDedupeForTest,
   autoPayroll,
   debtAutoCollection,
   onOrderCompleted,

@@ -259,6 +259,41 @@ const MENU_GROUPS = [
         label: "AI Phân tích",
         roles: ["ADMIN", "MANAGER"],
       },
+      {
+        // T12 — màn hình duyệt đề xuất nhập hàng của agent (human-gate).
+        key: "/agent-approvals",
+        icon: <AuditOutlined />,
+        label: "Duyệt đề xuất nhập",
+        roles: ["ADMIN", "MANAGER"],
+      },
+      {
+        // KPI chuỗi cung ứng: tồn kho, vòng quay, tồn chết, giao hàng NCC.
+        key: "/supply",
+        icon: <DashboardOutlined />,
+        label: "Chỉ số chuỗi cung ứng",
+        roles: ["ADMIN", "MANAGER", "WAREHOUSE", "ACCOUNTANT"],
+      },
+      {
+        // RFQ: hỏi giá nhiều NCC rồi so sánh chốt (Odoo Request for Quotation).
+        key: "/rfq",
+        icon: <FileTextOutlined />,
+        label: "So sánh báo giá NCC",
+        roles: ["ADMIN", "MANAGER"],
+      },
+      {
+        // Quy tắc nhập hàng theo SKU×kho (Odoo Reordering Rules).
+        key: "/replenishment-rules",
+        icon: <SettingOutlined />,
+        label: "Quy tắc nhập hàng",
+        roles: ["ADMIN", "MANAGER", "WAREHOUSE"],
+      },
+      {
+        // Bằng chứng backtest: ROP vs ngưỡng cố định, kèm nguồn + giới hạn.
+        key: "/evidence",
+        icon: <ExperimentOutlined />,
+        label: "Bằng chứng thực nghiệm",
+        roles: ["ADMIN", "MANAGER"],
+      },
     ],
   },
   {
@@ -429,6 +464,21 @@ const MENU_GROUPS = [
         icon: <HeartOutlined />,
         label: "Phân khúc & CLV",
         roles: CRM_MANAGER_ROLES,
+      },
+      {
+        // PRM — đối tác đầu ra. Mở cho CASHIER vì nhân viên cần xem hiệu quả đối tác
+        // khi gọi khách lấn theo mã giới thiệu. Việc SỬA cấu hình đối tác (tỷ lệ hoa
+        // hồng) bị backend chặn — `PRM_MANAGE_ROLES` không có CASHIER.
+        key: "/prm/partners",
+        icon: <TeamOutlined />,
+        label: "Đối tác",
+        roles: CRM_PIPELINE_ROLES,
+      },
+      {
+        key: "/prm/roi",
+        icon: <RiseOutlined />,
+        label: "Lợi nhuận đối tác",
+        roles: CRM_PIPELINE_ROLES,
       },
     ],
   },

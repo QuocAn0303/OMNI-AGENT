@@ -21,16 +21,19 @@ import {
   getPurchaseOrder,
   submitPurchaseOrder,
   approvePurchaseOrder,
-  receivePurchaseOrder,
+  orderPurchaseOrder,
   payPurchaseOrder,
   cancelPurchaseOrder,
 } from "../api/accounting";
+import { listGRNs, quickReceiveGRN } from "../api/srm";
 
 const STATUS_LABEL = {
   DRAFT: "Nháp",
   PENDING: "Chờ duyệt",
+  PENDING_APPROVAL: "Chờ duyệt",
   APPROVED: "Đã duyệt",
-  ORDERED: "Đã đặt",
+  ORDERED: "Đã gửi NCC",
+  PARTIALLY_RECEIVED: "Nhận một phần",
   RECEIVED: "Đã nhập kho",
   PAID: "Đã thanh toán",
   CANCELLED: "Đã hủy",
@@ -47,11 +50,28 @@ export default function PurchaseOrderDetail() {
   const [loading, setLoading] = useState(true);
   const [payOpen, setPayOpen] = useState(false);
   const [payForm] = Form.useForm();
+  const [grns, setGrns] = useState([]);
+  const [grnSummary, setGrnSummary] = useState({ ordered: 0, received: 0 });
 
   const load = async () => {
     setLoading(true);
     try {
-      setPo(await getPurchaseOrder(id));
+      const detail = await getPurchaseOrder(id);
+      setPo(detail);
+      const ordered = (detail.items || []).reduce((s, i) => s + Number(i.quantity || 0), 0);
+      try {
+        const r = await listGRNs({ poId: id, limit: 50 });
+        const rows = r.grns || [];
+        setGrns(rows);
+        const received = rows
+          .filter((g) => g.status === "POSTED")
+          .flatMap((g) => g.items || [])
+          .reduce((s, i) => s + Number(i.receivedQty || 0), 0);
+        setGrnSummary({ ordered, received });
+      } catch {
+        setGrns([]);
+        setGrnSummary({ ordered, received: 0 });
+      }
     } catch (e) {
       message.error(e.response?.data?.message || "Lỗi");
     } finally {
@@ -79,9 +99,9 @@ export default function PurchaseOrderDetail() {
             <Button icon={<ArrowLeftOutlined />} onClick={() => navigate("/purchase-orders")}>
               Danh sách
             </Button>
-            {["APPROVED", "ORDERED", "RECEIVED"].includes(po.status) && (
+            {[ "APPROVED", "ORDERED", "PARTIALLY_RECEIVED", "RECEIVED"].includes(po.status) && (
               <Button icon={<InboxOutlined />} onClick={() => navigate(`/grn?poId=${po.id}`)}>
-                Phiếu nhận hàng
+                Phiếu nhận hàng ({grnSummary.received}/{grnSummary.ordered})
               </Button>
             )}
             {["RECEIVED", "PAID"].includes(po.status) && (
@@ -122,14 +142,35 @@ export default function PurchaseOrderDetail() {
               Gửi duyệt
             </Button>
           )}
-          {po.status === "PENDING" && canApprove && (
+          {po.status === "PENDING" || po.status === "PENDING_APPROVAL" ? canApprove && (
             <Button type="primary" icon={<CheckOutlined />} onClick={async () => { await approvePurchaseOrder(id); message.success("Đã duyệt"); load(); }}>
               Duyệt
             </Button>
-          )}
+          ) : null}
           {po.status === "APPROVED" && canWarehouse && (
-            <Button type="primary" icon={<InboxOutlined />} onClick={async () => { await receivePurchaseOrder(id); message.success("Đã nhập kho"); load(); }}>
-              Nhập kho
+            <Button type="primary" icon={<SendOutlined />} onClick={async () => { await orderPurchaseOrder(id); message.success("Đã gửi NCC"); load(); }}>
+              Gửi NCC
+            </Button>
+          )}
+          {(po.status === "ORDERED" || po.status === "PARTIALLY_RECEIVED") && canWarehouse && (
+            <Button type="primary" icon={<InboxOutlined />} onClick={() => navigate(`/grn?poId=${po.id}`)}>
+              Tạo GRN
+            </Button>
+          )}
+          {(po.status === "ORDERED" || po.status === "PARTIALLY_RECEIVED") && canWarehouse && (
+            <Button
+              icon={<InboxOutlined />}
+              onClick={async () => {
+                try {
+                  await quickReceiveGRN({ purchaseOrderId: id });
+                  message.success("Đã nhận nhanh (GRN POSTED)");
+                  load();
+                } catch (e) {
+                  message.error(e.response?.data?.message || "Lỗi nhận nhanh");
+                }
+              }}
+            >
+              Nhận nhanh
             </Button>
           )}
           {po.status === "RECEIVED" && Number(po.paidAmount) < Number(po.total) && ["ADMIN", "MANAGER", "CASHIER"].includes(role) && (
@@ -137,12 +178,39 @@ export default function PurchaseOrderDetail() {
               Thanh toán
             </Button>
           )}
-          {["DRAFT", "PENDING", "APPROVED"].includes(po.status) && ["ADMIN", "MANAGER"].includes(role) && (
+          {[ "DRAFT", "PENDING", "PENDING_APPROVAL", "APPROVED"].includes(po.status) && ["ADMIN", "MANAGER"].includes(role) && (
             <Button danger icon={<StopOutlined />} onClick={async () => { await cancelPurchaseOrder(id); message.success("Đã hủy"); load(); }}>
               Hủy PO
             </Button>
           )}
         </Space>
+      </Card>
+
+      <Card size="small" title={`Phiếu nhận hàng — đã nhận ${grnSummary.received}/${grnSummary.ordered}`} style={{ marginTop: 16 }}>
+        <Table
+          size="small"
+          rowKey="id"
+          dataSource={grns}
+          pagination={false}
+          locale={{ emptyText: "Chưa có GRN — bấm Tạo GRN hoặc Nhận nhanh ở trên" }}
+          columns={[
+            { title: "Mã GRN", dataIndex: "grnCode" },
+            { title: "Trạng thái", dataIndex: "status" },
+            {
+              title: "SL nhận",
+              align: "right",
+              render: (_, g) => (g.items || []).reduce((s, i) => s + Number(i.receivedQty || 0), 0),
+            },
+            {
+              title: "Thao tác",
+              render: () => (
+                <Button type="link" size="small" onClick={() => navigate(`/grn?poId=${po.id}`)}>
+                  Mở GRN
+                </Button>
+              ),
+            },
+          ]}
+        />
       </Card>
 
       <Modal

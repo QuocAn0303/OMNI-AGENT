@@ -29,6 +29,8 @@ export const createGRN = (data) => axios.post("/grn", data).then(unwrap);
 export const qcGRN = (id, items) => axios.post(`/grn/${id}/qc`, { items }).then(unwrap);
 // postGRN(id) — nhập kho, sinh Inventory/Lot, tính onTime (chỉ khi GRN đã QC_DONE)
 export const postGRN = (id) => axios.post(`/grn/${id}/post`, {}).then(unwrap);
+// quickReceive({ purchaseOrderId, warehouseId? }) — nhan nhanh 1 lan: create + QC dat + POSTED
+export const quickReceiveGRN = (data) => axios.post("/grn/quick-receive", data).then(unwrap);
 
 // ===== 3-Way Matching — Hoá đơn NCC (Mục 6.2–6.3) =====
 // listMatchings(params) → { invoices, pagination } — filter: poId, matchStatus, page, limit

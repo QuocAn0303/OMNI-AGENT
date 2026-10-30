@@ -36,6 +36,25 @@ const {
   requireSuperOmega,
 } = require("../../middleware/auth.middleware");
 const { success, paginated } = require("../../utils/response");
+const auditService = require("../audit/audit.service");
+
+// Support session = đóng vai ADMIN của MỖT shop, trong thời gian ngắn.
+// Giới hạn cứng 8h: trước đây `durationHours` nhận thẳng từ body không validate,
+// nên durationHours: 876000 tạo token sống ~100 năm (H4).
+const MAX_SUPPORT_HOURS = 8;
+const supportSessionSchema = z.object({
+  tenantId: z.string().min(1, "Thiếu tenantId"),
+  reason: z
+    .string()
+    .min(10, "Lý do hỗ trợ phải mô tả ít nhất 10 ký tự")
+    .max(500, "Lý do hỗ trợ tối đa 500 ký tự"),
+  durationHours: z
+    .number()
+    .int("Thời hạn phải là số nguyên")
+    .min(1, "Thời hạn tối thiểu 1 giờ")
+    .max(MAX_SUPPORT_HOURS, `Thời hạn tối đa ${MAX_SUPPORT_HOURS} giờ`)
+    .default(2),
+});
 const campaignController = require("./admin-campaign.controller");
 
 // API bắt buộc phải qua 2 lớp check: Đã đăng nhập + Phải có role tối cao
@@ -45,14 +64,14 @@ router.post(
   requireSuperOmega,
   async (req, res, next) => {
     try {
-      const { tenantId, reason, durationHours = 2 } = req.body;
-
-      if (!tenantId || !reason) {
+      const parsed = supportSessionSchema.safeParse(req.body);
+      if (!parsed.success) {
         return next({
           status: 400,
-          message: "Thiếu thông tin tenantId hoặc lý do hỗ trợ",
+          message: parsed.error.issues.map((i) => i.message).join("; "),
         });
       }
+      const { tenantId, reason, durationHours } = parsed.data;
 
       // 1. Kiểm tra xem tenant cần hỗ trợ có tồn tại không
       const targetTenant = await prisma.tenant.findUnique({
@@ -81,7 +100,9 @@ router.post(
       });
 
       // 3. Sinh JWT Token đặc biệt (Giả lập quyền ADMIN của chính shop đó)
-      // Token này giữ nguyên ID của bạn để ghi log, nhưng hoán đổi role và tenantId để hệ thống nhận diện
+      // Token giữ ID của bạn để ghi log ai thực hiện, nhưng quyền thực thi bị hạ
+      // xuống ADMIN + tenant của shop cần hỗ trợ. auth.middleware.js ép lại role
+      // và đọc tenantId từ DB ở mọi request, nên token này không thể nâng quyền.
       const supportToken = jwt.sign(
         {
           id: req.user.id,
@@ -94,6 +115,21 @@ router.post(
         process.env.JWT_SECRET,
         { algorithm: "HS256", expiresIn: `${durationHours}h` },
       );
+
+      // Vì sao bắt buộc: impersonate là hành động đặc quyền. Không có audit thì
+      // không truy được "ai đã vào shop khách hàng lúc mấy giờ".
+      auditService.log({
+        userId: req.user.id,
+        action: "CREATE_SUPPORT_SESSION",
+        entity: "SupportAccessSession",
+        entityId: session.id,
+        meta: {
+          tenantId,
+          reason,
+          durationHours,
+          expiresAt: session.expiresAt,
+        },
+      });
 
       success(res, {
         message:

@@ -172,15 +172,20 @@ router.post("/opening-balance", authorize("ADMIN"), async (req, res, next) => {
 
 // ==================== VENDORS ====================
 
+// DB trả `null` cho các field optional (MST/SDT chua nhap...). Form AntD khi sua
+// setFieldsValue(row) roi submit lai dung `null` khi user de trong o. Zod `.optional()`
+// chi chap nhan undefined — neu khong chuan hoa null thi moi lan sua NCC bi 400
+// "Du lieu khong hop le". Dung nullish + transform null -> undefined.
+const optionalStr = z.string().nullish().transform((v) => v ?? undefined);
 const vendorSchema = z.object({
   name: z.string().min(2),
-  code: z.string().optional(),
-  taxCode: z.string().optional(),
-  phone: z.string().optional(),
-  email: z.string().optional(),
-  address: z.string().optional(),
-  contactPerson: z.string().optional(),
-  paymentTerms: z.number().int().nonnegative().optional(),
+  code: optionalStr,
+  taxCode: optionalStr,
+  phone: optionalStr,
+  email: optionalStr,
+  address: optionalStr,
+  contactPerson: optionalStr,
+  paymentTerms: z.number().int().nonnegative().nullish().transform((v) => v ?? undefined),
 });
 
 router.get("/vendors", authorize("ADMIN", "MANAGER", "ACCOUNTANT"), async (req, res, next) => {
@@ -617,3 +622,6 @@ router.get("/reports/profit-loss-b02", authorize("ADMIN", "MANAGER", "ACCOUNTANT
 });
 
 module.exports = router;
+
+// Noi bo, phuc vu test — khong dung o noi khac (cung pattern config/prisma.js).
+module.exports.__internals = { vendorSchema };

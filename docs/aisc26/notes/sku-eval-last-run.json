@@ -1,0 +1,146 @@
+{
+  "runId": "S10-20261016061529",
+  "at": "2026-10-16T06:15:29.344Z",
+  "labelSource": "nhan tay (label_sku do nguoi dien)",
+  "dataset": {
+    "labelSheet": "data\\aisc26\\skus\\labels\\label-sheet.csv",
+    "catalog": "data\\dataset\\sku_names.csv",
+    "totalPairs": 120,
+    "labelled": 107,
+    "nhanLaMoPhong": false
+  },
+  "mode": "live",
+  "llm": {
+    "mode": "live",
+    "enabled": true,
+    "configured": true,
+    "provider": "uit",
+    "model": "gemma-4-26b",
+    "throttleMs": 1200,
+    "backoffFactor": 1,
+    "recordStore": null
+  },
+  "confThreshold": 0.85,
+  "baselineThresholds": {
+    "autoAccept": 0.86,
+    "review": 0.62
+  },
+  "seed": 20261003,
+  "resamples": 1000,
+  "split": {
+    "test": 60,
+    "dev": 60
+  },
+  "kappa": {
+    "kappa": null,
+    "n": 0,
+    "reason": "chua co cap nao ca hai nguoi gan cung mot nhan (can nhan lap day cot label_b_sku)"
+  },
+  "test": {
+    "fuzzy": {
+      "n": 60,
+      "labelled": 56,
+      "tp": 43,
+      "fp": 9,
+      "fn": 6,
+      "precision": 0.8269,
+      "recall": 0.8776,
+      "f1": 0.8515,
+      "escalated": 8,
+      "fallbackRate": 0.1333,
+      "rawCorrect": 48,
+      "rawAccuracy": 0.8571,
+      "wrongAuto": 7
+    },
+    "hybrid": {
+      "n": 60,
+      "labelled": 56,
+      "tp": 48,
+      "fp": 11,
+      "fn": 0,
+      "precision": 0.8136,
+      "recall": 1,
+      "f1": 0.8972,
+      "escalated": 1,
+      "fallbackRate": 0.0167,
+      "rawCorrect": 48,
+      "rawAccuracy": 0.8571,
+      "wrongAuto": 8
+    }
+  },
+  "dev": {
+    "fuzzy": {
+      "n": 60,
+      "labelled": 51,
+      "tp": 39,
+      "fp": 16,
+      "fn": 2,
+      "precision": 0.7091,
+      "recall": 0.9512,
+      "f1": 0.8125,
+      "escalated": 5,
+      "fallbackRate": 0.0833,
+      "rawCorrect": 41,
+      "rawAccuracy": 0.8039,
+      "wrongAuto": 10
+    },
+    "hybrid": {
+      "n": 60,
+      "labelled": 51,
+      "tp": 41,
+      "fp": 18,
+      "fn": 0,
+      "precision": 0.6949,
+      "recall": 1,
+      "f1": 0.82,
+      "escalated": 1,
+      "fallbackRate": 0.0167,
+      "rawCorrect": 41,
+      "rawAccuracy": 0.8039,
+      "wrongAuto": 10
+    }
+  },
+  "f1DiffBootstrap": {
+    "n": 60,
+    "seed": 20261003,
+    "resamples": 1000,
+    "point": 0.0457,
+    "ciLow": 0.0008,
+    "ciHigh": 0.0969,
+    "excludesZero": true
+  },
+  "throughput": {
+    "fuzzyMs": 374,
+    "hybridMs": 9864,
+    "msPerPairFuzzy": 6.23,
+    "msPerPairHybrid": 164.4
+  },
+  "llmCalls": 8,
+  "llmUsable": 7,
+  "llmRejected": 1,
+  "llmMisses": 0,
+  "llmMissBy": {
+    "api": 0,
+    "json": 0,
+    "hallucinatedSku": 0,
+    "other": 0
+  },
+  "llmNoMatch": 0,
+  "tyLeDungDuoc": 87.5,
+  "usage": {
+    "measured": true,
+    "soLanGoi": 13,
+    "promptTokens": 5256,
+    "completionTokens": 971,
+    "totalTokens": 6227,
+    "doTreTrungBinhMs": 800,
+    "luuY": "doTreTrungBinhMs tinh ca lan ERROR (503/timeout) — la chi phi that"
+  },
+  "tokensPerPair": {
+    "trenMoiCapDaDoi": 479,
+    "trenMoiCapKiemDinh": 103.8,
+    "trenMoiCapDaNhan": 58.2
+  },
+  "publishable": true,
+  "lyDoKhongCongBo": null
+}

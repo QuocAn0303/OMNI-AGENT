@@ -49,9 +49,21 @@ function sanitizeObject(obj, allowTags) {
   return out;
 }
 
+// Chỉ sanitize được plain object / array của JSON.
+// Buffer và các typed array phải bỏ qua: `express.raw` mount TRƯỚC `express.json`
+// cho các path webhook, nên req.body lúc này là Buffer byte thô cần dùng để verify
+// HMAC. Nếu đi tiếp, `Object.entries(Buffer)` biến nó thành object chỉ số byte
+// ({"0":123,"1":34,...}) → JSON.parse ném lỗi, webhook hợp lệ bị chết �� im lặng.
+function isPlainContainer(value) {
+  if (value === null || typeof value !== "object") return false;
+  if (Buffer.isBuffer(value)) return false;
+  if (ArrayBuffer.isView(value) || value instanceof ArrayBuffer) return false;
+  return true;
+}
+
 function sanitize(allowTagsFields = []) {
   return (req, res, next) => {
-    if (req.body && typeof req.body === "object") {
+    if (isPlainContainer(req.body)) {
       const tagsSet = new Set(allowTagsFields);
       const sanitized = {};
       for (const [k, v] of Object.entries(req.body)) {

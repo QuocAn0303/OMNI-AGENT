@@ -46,7 +46,11 @@ const createEmployee = async (payload) => {
 
     // Tạo email tạm nếu không có
     const userEmail = email || `emp_${Date.now()}@erp.local`;
-    const hashedPw = await bcrypt.hash("NhanVien@2026", 10);
+    // Trước đây hard-code `10` ⇒ nhân viên tạo qua màn hình HR bị hash yếu hơn
+    // user tạo qua `auth`/`users` (dùng `BCRYPT_ROUNDS`, mặc định 12).
+    // Đọc cùng biến môi trường để một hệ thống chỉ có MỘT chính sách hash.
+    const bcryptRounds = Number(process.env.BCRYPT_ROUNDS) || 12;
+    const hashedPw = await bcrypt.hash("NhanVien@2026", bcryptRounds);
     const role = POSITION_TO_ROLE[position] || "CASHIER";
 
     const user = await tx.user.create({
