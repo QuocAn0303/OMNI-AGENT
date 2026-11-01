@@ -35,6 +35,8 @@
     "check:modules": "node scripts/check-module-load.js",
     "check:llm": "node scripts/check-llm.js",
     "check:humangate": "node scripts/check-humangate.js",
+    "check:agent-gateway": "node scripts/check-agent-gateway.js",
+    "eval:all": "node scripts/run-evals.js --all",
     "check:tenant": "node scripts/check-tenant-isolation.js && node scripts/check-tenant-gaps.js && node scripts/check-tenant-null.js",
     "check:tenant:null": "node scripts/check-tenant-null.js",
     "tenant:null": "node scripts/tenant-null.js",
@@ -147,5 +149,23 @@
   "keywords": [],
   "author": "",
   "license": "ISC",
-  "type": "commonjs"
+  "type": "commonjs",
+  "nodemonConfig": {
+    "ignore": [
+      "data/**",
+      "logs/**",
+      "tmp/**",
+      "traces/**",
+      "docs/**",
+      "skills/**",
+      "evals/**",
+      "agents/**",
+      "tests/**",
+      "coverage/**",
+      "frontend/**",
+      "prisma/migrations/**",
+      "*.test.js"
+    ],
+    "delay": 250
+  }
 }

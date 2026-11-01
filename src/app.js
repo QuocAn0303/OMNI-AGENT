@@ -60,6 +60,7 @@ const analyticsRoutes = require("./modules/analytics/analytics.routes");
 const aiRoutes = require("./modules/ai/ai.routes");
 const posRoutes = require("./modules/pos/pos.routes");
 const agentRoutes = require("./modules/ai/agent.routes");
+const agentGatewayRoutes = require("./modules/agent-gateway/agent-gateway.routes");
 const llmProxyRoutes = require("./modules/ai/agent.llm");
 const dbAgentRoutes = require("./modules/ai/db-agent.routes");
 const accountingRoutes = require("./modules/accounting/accounting.routes");
@@ -372,6 +373,9 @@ app.use("/api/ai/sync", aiLimiter);
 app.use("/api/ai", aiRoutes);
 app.use("/api/pos", posRoutes);
 app.use("/api/agent", agentRoutes);
+// UC-009: cầu nối DB duy nhất cho package `agents/` (auth-context, audit-events, gates).
+// Mount riêng để package TS không cần — và không được — require Prisma.
+app.use("/api/agent-gateway", agentGatewayRoutes);
 app.use("/api/llm", llmProxyRoutes);
 app.use("/api/db-agent", dbAgentRoutes);
 app.use("/api/accounting", accountingRoutes);

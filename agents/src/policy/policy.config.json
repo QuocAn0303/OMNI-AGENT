@@ -1,0 +1,232 @@
+{
+  "version": "1.0.0",
+  "defaultEffect": "DENY",
+  "_note": "Ma trận role × department × resource × action cho UC-009. Thứ tự rules là NGỮ NGHĨA: rule đầu tiên khớp sẽ thắng, kể cả rule DENY. Vì vậy các rule ALLOW cho HR phải đứng TRƯỚC rule DENY toàn cục 'hr.salary + read_individual'.",
+  "agentDepartments": {
+    "hr": "HR",
+    "finance": "FINANCE",
+    "sales": "SALES",
+    "ops": "OPS",
+    "warehouse": "WAREHOUSE",
+    "exec": "EXEC",
+    "knowledge": "OPS",
+    "orchestrator": "EXEC"
+  },
+  "_agentResourcesNote": "`orchestrator` CỐ Ý rỗng: bộ điều phối không sở hữu tool nào. Nếu ai đó gắn agentName='orchestrator' cho một tool, authorizeTool từ chối vì phạm vi rỗng — ràng buộc 'orchestrator không có tool ghi' được thực thi bằng dữ liệu, không chỉ bằng lời.",
+  "agentResources": {
+    "hr": ["hr"],
+    "finance": ["finance", "invoice", "kb"],
+    "sales": ["sales", "crm"],
+    "ops": ["ops", "inventory", "report"],
+    "warehouse": ["inventory", "ops", "report"],
+    "exec": ["*"],
+    "knowledge": ["report", "ops", "sop", "kb"],
+    "orchestrator": []
+  },
+  "handoff": {
+    "_note": "Phòng ban mà role được phép GIAO VIỆC tới. CASHIER chỉ giao việc trong SALES — giao cho agent `hr` bị chặn ở tầng HANDOFF, không phụ thuộc prompt.",
+    "targets": {
+      "SUPER_OMEGA_ULTRA_ADMIN": ["*"],
+      "SUPER_ADMIN": ["*"],
+      "ADMIN": ["EXEC", "FINANCE", "SALES", "OPS", "WAREHOUSE"],
+      "MANAGER": ["FINANCE", "SALES", "OPS", "WAREHOUSE"],
+      "ACCOUNTANT": ["FINANCE"],
+      "CASHIER": ["SALES"],
+      "WAREHOUSE": ["WAREHOUSE"]
+    },
+    "_alwaysAllowedNote": "Agent tra cứu quy định nội bộ phục vụ TOÀN công ty nên mọi role đều được giao việc cho `knowledge`. Chặn tài liệu nhạy cảm KHÔNG nằm ở đây mà ở mệnh đề WHERE của `kb/search` theo actor gốc — nếu chặn ở tầng handoff thì nhân viên SALES không hỏi được cả quy định chung.",
+    "alwaysAllowedAgents": ["knowledge"]
+  },
+  "fieldProjection": {
+    "_note": "Field LUÔN phải ẩn khi không đủ quyền xem bản ghi cá nhân.",
+    "default": ["baseSalary", "bankAccount", "cccd"],
+    "individualSalary": [
+      "baseSalary",
+      "bankAccount",
+      "cccd",
+      "socialInsuranceCode",
+      "taxCode",
+      "phone",
+      "email"
+    ]
+  },
+  "rules": [
+    {
+      "role": "SUPER_OMEGA_ULTRA_ADMIN",
+      "department": "*",
+      "resource": "*",
+      "actions": ["*"],
+      "note": "Cấp điều hành nền tảng — tường minh, không dựa vào bypass ngầm."
+    },
+    {
+      "role": "SUPER_ADMIN",
+      "department": "*",
+      "resource": "*",
+      "actions": ["*"]
+    },
+    {
+      "role": "ADMIN",
+      "department": "EXEC",
+      "resource": "*",
+      "actions": ["read", "read_individual", "read_aggregate", "write", "approve"]
+    },
+    {
+      "role": "MANAGER",
+      "department": "EXEC",
+      "resource": "*",
+      "actions": ["read", "read_aggregate"]
+    },
+
+    {
+      "role": "ADMIN",
+      "department": "HR",
+      "resource": "hr.salary",
+      "actions": ["read", "read_individual", "read_aggregate"]
+    },
+    {
+      "role": "ACCOUNTANT",
+      "department": "HR",
+      "resource": "hr.salary",
+      "actions": ["read", "read_individual", "read_aggregate"]
+    },
+    {
+      "role": "MANAGER",
+      "department": "HR",
+      "resource": "hr.salary",
+      "actions": ["read", "read_aggregate"],
+      "projection": ["baseSalary", "bankAccount", "cccd", "socialInsuranceCode", "taxCode", "phone", "email"]
+    },
+    {
+      "role": "*",
+      "department": "*",
+      "resource": "hr.salary",
+      "actions": ["read_individual"],
+      "effect": "DENY",
+      "note": "Lương CÁ NHÂN chỉ dành cho HR/ADMIN cùng phòng (rule ở trên). Rule này đứng sau nên không chặn họ."
+    },
+    {
+      "role": "ACCOUNTANT",
+      "department": "FINANCE",
+      "resource": "hr.salary",
+      "actions": ["read_aggregate"],
+      "projection": ["baseSalary", "bankAccount", "cccd", "socialInsuranceCode", "taxCode", "phone", "email"],
+      "note": "Kế toán cần TỔNG quỹ lương để hạch toán, không cần từng người."
+    },
+    {
+      "role": "ADMIN",
+      "department": "*",
+      "resource": "hr.salary",
+      "actions": ["read_aggregate"],
+      "projection": ["baseSalary", "bankAccount", "cccd", "socialInsuranceCode", "taxCode", "phone", "email"]
+    },
+    {
+      "role": "MANAGER",
+      "department": "*",
+      "resource": "hr.salary",
+      "actions": ["read_aggregate"],
+      "projection": ["baseSalary", "bankAccount", "cccd", "socialInsuranceCode", "taxCode", "phone", "email"]
+    },
+    {
+      "role": "*",
+      "department": "HR",
+      "resource": "hr.employee",
+      "actions": ["read", "read_individual", "read_aggregate", "write"]
+    },
+
+    {
+      "role": "*",
+      "department": "FINANCE",
+      "resource": "finance.*",
+      "actions": ["read", "read_individual", "read_aggregate", "write"],
+      "projection": ["baseSalary", "cccd"],
+      "note": "UC-004 cần đọc STK CHUẨN của NCC (vendorBankAccount) để đối chiếu; projection tường minh này không ẩn STK. Chỉ ẩn lương/CCCD — hai field không thuộc phạm vi tài chính."
+    },
+    {
+      "role": "*",
+      "department": "FINANCE",
+      "resource": "invoice.*",
+      "actions": ["read", "read_individual", "read_aggregate", "write"],
+      "projection": ["baseSalary", "cccd"],
+      "note": "Hoá đơn mua hàng cần STK NCC + MST để đối chiếu 3 bên. Projection tường minh giữ các field đó, chỉ ẩn lương/CCCD."
+    },
+
+    {
+      "role": "*",
+      "department": "SALES",
+      "resource": "sales.quote",
+      "actions": ["read", "write"],
+      "note": "UC-005: agent sales đọc bảng giá + ghi báo giá/thư nháp. Chiết khấu >10% vẫn phải qua gate QUOTE_DISCOUNT_APPROVAL — quyền ghi không thay thế quyền duyệt."
+    },
+    {
+      "role": "CASHIER",
+      "department": "SALES",
+      "resource": "sales.quote",
+      "actions": ["approve"],
+      "effect": "DENY",
+      "note": "CSKH không được tự duyệt chiết khấu; chỉ MANAGER/ADMIN/SUPER_* duyệt gate."
+    },
+    {
+      "role": "*",
+      "department": "SALES",
+      "resource": "sales.*",
+      "actions": ["read", "read_individual", "read_aggregate", "write"]
+    },
+    {
+      "role": "*",
+      "department": "SALES",
+      "resource": "crm.*",
+      "actions": ["read", "read_individual", "read_aggregate", "write"]
+    },
+
+    {
+      "role": "*",
+      "department": "OPS",
+      "resource": "ops.*",
+      "actions": ["read", "read_individual", "read_aggregate", "write"]
+    },
+    {
+      "role": "*",
+      "department": "OPS",
+      "resource": "inventory.*",
+      "actions": ["read", "read_individual", "read_aggregate", "write"]
+    },
+    {
+      "role": "*",
+      "department": "OPS",
+      "resource": "report.*",
+      "actions": ["read", "read_aggregate"]
+    },
+    {
+      "role": "*",
+      "department": "WAREHOUSE",
+      "resource": "inventory.*",
+      "actions": ["read", "read_individual", "read_aggregate", "write"]
+    },
+    {
+      "role": "*",
+      "department": "WAREHOUSE",
+      "resource": "ops.*",
+      "actions": ["read", "read_aggregate"]
+    },
+    {
+      "role": "*",
+      "department": "WAREHOUSE",
+      "resource": "report.*",
+      "actions": ["read", "read_aggregate"]
+    },
+
+    {
+      "role": "*",
+      "department": "*",
+      "resource": "sop",
+      "actions": ["read", "read_aggregate", "read_individual"],
+      "note": "Mọi role đều đọc được tài liệu SOP; mức `public/internal/department_only/manager_only/confidential` do SQL của kb/search lọc theo actor."
+    },
+    {
+      "role": "*",
+      "department": "*",
+      "resource": "kb",
+      "actions": ["read", "read_aggregate", "read_individual"]
+    }
+  ]
+}

@@ -1,0 +1,19 @@
+{
+  "generatedAt": "2026-11-01T05:13:20.557Z",
+  "modes": [
+    "improved"
+  ],
+  "counts": {
+    "sopDocuments": 31,
+    "sopQuestions": 37,
+    "invoiceCases": 18,
+    "crmCases": 16,
+    "memoryCases": 17,
+    "routingCases": 42,
+    "securityCases": 6,
+    "crossDepartmentCases": 18
+  },
+  "results": {
+    "improved": {}
+  }
+}

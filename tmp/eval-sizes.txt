@@ -1,0 +1,19 @@
+ 10822 evals/datasets/crm_quotes_emails.json
+ 23833 evals/datasets/invoices_3way.json
+  8019 evals/datasets/leave_and_memory_cases.json
+ 22183 evals/datasets/routing_and_security_cases.json
+ 26210 evals/datasets/sop_documents.json
+ 13929 evals/datasets/sop_questions.json
+ 11876 evals/lib/core.js
+ 65415 evals/results/baseline.json
+ 62768 evals/results/improved.json
+ 10009 evals/results/regression-report.md
+ 75629 scripts/run-evals.js
+  4779 src/modules/agent-gateway/evals.service.js
+ 18931 src/modules/agent-gateway/agent-gateway.routes.js
+ 41002 src/modules/agent-gateway/orchestration.service.js
+104472 scripts/check-agent-gateway.js
+  5550 frontend/src/api/agentGateway.api.js
+ 65560 frontend/src/pages/MultiAgentOpsPage.jsx
+  7565 package.json
+578552 total
