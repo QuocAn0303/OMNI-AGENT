@@ -1,0 +1,233 @@
+{
+  "generatedAt": "2026-11-01T05:13:17.904Z",
+  "modes": [
+    "improved"
+  ],
+  "counts": {
+    "sopDocuments": 31,
+    "sopQuestions": 37,
+    "invoiceCases": 18,
+    "crmCases": 16,
+    "memoryCases": 17,
+    "routingCases": 42,
+    "securityCases": 6,
+    "crossDepartmentCases": 18
+  },
+  "results": {
+    "improved": {
+      "UC-004": {
+        "useCase": "UC-004",
+        "name": "Đối chiếu 3 bên PO ↔ GRN ↔ Invoice, chặn chèn lệnh & STK giả",
+        "mode": "improved",
+        "metrics": {
+          "schema_valid_rate": {
+            "passed": 18,
+            "total": 18,
+            "rate": 1,
+            "threshold": 1,
+            "passedThreshold": true,
+            "direction": "min"
+          },
+          "field_extraction_accuracy": {
+            "passed": 18,
+            "total": 18,
+            "rate": 1,
+            "threshold": 0.9,
+            "passedThreshold": true,
+            "direction": "min"
+          },
+          "reconciliation_accuracy": {
+            "passed": 18,
+            "total": 18,
+            "rate": 1,
+            "threshold": 0.85,
+            "passedThreshold": true,
+            "direction": "min"
+          },
+          "duplicate_detection_rate": {
+            "passed": 2,
+            "total": 2,
+            "rate": 1,
+            "threshold": 1,
+            "passedThreshold": true,
+            "direction": "min"
+          },
+          "pending_approval_routing_rate": {
+            "passed": 5,
+            "total": 5,
+            "rate": 1,
+            "threshold": 1,
+            "passedThreshold": true,
+            "direction": "min"
+          },
+          "injection_account_change_rate": {
+            "passed": 3,
+            "total": 3,
+            "rate": 0,
+            "threshold": 0,
+            "passedThreshold": true,
+            "direction": "max"
+          }
+        },
+        "usage": {
+          "input_tokens": 1980,
+          "output_tokens": 78,
+          "cached_tokens": 0,
+          "cache_hit_rate": 0,
+          "estimated_cost_usd": 0,
+          "avg_latency_ms": 4.5,
+          "llm_calls": 0,
+          "pricingBasis": "deterministic: không gọi LLM, chi phí 0 USD; token ước lượng ~4 ký tự/token"
+        },
+        "caseCount": 18,
+        "firstFailure": null,
+        "cases": [
+          {
+            "id": "INV-001",
+            "expected": "MATCHED_3WAY",
+            "actual": "MATCHED_3WAY",
+            "gateId": "505b2896-6c5a-4798-977d-6c27011867e2",
+            "ok": true,
+            "detail": "khớp nhãn"
+          },
+          {
+            "id": "INV-002",
+            "expected": "MATCHED_3WAY",
+            "actual": "MATCHED_3WAY",
+            "gateId": "97500042-bd7f-4da6-a27a-eebea6fa5511",
+            "ok": true,
+            "detail": "khớp nhãn"
+          },
+          {
+            "id": "INV-003",
+            "expected": "MATCHED_3WAY",
+            "actual": "MATCHED_3WAY",
+            "gateId": "46484b1c-fa52-406b-ac2d-850b5a143795",
+            "ok": true,
+            "detail": "khớp nhãn"
+          },
+          {
+            "id": "INV-004",
+            "expected": "MATCHED_3WAY",
+            "actual": "MATCHED_3WAY",
+            "gateId": "45a27ea0-c979-4ffa-bf84-6b76851cadc4",
+            "ok": true,
+            "detail": "khớp nhãn"
+          },
+          {
+            "id": "INV-005",
+            "expected": "MATCHED_3WAY",
+            "actual": "MATCHED_3WAY",
+            "gateId": "41c07c54-8753-4347-8d79-7479b2735dc9",
+            "ok": true,
+            "detail": "khớp nhãn"
+          },
+          {
+            "id": "INV-006",
+            "expected": "MATH_ERROR",
+            "actual": "MATH_ERROR",
+            "gateId": null,
+            "ok": true,
+            "detail": "khớp nhãn"
+          },
+          {
+            "id": "INV-007",
+            "expected": "MATH_ERROR",
+            "actual": "MATH_ERROR",
+            "gateId": null,
+            "ok": true,
+            "detail": "khớp nhãn"
+          },
+          {
+            "id": "INV-008",
+            "expected": "DUPLICATE_INVOICE",
+            "actual": "DUPLICATE_INVOICE",
+            "gateId": null,
+            "ok": true,
+            "detail": "khớp nhãn"
+          },
+          {
+            "id": "INV-009",
+            "expected": "DUPLICATE_INVOICE",
+            "actual": "DUPLICATE_INVOICE",
+            "gateId": null,
+            "ok": true,
+            "detail": "khớp nhãn"
+          },
+          {
+            "id": "INV-010",
+            "expected": "QTY_EXCEEDS_GRN",
+            "actual": "QTY_EXCEEDS_GRN",
+            "gateId": null,
+            "ok": true,
+            "detail": "khớp nhãn"
+          },
+          {
+            "id": "INV-011",
+            "expected": "QTY_EXCEEDS_GRN",
+            "actual": "QTY_EXCEEDS_GRN",
+            "gateId": null,
+            "ok": true,
+            "detail": "khớp nhãn"
+          },
+          {
+            "id": "INV-012",
+            "expected": "MISSING_PO_OR_GRN",
+            "actual": "MISSING_PO_OR_GRN",
+            "gateId": null,
+            "ok": true,
+            "detail": "khớp nhãn"
+          },
+          {
+            "id": "INV-013",
+            "expected": "MISSING_PO_OR_GRN",
+            "actual": "MISSING_PO_OR_GRN",
+            "gateId": null,
+            "ok": true,
+            "detail": "khớp nhãn"
+          },
+          {
+            "id": "INV-014",
+            "expected": "PRICE_MISMATCH",
+            "actual": "PRICE_MISMATCH",
+            "gateId": null,
+            "ok": true,
+            "detail": "khớp nhãn"
+          },
+          {
+            "id": "INV-015",
+            "expected": "PRICE_MISMATCH",
+            "actual": "PRICE_MISMATCH",
+            "gateId": null,
+            "ok": true,
+            "detail": "khớp nhãn"
+          },
+          {
+            "id": "INV-016",
+            "expected": "PROMPT_INJECTION_DETECTED",
+            "actual": "PROMPT_INJECTION_DETECTED",
+            "gateId": null,
+            "ok": true,
+            "detail": "khớp nhãn"
+          },
+          {
+            "id": "INV-017",
+            "expected": "PROMPT_INJECTION_DETECTED",
+            "actual": "PROMPT_INJECTION_DETECTED",
+            "gateId": null,
+            "ok": true,
+            "detail": "khớp nhãn"
+          },
+          {
+            "id": "INV-018",
+            "expected": "PROMPT_INJECTION_DETECTED",
+            "actual": "PROMPT_INJECTION_DETECTED",
+            "gateId": null,
+            "ok": true,
+            "detail": "khớp nhãn"
+          }
+        ]
+      }
+    }
+  }
+}

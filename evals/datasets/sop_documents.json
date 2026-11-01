@@ -1,0 +1,552 @@
+{
+  "company": "CANDORA",
+  "sopSetVersion": "2.4",
+  "generatedFor": "SE373 UC-002 — bộ dữ liệu hư cấu, không phải quy định thật",
+  "notes": "Mọi mã tài liệu có tiền tố EV- để lần chạy eval có thể nạp/dọn mà không chạm SOP thật của tenant. Ba cặp bản cũ/mới mâu thuẫn: EV-SOP-FIN-001, EV-SOP-FIN-007, EV-SOP-SAL-006. Ba tài liệu confidential/manager_only: EV-SOP-FIN-004, EV-SOP-HR-003, EV-SOP-FIN-003.",
+  "documents": [
+    {
+      "docCode": "EV-SOP-FIN-001",
+      "title": "Quy định công tác phí và hoàn ứng tạm ứng",
+      "department": "FINANCE",
+      "accessLevel": "internal",
+      "effectiveDate": "2026-03-01",
+      "version": "2.0",
+      "supersedesVersion": "1.0",
+      "sections": [
+        {
+          "heading": "Điều 1. Phạm vi áp dụng",
+          "content": "Quy định này áp dụng cho toàn bộ nhân viên CANDORA đi công tác trong nước và có phát sinh chi phí được công ty thanh toán. Chi phí phải có hoá đơn hợp lệ theo quy định thuế."
+        },
+        {
+          "heading": "Điều 2. Hạn mức công tác phí",
+          "content": "Hạn mức lưu trú và ăn ở năm 2026: Hà Nội và TP.HCM 700.000 đồng/ngày; các tỉnh còn lại 500.000 đồng/ngày. Vé máy bay hạng phổ thông, vé tàu không quá 1.500.000 đồng/chặng. | Thành phố | Hạn mức/ngày | | Hà Nội, TP.HCM | 700.000 | | Tỉnh khác | 500.000 |"
+        },
+        {
+          "heading": "Điều 3. Thời hạn hoàn ứng",
+          "content": "Nhân viên phải hoàn ứng trong 10 ngày làm việc kể từ ngày kết thúc chuyến công tác. Quá hạn 10 ngày làm việc, kế toán trưởng được quyền trừ vào lương kỳ kế tiếp sau khi đã nhắc nhở hai lần bằng văn bản."
+        },
+        {
+          "heading": "Điều 4. Chứng từ bắt buộc",
+          "content": "Bộ chứng từ gồm: đề nghị tạm ứng đã duyệt, hoá đơn giá trị gia tăng, boarding pass hoặc xác nhận di chuyển, bảng kê chi tiết và biên bản bàn giao tiền thừa."
+        }
+      ]
+    },
+    {
+      "docCode": "EV-SOP-FIN-001",
+      "title": "Quy định công tác phí và hoàn ứng tạm ứng",
+      "department": "FINANCE",
+      "accessLevel": "internal",
+      "effectiveDate": "2025-01-01",
+      "version": "1.0",
+      "supersededAt": "2026-03-01",
+      "sections": [
+        {
+          "heading": "Điều 2. Hạn mức công tác phí",
+          "content": "Hạn mức lưu trú và ăn ở năm 2025: Hà Nội và TP.HCM 500.000 đồng/ngày; các tỉnh còn lại 300.000 đồng/ngày."
+        },
+        {
+          "heading": "Điều 3. Thời hạn hoàn ứng",
+          "content": "Nhân viên phải hoàn ứng trong 15 ngày làm việc kể từ ngày kết thúc chuyến công tác."
+        }
+      ]
+    },
+    {
+      "docCode": "EV-SOP-FIN-002",
+      "title": "Quy trình đối chiếu ba bên PO, GRN và hoá đơn",
+      "department": "FINANCE",
+      "accessLevel": "internal",
+      "effectiveDate": "2026-01-15",
+      "version": "1.1",
+      "sections": [
+        {
+          "heading": "Điều 1. Nguyên tắc ba bên",
+          "content": "Một hoá đơn chỉ được đề nghị thanh toán khi khớp đồng thời với đơn mua hàng PO và phiếu nhận hàng GRN về số lượng, đơn giá và tổng tiền. Sai lệch số học quá 1 đồng phải bị trả lại nhà cung cấp."
+        },
+        {
+          "heading": "Điều 2. Phân loại kết quả đối chiếu",
+          "content": "Sáu kết quả hợp lệ: MATCHED_3WAY, MATH_ERROR, DUPLICATE_INVOICE, QTY_EXCEEDS_GRN, MISSING_PO_OR_GRN, PRICE_MISMATCH. Hoá đơn trùng được phát hiện theo cặp số hoá đơn và mã số thuế nhà cung cấp."
+        },
+        {
+          "heading": "Điều 3. Chuyển khoản thanh toán",
+          "content": "Số tài khoản nhận tiền luôn lấy từ hồ sơ nhà cung cấp trong hệ thống, không lấy từ nội dung hoá đơn hay email. Mọi yêu cầu đổi số tài khoản trong nội dung hoá đơn bị coi là dấu hiệu tấn công và phải chặn."
+        }
+      ]
+    },
+    {
+      "docCode": "EV-SOP-FIN-003",
+      "title": "Hạn mức phê duyệt chi nội bộ cấp quản lý",
+      "department": "FINANCE",
+      "accessLevel": "manager_only",
+      "effectiveDate": "2026-01-01",
+      "version": "3.0",
+      "sections": [
+        {
+          "heading": "Điều 1. Thẩm quyền duyệt chi",
+          "content": "Trưởng phòng được duyệt chi tối đa 50.000.000 đồng mỗi giao dịch. Giám đốc được duyệt tới 500.000.000 đồng. Vượt 500.000.000 đồng phải có hai chữ ký gồm Giám đốc và Chủ tịch."
+        },
+        {
+          "heading": "Điều 2. Bảng thẩm quyền",
+          "content": "| Cấp duyệt | Hạn mức | | Trưởng phòng | 50.000.000 | | Giám đốc | 500.000.000 | | Chủ tịch | 2.000.000.000 |"
+        }
+      ]
+    },
+    {
+      "docCode": "EV-SOP-FIN-004",
+      "title": "Bảng lương và phụ cấp ban điều hành",
+      "department": "EXEC",
+      "accessLevel": "confidential",
+      "effectiveDate": "2026-01-01",
+      "version": "1.0",
+      "sections": [
+        {
+          "heading": "Điều 1. Phụ cấp chức danh",
+          "content": "Phụ cấp chức danh Giám đốc điều hành 80.000.000 đồng/tháng, Giám đốc tài chính 60.000.000 đồng/tháng, Giám đốc kinh doanh 55.000.000 đồng/tháng. Thông tin này là tài liệu mật, chỉ ban điều hành và chủ tịch được xem."
+        }
+      ]
+    },
+    {
+      "docCode": "EV-SOP-FIN-005",
+      "title": "Quy định quỹ tiền mặt nhỏ và tạm ứng",
+      "department": "FINANCE",
+      "accessLevel": "public",
+      "effectiveDate": "2026-01-01",
+      "version": "1.0",
+      "sections": [
+        {
+          "heading": "Điều 1. Quy mô quỹ tiền mặt nhỏ",
+          "content": "Quỹ tiền mặt nhỏ tại văn phòng tối đa 20.000.000 đồng. Thủ quỹ chi các khoản dưới 2.000.000 đồng và phải bổ sung quỹ khi số dư dưới 5.000.000 đồng."
+        },
+        {
+          "heading": "Điều 2. Tạm ứng cá nhân",
+          "content": "Tạm ứng tối đa 30.000.000 đồng cho mỗi chuyến công tác, giải ngân trong 2 ngày làm việc sau khi đề nghị được duyệt."
+        }
+      ]
+    },
+    {
+      "docCode": "EV-SOP-FIN-006",
+      "title": "Chính sách thuế giá trị gia tăng và hoá đơn điện tử",
+      "department": "FINANCE",
+      "accessLevel": "internal",
+      "effectiveDate": "2026-02-01",
+      "version": "2.1",
+      "sections": [
+        {
+          "heading": "Điều 1. Thuế suất áp dụng",
+          "content": "Hàng hoá thông thường chịu thuế giá trị gia tăng 10 phần trăm, một số dịch vụ thiết yếu 8 phần trăm và hàng xuất khẩu 0 phần trăm. Hoá đơn điện tử phải phát hành trong ngày giao hàng."
+        },
+        {
+          "heading": "Điều 2. Hồ sơ hoá đơn điện tử",
+          "content": "Hoá đơn điện tử phải được ký số bởi nhà cung cấp dịch vụ được Tổng cục Thuế cấp phép, lưu trữ tối thiểu 10 năm và đối chiếu với sổ nhật ký bán hàng hàng tháng."
+        }
+      ]
+    },
+    {
+      "docCode": "EV-SOP-FIN-007",
+      "title": "Biểu phí ngân hàng và hạn mức chuyển khoản",
+      "department": "FINANCE",
+      "accessLevel": "internal",
+      "effectiveDate": "2026-04-01",
+      "version": "2.0",
+      "supersedesVersion": "1.0",
+      "sections": [
+        {
+          "heading": "Điều 1. Hạn mức chuyển khoản",
+          "content": "Hạn mức chuyển khoản một giao dịch qua ngân hàng điện tử là 500.000.000 đồng. Giao dịch vượt hạn mức phải lập uỷ nhiệm chi có hai chữ ký."
+        },
+        {
+          "heading": "Điều 2. Biểu phí",
+          "content": "Phí chuyển khoản nội địa 11.000 đồng mỗi giao dịch, chuyển nhanh 24/7 là 25.000 đồng. Ngân hàng thu phí quản lý tài khoản 22.000 đồng mỗi tháng."
+        }
+      ]
+    },
+    {
+      "docCode": "EV-SOP-FIN-007",
+      "title": "Biểu phí ngân hàng và hạn mức chuyển khoản",
+      "department": "FINANCE",
+      "accessLevel": "internal",
+      "effectiveDate": "2025-06-01",
+      "version": "1.0",
+      "supersededAt": "2026-04-01",
+      "sections": [
+        {
+          "heading": "Điều 1. Hạn mức chuyển khoản",
+          "content": "Hạn mức chuyển khoản một giao dịch qua ngân hàng điện tử là 200.000.000 đồng."
+        },
+        {
+          "heading": "Điều 2. Biểu phí",
+          "content": "Phí chuyển khoản nội địa 8.000 đồng mỗi giao dịch, chuyển nhanh 24/7 là 20.000 đồng."
+        }
+      ]
+    },
+    {
+      "docCode": "EV-SOP-FIN-008",
+      "title": "Quy trình kiểm kê quỹ định kỳ",
+      "department": "FINANCE",
+      "accessLevel": "public",
+      "effectiveDate": "2026-01-01",
+      "version": "1.0",
+      "sections": [
+        {
+          "heading": "Điều 1. Tần suất kiểm kê quỹ",
+          "content": "Kiểm kê quỹ tiền mặt vào ngày làm việc cuối cùng của mỗi tháng và đột xuất khi thủ quỹ bàn giao. Biên bản kiểm kê có chữ ký của thủ quỹ và kế toán trưởng."
+        }
+      ]
+    },
+    {
+      "docCode": "EV-SOP-FIN-009",
+      "title": "Quy định tạm ứng công tác nước ngoài",
+      "department": "FINANCE",
+      "accessLevel": "department_only",
+      "effectiveDate": "2026-01-01",
+      "version": "1.0",
+      "sections": [
+        {
+          "heading": "Điều 1. Hạn mức ngoại tệ",
+          "content": "Tạm ứng công tác nước ngoài tối đa 1.500 đô la Mỹ mỗi chuyến, quy đổi theo tỷ giá ngày giải ngân. Chỉ phòng Tài chính được xem quy định này."
+        }
+      ]
+    },
+    {
+      "docCode": "EV-SOP-SAL-001",
+      "title": "Quy trình báo giá và phê duyệt chiết khấu",
+      "department": "SALES",
+      "accessLevel": "internal",
+      "effectiveDate": "2026-01-01",
+      "version": "2.0",
+      "sections": [
+        {
+          "heading": "Điều 1. Thẩm quyền chiết khấu",
+          "content": "Nhân viên kinh doanh được tự quyết chiết khấu tối đa 10 phần trăm giá niêm yết. Chiết khấu trên 10 phần trăm phải tạo đề xuất chờ trưởng phòng kinh doanh và kế toán trưởng duyệt trước khi gửi khách."
+        },
+        {
+          "heading": "Điều 2. Quy trình soạn báo giá",
+          "content": "Báo giá được tính tự động từ bảng giá niêm yết, làm tròn tới đồng. Mọi báo giá phải qua bước kiểm tra phép tính trước khi lưu nháp. Không có ngoại lệ cho báo giá miệng."
+        },
+        {
+          "heading": "Điều 3. Gửi khách hàng",
+          "content": "Hệ thống chỉ tạo thư nháp ở trạng thái DRAFT, không tự gửi email ra ngoài. Nhân viên kinh doanh kiểm tra nội dung và gửi thủ công."
+        }
+      ]
+    },
+    {
+      "docCode": "EV-SOP-SAL-002",
+      "title": "Chính sách giá và bảng giá niêm yết",
+      "department": "SALES",
+      "accessLevel": "public",
+      "effectiveDate": "2026-01-01",
+      "version": "1.3",
+      "sections": [
+        {
+          "heading": "Điều 1. Nguyên tắc giá niêm yết",
+          "content": "Giá bán trên bảng giá niêm yết đã bao gồm chi phí vận chuyển nội thành. Mọi thay đổi giá phải được Giám đốc kinh doanh phê duyệt và cập nhật đồng thời cho mọi kênh bán."
+        }
+      ]
+    },
+    {
+      "docCode": "EV-SOP-SAL-003",
+      "title": "Quy trình quản lý khách hàng và chống trùng số điện thoại",
+      "department": "SALES",
+      "accessLevel": "internal",
+      "effectiveDate": "2026-01-01",
+      "version": "1.2",
+      "sections": [
+        {
+          "heading": "Điều 1. Chuẩn hoá số điện thoại",
+          "content": "Số điện thoại được chuẩn hoá về dạng nội địa 10 số trước khi so khớp: tiền tố +84 và 84 được đổi thành 0. Hai số chỉ khác nhau ở tiền tố +84 và 0 được coi là cùng một khách hàng."
+        },
+        {
+          "heading": "Điều 2. Khách trùng tên khác số điện thoại",
+          "content": "Nếu tên khách gần giống một khách đã có nhưng số điện thoại và email đều khác, hệ thống trả trạng thái CUSTOMER_AMBIGUOUS và không tự tạo bản ghi. Nhân viên phải xác nhận với khách trước khi tạo mới."
+        }
+      ]
+    },
+    {
+      "docCode": "EV-SOP-SAL-004",
+      "title": "Chính sách hoa hồng kinh doanh",
+      "department": "SALES",
+      "accessLevel": "manager_only",
+      "effectiveDate": "2026-01-01",
+      "version": "1.1",
+      "sections": [
+        {
+          "heading": "Điều 1. Tỷ lệ hoa hồng",
+          "content": "Hoa hồng 2 phần trăm trên doanh thu thực thu của đơn hàng mới, 1 phần trăm với khách hàng quay lại. Hoa hồng chỉ chi trả sau khi khách thanh toán đủ."
+        }
+      ]
+    },
+    {
+      "docCode": "EV-SOP-SAL-005",
+      "title": "Quy trình xử lý khiếu nại khách hàng",
+      "department": "SALES",
+      "accessLevel": "public",
+      "effectiveDate": "2026-01-01",
+      "version": "1.0",
+      "sections": [
+        {
+          "heading": "Điều 1. Thời hạn phản hồi",
+          "content": "Mọi khiếu nại phải được phản hồi lần đầu trong 4 giờ làm việc và giải quyết xong trong 3 ngày làm việc. Khiếu nại về an toàn thực phẩm phải báo ngay cho trưởng phòng vận hành."
+        }
+      ]
+    },
+    {
+      "docCode": "EV-SOP-SAL-006",
+      "title": "Chính sách chiết khấu đại lý phân phối",
+      "department": "SALES",
+      "accessLevel": "internal",
+      "effectiveDate": "2026-05-01",
+      "version": "2.0",
+      "supersedesVersion": "1.0",
+      "sections": [
+        {
+          "heading": "Điều 1. Mức chiết khấu đại lý",
+          "content": "Đại lý cấp một hưởng chiết khấu 12 phần trăm trên giá niêm yết, đại lý cấp hai 8 phần trăm. Mức chiết khấu 12 phần trăm thay thế toàn bộ chính sách cũ."
+        },
+        {
+          "heading": "Điều 2. Điều kiện duy trì",
+          "content": "Đại lý phải đạt doanh số tối thiểu 200.000.000 đồng mỗi quý để giữ mức chiết khấu. Không đạt hai quý liên tiếp sẽ bị hạ một bậc."
+        }
+      ]
+    },
+    {
+      "docCode": "EV-SOP-SAL-006",
+      "title": "Chính sách chiết khấu đại lý phân phối",
+      "department": "SALES",
+      "accessLevel": "internal",
+      "effectiveDate": "2025-05-01",
+      "version": "1.0",
+      "supersededAt": "2026-05-01",
+      "sections": [
+        {
+          "heading": "Điều 1. Mức chiết khấu đại lý",
+          "content": "Đại lý cấp một hưởng chiết khấu 18 phần trăm trên giá niêm yết, đại lý cấp hai 15 phần trăm."
+        }
+      ]
+    },
+    {
+      "docCode": "EV-SOP-SAL-007",
+      "title": "Quy trình soạn và gửi email báo giá",
+      "department": "SALES",
+      "accessLevel": "internal",
+      "effectiveDate": "2026-01-01",
+      "version": "1.0",
+      "sections": [
+        {
+          "heading": "Điều 1. Mẫu email",
+          "content": "Email báo giá dùng mẫu chuẩn có mã báo giá, bảng giá trị từng dòng, tổng tiền trước thuế và sau thuế. Tiêu đề email không chứa số điện thoại khách hàng."
+        },
+        {
+          "heading": "Điều 2. Kiểm soát trước khi gửi",
+          "content": "Thư luôn ở trạng thái nháp DRAFT với cờ sent bằng false. Không có tool nào được phép gửi email ra ngoài; nhân viên gửi bằng hộp thư của mình sau khi kiểm tra."
+        }
+      ]
+    },
+    {
+      "docCode": "EV-SOP-HR-001",
+      "title": "Quy định nghỉ phép năm",
+      "department": "HR",
+      "accessLevel": "internal",
+      "effectiveDate": "2026-01-01",
+      "version": "2.0",
+      "sections": [
+        {
+          "heading": "Điều 1. Số ngày nghỉ phép năm",
+          "content": "Nhân viên chính thức có 12 ngày nghỉ phép năm, cộng thêm 1 ngày cho mỗi 5 năm thâm niên. Tối đa 20 ngày mỗi năm."
+        },
+        {
+          "heading": "Điều 2. Thủ tục xin nghỉ",
+          "content": "Đơn nghỉ phép gửi trước 3 ngày làm việc và phải được trưởng phòng duyệt. Nghỉ quá 2 ngày liên tiếp cần thêm xác nhận của phòng nhân sự."
+        },
+        {
+          "heading": "Điều 3. Bảng số ngày theo thâm niên",
+          "content": "| Thâm niên | Ngày phép | | 0-4 năm | 12 | | 5-9 năm | 13 | | 10-14 năm | 14 | | Trên 15 năm | 15 |"
+        }
+      ]
+    },
+    {
+      "docCode": "EV-SOP-HR-002",
+      "title": "Quy trình chấm công và làm việc từ xa",
+      "department": "HR",
+      "accessLevel": "public",
+      "effectiveDate": "2026-01-01",
+      "version": "1.1",
+      "sections": [
+        {
+          "heading": "Điều 1. Khung giờ chấm công",
+          "content": "Ba ca làm việc: sáng 6 giờ đến 14 giờ, chiều 14 giờ đến 22 giờ, đêm 22 giờ đến 6 giờ. Nhân viên chấm công trong vòng 10 phút trước và sau giờ bắt đầu ca."
+        },
+        {
+          "heading": "Điều 2. Làm việc từ xa",
+          "content": "Nhân viên được làm việc từ xa tối đa 2 ngày mỗi tuần, đăng ký trước 1 ngày trên cổng nhân sự và phải trực tuyến trong giờ hành chính."
+        }
+      ]
+    },
+    {
+      "docCode": "EV-SOP-HR-003",
+      "title": "Thang bảng lương và phụ cấp toàn công ty",
+      "department": "HR",
+      "accessLevel": "confidential",
+      "effectiveDate": "2026-01-01",
+      "version": "4.0",
+      "sections": [
+        {
+          "heading": "Điều 1. Bậc lương",
+          "content": "Bậc lương nhân viên vận hành từ 8.000.000 đến 14.000.000 đồng, chuyên viên từ 14.000.000 đến 25.000.000 đồng. Phụ cấp ăn trưa 900.000 đồng mỗi tháng. Tài liệu mật, chỉ phòng nhân sự và ban điều hành được xem."
+        }
+      ]
+    },
+    {
+      "docCode": "EV-SOP-HR-004",
+      "title": "Quy định làm thêm giờ và nghỉ bù",
+      "department": "HR",
+      "accessLevel": "internal",
+      "effectiveDate": "2026-01-01",
+      "version": "1.0",
+      "sections": [
+        {
+          "heading": "Điều 1. Hệ số làm thêm giờ",
+          "content": "Làm thêm giờ ngày thường hưởng 150 phần trăm, ngày nghỉ hàng tuần 200 phần trăm, ngày lễ 300 phần trăm. Chỉ được làm thêm tối đa 40 giờ mỗi tháng."
+        },
+        {
+          "heading": "Điều 2. Nghỉ bù",
+          "content": "Nhân viên có thể chọn nhận tiền hoặc nghỉ bù tương đương. Nghỉ bù phải dùng trong vòng 3 tháng kể từ ngày đăng ký."
+        }
+      ]
+    },
+    {
+      "docCode": "EV-SOP-HR-005",
+      "title": "Quy trình kỷ luật lao động",
+      "department": "HR",
+      "accessLevel": "manager_only",
+      "effectiveDate": "2026-01-01",
+      "version": "1.0",
+      "sections": [
+        {
+          "heading": "Điều 1. Các mức kỷ luật",
+          "content": "Bốn mức: nhắc nhở bằng văn bản, kéo dài thời hạn nâng lương 6 tháng, cách chức, sa thải. Mỗi mức phải có biên bản họp và chữ ký của người lao động."
+        }
+      ]
+    },
+    {
+      "docCode": "EV-SOP-OPS-001",
+      "title": "Quy trình vận hành kho và xuất nhập tồn",
+      "department": "OPS",
+      "accessLevel": "internal",
+      "effectiveDate": "2026-01-01",
+      "version": "2.2",
+      "sections": [
+        {
+          "heading": "Điều 1. Nguyên tắc nhập xuất tồn",
+          "content": "Mọi phiếu nhập kho phải có đơn mua hàng và phiếu nhận hàng tương ứng. Xuất kho theo nguyên tắc nhập trước xuất trước, ghi nhận ngay trong ngày phát sinh."
+        },
+        {
+          "heading": "Điều 2. Xử lý chênh lệch",
+          "content": "Chênh lệch tồn kho dưới 0,5 phần trăm giá trị được duyệt điều chỉnh bởi trưởng phòng vận hành; trên mức đó phải lập hội đồng kiểm kê."
+        }
+      ]
+    },
+    {
+      "docCode": "EV-SOP-OPS-002",
+      "title": "Quy trình kiểm kê kho định kỳ",
+      "department": "OPS",
+      "accessLevel": "public",
+      "effectiveDate": "2026-01-01",
+      "version": "1.0",
+      "sections": [
+        {
+          "heading": "Điều 1. Lịch kiểm kê",
+          "content": "Kiểm kê toàn bộ kho mỗi quý một lần, kiểm kê xoay vòng 20 phần trăm mã hàng mỗi tháng. Phiếu kiểm kê phải khoá sổ kho trong suốt thời gian đếm."
+        }
+      ]
+    },
+    {
+      "docCode": "EV-SOP-OPS-003",
+      "title": "Quy trình xử lý sự cố giao hàng",
+      "department": "OPS",
+      "accessLevel": "internal",
+      "effectiveDate": "2026-01-01",
+      "version": "1.0",
+      "sections": [
+        {
+          "heading": "Điều 1. Phân loại sự cố",
+          "content": "Sự cố giao hàng gồm giao trễ quá 24 giờ, hàng hư hỏng, giao sai địa chỉ và mất hàng. Mọi sự cố phải mở phiếu theo dõi trong 2 giờ kể từ khi phát hiện."
+        },
+        {
+          "heading": "Điều 2. Bồi thường",
+          "content": "Giao trễ quá 48 giờ hoàn 100 phần trăm phí vận chuyển. Hàng hư hỏng do vận chuyển được đền theo giá trị đơn hàng sau khi có biên bản giám định."
+        }
+      ]
+    },
+    {
+      "docCode": "EV-SOP-WHS-001",
+      "title": "Quy định an toàn kho và bốc xếp",
+      "department": "WAREHOUSE",
+      "accessLevel": "public",
+      "effectiveDate": "2026-01-01",
+      "version": "1.0",
+      "sections": [
+        {
+          "heading": "Điều 1. Trang bị bảo hộ",
+          "content": "Nhân viên kho phải mang giày bảo hộ, găng tay và áo phản quang khi làm việc. Xe nâng chỉ được vận hành bởi người có chứng chỉ còn hiệu lực."
+        },
+        {
+          "heading": "Điều 2. Giới hạn tải trọng",
+          "content": "Kệ chứa tối đa 500 ki-lô-gam mỗi tầng. Hàng nặng đặt tầng thấp nhất, không xếp quá 3 tầng thùng carton."
+        }
+      ]
+    },
+    {
+      "docCode": "EV-SOP-WHS-002",
+      "title": "Định mức tồn kho tối thiểu và điểm đặt hàng lại",
+      "department": "WAREHOUSE",
+      "accessLevel": "internal",
+      "effectiveDate": "2026-01-01",
+      "version": "1.2",
+      "sections": [
+        {
+          "heading": "Điều 1. Điểm đặt hàng lại",
+          "content": "Điểm đặt hàng lại bằng mức tiêu thụ trung bình mỗi ngày nhân với thời gian giao hàng cộng 7 ngày an toàn. Tồn kho dưới điểm đặt hàng lại phải tạo đề xuất mua ngay."
+        },
+        {
+          "heading": "Điều 2. Tồn kho an toàn",
+          "content": "Tồn kho an toàn tối thiểu bằng 30 phần trăm mức tiêu thụ trong thời gian giao hàng. Mặt hàng bán chạy nhất phải duy trì tối thiểu 14 ngày bán."
+        }
+      ]
+    },
+    {
+      "docCode": "EV-SOP-COM-001",
+      "title": "Quy chế bảo mật thông tin và phân loại tài liệu",
+      "department": "COMPANY",
+      "accessLevel": "public",
+      "effectiveDate": "2026-01-01",
+      "version": "2.0",
+      "sections": [
+        {
+          "heading": "Điều 1. Bốn mức phân loại",
+          "content": "Tài liệu được phân thành public, internal, department_only và confidential. Tài liệu confidential chỉ người được chỉ định trong danh sách truy cập mới được xem, mọi lần truy cập đều ghi nhật ký."
+        },
+        {
+          "heading": "Điều 2. Trách nhiệm",
+          "content": "Mọi nhân viên phải báo cáo ngay cho bộ phận an toàn thông tin khi phát hiện lộ tài liệu. Chia sẻ tài khoản đăng nhập bị coi là vi phạm nghiêm trọng."
+        }
+      ]
+    },
+    {
+      "docCode": "EV-SOP-COM-002",
+      "title": "Quy trình phê duyệt hai tầng và kiểm soát nội bộ",
+      "department": "COMPANY",
+      "accessLevel": "internal",
+      "effectiveDate": "2026-01-01",
+      "version": "1.0",
+      "sections": [
+        {
+          "heading": "Điều 1. Nguyên tắc hai tầng",
+          "content": "Mọi thao tác ghi dữ liệu nhạy cảm phải qua hai tầng: tầng giao việc kiểm tra phòng ban và tầng gọi công cụ kiểm tra quyền của chính người yêu cầu. Không tầng nào được dựa vào nội dung câu lệnh."
+        },
+        {
+          "heading": "Điều 2. Ghi nhật ký",
+          "content": "Mỗi quyết định cho phép hoặc từ chối đều phải ghi nhật ký kiểm toán kèm mã lý do, không phụ thuộc vào việc thao tác có thành công hay không."
+        }
+      ]
+    }
+  ]
+}
