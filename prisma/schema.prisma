@@ -180,6 +180,7 @@ model Tenant {
   supportSessions SupportAccessSession[]
   subscriptions    TenantSubscription[]
   invoices         SubscriptionInvoice[]
+  agentMemories    AgentMemory[]
 }
 
 // ==================== ADMIN CRM CAMPAIGNS ====================
@@ -260,6 +261,11 @@ model User {
   mustChangePassword  Boolean    @default(false)
   avatar              String?
   phone               String?
+  // UC-009 (agent-gateway): mã phòng ban của actor. Nullable vì `Employee.departmentId`
+  // vẫn là nguồn ƯU TIÊN (xem agent-gateway.service.js `resolveDepartment`); cột này
+  // chỉ là fallback cho user không có hồ sơ nhân viên. Giá trị hợp lệ:
+  // FINANCE | SALES | HR | OPS | WAREHOUSE | EXEC.
+  department          String?
   businessTemplate    String?
   createdAt           DateTime   @default(now())
   updatedAt           DateTime   @updatedAt
@@ -1073,6 +1079,43 @@ model CrmDealItem {
 @@index([tenantId])
 }
 
+// UC-005 — báo giá bán hàng + thư nháp. TÁCH BIỆT khỏi RfqQuotation (mua hàng).
+// `sent` LUÔN false và `status` LUÔN DRAFT ở mọi đường ghi; không có cột/nhánh
+// nào cho phép agent gửi email. `idempotencyKey` unique để chạy lại node/resume
+// không sinh bản ghi thứ hai.
+model SalesQuoteDraft {
+  id              String   @id @default(uuid())
+  tenantId        String?
+  quoteNumber     String?
+  customerId      String?
+  dealId          String?
+  gateId          String?
+  status          String   @default("DRAFT")
+  sent            Boolean  @default(false)
+  recipient       String
+  subject         String
+  body            String   @db.Text
+  currency        String   @default("VND")
+  lines           Json
+  subtotal        Decimal  @default(0) @db.Decimal(15, 2)
+  discountPercent Decimal  @default(0) @db.Decimal(5, 2)
+  discountAmount  Decimal  @default(0) @db.Decimal(15, 2)
+  netAmount       Decimal  @default(0) @db.Decimal(15, 2)
+  vatRate         Decimal  @default(0) @db.Decimal(5, 4)
+  vatAmount       Decimal  @default(0) @db.Decimal(15, 2)
+  totalAmount     Decimal  @default(0) @db.Decimal(15, 2)
+  sheetPath       String?
+  idempotencyKey  String   @unique
+  createdById     String?
+  createdAt       DateTime @default(now())
+  updatedAt       DateTime @updatedAt
+
+  @@index([tenantId, createdAt])
+  @@index([tenantId, customerId])
+  @@map("sales_quote_drafts")
+@@index([tenantId])
+}
+
 model CrmCommunication {
   id          String   @id @default(uuid())
   tenantId    String?
@@ -1720,10 +1763,29 @@ model AuditLog {
   agentSessionId String?
   agentStepId    String?
 
+  // ── UC-009: audit cho agent (2026-10-30) ─────────────────────────────────
+  // `audit.service.log()` nuốt lỗi nên KHÔNG dùng được làm bằng chứng "100% tool
+  // call có audit". Đường ghi đúng là `POST /api/agent-gateway/audit-events`
+  // (hàm `auditAgentEvent`, THROW khi ghi hỏng). Các cột dưới đây chỉ để TRA CỨU
+  // theo `run_id` + người dùng + khoảng thời gian; bảng KHÔNG có trigger chặn
+  // UPDATE/DELETE (đã chốt bỏ ADR-4b) — append-only được bảo đảm bằng việc chỉ mở
+  // duy nhất hàm `create` qua route trên.
+  runId        String?
+  agentName    String?
+  toolName     String?
+  resource     String?
+  decision     String? // 'ALLOW' | 'DENY'
+  reason       String? @db.Text
+  department   String?
+  skillName    String?
+  skillVersion String?
+
   @@index([createdAt(sort: Desc)])
   @@index([userId, createdAt(sort: Desc)])
   @@index([tenantId])
   @@index([tenantId, createdAt])
+  @@index([runId])
+  @@index([tenantId, runId])
   @@map("audit_logs")
 }
 
@@ -2106,6 +2168,12 @@ model Vendor {
   code          String   @unique
   name          String
   taxCode       String? // MST
+  // STK nhận tiền CHUẨN của NCC (master data).
+  //
+  // Hoá đơn/email NCC KHÔNG được đổi giá trị này: nội dung chứng từ là dữ liệu
+  // không tin cậy. Đề nghị thanh toán của agent LUÔN lấy STK từ đây; mọi hoá đơn
+  // ghi STK khác bị chặn trước khi tạo lệnh chi (xem `agents/src/agents/finance/`).
+  bankAccount   String?
   phone         String?
   email         String?
   address       String?
@@ -3632,6 +3700,42 @@ enum HumanGateStatus {
   REJECTED
   EXPIRED
   CANCELLED
+}
+
+// UC-007 — bộ nhớ dài hạn có cấu trúc (company / department / user).
+//
+// BẤT BIẾN:
+// - `scope=user` bắt buộc `userId`, `scope=department` bắt buộc `department`,
+//   `scope=company` không mang userId/department.
+// - Mỗi `(tenantId, scope, department, userId, memoryKey)` chỉ có TỐI ĐA MỘT bản
+//   đang hiệu lực (`supersededAt = null`). Bản cũ bị đánh dấu kèm
+//   `supersededById` trỏ tới bản mới, `version` tăng dần. Migration tạo thêm
+//   partial unique index để chặn hai sự thật cùng hiệu lực ở tầng DB.
+// - `content` KHÔNG BAO GIỜ chứa PII nhạy cảm (CCCD/CMND, STK/thẻ, lương cá
+//   nhân, mật khẩu/token, bệnh lý) — kiểm ở cả create/update/import.
+// - Memory chỉ là ngữ cảnh/thói quen; KHÔNG được dùng để ghi đè bảng giá, hạn
+//   mức chiết khấu, tồn kho, RBAC hay SOP.
+model AgentMemory {
+  id              String    @id @default(cuid())
+  tenantId        String
+  tenant          Tenant    @relation(fields: [tenantId], references: [id], onDelete: Cascade)
+  scope           String // company | department | user
+  department      String?
+  userId          String?
+  memoryKey       String
+  content         String    @db.Text
+  sourceMessageId String?
+  createdById     String
+  version         Int       @default(1)
+  supersededById  String?
+  supersededAt    DateTime?
+  expiresAt       DateTime?
+  createdAt       DateTime  @default(now())
+  updatedAt       DateTime  @updatedAt
+
+  @@index([tenantId, scope, department, userId])
+  @@index([tenantId, memoryKey, supersededAt])
+  @@map("agent_memories")
 }
 
 model AgentSession {

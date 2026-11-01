@@ -45,6 +45,7 @@ import {
   UploadOutlined,
   CheckSquareOutlined,
   ClusterOutlined,
+  RobotOutlined,
   ApiOutlined,
   NotificationOutlined,
   ProjectOutlined,
@@ -264,6 +265,14 @@ const MENU_GROUPS = [
         key: "/agent-approvals",
         icon: <AuditOutlined />,
         label: "Duyệt đề xuất nhập",
+        roles: ["ADMIN", "MANAGER"],
+      },
+      {
+        // Bước 9 — màn hình hợp nhất: đội agent, SOP có trích dẫn, đối chiếu/báo
+        // giá, hàng đợi gate, bộ nhớ dài hạn, audit + ma trận phân quyền.
+        key: "/multi-agent-ops",
+        icon: <RobotOutlined />,
+        label: "Quản trị Multi-Agent",
         roles: ["ADMIN", "MANAGER"],
       },
       {

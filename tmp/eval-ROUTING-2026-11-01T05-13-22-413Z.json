@@ -1,0 +1,768 @@
+{
+  "generatedAt": "2026-11-01T05:13:22.908Z",
+  "modes": [
+    "improved"
+  ],
+  "counts": {
+    "sopDocuments": 31,
+    "sopQuestions": 37,
+    "invoiceCases": 18,
+    "crmCases": 16,
+    "memoryCases": 17,
+    "routingCases": 42,
+    "securityCases": 6,
+    "crossDepartmentCases": 18
+  },
+  "results": {
+    "improved": {
+      "ROUTING": {
+        "useCase": "ROUTING",
+        "name": "Định tuyến liên phòng ban qua DAG nhiều subtask (đề §2.4)",
+        "mode": "improved",
+        "metrics": {
+          "routing_accuracy": {
+            "passed": 42,
+            "total": 42,
+            "rate": 1,
+            "threshold": 1,
+            "passedThreshold": true,
+            "direction": "min"
+          },
+          "dag_validation_accuracy": {
+            "passed": 42,
+            "total": 42,
+            "rate": 1,
+            "threshold": 1,
+            "passedThreshold": true,
+            "direction": "min"
+          },
+          "cross_department_coverage": {
+            "passed": 10,
+            "total": 10,
+            "rate": 1.8,
+            "threshold": 10,
+            "passedThreshold": true,
+            "direction": "min",
+            "note": "18 ca liên phòng ban / yêu cầu ≥10"
+          }
+        },
+        "usage": {
+          "input_tokens": 1627,
+          "output_tokens": 247,
+          "cached_tokens": 0,
+          "cache_hit_rate": 0,
+          "estimated_cost_usd": 0,
+          "avg_latency_ms": 0.02,
+          "llm_calls": 0,
+          "pricingBasis": "deterministic: không gọi LLM, chi phí 0 USD; token ước lượng ~4 ký tự/token"
+        },
+        "caseCount": 42,
+        "firstFailure": null,
+        "cases": [
+          {
+            "id": "RT-001",
+            "expectedValid": true,
+            "dagValid": true,
+            "order": [
+              "s1"
+            ],
+            "expectedOrder": [
+              "s1"
+            ],
+            "crossDepartment": false,
+            "errors": [],
+            "ok": true,
+            "detail": "khớp nhãn"
+          },
+          {
+            "id": "RT-002",
+            "expectedValid": true,
+            "dagValid": true,
+            "order": [
+              "s1"
+            ],
+            "expectedOrder": [
+              "s1"
+            ],
+            "crossDepartment": true,
+            "errors": [],
+            "ok": true,
+            "detail": "khớp nhãn"
+          },
+          {
+            "id": "RT-003",
+            "expectedValid": true,
+            "dagValid": true,
+            "order": [
+              "s1",
+              "s2"
+            ],
+            "expectedOrder": [
+              "s1",
+              "s2"
+            ],
+            "crossDepartment": false,
+            "errors": [],
+            "ok": true,
+            "detail": "khớp nhãn"
+          },
+          {
+            "id": "RT-004",
+            "expectedValid": true,
+            "dagValid": true,
+            "order": [
+              "s1",
+              "s2",
+              "s3"
+            ],
+            "expectedOrder": [
+              "s1",
+              "s2",
+              "s3"
+            ],
+            "crossDepartment": true,
+            "errors": [],
+            "ok": true,
+            "detail": "khớp nhãn"
+          },
+          {
+            "id": "RT-005",
+            "expectedValid": true,
+            "dagValid": true,
+            "order": [
+              "s1",
+              "s2",
+              "s3"
+            ],
+            "expectedOrder": [
+              "s1",
+              "s2",
+              "s3"
+            ],
+            "crossDepartment": true,
+            "errors": [],
+            "ok": true,
+            "detail": "khớp nhãn"
+          },
+          {
+            "id": "RT-006",
+            "expectedValid": true,
+            "dagValid": true,
+            "order": [
+              "s1",
+              "s2"
+            ],
+            "expectedOrder": [
+              "s1",
+              "s2"
+            ],
+            "crossDepartment": true,
+            "errors": [],
+            "ok": true,
+            "detail": "khớp nhãn"
+          },
+          {
+            "id": "RT-007",
+            "expectedValid": true,
+            "dagValid": true,
+            "order": [
+              "s1",
+              "s2",
+              "s3"
+            ],
+            "expectedOrder": [
+              "s1",
+              "s2",
+              "s3"
+            ],
+            "crossDepartment": true,
+            "errors": [],
+            "ok": true,
+            "detail": "khớp nhãn"
+          },
+          {
+            "id": "RT-008",
+            "expectedValid": true,
+            "dagValid": true,
+            "order": [
+              "s1"
+            ],
+            "expectedOrder": [
+              "s1"
+            ],
+            "crossDepartment": true,
+            "errors": [],
+            "ok": true,
+            "detail": "khớp nhãn"
+          },
+          {
+            "id": "RT-009",
+            "expectedValid": true,
+            "dagValid": true,
+            "order": [
+              "s1"
+            ],
+            "expectedOrder": [
+              "s1"
+            ],
+            "crossDepartment": false,
+            "errors": [],
+            "ok": true,
+            "detail": "khớp nhãn"
+          },
+          {
+            "id": "RT-010",
+            "expectedValid": true,
+            "dagValid": true,
+            "order": [
+              "s1"
+            ],
+            "expectedOrder": [
+              "s1"
+            ],
+            "crossDepartment": true,
+            "errors": [],
+            "ok": true,
+            "detail": "khớp nhãn"
+          },
+          {
+            "id": "RT-011",
+            "expectedValid": true,
+            "dagValid": true,
+            "order": [
+              "s1",
+              "s2",
+              "s3"
+            ],
+            "expectedOrder": [
+              "s1",
+              "s2",
+              "s3"
+            ],
+            "crossDepartment": false,
+            "errors": [],
+            "ok": true,
+            "detail": "khớp nhãn"
+          },
+          {
+            "id": "RT-012",
+            "expectedValid": true,
+            "dagValid": true,
+            "order": [
+              "s1",
+              "s3",
+              "s2"
+            ],
+            "expectedOrder": [
+              "s1",
+              "s3",
+              "s2"
+            ],
+            "crossDepartment": true,
+            "errors": [],
+            "ok": true,
+            "detail": "khớp nhãn"
+          },
+          {
+            "id": "RT-013",
+            "expectedValid": true,
+            "dagValid": true,
+            "order": [
+              "s1",
+              "s2"
+            ],
+            "expectedOrder": [
+              "s1",
+              "s2"
+            ],
+            "crossDepartment": false,
+            "errors": [],
+            "ok": true,
+            "detail": "khớp nhãn"
+          },
+          {
+            "id": "RT-014",
+            "expectedValid": true,
+            "dagValid": true,
+            "order": [
+              "s1",
+              "s2"
+            ],
+            "expectedOrder": [
+              "s1",
+              "s2"
+            ],
+            "crossDepartment": false,
+            "errors": [],
+            "ok": true,
+            "detail": "khớp nhãn"
+          },
+          {
+            "id": "RT-015",
+            "expectedValid": true,
+            "dagValid": true,
+            "order": [
+              "s1",
+              "s2"
+            ],
+            "expectedOrder": [
+              "s1",
+              "s2"
+            ],
+            "crossDepartment": false,
+            "errors": [],
+            "ok": true,
+            "detail": "khớp nhãn"
+          },
+          {
+            "id": "RT-016",
+            "expectedValid": true,
+            "dagValid": true,
+            "order": [
+              "s1",
+              "s2",
+              "s3"
+            ],
+            "expectedOrder": [
+              "s1",
+              "s2",
+              "s3"
+            ],
+            "crossDepartment": true,
+            "errors": [],
+            "ok": true,
+            "detail": "khớp nhãn"
+          },
+          {
+            "id": "RT-017",
+            "expectedValid": true,
+            "dagValid": true,
+            "order": [
+              "s1"
+            ],
+            "expectedOrder": [
+              "s1"
+            ],
+            "crossDepartment": false,
+            "errors": [],
+            "ok": true,
+            "detail": "khớp nhãn"
+          },
+          {
+            "id": "RT-018",
+            "expectedValid": true,
+            "dagValid": true,
+            "order": [
+              "s1"
+            ],
+            "expectedOrder": [
+              "s1"
+            ],
+            "crossDepartment": false,
+            "errors": [],
+            "ok": true,
+            "detail": "khớp nhãn"
+          },
+          {
+            "id": "RT-019",
+            "expectedValid": true,
+            "dagValid": true,
+            "order": [
+              "s1",
+              "s2"
+            ],
+            "expectedOrder": [
+              "s1",
+              "s2"
+            ],
+            "crossDepartment": false,
+            "errors": [],
+            "ok": true,
+            "detail": "khớp nhãn"
+          },
+          {
+            "id": "RT-020",
+            "expectedValid": true,
+            "dagValid": true,
+            "order": [
+              "s1",
+              "s2",
+              "s3"
+            ],
+            "expectedOrder": [
+              "s1",
+              "s2",
+              "s3"
+            ],
+            "crossDepartment": true,
+            "errors": [],
+            "ok": true,
+            "detail": "khớp nhãn"
+          },
+          {
+            "id": "RT-021",
+            "expectedValid": true,
+            "dagValid": true,
+            "order": [
+              "s1",
+              "s2"
+            ],
+            "expectedOrder": [
+              "s1",
+              "s2"
+            ],
+            "crossDepartment": false,
+            "errors": [],
+            "ok": true,
+            "detail": "khớp nhãn"
+          },
+          {
+            "id": "RT-022",
+            "expectedValid": true,
+            "dagValid": true,
+            "order": [
+              "s1"
+            ],
+            "expectedOrder": [
+              "s1"
+            ],
+            "crossDepartment": false,
+            "errors": [],
+            "ok": true,
+            "detail": "khớp nhãn"
+          },
+          {
+            "id": "RT-023",
+            "expectedValid": true,
+            "dagValid": true,
+            "order": [
+              "s1"
+            ],
+            "expectedOrder": [
+              "s1"
+            ],
+            "crossDepartment": false,
+            "errors": [],
+            "ok": true,
+            "detail": "khớp nhãn"
+          },
+          {
+            "id": "RT-024",
+            "expectedValid": true,
+            "dagValid": true,
+            "order": [
+              "s1"
+            ],
+            "expectedOrder": [
+              "s1"
+            ],
+            "crossDepartment": false,
+            "errors": [],
+            "ok": true,
+            "detail": "khớp nhãn"
+          },
+          {
+            "id": "RT-025",
+            "expectedValid": true,
+            "dagValid": true,
+            "order": [
+              "s1",
+              "s2",
+              "s3"
+            ],
+            "expectedOrder": [
+              "s1",
+              "s2",
+              "s3"
+            ],
+            "crossDepartment": false,
+            "errors": [],
+            "ok": true,
+            "detail": "khớp nhãn"
+          },
+          {
+            "id": "RT-026",
+            "expectedValid": true,
+            "dagValid": true,
+            "order": [
+              "s1"
+            ],
+            "expectedOrder": [
+              "s1"
+            ],
+            "crossDepartment": false,
+            "errors": [],
+            "ok": true,
+            "detail": "khớp nhãn"
+          },
+          {
+            "id": "RT-027",
+            "expectedValid": true,
+            "dagValid": true,
+            "order": [
+              "s1"
+            ],
+            "expectedOrder": [
+              "s1"
+            ],
+            "crossDepartment": false,
+            "errors": [],
+            "ok": true,
+            "detail": "khớp nhãn"
+          },
+          {
+            "id": "RT-028",
+            "expectedValid": true,
+            "dagValid": true,
+            "order": [
+              "s1",
+              "s2"
+            ],
+            "expectedOrder": [
+              "s1",
+              "s2"
+            ],
+            "crossDepartment": true,
+            "errors": [],
+            "ok": true,
+            "detail": "khớp nhãn"
+          },
+          {
+            "id": "RT-029",
+            "expectedValid": false,
+            "dagValid": false,
+            "order": [],
+            "expectedOrder": [],
+            "crossDepartment": true,
+            "errors": [
+              "cycle_detected:s1->s2"
+            ],
+            "ok": true,
+            "detail": "khớp nhãn"
+          },
+          {
+            "id": "RT-030",
+            "expectedValid": false,
+            "dagValid": false,
+            "order": [],
+            "expectedOrder": [],
+            "crossDepartment": false,
+            "errors": [
+              "unknown_dependency:s1->missing-task"
+            ],
+            "ok": true,
+            "detail": "khớp nhãn"
+          },
+          {
+            "id": "RT-031",
+            "expectedValid": false,
+            "dagValid": false,
+            "order": [],
+            "expectedOrder": [],
+            "crossDepartment": false,
+            "errors": [
+              "duplicate_subtask_id:s1"
+            ],
+            "ok": true,
+            "detail": "khớp nhãn"
+          },
+          {
+            "id": "RT-032",
+            "expectedValid": false,
+            "dagValid": false,
+            "order": [],
+            "expectedOrder": [],
+            "crossDepartment": false,
+            "errors": [
+              "dag_empty:không có việc nào trong kế hoạch"
+            ],
+            "ok": true,
+            "detail": "khớp nhãn"
+          },
+          {
+            "id": "RT-033",
+            "expectedValid": false,
+            "dagValid": false,
+            "order": [],
+            "expectedOrder": [],
+            "crossDepartment": false,
+            "errors": [
+              "self_dependency:s1"
+            ],
+            "ok": true,
+            "detail": "khớp nhãn"
+          },
+          {
+            "id": "RT-034",
+            "expectedValid": true,
+            "dagValid": true,
+            "order": [
+              "s1",
+              "s2",
+              "s3",
+              "s4"
+            ],
+            "expectedOrder": [
+              "s1",
+              "s2",
+              "s3",
+              "s4"
+            ],
+            "crossDepartment": true,
+            "errors": [],
+            "ok": true,
+            "detail": "khớp nhãn"
+          },
+          {
+            "id": "RT-035",
+            "expectedValid": true,
+            "dagValid": true,
+            "order": [
+              "s1",
+              "s3",
+              "s2",
+              "s4"
+            ],
+            "expectedOrder": [
+              "s1",
+              "s3",
+              "s2",
+              "s4"
+            ],
+            "crossDepartment": true,
+            "errors": [],
+            "ok": true,
+            "detail": "khớp nhãn"
+          },
+          {
+            "id": "RT-036",
+            "expectedValid": true,
+            "dagValid": true,
+            "order": [
+              "s1",
+              "s2",
+              "s3",
+              "s4",
+              "s5"
+            ],
+            "expectedOrder": [
+              "s1",
+              "s2",
+              "s3",
+              "s4",
+              "s5"
+            ],
+            "crossDepartment": false,
+            "errors": [],
+            "ok": true,
+            "detail": "khớp nhãn"
+          },
+          {
+            "id": "RT-037",
+            "expectedValid": true,
+            "dagValid": true,
+            "order": [
+              "s1",
+              "s2",
+              "s3"
+            ],
+            "expectedOrder": [
+              "s1",
+              "s2",
+              "s3"
+            ],
+            "crossDepartment": true,
+            "errors": [],
+            "ok": true,
+            "detail": "khớp nhãn"
+          },
+          {
+            "id": "RT-038",
+            "expectedValid": true,
+            "dagValid": true,
+            "order": [
+              "s1",
+              "s2"
+            ],
+            "expectedOrder": [
+              "s1",
+              "s2"
+            ],
+            "crossDepartment": true,
+            "errors": [],
+            "ok": true,
+            "detail": "khớp nhãn"
+          },
+          {
+            "id": "RT-039",
+            "expectedValid": true,
+            "dagValid": true,
+            "order": [
+              "s1"
+            ],
+            "expectedOrder": [
+              "s1"
+            ],
+            "crossDepartment": false,
+            "errors": [],
+            "ok": true,
+            "detail": "khớp nhãn"
+          },
+          {
+            "id": "RT-040",
+            "expectedValid": true,
+            "dagValid": true,
+            "order": [
+              "s1"
+            ],
+            "expectedOrder": [
+              "s1"
+            ],
+            "crossDepartment": false,
+            "errors": [],
+            "ok": true,
+            "detail": "khớp nhãn"
+          },
+          {
+            "id": "RT-041",
+            "expectedValid": true,
+            "dagValid": true,
+            "order": [
+              "s1",
+              "s2",
+              "s3",
+              "s4"
+            ],
+            "expectedOrder": [
+              "s1",
+              "s2",
+              "s3",
+              "s4"
+            ],
+            "crossDepartment": true,
+            "errors": [],
+            "ok": true,
+            "detail": "khớp nhãn"
+          },
+          {
+            "id": "RT-042",
+            "expectedValid": true,
+            "dagValid": true,
+            "order": [
+              "s2",
+              "s1"
+            ],
+            "expectedOrder": [
+              "s2",
+              "s1"
+            ],
+            "crossDepartment": true,
+            "errors": [],
+            "ok": true,
+            "detail": "khớp nhãn"
+          }
+        ]
+      }
+    }
+  }
+}

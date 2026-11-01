@@ -1,6 +1,6 @@
 {
-  "runId": "S10-20261016061529",
-  "at": "2026-10-16T06:15:29.344Z",
+  "runId": "S10-20261022015940",
+  "at": "2026-10-22T01:59:40.240Z",
   "labelSource": "nhan tay (label_sku do nguoi dien)",
   "dataset": {
     "labelSheet": "data\\aisc26\\skus\\labels\\label-sheet.csv",
@@ -88,13 +88,13 @@
       "n": 60,
       "labelled": 51,
       "tp": 41,
-      "fp": 18,
+      "fp": 19,
       "fn": 0,
-      "precision": 0.6949,
+      "precision": 0.6833,
       "recall": 1,
-      "f1": 0.82,
-      "escalated": 1,
-      "fallbackRate": 0.0167,
+      "f1": 0.8119,
+      "escalated": 0,
+      "fallbackRate": 0,
       "rawCorrect": 41,
       "rawAccuracy": 0.8039,
       "wrongAuto": 10
@@ -110,10 +110,10 @@
     "excludesZero": true
   },
   "throughput": {
-    "fuzzyMs": 374,
-    "hybridMs": 9864,
-    "msPerPairFuzzy": 6.23,
-    "msPerPairHybrid": 164.4
+    "fuzzyMs": 635,
+    "hybridMs": 10280,
+    "msPerPairFuzzy": 10.58,
+    "msPerPairHybrid": 171.33
   },
   "llmCalls": 8,
   "llmUsable": 7,
@@ -131,15 +131,15 @@
     "measured": true,
     "soLanGoi": 13,
     "promptTokens": 5256,
-    "completionTokens": 971,
-    "totalTokens": 6227,
-    "doTreTrungBinhMs": 800,
+    "completionTokens": 910,
+    "totalTokens": 6166,
+    "doTreTrungBinhMs": 1208,
     "luuY": "doTreTrungBinhMs tinh ca lan ERROR (503/timeout) — la chi phi that"
   },
   "tokensPerPair": {
-    "trenMoiCapDaDoi": 479,
-    "trenMoiCapKiemDinh": 103.8,
-    "trenMoiCapDaNhan": 58.2
+    "trenMoiCapDaDoi": 474.3,
+    "trenMoiCapKiemDinh": 102.8,
+    "trenMoiCapDaNhan": 57.6
   },
   "publishable": true,
   "lyDoKhongCongBo": null

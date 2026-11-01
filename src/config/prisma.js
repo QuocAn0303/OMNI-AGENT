@@ -78,6 +78,9 @@ const TENANT_SCOPED_MODELS = new Set([
   "Workflow", "WorkflowApproval", "WorkflowRun", "WorkflowStep",
   "User", "AgentSession", "SupportAccessSession", "TenantSubscription", "SubscriptionInvoice",
   "AuditLog", "AgentStep", "AgentHumanGate", "AgentFeedback", "BackupCode", "WebhookDelivery",
+  // UC-007 — bộ nhớ dài hạn. CÓ `tenantId` bắt buộc: thiếu đăng ký ở đây thì
+  // `assertTenantScopingReady()` từ chối khởi động backend.
+  "AgentMemory",
   "RefreshToken",
   // CRM/SRM upgrade (2026-09): churn win-back + 3-way matching + GRN
   "ChurnAlert", "GoodsReceiptNote", "GoodsReceiptItem", "PurchaseInvoiceRecord",
@@ -90,6 +93,8 @@ const TENANT_SCOPED_MODELS = new Set([
   // CRM Sales Pipeline (2026-09): Lead / Deal / Organization / Contact
   "CrmPipelineStage", "CrmLead", "CrmOrganization", "CrmContact",
   "CrmDeal", "CrmDealItem", "CrmCommunication",
+  // UC-005 — báo giá bán hàng + thư nháp (tách khỏi RfqQuotation mua hàng).
+  "SalesQuoteDraft",
   // CRM audit C5: AiDocument là model DUY NHẤT có cột `tenantId` mà chưa khai báo ở
   // đây (đã đối chiếu toàn bộ schema). Model hiện `@@ignore` nên extension chưa có tác
   // dụng gì — nhưng đăng ký sẵn để khi ai gỡ `@@ignore` thì đã được scope, không phải

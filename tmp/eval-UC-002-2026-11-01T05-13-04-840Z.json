@@ -1,0 +1,676 @@
+{
+  "generatedAt": "2026-11-01T05:13:05.596Z",
+  "modes": [
+    "improved"
+  ],
+  "counts": {
+    "sopDocuments": 31,
+    "sopQuestions": 37,
+    "invoiceCases": 18,
+    "crmCases": 16,
+    "memoryCases": 17,
+    "routingCases": 42,
+    "securityCases": 6,
+    "crossDepartmentCases": 18
+  },
+  "results": {
+    "improved": {
+      "UC-002": {
+        "useCase": "UC-002",
+        "name": "Hỏi đáp SOP có trích dẫn, ACL và phiên bản hiệu lực",
+        "mode": "improved",
+        "metrics": {
+          "recall_at_5": {
+            "passed": 28,
+            "total": 28,
+            "rate": 1,
+            "threshold": 0.8,
+            "passedThreshold": true,
+            "direction": "min"
+          },
+          "citation_validity_rate": {
+            "passed": 28,
+            "total": 28,
+            "rate": 1,
+            "threshold": 1,
+            "passedThreshold": true,
+            "direction": "min"
+          },
+          "no_answer_accuracy": {
+            "passed": 5,
+            "total": 5,
+            "rate": 1,
+            "threshold": 0.9,
+            "passedThreshold": true,
+            "direction": "min"
+          },
+          "version_accuracy": {
+            "passed": 28,
+            "total": 28,
+            "rate": 1,
+            "threshold": 1,
+            "passedThreshold": true,
+            "direction": "min"
+          },
+          "confidential_leak_rate": {
+            "passed": 4,
+            "total": 4,
+            "rate": 0,
+            "threshold": 0,
+            "passedThreshold": true,
+            "direction": "max"
+          }
+        },
+        "usage": {
+          "input_tokens": 617,
+          "output_tokens": 8635,
+          "cached_tokens": 0,
+          "cache_hit_rate": 0,
+          "estimated_cost_usd": 0,
+          "avg_latency_ms": 5.46,
+          "llm_calls": 0,
+          "pricingBasis": "deterministic: không gọi LLM, chi phí 0 USD; token ước lượng ~4 ký tự/token"
+        },
+        "caseCount": 37,
+        "firstFailure": null,
+        "cases": [
+          {
+            "id": "Q-001",
+            "expectedStatus": "ANSWERED",
+            "status": "ANSWERED",
+            "expectedDocCode": "EV-SOP-FIN-001",
+            "topDocs": [
+              "EV-SOP-FIN-001@2.0",
+              "EV-SOP-FIN-007@2.0",
+              "EV-SOP-FIN-009@1.0",
+              "EV-SOP-FIN-007@2.0",
+              "EV-SOP-HR-001@2.0"
+            ],
+            "citationValid": true,
+            "latencyMs": 27,
+            "ok": true,
+            "detail": "top5=EV-SOP-FIN-001@2.0,EV-SOP-FIN-007@2.0,EV-SOP-FIN-009@1.0,EV-SOP-FIN-007@2.0,EV-SOP-HR-001@2.0 versionMatched=true keywordsOk=true"
+          },
+          {
+            "id": "Q-002",
+            "expectedStatus": "ANSWERED",
+            "status": "ANSWERED",
+            "expectedDocCode": "EV-SOP-FIN-001",
+            "topDocs": [
+              "EV-SOP-FIN-001@2.0",
+              "EV-SOP-FIN-001@2.0",
+              "EV-SOP-FIN-005@1.0",
+              "EV-SOP-SAL-005@1.0",
+              "EV-SOP-HR-002@1.1"
+            ],
+            "citationValid": true,
+            "latencyMs": 6,
+            "ok": true,
+            "detail": "top5=EV-SOP-FIN-001@2.0,EV-SOP-FIN-001@2.0,EV-SOP-FIN-005@1.0,EV-SOP-SAL-005@1.0,EV-SOP-HR-002@1.1 versionMatched=true keywordsOk=true"
+          },
+          {
+            "id": "Q-003",
+            "expectedStatus": "ANSWERED",
+            "status": "ANSWERED",
+            "expectedDocCode": "EV-SOP-FIN-001",
+            "topDocs": [
+              "EV-SOP-FIN-001@1.0",
+              "EV-SOP-FIN-007@1.0",
+              "EV-SOP-FIN-001@1.0",
+              "EV-SOP-FIN-007@1.0",
+              "EV-SOP-SAL-006@1.0"
+            ],
+            "citationValid": true,
+            "latencyMs": 2,
+            "ok": true,
+            "detail": "top5=EV-SOP-FIN-001@1.0,EV-SOP-FIN-007@1.0,EV-SOP-FIN-001@1.0,EV-SOP-FIN-007@1.0,EV-SOP-SAL-006@1.0 versionMatched=true keywordsOk=true"
+          },
+          {
+            "id": "Q-004",
+            "expectedStatus": "ANSWERED",
+            "status": "ANSWERED",
+            "expectedDocCode": "EV-SOP-FIN-001",
+            "topDocs": [
+              "EV-SOP-FIN-001@1.0",
+              "EV-SOP-FIN-001@1.0",
+              "EV-SOP-FIN-007@1.0"
+            ],
+            "citationValid": true,
+            "latencyMs": 1,
+            "ok": true,
+            "detail": "top5=EV-SOP-FIN-001@1.0,EV-SOP-FIN-001@1.0,EV-SOP-FIN-007@1.0 versionMatched=true keywordsOk=true"
+          },
+          {
+            "id": "Q-005",
+            "expectedStatus": "ANSWERED",
+            "status": "ANSWERED",
+            "expectedDocCode": "EV-SOP-FIN-007",
+            "topDocs": [
+              "EV-SOP-FIN-007@2.0",
+              "EV-SOP-FIN-001@2.0",
+              "EV-SOP-FIN-009@1.0",
+              "EV-SOP-FIN-002@1.1",
+              "EV-SOP-FIN-007@2.0"
+            ],
+            "citationValid": true,
+            "latencyMs": 5,
+            "ok": true,
+            "detail": "top5=EV-SOP-FIN-007@2.0,EV-SOP-FIN-001@2.0,EV-SOP-FIN-009@1.0,EV-SOP-FIN-002@1.1,EV-SOP-FIN-007@2.0 versionMatched=true keywordsOk=true"
+          },
+          {
+            "id": "Q-006",
+            "expectedStatus": "ANSWERED",
+            "status": "ANSWERED",
+            "expectedDocCode": "EV-SOP-FIN-007",
+            "topDocs": [
+              "EV-SOP-FIN-007@1.0",
+              "EV-SOP-FIN-001@1.0",
+              "EV-SOP-FIN-001@1.0",
+              "EV-SOP-FIN-007@1.0",
+              "EV-SOP-SAL-006@1.0"
+            ],
+            "citationValid": true,
+            "latencyMs": 2,
+            "ok": true,
+            "detail": "top5=EV-SOP-FIN-007@1.0,EV-SOP-FIN-001@1.0,EV-SOP-FIN-001@1.0,EV-SOP-FIN-007@1.0,EV-SOP-SAL-006@1.0 versionMatched=true keywordsOk=true"
+          },
+          {
+            "id": "Q-007",
+            "expectedStatus": "ANSWERED",
+            "status": "ANSWERED",
+            "expectedDocCode": "EV-SOP-SAL-006",
+            "topDocs": [
+              "EV-SOP-SAL-006@2.0",
+              "EV-SOP-SAL-001@2.0",
+              "EV-SOP-COM-001@2.0",
+              "EV-SOP-FIN-006@2.1",
+              "EV-SOP-OPS-001@2.2"
+            ],
+            "citationValid": true,
+            "latencyMs": 5,
+            "ok": true,
+            "detail": "top5=EV-SOP-SAL-006@2.0,EV-SOP-SAL-001@2.0,EV-SOP-COM-001@2.0,EV-SOP-FIN-006@2.1,EV-SOP-OPS-001@2.2 versionMatched=true keywordsOk=true"
+          },
+          {
+            "id": "Q-008",
+            "expectedStatus": "ANSWERED",
+            "status": "ANSWERED",
+            "expectedDocCode": "EV-SOP-SAL-006",
+            "topDocs": [
+              "EV-SOP-SAL-006@1.0",
+              "EV-SOP-FIN-001@1.0",
+              "EV-SOP-FIN-007@1.0"
+            ],
+            "citationValid": true,
+            "latencyMs": 3,
+            "ok": true,
+            "detail": "top5=EV-SOP-SAL-006@1.0,EV-SOP-FIN-001@1.0,EV-SOP-FIN-007@1.0 versionMatched=true keywordsOk=true"
+          },
+          {
+            "id": "Q-009",
+            "expectedStatus": "ANSWERED",
+            "status": "ANSWERED",
+            "expectedDocCode": "EV-SOP-SAL-001",
+            "topDocs": [
+              "EV-SOP-SAL-001@2.0",
+              "EV-SOP-SAL-006@2.0",
+              "EV-SOP-HR-002@1.1",
+              "EV-SOP-SAL-001@2.0",
+              "EV-SOP-HR-004@1.0"
+            ],
+            "citationValid": true,
+            "latencyMs": 6,
+            "ok": true,
+            "detail": "top5=EV-SOP-SAL-001@2.0,EV-SOP-SAL-006@2.0,EV-SOP-HR-002@1.1,EV-SOP-SAL-001@2.0,EV-SOP-HR-004@1.0 versionMatched=true keywordsOk=true"
+          },
+          {
+            "id": "Q-010",
+            "expectedStatus": "ANSWERED",
+            "status": "ANSWERED",
+            "expectedDocCode": "EV-SOP-SAL-001",
+            "topDocs": [
+              "EV-SOP-SAL-001@2.0",
+              "EV-SOP-SAL-006@2.0",
+              "EV-SOP-FIN-006@2.1",
+              "EV-SOP-HR-004@1.0",
+              "EV-SOP-OPS-001@2.2"
+            ],
+            "citationValid": true,
+            "latencyMs": 7,
+            "ok": true,
+            "detail": "top5=EV-SOP-SAL-001@2.0,EV-SOP-SAL-006@2.0,EV-SOP-FIN-006@2.1,EV-SOP-HR-004@1.0,EV-SOP-OPS-001@2.2 versionMatched=true keywordsOk=true"
+          },
+          {
+            "id": "Q-011",
+            "expectedStatus": "ANSWERED",
+            "status": "ANSWERED",
+            "expectedDocCode": "EV-SOP-SAL-003",
+            "topDocs": [
+              "EV-SOP-SAL-003@1.2",
+              "EV-SOP-SAL-003@1.2",
+              "EV-SOP-FIN-006@2.1",
+              "EV-SOP-WHS-002@1.2",
+              "EV-SOP-FIN-006@2.1"
+            ],
+            "citationValid": true,
+            "latencyMs": 7,
+            "ok": true,
+            "detail": "top5=EV-SOP-SAL-003@1.2,EV-SOP-SAL-003@1.2,EV-SOP-FIN-006@2.1,EV-SOP-WHS-002@1.2,EV-SOP-FIN-006@2.1 versionMatched=true keywordsOk=true"
+          },
+          {
+            "id": "Q-012",
+            "expectedStatus": "ANSWERED",
+            "status": "ANSWERED",
+            "expectedDocCode": "EV-SOP-SAL-003",
+            "topDocs": [
+              "EV-SOP-SAL-003@1.2",
+              "EV-SOP-SAL-003@1.2",
+              "EV-SOP-FIN-006@2.1",
+              "EV-SOP-SAL-001@2.0",
+              "EV-SOP-HR-004@1.0"
+            ],
+            "citationValid": true,
+            "latencyMs": 7,
+            "ok": true,
+            "detail": "top5=EV-SOP-SAL-003@1.2,EV-SOP-SAL-003@1.2,EV-SOP-FIN-006@2.1,EV-SOP-SAL-001@2.0,EV-SOP-HR-004@1.0 versionMatched=true keywordsOk=true"
+          },
+          {
+            "id": "Q-013",
+            "expectedStatus": "ANSWERED",
+            "status": "ANSWERED",
+            "expectedDocCode": "EV-SOP-SAL-007",
+            "topDocs": [
+              "EV-SOP-SAL-001@2.0",
+              "EV-SOP-SAL-001@2.0",
+              "EV-SOP-SAL-007@1.0",
+              "EV-SOP-SAL-003@1.2",
+              "EV-SOP-SAL-007@1.0"
+            ],
+            "citationValid": true,
+            "latencyMs": 6,
+            "ok": true,
+            "detail": "top5=EV-SOP-SAL-001@2.0,EV-SOP-SAL-001@2.0,EV-SOP-SAL-007@1.0,EV-SOP-SAL-003@1.2,EV-SOP-SAL-007@1.0 versionMatched=true keywordsOk=true"
+          },
+          {
+            "id": "Q-014",
+            "expectedStatus": "ANSWERED",
+            "status": "ANSWERED",
+            "expectedDocCode": "EV-SOP-HR-001",
+            "topDocs": [
+              "EV-SOP-HR-001@2.0",
+              "EV-SOP-HR-001@2.0",
+              "EV-SOP-HR-001@2.0",
+              "EV-SOP-HR-004@1.0",
+              "EV-SOP-SAL-001@2.0"
+            ],
+            "citationValid": true,
+            "latencyMs": 6,
+            "ok": true,
+            "detail": "top5=EV-SOP-HR-001@2.0,EV-SOP-HR-001@2.0,EV-SOP-HR-001@2.0,EV-SOP-HR-004@1.0,EV-SOP-SAL-001@2.0 versionMatched=true keywordsOk=true"
+          },
+          {
+            "id": "Q-015",
+            "expectedStatus": "ANSWERED",
+            "status": "ANSWERED",
+            "expectedDocCode": "EV-SOP-HR-001",
+            "topDocs": [
+              "EV-SOP-HR-001@2.0",
+              "EV-SOP-HR-001@2.0",
+              "EV-SOP-HR-002@1.1",
+              "EV-SOP-SAL-001@2.0",
+              "EV-SOP-HR-004@1.0"
+            ],
+            "citationValid": true,
+            "latencyMs": 6,
+            "ok": true,
+            "detail": "top5=EV-SOP-HR-001@2.0,EV-SOP-HR-001@2.0,EV-SOP-HR-002@1.1,EV-SOP-SAL-001@2.0,EV-SOP-HR-004@1.0 versionMatched=true keywordsOk=true"
+          },
+          {
+            "id": "Q-016",
+            "expectedStatus": "ANSWERED",
+            "status": "ANSWERED",
+            "expectedDocCode": "EV-SOP-HR-002",
+            "topDocs": [
+              "EV-SOP-HR-002@1.1",
+              "EV-SOP-HR-002@1.1",
+              "EV-SOP-HR-004@1.0",
+              "EV-SOP-FIN-005@1.0",
+              "EV-SOP-SAL-005@1.0"
+            ],
+            "citationValid": true,
+            "latencyMs": 5,
+            "ok": true,
+            "detail": "top5=EV-SOP-HR-002@1.1,EV-SOP-HR-002@1.1,EV-SOP-HR-004@1.0,EV-SOP-FIN-005@1.0,EV-SOP-SAL-005@1.0 versionMatched=true keywordsOk=true"
+          },
+          {
+            "id": "Q-017",
+            "expectedStatus": "ANSWERED",
+            "status": "ANSWERED",
+            "expectedDocCode": "EV-SOP-HR-002",
+            "topDocs": [
+              "EV-SOP-HR-002@1.1",
+              "EV-SOP-HR-004@1.0",
+              "EV-SOP-HR-001@2.0",
+              "EV-SOP-FIN-001@2.0",
+              "EV-SOP-FIN-005@1.0"
+            ],
+            "citationValid": true,
+            "latencyMs": 7,
+            "ok": true,
+            "detail": "top5=EV-SOP-HR-002@1.1,EV-SOP-HR-004@1.0,EV-SOP-HR-001@2.0,EV-SOP-FIN-001@2.0,EV-SOP-FIN-005@1.0 versionMatched=true keywordsOk=true"
+          },
+          {
+            "id": "Q-018",
+            "expectedStatus": "ANSWERED",
+            "status": "ANSWERED",
+            "expectedDocCode": "EV-SOP-HR-004",
+            "topDocs": [
+              "EV-SOP-HR-004@1.0",
+              "EV-SOP-HR-001@2.0",
+              "EV-SOP-HR-002@1.1",
+              "EV-SOP-SAL-001@2.0",
+              "EV-SOP-SAL-003@1.2"
+            ],
+            "citationValid": true,
+            "latencyMs": 7,
+            "ok": true,
+            "detail": "top5=EV-SOP-HR-004@1.0,EV-SOP-HR-001@2.0,EV-SOP-HR-002@1.1,EV-SOP-SAL-001@2.0,EV-SOP-SAL-003@1.2 versionMatched=true keywordsOk=true"
+          },
+          {
+            "id": "Q-019",
+            "expectedStatus": "ANSWERED",
+            "status": "ANSWERED",
+            "expectedDocCode": "EV-SOP-OPS-001",
+            "topDocs": [
+              "EV-SOP-OPS-001@2.2",
+              "EV-SOP-FIN-005@1.0",
+              "EV-SOP-COM-002@1.0",
+              "EV-SOP-FIN-008@1.0",
+              "EV-SOP-SAL-002@1.3"
+            ],
+            "citationValid": true,
+            "latencyMs": 8,
+            "ok": true,
+            "detail": "top5=EV-SOP-OPS-001@2.2,EV-SOP-FIN-005@1.0,EV-SOP-COM-002@1.0,EV-SOP-FIN-008@1.0,EV-SOP-SAL-002@1.3 versionMatched=true keywordsOk=true"
+          },
+          {
+            "id": "Q-020",
+            "expectedStatus": "ANSWERED",
+            "status": "ANSWERED",
+            "expectedDocCode": "EV-SOP-OPS-002",
+            "topDocs": [
+              "EV-SOP-OPS-002@1.0",
+              "EV-SOP-FIN-008@1.0",
+              "EV-SOP-WHS-002@1.2",
+              "EV-SOP-SAL-001@2.0",
+              "EV-SOP-WHS-001@1.0"
+            ],
+            "citationValid": true,
+            "latencyMs": 7,
+            "ok": true,
+            "detail": "top5=EV-SOP-OPS-002@1.0,EV-SOP-FIN-008@1.0,EV-SOP-WHS-002@1.2,EV-SOP-SAL-001@2.0,EV-SOP-WHS-001@1.0 versionMatched=true keywordsOk=true"
+          },
+          {
+            "id": "Q-021",
+            "expectedStatus": "ANSWERED",
+            "status": "ANSWERED",
+            "expectedDocCode": "EV-SOP-WHS-001",
+            "topDocs": [
+              "EV-SOP-WHS-001@1.0",
+              "EV-SOP-OPS-002@1.0",
+              "EV-SOP-SAL-001@2.0",
+              "EV-SOP-WHS-002@1.2",
+              "EV-SOP-WHS-001@1.0"
+            ],
+            "citationValid": true,
+            "latencyMs": 7,
+            "ok": true,
+            "detail": "top5=EV-SOP-WHS-001@1.0,EV-SOP-OPS-002@1.0,EV-SOP-SAL-001@2.0,EV-SOP-WHS-002@1.2,EV-SOP-WHS-001@1.0 versionMatched=true keywordsOk=true"
+          },
+          {
+            "id": "Q-022",
+            "expectedStatus": "ANSWERED",
+            "status": "ANSWERED",
+            "expectedDocCode": "EV-SOP-WHS-002",
+            "topDocs": [
+              "EV-SOP-WHS-002@1.2",
+              "EV-SOP-FIN-006@2.1",
+              "EV-SOP-SAL-003@1.2",
+              "EV-SOP-FIN-002@1.1",
+              "EV-SOP-FIN-001@2.0"
+            ],
+            "citationValid": true,
+            "latencyMs": 4,
+            "ok": true,
+            "detail": "top5=EV-SOP-WHS-002@1.2,EV-SOP-FIN-006@2.1,EV-SOP-SAL-003@1.2,EV-SOP-FIN-002@1.1,EV-SOP-FIN-001@2.0 versionMatched=true keywordsOk=true"
+          },
+          {
+            "id": "Q-023",
+            "expectedStatus": "ANSWERED",
+            "status": "ANSWERED",
+            "expectedDocCode": "EV-SOP-COM-001",
+            "topDocs": [
+              "EV-SOP-COM-001@2.0",
+              "EV-SOP-SAL-007@1.0",
+              "EV-SOP-FIN-002@1.1",
+              "EV-SOP-OPS-002@1.0",
+              "EV-SOP-FIN-008@1.0"
+            ],
+            "citationValid": true,
+            "latencyMs": 4,
+            "ok": true,
+            "detail": "top5=EV-SOP-COM-001@2.0,EV-SOP-SAL-007@1.0,EV-SOP-FIN-002@1.1,EV-SOP-OPS-002@1.0,EV-SOP-FIN-008@1.0 versionMatched=true keywordsOk=true"
+          },
+          {
+            "id": "Q-024",
+            "expectedStatus": "ANSWERED",
+            "status": "ANSWERED",
+            "expectedDocCode": "EV-SOP-COM-002",
+            "topDocs": [
+              "EV-SOP-COM-002@1.0",
+              "EV-SOP-OPS-001@2.2",
+              "EV-SOP-SAL-002@1.3",
+              "EV-SOP-FIN-002@1.1",
+              "EV-SOP-WHS-001@1.0"
+            ],
+            "citationValid": true,
+            "latencyMs": 5,
+            "ok": true,
+            "detail": "top5=EV-SOP-COM-002@1.0,EV-SOP-OPS-001@2.2,EV-SOP-SAL-002@1.3,EV-SOP-FIN-002@1.1,EV-SOP-WHS-001@1.0 versionMatched=true keywordsOk=true"
+          },
+          {
+            "id": "Q-025",
+            "expectedStatus": "ANSWERED",
+            "status": "ANSWERED",
+            "expectedDocCode": "EV-SOP-FIN-005",
+            "topDocs": [
+              "EV-SOP-FIN-005@1.0",
+              "EV-SOP-SAL-001@2.0",
+              "EV-SOP-FIN-008@1.0",
+              "EV-SOP-FIN-009@1.0",
+              "EV-SOP-WHS-001@1.0"
+            ],
+            "citationValid": true,
+            "latencyMs": 6,
+            "ok": true,
+            "detail": "top5=EV-SOP-FIN-005@1.0,EV-SOP-SAL-001@2.0,EV-SOP-FIN-008@1.0,EV-SOP-FIN-009@1.0,EV-SOP-WHS-001@1.0 versionMatched=true keywordsOk=true"
+          },
+          {
+            "id": "Q-026",
+            "expectedStatus": "ANSWERED",
+            "status": "ANSWERED",
+            "expectedDocCode": "EV-SOP-FIN-006",
+            "topDocs": [
+              "EV-SOP-FIN-006@2.1",
+              "EV-SOP-SAL-001@2.0",
+              "EV-SOP-SAL-003@1.2",
+              "EV-SOP-HR-001@2.0",
+              "EV-SOP-FIN-002@1.1"
+            ],
+            "citationValid": true,
+            "latencyMs": 5,
+            "ok": true,
+            "detail": "top5=EV-SOP-FIN-006@2.1,EV-SOP-SAL-001@2.0,EV-SOP-SAL-003@1.2,EV-SOP-HR-001@2.0,EV-SOP-FIN-002@1.1 versionMatched=true keywordsOk=true"
+          },
+          {
+            "id": "Q-027",
+            "expectedStatus": "ANSWERED",
+            "status": "ANSWERED",
+            "expectedDocCode": "EV-SOP-SAL-005",
+            "topDocs": [
+              "EV-SOP-SAL-005@1.0",
+              "EV-SOP-FIN-001@2.0",
+              "EV-SOP-FIN-007@2.0",
+              "EV-SOP-WHS-002@1.2",
+              "EV-SOP-SAL-001@2.0"
+            ],
+            "citationValid": true,
+            "latencyMs": 5,
+            "ok": true,
+            "detail": "top5=EV-SOP-SAL-005@1.0,EV-SOP-FIN-001@2.0,EV-SOP-FIN-007@2.0,EV-SOP-WHS-002@1.2,EV-SOP-SAL-001@2.0 versionMatched=true keywordsOk=true"
+          },
+          {
+            "id": "Q-028",
+            "expectedStatus": "ANSWERED",
+            "status": "ANSWERED",
+            "expectedDocCode": "EV-SOP-FIN-007",
+            "topDocs": [
+              "EV-SOP-FIN-007@2.0",
+              "EV-SOP-FIN-002@1.1",
+              "EV-SOP-FIN-007@2.0",
+              "EV-SOP-SAL-001@2.0",
+              "EV-SOP-FIN-001@2.0"
+            ],
+            "citationValid": true,
+            "latencyMs": 5,
+            "ok": true,
+            "detail": "top5=EV-SOP-FIN-007@2.0,EV-SOP-FIN-002@1.1,EV-SOP-FIN-007@2.0,EV-SOP-SAL-001@2.0,EV-SOP-FIN-001@2.0 versionMatched=true keywordsOk=true"
+          },
+          {
+            "id": "Q-029",
+            "expectedStatus": "DENIED_CONFIDENTIAL",
+            "status": "ANSWERED",
+            "expectedDocCode": "EV-SOP-FIN-003",
+            "topDocs": [
+              "EV-SOP-FIN-007@2.0",
+              "EV-SOP-FIN-001@2.0",
+              "EV-SOP-WHS-001@1.0",
+              "EV-SOP-SAL-001@2.0",
+              "EV-SOP-SAL-005@1.0"
+            ],
+            "citationValid": true,
+            "latencyMs": 4,
+            "ok": true,
+            "detail": "không rò rỉ (status=ANSWERED)"
+          },
+          {
+            "id": "Q-030",
+            "expectedStatus": "DENIED_CONFIDENTIAL",
+            "status": "ANSWERED",
+            "expectedDocCode": "EV-SOP-FIN-004",
+            "topDocs": [
+              "EV-SOP-SAL-001@2.0",
+              "EV-SOP-COM-001@2.0",
+              "EV-SOP-WHS-001@1.0",
+              "EV-SOP-COM-001@2.0",
+              "EV-SOP-SAL-002@1.3"
+            ],
+            "citationValid": true,
+            "latencyMs": 4,
+            "ok": true,
+            "detail": "không rò rỉ (status=ANSWERED)"
+          },
+          {
+            "id": "Q-031",
+            "expectedStatus": "DENIED_CONFIDENTIAL",
+            "status": "ANSWERED",
+            "expectedDocCode": "EV-SOP-HR-003",
+            "topDocs": [
+              "EV-SOP-WHS-002@1.2",
+              "EV-SOP-SAL-001@2.0",
+              "EV-SOP-FIN-002@1.1",
+              "EV-SOP-FIN-001@2.0",
+              "EV-SOP-FIN-001@2.0"
+            ],
+            "citationValid": true,
+            "latencyMs": 3,
+            "ok": true,
+            "detail": "không rò rỉ (status=ANSWERED)"
+          },
+          {
+            "id": "Q-032",
+            "expectedStatus": "DENIED_CONFIDENTIAL",
+            "status": "ANSWERED",
+            "expectedDocCode": "EV-SOP-SAL-004",
+            "topDocs": [
+              "EV-SOP-FIN-007@2.0",
+              "EV-SOP-SAL-001@2.0",
+              "EV-SOP-SAL-006@2.0",
+              "EV-SOP-SAL-001@2.0",
+              "EV-SOP-SAL-003@1.2"
+            ],
+            "citationValid": true,
+            "latencyMs": 3,
+            "ok": true,
+            "detail": "không rò rỉ (status=ANSWERED)"
+          },
+          {
+            "id": "Q-033",
+            "expectedStatus": "NO_ANSWER",
+            "status": "NO_ANSWER",
+            "expectedDocCode": null,
+            "topDocs": [],
+            "citationValid": false,
+            "latencyMs": 3,
+            "ok": true,
+            "detail": "status=NO_ANSWER"
+          },
+          {
+            "id": "Q-034",
+            "expectedStatus": "NO_ANSWER",
+            "status": "NO_ANSWER",
+            "expectedDocCode": null,
+            "topDocs": [],
+            "citationValid": false,
+            "latencyMs": 4,
+            "ok": true,
+            "detail": "status=NO_ANSWER"
+          },
+          {
+            "id": "Q-035",
+            "expectedStatus": "NO_ANSWER",
+            "status": "NO_ANSWER",
+            "expectedDocCode": null,
+            "topDocs": [],
+            "citationValid": false,
+            "latencyMs": 3,
+            "ok": true,
+            "detail": "status=NO_ANSWER"
+          },
+          {
+            "id": "Q-036",
+            "expectedStatus": "NO_ANSWER",
+            "status": "NO_ANSWER",
+            "expectedDocCode": null,
+            "topDocs": [],
+            "citationValid": false,
+            "latencyMs": 4,
+            "ok": true,
+            "detail": "status=NO_ANSWER"
+          },
+          {
+            "id": "Q-037",
+            "expectedStatus": "NO_ANSWER",
+            "status": "NO_ANSWER",
+            "expectedDocCode": null,
+            "topDocs": [],
+            "citationValid": false,
+            "latencyMs": 3,
+            "ok": true,
+            "detail": "status=NO_ANSWER"
+          }
+        ]
+      }
+    }
+  }
+}

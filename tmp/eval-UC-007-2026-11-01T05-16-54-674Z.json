@@ -1,0 +1,277 @@
+{
+  "generatedAt": "2026-11-01T05:16:55.353Z",
+  "modes": [
+    "improved"
+  ],
+  "counts": {
+    "sopDocuments": 31,
+    "sopQuestions": 37,
+    "invoiceCases": 18,
+    "crmCases": 16,
+    "memoryCases": 17,
+    "routingCases": 42,
+    "securityCases": 6,
+    "crossDepartmentCases": 18
+  },
+  "results": {
+    "improved": {
+      "UC-007": {
+        "useCase": "UC-007",
+        "name": "Bộ nhớ dài hạn: PII, ranh giới, supersede, TTL, cách ly, compaction 5 mục",
+        "mode": "improved",
+        "metrics": {
+          "cross_session_recall_rate": {
+            "passed": 3,
+            "total": 3,
+            "rate": 1,
+            "threshold": 0.85,
+            "passedThreshold": true,
+            "direction": "min"
+          },
+          "pii_block_rate": {
+            "passed": 7,
+            "total": 7,
+            "rate": 1,
+            "threshold": 1,
+            "passedThreshold": true,
+            "direction": "min"
+          },
+          "memory_leak_rate": {
+            "passed": 3,
+            "total": 3,
+            "rate": 0,
+            "threshold": 0,
+            "passedThreshold": true,
+            "direction": "max"
+          },
+          "compaction_5section_valid_rate": {
+            "passed": 2,
+            "total": 2,
+            "rate": 1,
+            "threshold": 1,
+            "passedThreshold": true,
+            "direction": "min"
+          }
+        },
+        "usage": {
+          "input_tokens": 294,
+          "output_tokens": 185,
+          "cached_tokens": 41,
+          "cache_hit_rate": 0.1395,
+          "estimated_cost_usd": 0,
+          "avg_latency_ms": 8.41,
+          "llm_calls": 0,
+          "pricingBasis": "deterministic: không gọi LLM, chi phí 0 USD; token ước lượng ~4 ký tự/token"
+        },
+        "caseCount": 17,
+        "firstFailure": null,
+        "cases": [
+          {
+            "id": "MEM-001",
+            "kind": "cross_session_recall",
+            "blocked": false,
+            "blockCode": null,
+            "leak": null,
+            "recalled": true,
+            "compactionValid": null,
+            "versionAfterUpdate": null,
+            "ok": true,
+            "detail": "khớp nhãn"
+          },
+          {
+            "id": "MEM-002",
+            "kind": "cross_session_recall",
+            "blocked": false,
+            "blockCode": null,
+            "leak": null,
+            "recalled": true,
+            "compactionValid": null,
+            "versionAfterUpdate": null,
+            "ok": true,
+            "detail": "khớp nhãn"
+          },
+          {
+            "id": "MEM-003",
+            "kind": "cross_session_recall",
+            "blocked": false,
+            "blockCode": null,
+            "leak": null,
+            "recalled": true,
+            "compactionValid": null,
+            "versionAfterUpdate": null,
+            "ok": true,
+            "detail": "khớp nhãn"
+          },
+          {
+            "id": "MEM-004",
+            "kind": "pii_block_create",
+            "blocked": true,
+            "blockCode": "PII_FORBIDDEN",
+            "leak": null,
+            "recalled": null,
+            "compactionValid": null,
+            "versionAfterUpdate": null,
+            "ok": true,
+            "detail": "khớp nhãn"
+          },
+          {
+            "id": "MEM-005",
+            "kind": "pii_block_create",
+            "blocked": true,
+            "blockCode": "PII_FORBIDDEN",
+            "leak": null,
+            "recalled": null,
+            "compactionValid": null,
+            "versionAfterUpdate": null,
+            "ok": true,
+            "detail": "khớp nhãn"
+          },
+          {
+            "id": "MEM-006",
+            "kind": "pii_block_create",
+            "blocked": true,
+            "blockCode": "PII_FORBIDDEN",
+            "leak": null,
+            "recalled": null,
+            "compactionValid": null,
+            "versionAfterUpdate": null,
+            "ok": true,
+            "detail": "khớp nhãn"
+          },
+          {
+            "id": "MEM-007",
+            "kind": "pii_block_update",
+            "blocked": true,
+            "blockCode": "PII_FORBIDDEN",
+            "leak": null,
+            "recalled": null,
+            "compactionValid": null,
+            "versionAfterUpdate": null,
+            "ok": true,
+            "detail": "khớp nhãn"
+          },
+          {
+            "id": "MEM-008",
+            "kind": "pii_block_import",
+            "blocked": true,
+            "blockCode": "PII_FORBIDDEN",
+            "leak": null,
+            "recalled": null,
+            "compactionValid": null,
+            "versionAfterUpdate": null,
+            "ok": true,
+            "detail": "khớp nhãn"
+          },
+          {
+            "id": "MEM-009",
+            "kind": "boundary_block",
+            "blocked": true,
+            "blockCode": "MEMORY_BOUNDARY_FORBIDDEN",
+            "leak": null,
+            "recalled": null,
+            "compactionValid": null,
+            "versionAfterUpdate": null,
+            "ok": true,
+            "detail": "khớp nhãn"
+          },
+          {
+            "id": "MEM-010",
+            "kind": "boundary_block",
+            "blocked": true,
+            "blockCode": "MEMORY_BOUNDARY_FORBIDDEN",
+            "leak": null,
+            "recalled": null,
+            "compactionValid": null,
+            "versionAfterUpdate": null,
+            "ok": true,
+            "detail": "khớp nhãn"
+          },
+          {
+            "id": "MEM-011",
+            "kind": "supersede",
+            "blocked": true,
+            "blockCode": null,
+            "leak": null,
+            "recalled": null,
+            "compactionValid": null,
+            "versionAfterUpdate": 2,
+            "ok": true,
+            "detail": "khớp nhãn"
+          },
+          {
+            "id": "MEM-012",
+            "kind": "supersede",
+            "blocked": true,
+            "blockCode": null,
+            "leak": null,
+            "recalled": null,
+            "compactionValid": null,
+            "versionAfterUpdate": 2,
+            "ok": true,
+            "detail": "khớp nhãn"
+          },
+          {
+            "id": "MEM-013",
+            "kind": "ttl",
+            "blocked": false,
+            "blockCode": null,
+            "leak": false,
+            "recalled": null,
+            "compactionValid": null,
+            "versionAfterUpdate": null,
+            "ok": true,
+            "detail": "khớp nhãn"
+          },
+          {
+            "id": "MEM-014",
+            "kind": "isolation",
+            "blocked": false,
+            "blockCode": null,
+            "leak": false,
+            "recalled": null,
+            "compactionValid": null,
+            "versionAfterUpdate": null,
+            "ok": true,
+            "detail": "khớp nhãn"
+          },
+          {
+            "id": "MEM-015",
+            "kind": "isolation",
+            "blocked": false,
+            "blockCode": null,
+            "leak": false,
+            "recalled": null,
+            "compactionValid": null,
+            "versionAfterUpdate": null,
+            "ok": true,
+            "detail": "khớp nhãn"
+          },
+          {
+            "id": "MEM-016",
+            "kind": "compaction",
+            "blocked": false,
+            "blockCode": null,
+            "leak": null,
+            "recalled": null,
+            "compactionValid": true,
+            "versionAfterUpdate": null,
+            "ok": true,
+            "detail": "khớp nhãn"
+          },
+          {
+            "id": "MEM-017",
+            "kind": "compaction",
+            "blocked": false,
+            "blockCode": null,
+            "leak": null,
+            "recalled": null,
+            "compactionValid": true,
+            "versionAfterUpdate": null,
+            "ok": true,
+            "detail": "khớp nhãn"
+          }
+        ]
+      }
+    }
+  }
+}

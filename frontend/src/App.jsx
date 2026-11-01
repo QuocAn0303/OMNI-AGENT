@@ -112,6 +112,8 @@ const Integrations = lazy(() => import("./pages/Integrations"));
 const SettingsPage = lazy(() => import("./pages/Settings"));
 const AgentAnalytics = lazy(() => import("./pages/AgentAnalytics"));
 const AgentApprovals = lazy(() => import("./pages/AgentApprovals"));
+// Multi-Agent hợp nhất (Bước 9): đội agent, SOP, đối chiếu/báo giá, bộ nhớ, audit.
+const MultiAgentOpsPage = lazy(() => import("./pages/MultiAgentOpsPage"));
 const StoreCredits = lazy(() => import("./pages/StoreCredits"));
 const SerialNumbers = lazy(() => import("./pages/SerialNumbers"));
 const SmartGuide = lazy(() => import("./pages/SmartGuide"));
@@ -436,6 +438,7 @@ function App() {
               <Route element={<RequireRole roles={["ADMIN", "MANAGER"]} />}>
                 <Route path="/agent-analytics" element={<AgentAnalytics />} />
                 <Route path="/agent-approvals" element={<AgentApprovals />} />
+                <Route path="/multi-agent-ops" element={<MultiAgentOpsPage />} />
                 <Route path="/smart-guide" element={<SmartGuide />} />
                 <Route path="/evidence" element={<EvidenceBacktest />} />
                 <Route path="/rfq" element={<RfqQuotation />} />

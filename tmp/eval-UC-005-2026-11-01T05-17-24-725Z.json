@@ -1,0 +1,282 @@
+{
+  "generatedAt": "2026-11-01T05:17:26.175Z",
+  "modes": [
+    "improved"
+  ],
+  "counts": {
+    "sopDocuments": 31,
+    "sopQuestions": 37,
+    "invoiceCases": 18,
+    "crmCases": 16,
+    "memoryCases": 17,
+    "routingCases": 42,
+    "securityCases": 6,
+    "crossDepartmentCases": 18
+  },
+  "results": {
+    "improved": {
+      "UC-005": {
+        "useCase": "UC-005",
+        "name": "CRM chống trùng khách + báo giá MCP + gate chiết khấu",
+        "mode": "improved",
+        "metrics": {
+          "duplicate_customer_rate": {
+            "passed": 7,
+            "total": 7,
+            "rate": 0,
+            "threshold": 0,
+            "passedThreshold": true,
+            "direction": "max"
+          },
+          "quote_math_accuracy": {
+            "passed": 14,
+            "total": 14,
+            "rate": 1,
+            "threshold": 1,
+            "passedThreshold": true,
+            "direction": "min"
+          },
+          "discount_gate_rate": {
+            "passed": 3,
+            "total": 3,
+            "rate": 1,
+            "threshold": 1,
+            "passedThreshold": true,
+            "direction": "min"
+          },
+          "mcp_trace_completeness": {
+            "passed": 1,
+            "total": 1,
+            "rate": 1,
+            "threshold": 1,
+            "passedThreshold": true,
+            "direction": "min"
+          }
+        },
+        "usage": {
+          "input_tokens": 330,
+          "output_tokens": 150,
+          "cached_tokens": 82,
+          "cache_hit_rate": 0.2485,
+          "estimated_cost_usd": 0,
+          "avg_latency_ms": 54.06,
+          "llm_calls": 0,
+          "pricingBasis": "deterministic: không gọi LLM, chi phí 0 USD; token ước lượng ~4 ký tự/token"
+        },
+        "caseCount": 17,
+        "firstFailure": {
+          "id": "CRM-009",
+          "customerStatus": "UPDATED",
+          "expectedCustomerStatus": "CREATED",
+          "gateCreated": true,
+          "expectedGate": true,
+          "quoteValid": true,
+          "injectionDetected": false,
+          "retryOk": null,
+          "ok": false,
+          "detail": "khách UPDATED/CREATED gate=true/true"
+        },
+        "cases": [
+          {
+            "id": "CRM-001",
+            "customerStatus": "CREATED",
+            "expectedCustomerStatus": "CREATED",
+            "gateCreated": false,
+            "expectedGate": false,
+            "quoteValid": true,
+            "injectionDetected": false,
+            "retryOk": null,
+            "ok": true,
+            "detail": "khớp nhãn"
+          },
+          {
+            "id": "CRM-002",
+            "customerStatus": "UPDATED",
+            "expectedCustomerStatus": "UPDATED",
+            "gateCreated": false,
+            "expectedGate": false,
+            "quoteValid": true,
+            "injectionDetected": false,
+            "retryOk": null,
+            "ok": true,
+            "detail": "khớp nhãn"
+          },
+          {
+            "id": "CRM-003",
+            "customerStatus": "UPDATED",
+            "expectedCustomerStatus": "UPDATED",
+            "gateCreated": false,
+            "expectedGate": false,
+            "quoteValid": true,
+            "injectionDetected": false,
+            "retryOk": null,
+            "ok": true,
+            "detail": "khớp nhãn"
+          },
+          {
+            "id": "CRM-004",
+            "customerStatus": "UPDATED",
+            "expectedCustomerStatus": "UPDATED",
+            "gateCreated": false,
+            "expectedGate": false,
+            "quoteValid": true,
+            "injectionDetected": false,
+            "retryOk": null,
+            "ok": true,
+            "detail": "khớp nhãn"
+          },
+          {
+            "id": "CRM-005",
+            "customerStatus": "UPDATED",
+            "expectedCustomerStatus": "UPDATED",
+            "gateCreated": false,
+            "expectedGate": false,
+            "quoteValid": true,
+            "injectionDetected": false,
+            "retryOk": null,
+            "ok": true,
+            "detail": "khớp nhãn"
+          },
+          {
+            "id": "CRM-006",
+            "customerStatus": "CUSTOMER_AMBIGUOUS",
+            "expectedCustomerStatus": "CUSTOMER_AMBIGUOUS",
+            "gateCreated": false,
+            "expectedGate": false,
+            "quoteValid": null,
+            "injectionDetected": false,
+            "retryOk": null,
+            "ok": true,
+            "detail": "khớp nhãn"
+          },
+          {
+            "id": "CRM-007",
+            "customerStatus": "CUSTOMER_AMBIGUOUS",
+            "expectedCustomerStatus": "CUSTOMER_AMBIGUOUS",
+            "gateCreated": false,
+            "expectedGate": false,
+            "quoteValid": null,
+            "injectionDetected": false,
+            "retryOk": null,
+            "ok": true,
+            "detail": "khớp nhãn"
+          },
+          {
+            "id": "CRM-008",
+            "customerStatus": "CREATED",
+            "expectedCustomerStatus": "CREATED",
+            "gateCreated": false,
+            "expectedGate": false,
+            "quoteValid": true,
+            "injectionDetected": false,
+            "retryOk": null,
+            "ok": true,
+            "detail": "khớp nhãn"
+          },
+          {
+            "id": "CRM-009",
+            "customerStatus": "UPDATED",
+            "expectedCustomerStatus": "CREATED",
+            "gateCreated": true,
+            "expectedGate": true,
+            "quoteValid": true,
+            "injectionDetected": false,
+            "retryOk": null,
+            "ok": false,
+            "detail": "khách UPDATED/CREATED gate=true/true"
+          },
+          {
+            "id": "CRM-010",
+            "customerStatus": "CREATED",
+            "expectedCustomerStatus": "CREATED",
+            "gateCreated": true,
+            "expectedGate": true,
+            "quoteValid": true,
+            "injectionDetected": false,
+            "retryOk": null,
+            "ok": true,
+            "detail": "khớp nhãn"
+          },
+          {
+            "id": "CRM-011",
+            "customerStatus": "CREATED",
+            "expectedCustomerStatus": "CREATED",
+            "gateCreated": true,
+            "expectedGate": true,
+            "quoteValid": true,
+            "injectionDetected": true,
+            "retryOk": null,
+            "ok": true,
+            "detail": "khớp nhãn"
+          },
+          {
+            "id": "CRM-012",
+            "phase": "createQuote",
+            "ok": true,
+            "detail": "Sản phẩm không có trong bảng giá chuẩn: EV-SKU-UNKNOWN"
+          },
+          {
+            "id": "CRM-012",
+            "customerStatus": "CREATED",
+            "expectedCustomerStatus": "CREATED",
+            "gateCreated": false,
+            "expectedGate": false,
+            "quoteValid": false,
+            "injectionDetected": false,
+            "retryOk": null,
+            "ok": true,
+            "detail": "khớp nhãn"
+          },
+          {
+            "id": "CRM-013",
+            "customerStatus": "CREATED",
+            "expectedCustomerStatus": "CREATED",
+            "gateCreated": false,
+            "expectedGate": false,
+            "quoteValid": true,
+            "injectionDetected": false,
+            "retryOk": true,
+            "ok": true,
+            "detail": "khớp nhãn"
+          },
+          {
+            "id": "CRM-014",
+            "customerStatus": "CREATED",
+            "expectedCustomerStatus": "CREATED",
+            "gateCreated": false,
+            "expectedGate": false,
+            "quoteValid": true,
+            "injectionDetected": true,
+            "retryOk": null,
+            "ok": true,
+            "detail": "khớp nhãn"
+          },
+          {
+            "id": "CRM-015",
+            "customerStatus": "UPDATED",
+            "expectedCustomerStatus": "UPDATED",
+            "gateCreated": false,
+            "expectedGate": false,
+            "quoteValid": true,
+            "injectionDetected": false,
+            "retryOk": null,
+            "ok": true,
+            "detail": "khớp nhãn"
+          },
+          {
+            "id": "CRM-016",
+            "customerStatus": "CREATED",
+            "expectedCustomerStatus": "CREATED",
+            "gateCreated": false,
+            "expectedGate": false,
+            "quoteValid": true,
+            "injectionDetected": false,
+            "retryOk": null,
+            "ok": true,
+            "detail": "khớp nhãn"
+          }
+        ]
+      }
+    }
+  }
+}
