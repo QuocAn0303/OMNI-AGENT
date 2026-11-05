@@ -121,6 +121,7 @@ const EvidenceBacktest = lazy(() => import("./pages/EvidenceBacktest"));
 const ReplenishmentRules = lazy(() => import("./pages/ReplenishmentRules"));
 const RfqQuotation = lazy(() => import("./pages/RfqQuotation"));
 const SupplyDashboard = lazy(() => import("./pages/SupplyDashboard"));
+const VnSupplyChainDemoPage = lazy(() => import("./pages/VnSupplyChainDemoPage"));
 const Sessions = lazy(() => import("./pages/Sessions"));
 const Promotions = lazy(() => import("./pages/Promotions"));
 const ModifierGroups = lazy(() => import("./pages/ModifierGroups"));
@@ -432,6 +433,7 @@ function App() {
                   role đều xem được; nhưng KHÔNG có nút thao tác nào trên màn này. */}
               <Route element={<RequireRole roles={["ADMIN", "MANAGER", "WAREHOUSE", "ACCOUNTANT"]} />}>
                 <Route path="/supply" element={<SupplyDashboard />} />
+                <Route path="/vn-supply-chain-demo" element={<VnSupplyChainDemoPage />} />
               </Route>
 
               {/* ADMIN + MANAGER — Management features (ACCOUNTANT excluded) */}
