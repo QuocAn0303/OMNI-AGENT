@@ -35,6 +35,7 @@ function createWmsService(options = {}) {
     inventoryMovementLog: [], workflowEvents: [], lastEventAt: null };
   const replays = new Map();
   let strategyRunning = false;
+  let transactionRunning = false;
   const now = () => {
     const value = clock();
     const date = value instanceof Date ? value : new Date(value);
@@ -88,7 +89,8 @@ function createWmsService(options = {}) {
       for (const field of ['onHandQty', 'reservedQty', 'quarantineQty', 'inTransitQty', 'atpQty']) v.qty.parse(row[field]);
       const location = bin(row.warehouseId, row.binId);
       ensure(location.sellable || row.onHandQty === 0, 'Hàng bán được ở sai zone');
-      ensure(location.zone === 'Q' || (row.quarantineQty === 0 && row.inTransitQty === 0), 'Hàng chờ ở sai zone');
+      ensure(['Q', 'R'].includes(location.zone) || row.quarantineQty === 0, 'Hàng chờ QC ở sai zone');
+      ensure(location.zone === 'Q' || row.inTransitQty === 0, 'Hàng đi đường ở sai zone');
       const reservations = draft.orders.filter(o => o.warehouseId === row.warehouseId && ACTIVE.has(o.status))
         .flatMap(o => o.allocations).filter(a => a.sku === row.sku && a.binId === row.binId);
       ensure(sum(reservations, 'quantity') === row.reservedQty, 'Reserved không khớp phiếu nhặt');
@@ -218,7 +220,7 @@ function createWmsService(options = {}) {
       ensure(order && order.status === 'HANDED_OVER_CARRIER', 'Chỉ nhận hoàn từ đơn đã xuất');
       ensure(!draft.receipts.some(r => r.receiptId === args.receiptId), 'receiptId đã tồn tại');
       bin(order.warehouseId, args.receivingBinId, ['R']);
-      bin(order.warehouseId, args.quarantineBinId, ['Q']);
+      bin(order.warehouseId, args.quarantineBinId, ['Q', 'R']);
       const receipt = { receiptId: args.receiptId, orderId: order.orderId, warehouseId: order.warehouseId,
         receivingBinId: args.receivingBinId, quarantineBinId: args.quarantineBinId,
         sourceType: 'RETURN', receivedAt: at, items: [] };
@@ -463,7 +465,24 @@ function createWmsService(options = {}) {
     }
     return { initialized: true };
   });
-  return Object.freeze({ registerInboundShipment, receiveInboundGoods, inspectInboundGoods, putawayToBin,
+  function transaction(action) {
+    ensure(typeof action === 'function' && action.constructor.name !== 'AsyncFunction', 'Giao dịch phải là hàm đồng bộ');
+    ensure(!transactionRunning && !strategyRunning, 'Không cho phép giao dịch lồng');
+    const before = state;
+    const previousReplays = new Map(replays);
+    transactionRunning = true;
+    try {
+      const result = action();
+      ensure(!result || typeof result.then !== 'function', 'Giao dịch không được trả Promise');
+      return result;
+    } catch (error) {
+      state = before;
+      replays.clear();
+      previousReplays.forEach((value, key) => replays.set(key, value));
+      throw error;
+    } finally { transactionRunning = false; }
+  }
+  return Object.freeze({ transaction, registerInboundShipment, receiveInboundGoods, inspectInboundGoods, putawayToBin,
     receiveReturnedGoods, returnDefectiveGoods, reserveOrder, pickOrderItems, pickWave, packOrder, shipOrderOut, cancelOrder,
     getInventory: input => stock(state, input), getSnapshot: () => copy(state), projectedAtp, planReplenishment });
 }
