@@ -1,0 +1,31 @@
+{
+  "task": "C-03",
+  "fixtureVersion": "1.0.0",
+  "branch": "feat/uc004-company-seed",
+  "baseCommit": "4af0307bae1c100f29aa5dee82a6e27c84649580",
+  "verificationDate": "2026-11-03",
+  "database": "PostgreSQL thật được cấu hình bằng DATABASE_URL; không ghi thông tin kết nối",
+  "command": "node scripts/seed/company/run.js --verify",
+  "exitCode": 0,
+  "result": {
+    "tenantId": "4f9e8d59-db8d-46fa-af29-31fe94ca1a2c",
+    "departments": 6,
+    "users": 32,
+    "employees": 32,
+    "firstRunWrites": 102,
+    "secondRunWrites": 0,
+    "userSnapshotsEqual": true,
+    "idempotent": true
+  },
+  "unitTests": {
+    "command": "npm test -- --runTestsByPath tests/company-seed.test.js",
+    "exitCode": 0,
+    "passed": 5,
+    "failed": 0
+  },
+  "limits": [
+    "Bằng chứng lần chạy C-03 tại thời điểm ghi nhận, không phải kiểm chứng policy/approval của UC-004.",
+    "Kiểm password login qua HTTP, subscription và review identity bởi M1 chưa nằm trong lần kiểm này.",
+    "Các tài khoản và tenant mô phỏng được giữ trong DB để demo."
+  ]
+}

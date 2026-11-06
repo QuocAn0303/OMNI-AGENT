@@ -1,0 +1,325 @@
+{
+  "schemaVersion": "1.0.0",
+  "fixture": true,
+  "task": "C-03",
+  "company": {
+    "slug": "candora-se373-c03",
+    "name": "CANDORA — Công ty mô phỏng SE373"
+  },
+  "departments": [
+    {
+      "code": "EXEC",
+      "name": "Ban Giám đốc"
+    },
+    {
+      "code": "FINANCE",
+      "name": "Phòng Tài chính Kế toán"
+    },
+    {
+      "code": "SALES",
+      "name": "Phòng Kinh doanh"
+    },
+    {
+      "code": "HR",
+      "name": "Phòng Nhân sự"
+    },
+    {
+      "code": "OPS",
+      "name": "Phòng Vận hành"
+    },
+    {
+      "code": "WAREHOUSE",
+      "name": "Kho trung tâm"
+    }
+  ],
+  "employees": [
+    {
+      "code": "C03-EXEC-01",
+      "email": "exec.01@candora.example",
+      "fullName": "Nhân viên mô phỏng EXEC 1",
+      "department": "EXEC",
+      "role": "ADMIN",
+      "position": "Giám đốc",
+      "reportsTo": null
+    },
+    {
+      "code": "C03-EXEC-02",
+      "email": "exec.02@candora.example",
+      "fullName": "Nhân viên mô phỏng EXEC 2",
+      "department": "EXEC",
+      "role": "ADMIN",
+      "position": "Phó giám đốc",
+      "reportsTo": "C03-EXEC-01"
+    },
+    {
+      "code": "C03-FINANCE-01",
+      "email": "finance.01@candora.example",
+      "fullName": "Nhân viên mô phỏng FINANCE 1",
+      "department": "FINANCE",
+      "role": "ACCOUNTANT",
+      "position": "Kế toán trưởng",
+      "reportsTo": "C03-EXEC-01"
+    },
+    {
+      "code": "C03-FINANCE-02",
+      "email": "finance.02@candora.example",
+      "fullName": "Nhân viên mô phỏng FINANCE 2",
+      "department": "FINANCE",
+      "role": "ACCOUNTANT",
+      "position": "Nhân viên",
+      "reportsTo": "C03-FINANCE-01"
+    },
+    {
+      "code": "C03-FINANCE-03",
+      "email": "finance.03@candora.example",
+      "fullName": "Nhân viên mô phỏng FINANCE 3",
+      "department": "FINANCE",
+      "role": "ACCOUNTANT",
+      "position": "Nhân viên",
+      "reportsTo": "C03-FINANCE-01"
+    },
+    {
+      "code": "C03-FINANCE-04",
+      "email": "finance.04@candora.example",
+      "fullName": "Nhân viên mô phỏng FINANCE 4",
+      "department": "FINANCE",
+      "role": "ACCOUNTANT",
+      "position": "Nhân viên",
+      "reportsTo": "C03-FINANCE-01"
+    },
+    {
+      "code": "C03-FINANCE-05",
+      "email": "finance.05@candora.example",
+      "fullName": "Nhân viên mô phỏng FINANCE 5",
+      "department": "FINANCE",
+      "role": "ACCOUNTANT",
+      "position": "Nhân viên",
+      "reportsTo": "C03-FINANCE-01"
+    },
+    {
+      "code": "C03-FINANCE-06",
+      "email": "finance.06@candora.example",
+      "fullName": "Nhân viên mô phỏng FINANCE 6",
+      "department": "FINANCE",
+      "role": "ACCOUNTANT",
+      "position": "Nhân viên",
+      "reportsTo": "C03-FINANCE-01"
+    },
+    {
+      "code": "C03-SALES-01",
+      "email": "sales.01@candora.example",
+      "fullName": "Nhân viên mô phỏng SALES 1",
+      "department": "SALES",
+      "role": "MANAGER",
+      "position": "Trưởng phòng",
+      "reportsTo": "C03-EXEC-01"
+    },
+    {
+      "code": "C03-SALES-02",
+      "email": "sales.02@candora.example",
+      "fullName": "Nhân viên mô phỏng SALES 2",
+      "department": "SALES",
+      "role": "CASHIER",
+      "position": "Nhân viên",
+      "reportsTo": "C03-SALES-01"
+    },
+    {
+      "code": "C03-SALES-03",
+      "email": "sales.03@candora.example",
+      "fullName": "Nhân viên mô phỏng SALES 3",
+      "department": "SALES",
+      "role": "CASHIER",
+      "position": "Nhân viên",
+      "reportsTo": "C03-SALES-01"
+    },
+    {
+      "code": "C03-SALES-04",
+      "email": "sales.04@candora.example",
+      "fullName": "Nhân viên mô phỏng SALES 4",
+      "department": "SALES",
+      "role": "CASHIER",
+      "position": "Nhân viên",
+      "reportsTo": "C03-SALES-01"
+    },
+    {
+      "code": "C03-SALES-05",
+      "email": "sales.05@candora.example",
+      "fullName": "Nhân viên mô phỏng SALES 5",
+      "department": "SALES",
+      "role": "CASHIER",
+      "position": "Nhân viên",
+      "reportsTo": "C03-SALES-01"
+    },
+    {
+      "code": "C03-SALES-06",
+      "email": "sales.06@candora.example",
+      "fullName": "Nhân viên mô phỏng SALES 6",
+      "department": "SALES",
+      "role": "CASHIER",
+      "position": "Nhân viên",
+      "reportsTo": "C03-SALES-01"
+    },
+    {
+      "code": "C03-SALES-07",
+      "email": "sales.07@candora.example",
+      "fullName": "Nhân viên mô phỏng SALES 7",
+      "department": "SALES",
+      "role": "CASHIER",
+      "position": "Nhân viên",
+      "reportsTo": "C03-SALES-01"
+    },
+    {
+      "code": "C03-SALES-08",
+      "email": "sales.08@candora.example",
+      "fullName": "Nhân viên mô phỏng SALES 8",
+      "department": "SALES",
+      "role": "CASHIER",
+      "position": "Nhân viên",
+      "reportsTo": "C03-SALES-01"
+    },
+    {
+      "code": "C03-HR-01",
+      "email": "hr.01@candora.example",
+      "fullName": "Nhân viên mô phỏng HR 1",
+      "department": "HR",
+      "role": "MANAGER",
+      "position": "Trưởng phòng",
+      "reportsTo": "C03-EXEC-01"
+    },
+    {
+      "code": "C03-HR-02",
+      "email": "hr.02@candora.example",
+      "fullName": "Nhân viên mô phỏng HR 2",
+      "department": "HR",
+      "role": "CASHIER",
+      "position": "Nhân viên",
+      "reportsTo": "C03-HR-01"
+    },
+    {
+      "code": "C03-HR-03",
+      "email": "hr.03@candora.example",
+      "fullName": "Nhân viên mô phỏng HR 3",
+      "department": "HR",
+      "role": "CASHIER",
+      "position": "Nhân viên",
+      "reportsTo": "C03-HR-01"
+    },
+    {
+      "code": "C03-HR-04",
+      "email": "hr.04@candora.example",
+      "fullName": "Nhân viên mô phỏng HR 4",
+      "department": "HR",
+      "role": "CASHIER",
+      "position": "Nhân viên",
+      "reportsTo": "C03-HR-01"
+    },
+    {
+      "code": "C03-OPS-01",
+      "email": "ops.01@candora.example",
+      "fullName": "Nhân viên mô phỏng OPS 1",
+      "department": "OPS",
+      "role": "MANAGER",
+      "position": "Trưởng phòng",
+      "reportsTo": "C03-EXEC-01"
+    },
+    {
+      "code": "C03-OPS-02",
+      "email": "ops.02@candora.example",
+      "fullName": "Nhân viên mô phỏng OPS 2",
+      "department": "OPS",
+      "role": "CASHIER",
+      "position": "Nhân viên",
+      "reportsTo": "C03-OPS-01"
+    },
+    {
+      "code": "C03-OPS-03",
+      "email": "ops.03@candora.example",
+      "fullName": "Nhân viên mô phỏng OPS 3",
+      "department": "OPS",
+      "role": "CASHIER",
+      "position": "Nhân viên",
+      "reportsTo": "C03-OPS-01"
+    },
+    {
+      "code": "C03-OPS-04",
+      "email": "ops.04@candora.example",
+      "fullName": "Nhân viên mô phỏng OPS 4",
+      "department": "OPS",
+      "role": "CASHIER",
+      "position": "Nhân viên",
+      "reportsTo": "C03-OPS-01"
+    },
+    {
+      "code": "C03-OPS-05",
+      "email": "ops.05@candora.example",
+      "fullName": "Nhân viên mô phỏng OPS 5",
+      "department": "OPS",
+      "role": "CASHIER",
+      "position": "Nhân viên",
+      "reportsTo": "C03-OPS-01"
+    },
+    {
+      "code": "C03-OPS-06",
+      "email": "ops.06@candora.example",
+      "fullName": "Nhân viên mô phỏng OPS 6",
+      "department": "OPS",
+      "role": "CASHIER",
+      "position": "Nhân viên",
+      "reportsTo": "C03-OPS-01"
+    },
+    {
+      "code": "C03-WAREHOUSE-01",
+      "email": "warehouse.01@candora.example",
+      "fullName": "Nhân viên mô phỏng WAREHOUSE 1",
+      "department": "WAREHOUSE",
+      "role": "MANAGER",
+      "position": "Trưởng phòng",
+      "reportsTo": "C03-EXEC-01"
+    },
+    {
+      "code": "C03-WAREHOUSE-02",
+      "email": "warehouse.02@candora.example",
+      "fullName": "Nhân viên mô phỏng WAREHOUSE 2",
+      "department": "WAREHOUSE",
+      "role": "WAREHOUSE",
+      "position": "Nhân viên",
+      "reportsTo": "C03-WAREHOUSE-01"
+    },
+    {
+      "code": "C03-WAREHOUSE-03",
+      "email": "warehouse.03@candora.example",
+      "fullName": "Nhân viên mô phỏng WAREHOUSE 3",
+      "department": "WAREHOUSE",
+      "role": "WAREHOUSE",
+      "position": "Nhân viên",
+      "reportsTo": "C03-WAREHOUSE-01"
+    },
+    {
+      "code": "C03-WAREHOUSE-04",
+      "email": "warehouse.04@candora.example",
+      "fullName": "Nhân viên mô phỏng WAREHOUSE 4",
+      "department": "WAREHOUSE",
+      "role": "WAREHOUSE",
+      "position": "Nhân viên",
+      "reportsTo": "C03-WAREHOUSE-01"
+    },
+    {
+      "code": "C03-WAREHOUSE-05",
+      "email": "warehouse.05@candora.example",
+      "fullName": "Nhân viên mô phỏng WAREHOUSE 5",
+      "department": "WAREHOUSE",
+      "role": "WAREHOUSE",
+      "position": "Nhân viên",
+      "reportsTo": "C03-WAREHOUSE-01"
+    },
+    {
+      "code": "C03-WAREHOUSE-06",
+      "email": "warehouse.06@candora.example",
+      "fullName": "Nhân viên mô phỏng WAREHOUSE 6",
+      "department": "WAREHOUSE",
+      "role": "WAREHOUSE",
+      "position": "Nhân viên",
+      "reportsTo": "C03-WAREHOUSE-01"
+    }
+  ]
+}

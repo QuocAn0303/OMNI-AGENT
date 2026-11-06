@@ -422,6 +422,7 @@ app.use("/api/replenishment", replenishmentRoutes);
 app.use("/api/evidence", evidenceRoutes);
 app.use("/api/rfq", rfqRoutes);
 app.use("/api/supply", supplyRoutes);
+app.use("/api/vn-supply-chain", require("./modules/vn-supply-chain/vn-supply-chain.routes")());
 app.use("/api/menu", menuRoutes);
 app.use("/api/tables", tableRoutes);
 app.use("/api/kds", kdsRoutes);
