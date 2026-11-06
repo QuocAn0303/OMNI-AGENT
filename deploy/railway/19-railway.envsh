@@ -1,0 +1,6 @@
+#!/bin/sh
+# Sourced by the official nginx entrypoint before template expansion.
+: "${BACKEND_HOST:?Set BACKEND_HOST to the backend private domain}"
+DNS_RESOLVER=$(awk '/^nameserver / { if ($2 ~ /:/) print "[" $2 "]"; else print $2; exit }' /etc/resolv.conf)
+: "${DNS_RESOLVER:?No DNS resolver found}"
+export DNS_RESOLVER

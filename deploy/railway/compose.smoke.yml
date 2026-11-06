@@ -1,0 +1,50 @@
+# Local, disposable validation of the Railway images. Never use these secrets online.
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: smoke
+      POSTGRES_PASSWORD: smoke-local-only
+      POSTGRES_DB: aduu_smoke
+    tmpfs:
+      - /var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U smoke -d aduu_smoke"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+  redis:
+    image: redis:7-alpine
+    command: ["redis-server", "--requirepass", "smoke-redis-local-only"]
+    healthcheck:
+      test: ["CMD", "redis-cli", "-a", "smoke-redis-local-only", "ping"]
+      interval: 2s
+      timeout: 3s
+      retries: 30
+  backend:
+    image: aduu-railway-backend:test
+    environment:
+      NODE_ENV: production
+      PORT: "4000"
+      TRUST_PROXY: "true"
+      DATABASE_URL: postgresql://smoke:smoke-local-only@db:5432/aduu_smoke
+      REDIS_URL: redis://:smoke-redis-local-only@redis:6379
+      JWT_SECRET: smoke-local-only-jwt-secret-at-least-32-characters
+      ENCRYPTION_KEY: smoke-local-only-encryption-key-at-least-32-characters
+      CORS_ORIGIN: http://localhost:18080
+      CLIENT_URL: http://localhost:18080
+    depends_on:
+      db:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+  frontend:
+    image: aduu-railway-frontend:test
+    environment:
+      PORT: "8080"
+      BACKEND_HOST: backend
+      BACKEND_PORT: "4000"
+    ports:
+      - "127.0.0.1:18080:8080"
+    depends_on:
+      - backend
