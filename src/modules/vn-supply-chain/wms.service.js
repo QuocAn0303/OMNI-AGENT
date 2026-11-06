@@ -404,14 +404,25 @@ function createWmsService(options = {}) {
       return order;
     });
   }
+  // Count unreceived supply and QC-passed units waiting for putaway exactly once.
+  function scheduledSupply(warehouseId, sku, timestamp, cutoff) {
+    return state.shipments.filter(s => s.warehouseId === warehouseId
+      && Date.parse(s.expectedAvailableAt) > timestamp && Date.parse(s.expectedAvailableAt) <= cutoff)
+      .reduce((total, shipment) => {
+        const incoming = shipment.items.filter(i => i.sku === sku)
+          .reduce((n, i) => n + i.quantity - i.receivedQty, 0);
+        const ready = state.receipts.filter(r => r.shipmentId === shipment.shipmentId)
+          .flatMap(r => r.items).filter(i => i.sku === sku)
+          .reduce((n, i) => n + i.passQty - i.putawayQty, 0);
+        return total + incoming + ready;
+      }, 0);
+  }
   function projectedAtp(input) {
     const args = v.projectionSchema.parse(input);
     const current = stock(state, { warehouseId: args.warehouseId, sku: args.sku });
     const timestamp = Date.parse(now());
     const cutoff = timestamp + args.daysAhead * DAY_MS;
-    const scheduledReceipts = state.shipments.filter(s => s.warehouseId === args.warehouseId
-      && Date.parse(s.expectedAvailableAt) > timestamp && Date.parse(s.expectedAvailableAt) <= cutoff)
-      .flatMap(s => s.items).filter(i => i.sku === args.sku).reduce((n, i) => n + i.quantity - i.receivedQty, 0);
+    const scheduledReceipts = scheduledSupply(args.warehouseId, args.sku, timestamp, cutoff);
     const forecastDemand = args.forecastDaily ? args.forecastDaily.reduce((a, b) => a + b, 0)
       : (args.dailyDemand ?? product(args.sku).baseDailyDemand * warehouse(args.warehouseId).demandShare) * args.daysAhead;
     return { warehouseId: args.warehouseId, sku: args.sku, daysAhead: args.daysAhead, atpQty: current.atpQty,
@@ -432,9 +443,8 @@ function createWmsService(options = {}) {
       const supplier = overdue || projection.projectedAtpQty < 0 ? backup : primary;
       const safetyStock = Math.ceil(dailyDemand * args.safetyStockDays);
       const rop = calculateROP({ dailyDemand, leadTimeDays: supplier.leadTimeDays, safetyStock });
-      const timely = open.filter(s => Date.parse(s.expectedAvailableAt) > timestamp
-        && Date.parse(s.expectedAvailableAt) <= timestamp + (supplier.leadTimeDays + args.reviewDays) * DAY_MS)
-        .flatMap(s => s.items).filter(i => i.sku === p.sku).reduce((n, i) => n + i.quantity - i.receivedQty, 0);
+      const timely = scheduledSupply(hub.id, p.sku, timestamp,
+        timestamp + (supplier.leadTimeDays + args.reviewDays) * DAY_MS);
       const position = current.atpQty + timely;
       const eoq = calculateEOQ({ annualDemand: dailyDemand * 365, orderingCost: args.orderingCost,
         holdingCostPerUnitPerYear: p.holdingCostPerDay * 365, moq: supplier.moq });
