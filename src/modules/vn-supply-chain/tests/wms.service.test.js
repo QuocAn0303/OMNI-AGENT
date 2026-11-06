@@ -305,3 +305,36 @@ describe('EOQ/ROP, kế hoạch và scoringAdapter', () => {
     expect(stock(w).reservedQty).toBe(2);
   });
 });
+
+
+describe('ATP của hàng đạt QC chờ lên kệ', () => {
+  test.each([0, 2, 10])('không bỏ sót hoặc cộng trùng với %i sản phẩm lỗi', defectQty => {
+    const w = create();
+    w.registerInboundShipment(shipment());
+    const projection = daysAhead => w.projectedAtp({ warehouseId: HCM, sku: SKU, daysAhead, dailyDemand: 0 });
+    expect(projection(4).projectedAtpQty).toBe(10);
+    w.receiveInboundGoods({ requestId: 'r', receiptId: 'R1', shipmentId: 'S1', items: [{ sku: SKU, quantity: 10 }] });
+    expect(projection(4).projectedAtpQty).toBe(0);
+    w.inspectInboundGoods({ requestId: 'qc', receiptId: 'R1', results: [{ sku: SKU, passQty: 10 - defectQty, defectQty }] });
+    expect(stock(w).atpQty).toBe(0);
+    expect(projection(2).projectedAtpQty).toBe(0);
+    expect(projection(4).projectedAtpQty).toBe(10 - defectQty);
+    const plan = w.planReplenishment().find(p => p.warehouseId === HCM && p.sku === SKU);
+    expect(plan.inventoryPosition).toBe(10 - defectQty);
+    if (defectQty < 10) {
+      w.putawayToBin({ requestId: 'put1', receiptId: 'R1', sku: SKU, binId: A, quantity: 3 });
+      expect(projection(4).scheduledReceipts).toBe(7 - defectQty);
+      expect(projection(4).projectedAtpQty).toBe(10 - defectQty);
+      w.putawayToBin({ requestId: 'put2', receiptId: 'R1', sku: SKU, binId: A, quantity: 7 - defectQty });
+      expect(projection(4).scheduledReceipts).toBe(0);
+      expect(projection(4).projectedAtpQty).toBe(10 - defectQty);
+    }
+  });
+  test('nhận một phần vẫn tính phần đang đi và chỉ phần đã đạt QC', () => {
+    const w = create();
+    w.registerInboundShipment(shipment());
+    w.receiveInboundGoods({ requestId: 'r', receiptId: 'R1', shipmentId: 'S1',
+      items: [{ sku: SKU, quantity: 4, passQty: 3, defectQty: 1 }] });
+    expect(w.projectedAtp({ warehouseId: HCM, sku: SKU, daysAhead: 4, dailyDemand: 0 }).scheduledReceipts).toBe(9);
+  });
+});

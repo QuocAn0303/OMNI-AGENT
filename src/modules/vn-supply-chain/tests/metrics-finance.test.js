@@ -180,3 +180,48 @@ describe('E2E HTTP: Nhập → Đơn → Xuất → Hoàn → KPI và xuất d�
     expect(bob.stage).toBe(0);
   });
 });
+
+
+describe('Hồi quy QC độc lập với lên kệ', () => {
+  test.each([200, 2])('ghi nhận %i hàng lỗi ngay ngày QC và không ghi hai lần', defectQty => {
+    const { createOmsLogisticsService } = require('../oms-logistics.service');
+    let time = '2026-12-18T02:00:00Z';
+    const oms = createOmsLogisticsService({ clock: () => time });
+    const sku = 'VN-B-001';
+    oms.createInboundPo({ requestId: 'po', poId: 'QC-PO', supplierId: 'SUP-B-PRIMARY', warehouseId: 'WH-HN',
+      promisedAt: '2026-12-20T02:00:00Z', items: [{ sku, quantity: 200 }] });
+    const advance = (status, qcResults) => oms.advanceInboundPo({ requestId: status, poId: 'QC-PO', status,
+      ...(qcResults ? { qcResults } : {}) });
+    advance('SUPPLIER_PRODUCTION');advance('IN_TRANSIT_INBOUND');
+    time = '2026-12-20T02:00:00Z';advance('ARRIVED_AT_DOCK');
+    expect(calculateMetricsFinance({ dataset, demoSnapshot: oms.getSnapshot() }).pnl.writeOffCost).toBe(report.pnl.writeOffCost);
+    advance('QC_COMPLETED', [{ sku, passQty: 200 - defectQty, defectQty }]);
+    const unitCost = dataset.catalog.suppliers.find(s => s.id === 'SUP-B-PRIMARY').offers.find(o => o.sku === sku).unitCost;
+    const before = calculateMetricsFinance({ dataset, demoSnapshot: oms.getSnapshot() });
+    expect(before.pnl.writeOffCost - report.pnl.writeOffCost).toBe(defectQty * unitCost);
+    expect(before.kpis.productDevelopment.poToShelfDays).toBe(report.kpis.productDevelopment.poToShelfDays);
+    const loss = before.journal.filter(j => j.kind === 'writeOffCost' && j.sourceId.includes('QC-PO'));
+    expect(loss).toHaveLength(1);expect(loss[0].date).toBe('2026-12-20');
+    time = '2026-12-21T02:00:00Z';advance('PUTAWAY_DONE');
+    const after = calculateMetricsFinance({ dataset, demoSnapshot: oms.getSnapshot() });
+    expect(after.pnl.writeOffCost).toBe(before.pnl.writeOffCost);
+    const receipts = after.sources.goodsReceipts.filter(g => g.poId === 'LIVE-QC-PO-' + sku);
+    expect(sum(receipts, 'receivedQuantity')).toBe(200);
+    expect(sum(receipts, 'acceptedQuantity')).toBe(200 - defectQty);
+    expect(sum(receipts, 'rejectedQuantity')).toBe(defectQty);
+    expect(after.journal.filter(j => j.kind === 'writeOffCost' && j.sourceId.includes('QC-PO'))).toEqual(loss);
+  });
+});
+
+test('PM2 giữ một worker cho phiên demo kể cả khi môi trường yêu cầu 4', () => {
+  const previous = process.env.PM2_INSTANCES;
+  try {
+    process.env.PM2_INSTANCES = '4';
+    jest.isolateModules(() => {
+      expect(require('../../../../ecosystem.config').apps.find(a => a.name === 'erp-api').instances).toBe(1);
+    });
+  } finally {
+    if (previous === undefined) delete process.env.PM2_INSTANCES;
+    else process.env.PM2_INSTANCES = previous;
+  }
+});
