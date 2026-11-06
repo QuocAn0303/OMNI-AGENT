@@ -146,7 +146,7 @@ function calculateMetricsFinance({ dataset = buildVnSeedData(), demoSnapshot = n
   const scenarios={delay:simulateSupplierDelay14Days(),surge:simulateDemandSurge50Percent()};
   const peak=scenarios.surge.after.ledger.filter(r=>r.day<=14);
   const baselinePeak=scenarios.surge.before.ledger.filter(r=>r.day<=14);
-  const manufacturingDays=log.goodsReceipts.map(g=>elapsed(poMap.get(g.poId).date,g.date));
+  const manufacturingDays=log.goodsReceipts.filter(g=>g.acceptedQuantity>0).map(g=>elapsed(poMap.get(g.poId).date,g.date));
   const kpis={
     customerService:{otifPercent:ratio(service.onTime,service.resolved)===null?null:100*service.onTime/service.resolved,
       orderFillRatePercent:100*(ratio(service.shipped,service.demand)||0),orderCycleTimeDays:ratio(service.cycleWeighted,service.delivered),

@@ -16,10 +16,16 @@ function normalizeFinanceSources(dataset, demo) {
   for (const receipt of demo.wms.receipts.filter(r => r.sourceType === 'PO')) for (const line of receipt.items) {
     const shipment = demo.wms.shipments.find(s => s.shipmentId === receipt.shipmentId);
     const po = log.purchaseOrders.find(p => p.id === 'LIVE-' + shipment.sourceId + '-' + line.sku);
+    const history = demo.purchaseOrders.find(p => p.poId === shipment.sourceId).history;
+    const qc = history.find(h => h.status === 'QC_COMPLETED');
+    // QC losses are recognized on inspection, even if no units ever reach a shelf.
+    if (qc) log.goodsReceipts.push({ id: 'LIVE-' + receipt.receiptId + '-' + line.sku + '-QC', poId: po.id,
+      date: date(qc.at), sku: line.sku, warehouseId: receipt.warehouseId,
+      acceptedQuantity: 0, receivedQuantity: line.receivedQty, rejectedQuantity: line.defectQty });
     if (line.putawayQty) log.goodsReceipts.push({ id: 'LIVE-' + receipt.receiptId + '-' + line.sku, poId: po.id,
-      date: date(demo.purchaseOrders.find(p => p.poId === shipment.sourceId).history.find(h => h.status === 'PUTAWAY_DONE').at),
-      sku: line.sku, warehouseId: receipt.warehouseId, acceptedQuantity: line.putawayQty, receivedQuantity: line.receivedQty,
-      rejectedQuantity: line.defectQty });
+      date: date(history.find(h => h.status === 'PUTAWAY_DONE').at),
+      sku: line.sku, warehouseId: receipt.warehouseId, acceptedQuantity: line.putawayQty, receivedQuantity: 0,
+      rejectedQuantity: 0 });
   }
   for (const f of demo.fulfillments.filter(f => f.shippedAt)) {
     const order = demo.orders.find(o => o.orderId === f.orderId);
