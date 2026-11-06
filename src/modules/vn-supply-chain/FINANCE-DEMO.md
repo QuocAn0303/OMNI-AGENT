@@ -74,3 +74,9 @@ npm run build
 ```
 
 `tests/metrics-finance.test.js` có E2E HTTP thật qua Express → demo → OMS/WMS → tài chính → JSON/XLSX; kiểm tra phân quyền, phân tách tenant/user, idempotency, tiền COD, lịch NCC, FIFO dự phòng và đủ 60 ngày.
+
+## Sửa lỗi phiên và thời điểm ghi nhận
+
+- Cấu hình PM2 chạy đúng một worker (`instances: 1`), kể cả khi đặt `PM2_INSTANCES`. Phiên vẫn ở RAM và mất khi khởi động lại; không scale API hoặc chạy nhiều replica cho đến khi có kho phiên dùng chung. Khi áp dụng từ cấu hình 4 worker, cần thay thế cụm đang chạy bằng cấu hình mới, kiểm tra PM2 chỉ còn một instance.
+- GRN ghi nhận QC và hao hụt tại ngày kiểm định, kể cả lô lỗi toàn bộ. Lên kệ là dòng riêng, không cộng lại chi phí lỗi hay lượng nhận.
+- ATP dự kiến và vị thế tồn kho bổ sung bao gồm hàng đạt QC chờ lên kệ trong khoảng lịch dự báo; không bao gồm hàng lỗi, chờ QC hoặc lượng đã lên kệ.
